@@ -8,6 +8,9 @@ export interface SshConnectConfig {
   auth: HostCredentialInput;
   hostKeyAlgorithm: string | null;
   hostKeyFingerprint: string | null;
+  cols?: number;
+  rows?: number;
+  term?: string;
 }
 
 export interface SshHostKeyChallenge {
