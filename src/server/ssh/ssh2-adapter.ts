@@ -33,7 +33,7 @@ export interface Ssh2AdapterOptions {
 }
 
 const DEFAULT_OPTIONS = {
-  readyTimeout: 10_000,
+  readyTimeout: 60_000,
   keepaliveInterval: 10_000,
   keepaliveCountMax: 3
 } as const;

@@ -198,6 +198,7 @@ export const registerTerminalGateway = async (
     let managerSessionId: string | undefined;
     let channel: SshChannel | undefined;
     let hostKeyPolicy: HostKeyPolicy | undefined;
+    let pendingResize: { cols: number; rows: number } | undefined;
     let active = true;
     let cleanupStarted = false;
     let lastStatus: Extract<TerminalServerEvent, { type: 'status' }>['state'] | undefined;
@@ -254,6 +255,10 @@ export const registerTerminalGateway = async (
           sendStatus('closed');
         }
       });
+      if (pendingResize) {
+        nextChannel.resize(pendingResize.cols, pendingResize.rows);
+        pendingResize = undefined;
+      }
     };
 
     const openTerminal = async (message: Extract<TerminalClientMessage, { type: 'open' }>): Promise<void> => {
@@ -336,12 +341,14 @@ export const registerTerminalGateway = async (
           await openTerminal(message);
           return;
         case 'resize':
-          if (!channel) throw new AppError('PROTOCOL_INVALID_MESSAGE');
-          channel.resize(message.cols, message.rows);
+          if (channel) {
+            channel.resize(message.cols, message.rows);
+          } else {
+            pendingResize = { cols: message.cols, rows: message.rows };
+          }
           return;
         case 'input':
-          if (!channel) throw new AppError('PROTOCOL_INVALID_MESSAGE');
-          channel.write(message.data);
+          channel?.write(message.data);
           return;
         case 'ping':
           send({ type: 'pong' });
@@ -362,8 +369,7 @@ export const registerTerminalGateway = async (
       getPendingFingerprint: () => hostKeyPolicy?.pendingChallenge?.fingerprint,
       onMessage: handleMessage,
       onBinary: (data) => {
-        if (!channel) throw new AppError('PROTOCOL_INVALID_MESSAGE');
-        channel.write(data);
+        channel?.write(data);
       },
       onClose: cleanup
     });

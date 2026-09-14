@@ -1,0 +1,31 @@
+services:
+  webssh:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATA_DIR: /data
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:?Set TRUSTED_ORIGINS to the browser origin before starting}
+      SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-900000}
+      MAX_SESSIONS: ${MAX_SESSIONS:-8}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${WEBSSH_PORT:-3000}:3000"
+    volumes:
+      - webssh_data:/data
+
+  ssh-fixture:
+    profiles: ["openssh-test"]
+    build:
+      context: ./tests/fixtures/openssh
+      dockerfile: Dockerfile
+    environment:
+      WEBSSH_FIXTURE_PASSWORD: ${WEBSSH_FIXTURE_PASSWORD:?Set WEBSSH_FIXTURE_PASSWORD only for the test profile}
+    expose:
+      - "22"
+
+volumes:
+  webssh_data:

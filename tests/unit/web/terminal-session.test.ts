@@ -114,6 +114,8 @@ describe('TerminalSessionController', () => {
       decision: 'trust',
       fingerprint: 'SHA256:fixture'
     });
+    socket.message(JSON.stringify({ type: 'status', state: 'connected' }));
+    expect(controller.snapshot.hostKey).toBeNull();
   });
 
   it('reconnects after an unintentional close with a capped exponential backoff', () => {

@@ -78,7 +78,7 @@ describe('Ssh2Adapter', () => {
       port: 22,
       username: 'deploy',
       password: 'fixture-password',
-      readyTimeout: 10_000,
+      readyTimeout: 60_000,
       keepaliveInterval: 10_000,
       keepaliveCountMax: 3,
       hostHash: 'sha256'

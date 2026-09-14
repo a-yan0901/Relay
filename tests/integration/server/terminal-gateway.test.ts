@@ -196,6 +196,7 @@ describe('terminal WebSocket gateway', () => {
     expect(awaiting).toEqual(expect.objectContaining({ type: 'status', state: 'awaiting-host-key' }));
     const challenge = await nextJson<{ type: string; fingerprint: string }>(socket);
     expect(challenge).toEqual(expect.objectContaining({ type: 'host-key', fingerprint: 'SHA256:fixture-key' }));
+    socket.send(JSON.stringify({ type: 'resize', cols: 100, rows: 30 }));
     socket.send(JSON.stringify({ type: 'host-key-decision', decision: 'trust', fingerprint: 'SHA256:fixture-key' }));
 
     const connected = await nextJson<{ type: string; state?: string }>(socket);
@@ -203,12 +204,13 @@ describe('terminal WebSocket gateway', () => {
     expect(statuses).toEqual(['connecting']);
 
     const channel = adapter.channels[0];
+    expect(channel.resizes).toEqual([{ cols: 100, rows: 30 }]);
     channel.emit('data', Buffer.from('fixture output'));
     expect((await nextMessage(socket)).toString()).toBe('fixture output');
     socket.send(JSON.stringify({ type: 'resize', cols: 80, rows: 24 }));
     socket.send(Buffer.from('printf gateway\\n'));
-    await waitFor(() => channel.resizes.length === 1 && channel.writes.length === 1);
-    expect(channel.resizes).toEqual([{ cols: 80, rows: 24 }]);
+    await waitFor(() => channel.resizes.length === 2 && channel.writes.length === 1);
+    expect(channel.resizes).toEqual([{ cols: 100, rows: 30 }, { cols: 80, rows: 24 }]);
     expect(channel.writes[0].toString()).toBe('printf gateway\\n');
 
     socket.send(JSON.stringify({ type: 'close' }));

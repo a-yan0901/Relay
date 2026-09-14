@@ -252,7 +252,10 @@ export class TerminalSessionController {
   private handleServerEvent(event: TerminalServerEvent): void {
     switch (event.type) {
       case 'status':
-        this.updateSnapshot({ state: event.state });
+        this.updateSnapshot({
+          state: event.state,
+          ...(event.state === 'awaiting-host-key' ? {} : { hostKey: null })
+        });
         if (event.state === 'connected') {
           this.reconnectAttempt = 0;
           this.updateSnapshot({ reconnectDelayMs: 0, error: null });

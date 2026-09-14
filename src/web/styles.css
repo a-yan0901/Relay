@@ -210,6 +210,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .button:hover { transform: translateY(-1px); }
 
+.host-key-dialog .button:hover { transform: none; }
+
 .button-primary { background: linear-gradient(135deg, #55a9ff, #317edb); box-shadow: 0 10px 24px rgba(49, 126, 219, 0.2); color: #fff; }
 
 .button-primary:hover { background: linear-gradient(135deg, #72b8ff, #3f8ce8); }

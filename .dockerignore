@@ -1,0 +1,15 @@
+.git
+.worktrees
+node_modules
+dist
+coverage
+playwright-report
+test-results
+data
+.tmp-smoke-data
+.tmp-e2e-data
+tests
+docs
+*.log
+.env
+.env.*

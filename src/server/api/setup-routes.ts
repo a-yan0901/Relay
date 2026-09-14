@@ -7,16 +7,9 @@ import { clearSessionCookie, getSessionId, setSessionCookie } from '../auth/sess
 import { SessionStore } from '../auth/session-store.js';
 import { VaultService } from '../vault/vault-service.js';
 import type { SshSessionManagerPort } from '../ssh/types.js';
+import type { AppRuntimeConfig } from '../config.js';
 
-export interface AppRuntimeConfig {
-  nodeEnv: 'development' | 'test' | 'production';
-  port: number;
-  dataDir: string;
-  trustedOrigins: string[];
-  sessionIdleTimeoutMs: number;
-  maxSessions: number;
-  logLevel: string;
-}
+export type { AppRuntimeConfig } from '../config.js';
 
 export interface SetupRouteDependencies {
   appConfigRepository: AppConfigRepository;
