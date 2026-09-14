@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { resolve } from 'node:path';
 
 import { createServerApp } from '../../../src/server/index.js';
+import { loadConfig } from '../../../src/server/config.js';
 
 const handles: Array<{ close: () => Promise<void> }> = [];
 
@@ -58,5 +59,18 @@ describe('health and version endpoints', () => {
     });
     expect(browserRoute.statusCode).toBe(200);
     expect(browserRoute.body).toContain('webssh static fixture');
+  });
+
+  it('accepts the wildcard bind address as a development browser origin', async () => {
+    const handle = await createServerApp(loadConfig({ NODE_ENV: 'development', DATA_DIR: ':memory:' }));
+    handles.push(handle);
+
+    const setup = await handle.app.inject({
+      method: 'POST',
+      url: '/api/setup',
+      headers: { origin: 'http://0.0.0.0:5173' },
+      payload: { masterPassword: 'development-origin-fixture-password' }
+    });
+    expect(setup.statusCode).toBe(201);
   });
 });

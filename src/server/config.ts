@@ -1,3 +1,5 @@
+import { networkInterfaces } from 'node:os';
+
 export interface AppRuntimeConfig {
   nodeEnv: 'development' | 'test' | 'production';
   port: number;
@@ -10,6 +12,7 @@ export interface AppRuntimeConfig {
 
 const DEFAULT_PORT = 3000;
 const DEFAULT_DATA_DIR = '/data';
+const DEFAULT_FRONTEND_PORT = 5173;
 const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_MAX_SESSIONS = 8;
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
@@ -46,11 +49,33 @@ const parseDataDir = (value: string | undefined): string => {
   return dataDir;
 };
 
+const localOrigin = (address: string, port: number): string => (
+  `http://${address.includes(':') ? `[${address}]` : address}:${port}`
+);
+
+const defaultDevelopmentOrigins = (env: Environment): string[] => {
+  const frontendPort = parseInteger(env, 'VITE_PORT', DEFAULT_FRONTEND_PORT, 1, 65_535);
+  const origins = new Set([
+    `http://localhost:${frontendPort}`,
+    `http://127.0.0.1:${frontendPort}`,
+    `http://0.0.0.0:${frontendPort}`,
+    `http://[::1]:${frontendPort}`
+  ]);
+
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (!entry.address.includes('%')) origins.add(localOrigin(entry.address, frontendPort));
+    }
+  }
+
+  return [...origins];
+};
+
 const parseTrustedOrigins = (env: Environment, nodeEnv: AppRuntimeConfig['nodeEnv']): string[] => {
   const raw = env.TRUSTED_ORIGINS;
   if (raw === undefined || raw.trim() === '') {
     if (nodeEnv === 'production') throw new Error('TRUSTED_ORIGINS must be configured in production');
-    return ['http://localhost:5173', 'http://127.0.0.1:5173'];
+    return defaultDevelopmentOrigins(env);
   }
 
   const origins = [...new Set(raw.split(',').map((value) => value.trim()).filter(Boolean))];

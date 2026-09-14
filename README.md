@@ -55,6 +55,8 @@ npm run build
 DATA_DIR=.local-data NODE_ENV=test TRUSTED_ORIGINS=http://127.0.0.1:4173 PORT=4173 npm start
 ```
 
+开发模式未显式设置 `TRUSTED_ORIGINS` 时，会自动信任 localhost、回环地址、`0.0.0.0` 和本机网卡地址对应的 Vite 端口；生产模式仍必须显式配置完整浏览器 origin。
+
 验证命令：
 
 ```bash
