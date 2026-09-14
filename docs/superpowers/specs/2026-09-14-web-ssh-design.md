@@ -158,6 +158,7 @@ SQLite 表以逻辑字段描述如下：
 ### `hosts`
 
 - `id`：随机 UUID。
+- `owner_id`：单用户首版固定为 `default`，所有 repository 查询都必须显式带上；未来映射到用户/租户。
 - `name`：用户可见名称。
 - `address`：IP 或域名。
 - `port`：1–65535，默认 22。
@@ -175,9 +176,12 @@ SQLite 表以逻辑字段描述如下：
 
 地址、用户名和标签用于列表搜索；凭据密文永不进入列表 DTO。
 
+单用户组合根为所有 repository 调用注入 `owner_id = default`。未来多用户版本必须将 owner/tenant 从已认证会话解析，而不能接受浏览器直接提交的 owner id。
+
 ### `groups`
 
 - `id`
+- `owner_id`：单用户首版固定为 `default`，用于未来租户隔离。
 - `name`
 - `sort_order`
 - `created_at`、`updated_at`
@@ -185,6 +189,7 @@ SQLite 表以逻辑字段描述如下：
 ### `audit_events`
 
 - `id`
+- `owner_id`：单用户首版固定为 `default`，用于未来审计范围隔离。
 - `event_type`：如 `vault_unlocked`、`host_created`、`ssh_connect_failed`、`host_key_rejected`。
 - `host_id`：可空。
 - `request_id`
@@ -448,4 +453,3 @@ API 前缀：`/api`。所有错误使用统一结构：
 5. 独立 SSH worker，解决更高并发和资源隔离。
 
 这些能力不能通过放宽首版的 host key 校验、URL 目标注入或明文凭据存储来提前实现。
-
