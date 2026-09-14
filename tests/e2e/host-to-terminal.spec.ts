@@ -55,6 +55,8 @@ test.describe('host to terminal journey', () => {
     expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewportHeight);
     await hostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
     await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
+    const terminalInput = page.locator('.terminal-panel.is-active textarea.xterm-helper-textarea');
+    await expect(terminalInput).toBeFocused();
     const scrollPolicy = await page.locator('.terminal-panel.is-active .terminal-canvas .xterm-viewport').evaluate((element) => ({
       rootOverscroll: getComputedStyle(document.documentElement).overscrollBehaviorY,
       bodyOverscroll: getComputedStyle(document.body).overscrollBehaviorY,
@@ -65,11 +67,14 @@ test.describe('host to terminal journey', () => {
     expect(scrollPolicy.bodyOverscroll).toBe('none');
     expect(scrollPolicy.viewportOverscroll).toBe('contain');
     expect(['auto', 'scroll']).toContain(scrollPolicy.viewportOverflowY);
+    await page.getByRole('button', { name: '← Server 列表' }).click();
+    await expect(page.getByText('指纹已验证', { exact: true })).toBeVisible();
+    await expect(page.locator('.host-last-connected')).toContainText('最近连接：');
+    await page.getByRole('button', { name: '终端 1' }).click();
     await page.keyboard.press('Control+K');
     await expect(page.locator('#terminal-host-search')).toBeFocused();
     await page.getByRole('button', { name: '关闭 Server 选择器' }).click();
 
-    const terminalInput = page.locator('.terminal-panel.is-active textarea.xterm-helper-textarea');
     await terminalInput.click();
     await terminalInput.pressSequentially("printf 'web-ssh-e2e\\n'");
     await terminalInput.press('Enter');
@@ -119,5 +124,19 @@ test.describe('host to terminal journey', () => {
     await page.getByRole('button', { name: '锁定' }).click();
     await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible();
     await expect(page.getByRole('button', { name: '连接 Fixture SSH A' })).toHaveCount(0);
+    await page.getByLabel('主密码', { exact: true }).fill(MASTER_PASSWORD);
+    await page.getByRole('button', { name: '解锁 Vault' }).click();
+    await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '添加 Server', exact: true }).click();
+    await page.getByLabel('服务器名称').fill('Long Hostname');
+    await page.getByLabel('IP / 域名').fill('very-long-hostname.internal.example.com');
+    await page.getByLabel('用户名').fill('ops');
+    await page.getByLabel('密码').fill('fixture-password');
+    await page.getByRole('button', { name: '保存 Server' }).click();
+    await page.setViewportSize({ width: 320, height: 720 });
+    const narrowCard = page.locator('.host-card').filter({ hasText: 'Long Hostname' });
+    await expect(narrowCard).toBeVisible();
+    const narrowCardRight = await narrowCard.evaluate((element) => element.getBoundingClientRect().right);
+    expect(narrowCardRight).toBeLessThanOrEqual(320);
   });
 });

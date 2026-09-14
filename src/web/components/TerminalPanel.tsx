@@ -58,6 +58,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
       if (/^https?:\/\//iu.test(uri)) window.open(uri, '_blank', 'noopener,noreferrer');
     }));
     terminal.open(mountRef.current);
+    if (active) terminal.focus();
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
@@ -114,7 +115,8 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
   useEffect(() => {
     if (!active) return;
     fitRef.current?.();
-  }, [active]);
+    if (session.state.state === 'connected' && !session.state.hostKey) terminalRef.current?.focus();
+  }, [active, session.state.hostKey, session.state.state]);
 
   const toggleSearch = (): void => {
     setSearchOpen((open) => !open);
@@ -148,6 +150,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
         <div><p className="eyebrow">SSH SESSION</p><h2>{host.name}</h2><span>{host.username}@{host.address}:{host.port}</span></div>
         <TerminalToolbar
           state={session.state.state}
+          reconnectDelayMs={session.state.reconnectDelayMs}
           onReconnect={session.reconnect}
           onClose={onClose}
           onClear={clear}

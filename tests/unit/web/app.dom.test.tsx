@@ -12,7 +12,8 @@ const apiMocks = vi.hoisted(() => ({
   setupVault: vi.fn(),
   unlockVault: vi.fn(),
   createHost: vi.fn(),
-  updateHost: vi.fn()
+  updateHost: vi.fn(),
+  testConnection: vi.fn()
 }));
 
 vi.mock('../../../src/web/api', () => apiMocks);
@@ -56,6 +57,36 @@ describe('App boot recovery', () => {
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
   });
 
+  it('announces a successful connection test as positive feedback', async () => {
+    const user = userEvent.setup();
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([{
+      id: 'host-1',
+      name: 'Production API',
+      address: '10.0.0.8',
+      port: 22,
+      username: 'deploy',
+      authType: 'password',
+      groupId: null,
+      tags: [],
+      isFavorite: false,
+      hostKeyAlgorithm: 'ssh-ed25519',
+      hostKeyFingerprint: 'SHA256:fixture',
+      lastConnectedAt: null,
+      createdAt: '2026-09-14T00:00:00.000Z',
+      updatedAt: '2026-09-14T00:00:00.000Z'
+    }]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    apiMocks.testConnection.mockResolvedValue({ ok: true });
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.click(screen.getByRole('button', { name: '测试连接 Production API' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('连接测试成功：Production API');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('focuses the active Server search with the platform shortcut', async () => {
     const user = userEvent.setup();
     apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
@@ -67,5 +98,27 @@ describe('App boot recovery', () => {
     await user.keyboard('{Control>}k{/Control}');
 
     expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: '搜索 Server' }));
+  });
+
+  it('moves focus into overlays and closes them with Escape', async () => {
+    const user = userEvent.setup();
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    const addHost = screen.getByRole('button', { name: '添加第一台 Server' });
+    await user.click(addHost);
+    expect(document.activeElement).toBe(screen.getByLabelText('服务器名称'));
+    expect(screen.getByRole('dialog', { name: '添加 Server' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: '添加 Server' })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(addHost);
+
+    await user.click(screen.getByRole('button', { name: '偏好设置' }));
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: '色彩主题' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: '偏好设置' })).not.toBeInTheDocument();
   });
 });

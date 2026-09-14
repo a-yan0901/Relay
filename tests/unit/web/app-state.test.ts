@@ -58,6 +58,16 @@ describe('appReducer', () => {
     expect(rolledBack.hosts[0].isFavorite).toBe(false);
   });
 
+  it('keeps the server-confirmed favorite after a successful API update', () => {
+    const loaded = appReducer(initialAppState, { type: 'hostsLoaded', hosts: [host()] });
+    const optimistic = appReducer(loaded, { type: 'favoriteOptimistic', hostId: 'host-1', isFavorite: true });
+    const confirmed = appReducer(optimistic, { type: 'hostUpdated', host: host({ isFavorite: true, updatedAt: '2026-09-15T00:00:00.000Z' }) });
+    const committed = appReducer(confirmed, { type: 'favoriteCommitted', hostId: 'host-1' });
+
+    expect(committed.hosts[0].isFavorite).toBe(true);
+    expect(committed.favoriteRollback).toEqual({});
+  });
+
   it('tracks query/group filters and multiple terminal tabs', () => {
     let state: AppState = appReducer(initialAppState, {
       type: 'hostsLoaded',

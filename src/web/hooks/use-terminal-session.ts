@@ -99,6 +99,7 @@ export class TerminalSessionController {
   private socket: TerminalSocketLike | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  private retryBlocked = false;
   private reconnectAttempt = 0;
   private snapshotValue: TerminalSessionSnapshot = {
     state: 'closed',
@@ -138,6 +139,7 @@ export class TerminalSessionController {
 
   connect(): void {
     this.stopped = false;
+    if (this.retryBlocked) return;
     if (this.socket && (this.socket.readyState === 0 || this.socket.readyState === 1)) return;
     this.clearReconnectTimer();
     this.updateSnapshot({ state: 'connecting', error: null, exit: null, reconnectDelayMs: 0 });
@@ -157,6 +159,7 @@ export class TerminalSessionController {
 
   reconnect(): void {
     this.stopped = false;
+    this.retryBlocked = false;
     this.reconnectAttempt = 0;
     this.clearReconnectTimer();
     this.detachSocket(this.socket);
@@ -265,6 +268,7 @@ export class TerminalSessionController {
         this.updateSnapshot({ state: 'awaiting-host-key', hostKey: event, error: null });
         return;
       case 'error':
+        this.retryBlocked = true;
         this.updateSnapshot({ state: 'failed', error: event });
         return;
       case 'exit':
@@ -286,6 +290,7 @@ export class TerminalSessionController {
       this.updateSnapshot({ state: 'closed', reconnectDelayMs: 0 });
       return;
     }
+    if (this.retryBlocked) return;
     const delay = Math.min(this.reconnectBaseMs * (2 ** this.reconnectAttempt), this.reconnectMaxMs);
     this.reconnectAttempt += 1;
     this.updateSnapshot({ state: 'reconnecting', reconnectDelayMs: delay });

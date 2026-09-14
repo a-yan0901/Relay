@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
 import type { TerminalSessionSnapshot } from '../hooks/use-terminal-session';
@@ -176,6 +176,22 @@ export const TerminalWorkspace = ({
   };
 
   const stopDraggingDivider = (): void => setIsDraggingDivider(false);
+  const updateSplitRatioFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (!splitLayout) return;
+    const isHorizontal = splitLayout.orientation === 'horizontal';
+    const positiveKey = isHorizontal ? 'ArrowRight' : 'ArrowDown';
+    const negativeKey = isHorizontal ? 'ArrowLeft' : 'ArrowUp';
+    if (event.key === 'Home') {
+      event.preventDefault();
+      setSplitRatio(0.2);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      setSplitRatio(0.8);
+    } else if (event.key === positiveKey || event.key === negativeKey) {
+      event.preventDefault();
+      setSplitRatio((ratio) => clampSplitRatio(ratio + (event.key === positiveKey ? 0.05 : -0.05)));
+    }
+  };
   const layoutStyle: CSSProperties | undefined = splitLayout ? { '--split-ratio': `${splitRatio * 100}%` } as CSSProperties : undefined;
 
   return (
@@ -242,7 +258,11 @@ export const TerminalWorkspace = ({
                 key={terminal.terminalId}
                 role={visible ? 'region' : undefined}
                 aria-label={visible ? paneLabel(pane) : undefined}
-                onMouseDown={() => { if (pane) setFocusedPane(pane); }}
+                onMouseDown={() => {
+                  if (!pane) return;
+                  setFocusedPane(pane);
+                  if (terminal.terminalId !== activeTerminalId) onActivate(terminal.terminalId);
+                }}
               >
                 {visible && splitLayout && (
                   <div className="terminal-pane-toolbar">
@@ -278,11 +298,13 @@ export const TerminalWorkspace = ({
             <div
               className="terminal-divider"
               role="separator"
+              tabIndex={0}
               aria-label={splitLayout.orientation === 'horizontal' ? '调整左右分屏大小' : '调整上下分屏大小'}
               aria-orientation={splitLayout.orientation === 'horizontal' ? 'vertical' : 'horizontal'}
               aria-valuemin={20}
               aria-valuemax={80}
               aria-valuenow={Math.round(splitRatio * 100)}
+              onKeyDown={updateSplitRatioFromKeyboard}
               onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setIsDraggingDivider(true); }}
               onPointerMove={updateSplitRatio}
               onPointerUp={stopDraggingDivider}

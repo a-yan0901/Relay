@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import { AppError } from '@shared/errors';
 import type { HostCreateInput, HostPatchInput } from '@shared/validation';
@@ -21,6 +21,7 @@ import { SetupGate } from './components/SetupGate';
 import { TerminalWorkspace } from './components/TerminalWorkspace';
 import { UnlockView } from './components/UnlockView';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
+import { useDialogFocus } from './hooks/use-dialog-focus';
 import {
   appReducer,
   clearTerminalDescriptors,
@@ -43,6 +44,11 @@ import {
 const messageFromError = (error: unknown): string => (
   error instanceof AppError ? error.message : '服务暂时不可用，请稍后重试'
 );
+
+type ConnectionFeedback = {
+  tone: 'success' | 'info';
+  message: string;
+};
 
 const createTerminalId = (): string => {
   if (typeof globalThis.crypto?.randomUUID === 'function') return `terminal-${globalThis.crypto.randomUUID()}`;
@@ -85,9 +91,13 @@ const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, t
   </header>
 );
 
-const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiPreferences; onChange: (preferences: UiPreferences) => void; onClose: () => void }) => (
+const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiPreferences; onChange: (preferences: UiPreferences) => void; onClose: () => void }) => {
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, true, onClose, '#theme-select');
+
+  return (
   <div className="preferences-backdrop" role="presentation" onMouseDown={onClose}>
-    <aside className="preferences-panel" role="dialog" aria-modal="true" aria-labelledby="preferences-title" onMouseDown={(event) => event.stopPropagation()}>
+    <aside ref={dialogRef} className="preferences-panel" role="dialog" aria-modal="true" aria-labelledby="preferences-title" onMouseDown={(event) => event.stopPropagation()}>
       <div className="form-heading">
         <div><p className="eyebrow">WORKSPACE PREFERENCES</p><h2 id="preferences-title">偏好设置</h2></div>
         <button className="icon-button" type="button" aria-label="关闭偏好设置" onClick={onClose}>×</button>
@@ -105,7 +115,8 @@ const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiP
       <p className="preferences-note">偏好只保存在当前浏览器，不包含主密码、服务器密码或私钥。</p>
     </aside>
   </div>
-);
+  );
+};
 
 export const App = () => {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
@@ -116,6 +127,9 @@ export const App = () => {
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
   const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const refreshedHostForTerminalRef = useRef(new Set<string>());
+  const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null);
+  const drawerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     applyPreferences(preferences);
@@ -221,7 +235,7 @@ export const App = () => {
     try {
       const updated = await updateHost(host.id, { isFavorite: nextFavorite });
       dispatch({ type: 'hostUpdated', host: updated });
-      dispatch({ type: 'favoriteRollback', hostId: host.id });
+      dispatch({ type: 'favoriteCommitted', hostId: host.id });
     } catch (error) {
       dispatch({ type: 'favoriteRollback', hostId: host.id });
       dispatch({ type: 'error', message: messageFromError(error) });
@@ -247,14 +261,18 @@ export const App = () => {
   };
 
   const handleTestConnection = async (host: HostMetadataState): Promise<void> => {
+    setConnectionFeedback(null);
     try {
       const result = await testConnection(host.id);
-      const message = result.ok
-        ? `连接测试成功：${host.name}`
-        : result.hostKey
-          ? `需要确认远程主机指纹：${result.hostKey.fingerprint}`
-          : `无法连接：${host.name}`;
-      dispatch({ type: 'error', message });
+      if (result.ok) {
+        dispatch({ type: 'error', message: null });
+        setConnectionFeedback({ tone: 'success', message: `连接测试成功：${host.name}` });
+      } else if (result.hostKey) {
+        dispatch({ type: 'error', message: null });
+        setConnectionFeedback({ tone: 'info', message: `需要确认远程主机指纹：${result.hostKey.fingerprint}` });
+      } else {
+        dispatch({ type: 'error', message: `无法连接：${host.name}` });
+      }
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
     }
@@ -275,6 +293,8 @@ export const App = () => {
     setHostFormOpen(false);
   };
 
+  useDialogFocus(drawerRef, hostFormOpen, closeHostForm, '#host-name');
+
   const handleCloseTerminal = (terminalId: string): void => {
     dispatch({ type: 'terminalClosed', terminalId });
     saveTerminalDescriptors(loadTerminalDescriptors().filter((descriptor) => descriptor.terminalId !== terminalId));
@@ -284,9 +304,11 @@ export const App = () => {
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent): void => {
       const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
+      const isTerminalInput = target instanceof HTMLTextAreaElement && target.classList.contains('xterm-helper-textarea');
+      const isTextEntry = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
+      if (isTextEntry && !(isTerminalInput && (key === 'k' || key === 'w'))) return;
       if (key === 'k') {
         event.preventDefault();
         if (terminalView) {
@@ -301,8 +323,8 @@ export const App = () => {
         handleCloseTerminal(state.activeTerminalId);
       }
     };
-    window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
+    window.addEventListener('keydown', handleShortcut, true);
+    return () => window.removeEventListener('keydown', handleShortcut, true);
   }, [state.activeTerminalId, terminalView]);
 
   const handleTerminalStatus = (terminalId: string, snapshot: TerminalSessionSnapshot): void => {
@@ -313,6 +335,17 @@ export const App = () => {
       reconnectDelayMs: snapshot.reconnectDelayMs,
       errorMessage: snapshot.error?.message ?? null
     });
+    if (snapshot.state !== 'connected') {
+      refreshedHostForTerminalRef.current.delete(terminalId);
+      return;
+    }
+    if (refreshedHostForTerminalRef.current.has(terminalId)) return;
+    refreshedHostForTerminalRef.current.add(terminalId);
+    void listHosts()
+      .then((hosts) => dispatch({ type: 'hostsLoaded', hosts }))
+      .catch(() => {
+        refreshedHostForTerminalRef.current.delete(terminalId);
+      });
   };
 
   const handleLock = async (): Promise<void> => {
@@ -320,6 +353,7 @@ export const App = () => {
       await lockVault();
       dispatch({ type: 'lock' });
       clearTerminalDescriptors();
+      setTerminalView(false);
       closeHostForm();
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
@@ -337,6 +371,12 @@ export const App = () => {
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
           <button className="icon-button" type="button" aria-label="关闭提示" onClick={() => dispatch({ type: 'error', message: null })}>×</button>
+        </div>
+      )}
+      {connectionFeedback && (
+        <div className={`global-feedback global-feedback-${connectionFeedback.tone}`} role="status" aria-live="polite">
+          <span>{connectionFeedback.message}</span>
+          <button className="icon-button" type="button" aria-label="关闭提示" onClick={() => setConnectionFeedback(null)}>×</button>
         </div>
       )}
       <div className={`app-body ${terminalView ? 'app-body-terminal' : ''}`}>
@@ -372,8 +412,8 @@ export const App = () => {
         )}
       </div>
       {hostFormOpen && (
-        <div className="drawer-backdrop" role="presentation">
-          <aside className="drawer" aria-label={editingHost ? '编辑 Server' : '添加 Server'}>
+        <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeHostForm(); }}>
+          <aside ref={drawerRef} className="drawer" role="dialog" aria-modal="true" aria-labelledby="host-form-title" onMouseDown={(event) => event.stopPropagation()}>
             {editingHost ? <HostForm mode="edit" initialHost={editingHost} groups={state.groups} onEditSubmit={handleUpdateHost} onCancel={closeHostForm} /> : <HostForm groups={state.groups} onSubmit={handleCreateHost} onCancel={closeHostForm} />}
           </aside>
         </div>

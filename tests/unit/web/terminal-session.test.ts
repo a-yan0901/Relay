@@ -160,6 +160,33 @@ describe('TerminalSessionController', () => {
     }
   });
 
+  it('does not retry automatically after a permanent SSH error', () => {
+    vi.useFakeTimers();
+    try {
+      FakeSocket.instances = [];
+      const controller = new TerminalSessionController({
+        hostId: 'host-1',
+        terminalId: 'terminal-1',
+        webSocketFactory: (url) => new FakeSocket(url),
+        reconnectBaseMs: 250
+      });
+
+      controller.connect();
+      const socket = lastSocket();
+      socket.open();
+      socket.message(JSON.stringify({ type: 'error', code: 'SSH_AUTH_FAILED', message: '远程服务器认证失败' }));
+      expect(controller.snapshot.state).toBe('failed');
+
+      socket.close();
+      vi.advanceTimersByTime(10_000);
+
+      expect(FakeSocket.instances).toHaveLength(1);
+      expect(controller.snapshot.state).toBe('failed');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('closes explicitly and removes reconnect timers', () => {
     vi.useFakeTimers();
     try {

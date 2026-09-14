@@ -115,6 +115,7 @@ export type AppAction =
   | { type: 'hostUpdated'; host: HostMetadataState }
   | { type: 'hostDeleted'; hostId: string }
   | { type: 'favoriteOptimistic'; hostId: string; isFavorite: boolean }
+  | { type: 'favoriteCommitted'; hostId: string }
   | { type: 'favoriteRollback'; hostId: string }
   | { type: 'groupSelected'; groupId: string | null }
   | { type: 'queryChanged'; query: string }
@@ -200,6 +201,12 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           [action.hostId]: state.favoriteRollback[action.hostId] ?? host.isFavorite
         }
       };
+    }
+    case 'favoriteCommitted': {
+      if (state.favoriteRollback[action.hostId] === undefined) return state;
+      const rollback = { ...state.favoriteRollback };
+      delete rollback[action.hostId];
+      return { ...state, favoriteRollback: rollback };
     }
     case 'favoriteRollback': {
       const previous = state.favoriteRollback[action.hostId];

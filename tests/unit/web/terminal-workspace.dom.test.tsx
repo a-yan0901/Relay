@@ -122,9 +122,17 @@ describe('TerminalWorkspace', () => {
     await user.click(screen.getByRole('button', { name: '左右分屏' }));
     expect(screen.getByRole('region', { name: '左侧 Console' })).toBeVisible();
     expect(screen.getByRole('region', { name: '右侧 Console' })).toBeVisible();
-    expect(screen.getByRole('separator', { name: '调整左右分屏大小' })).toBeInTheDocument();
+    const divider = screen.getByRole('separator', { name: '调整左右分屏大小' });
+    expect(divider).toBeInTheDocument();
     expect(screen.getByTestId('terminal-panel-tab-1')).toBeVisible();
     expect(screen.getByTestId('terminal-panel-tab-2')).toBeVisible();
+
+    await user.click(screen.getByRole('region', { name: '右侧 Console' }));
+    expect(onActivate).toHaveBeenCalledWith('tab-2');
+
+    divider.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(divider).toHaveAttribute('aria-valuenow', '55');
 
     await user.selectOptions(screen.getByRole('combobox', { name: '右侧 Console' }), 'tab-3');
     expect(screen.getByTestId('terminal-panel-tab-3')).toBeVisible();
@@ -163,9 +171,10 @@ describe('TerminalWorkspace', () => {
     const onReconnect = vi.fn();
     const onClose = vi.fn();
     const onClear = vi.fn();
-    render(<TerminalToolbar state="reconnecting" onReconnect={onReconnect} onClose={onClose} onClear={onClear} />);
+    render(<TerminalToolbar state="reconnecting" reconnectDelayMs={1_500} onReconnect={onReconnect} onClose={onClose} onClear={onClear} />);
 
     expect(screen.getByText('重连中')).toBeInTheDocument();
+    expect(screen.getByText('约 2 秒后自动重试')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '重新连接' }));
     await user.click(screen.getByRole('button', { name: '清屏' }));
     await user.click(screen.getByRole('button', { name: '关闭终端' }));

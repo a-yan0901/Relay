@@ -2,6 +2,7 @@ import type { TerminalStatus } from '@shared/protocol';
 
 export interface TerminalToolbarProps {
   state: TerminalStatus;
+  reconnectDelayMs?: number;
   onReconnect: () => void;
   onClose: () => void;
   onClear: () => void;
@@ -30,6 +31,7 @@ export const terminalStatusDotClass = (state: TerminalStatus): string => {
 
 export const TerminalToolbar = ({
   state,
+  reconnectDelayMs = 0,
   onReconnect,
   onClose,
   onClear,
@@ -39,7 +41,11 @@ export const TerminalToolbar = ({
   searchActive = false
 }: TerminalToolbarProps) => (
   <div className="terminal-toolbar">
-    <div className="terminal-status"><span className={`status-dot ${terminalStatusDotClass(state)}`} />{terminalStatusLabels[state]}</div>
+    <div className="terminal-status" role="status" aria-live="polite">
+      <span className={`status-dot ${terminalStatusDotClass(state)}`} aria-hidden="true" />
+      <span>{terminalStatusLabels[state]}</span>
+      {state === 'reconnecting' && reconnectDelayMs > 0 && <small>约 {Math.max(1, Math.ceil(reconnectDelayMs / 1_000))} 秒后自动重试</small>}
+    </div>
     <div className="terminal-toolbar-actions">
       {onNewTerminal && <button className="toolbar-button toolbar-button-new" type="button" aria-label="新建终端" onClick={onNewTerminal}>＋<span>新建终端</span></button>}
       {onSearch && <button className={`toolbar-button ${searchActive ? 'is-active' : ''}`} type="button" aria-label="搜索" onClick={onSearch}>⌕<span>搜索</span></button>}

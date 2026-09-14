@@ -311,7 +311,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .host-count { color: var(--faint); font-size: 11px; }
 
-.host-list { display: grid; gap: 11px; }
+.host-list { display: grid; gap: 11px; min-width: 0; }
 
 .host-card {
   align-items: center;
@@ -322,13 +322,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   gap: 16px;
   justify-content: space-between;
   min-height: 91px;
+  min-width: 0;
   padding: 16px 17px;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
 .host-card:hover { background: var(--panel-hover); border-color: rgba(93, 168, 255, 0.34); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12); transform: translateY(-1px); }
 
-.host-card-main { min-width: 0; }
+.host-card-main { max-width: 100%; min-width: 0; }
 
 .card-title-line { gap: 10px; }
 
@@ -418,6 +419,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .global-alert { align-items: center; background: rgba(255, 125, 125, 0.1); border: 1px solid rgba(255, 125, 125, 0.22); border-radius: 8px; color: #ffb5b5; display: flex; font-size: 12px; justify-content: space-between; margin: 0 auto 18px; max-width: 1440px; padding: 10px 12px; }
 
+.global-feedback { align-items: center; border-radius: 8px; display: flex; font-size: 12px; justify-content: space-between; margin: 0 auto 18px; max-width: 1440px; padding: 10px 12px; }
+
+.global-feedback-success { background: rgba(82, 211, 154, 0.1); border: 1px solid rgba(82, 211, 154, 0.24); color: #a7ddc5; }
+
+.global-feedback-info { background: rgba(246, 198, 106, 0.1); border: 1px solid rgba(246, 198, 106, 0.25); color: #f0cf8c; }
+
 .icon-button { background: transparent; border: 0; color: var(--muted); font-size: 21px; line-height: 1; padding: 3px 5px; }
 
 .icon-button:hover { color: var(--text); }
@@ -501,6 +508,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .terminal-toolbar { align-items: center; display: flex; gap: 16px; }
 
 .terminal-status { align-items: center; color: var(--muted); display: flex; font-size: 10px; gap: 8px; }
+
+.terminal-status small { color: var(--faint); font-size: 9px; white-space: nowrap; }
 
 .terminal-toolbar-actions { gap: 4px; }
 
@@ -625,7 +634,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-pane-empty-content { align-items: center; color: var(--faint); display: flex; flex: 1; flex-direction: column; font-size: 11px; gap: 12px; justify-content: center; }
 
-.terminal-divider { background: rgba(154, 181, 215, 0.17); position: relative; z-index: 4; }
+.terminal-divider { background: rgba(154, 181, 215, 0.17); position: relative; touch-action: none; z-index: 4; }
 
 .terminal-divider::after { background: var(--faint); border-radius: 99px; content: ''; left: 50%; opacity: 0; position: absolute; top: 50%; transform: translate(-50%, -50%); transition: opacity 120ms ease; }
 
@@ -728,6 +737,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .app-header { min-height: 66px; }
   .brand-lockup small, .secure-pill { display: none; }
   .workspace-shell { display: block; }
+  .host-pane, .host-list { min-width: 0; width: 100%; }
   .sidebar { min-height: 0; overflow-x: auto; padding: 0 0 18px; }
   .sidebar-section { display: flex; gap: 6px; margin-bottom: 0; }
   .sidebar-section .sidebar-label, .sidebar-heading { display: none; }
@@ -737,9 +747,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .host-toolbar { align-items: stretch; flex-direction: column; gap: 10px; }
   .search-field { max-width: none; }
   .host-count { align-self: flex-end; }
-  .host-card { align-items: flex-start; flex-direction: column; }
-  .host-card-actions { width: 100%; }
-  .card-action { flex: 1; }
+  .host-card { align-items: flex-start; flex-direction: column; width: 100%; }
+  .host-card-main { width: 100%; }
+  .host-card-actions { flex-wrap: wrap; width: 100%; }
+  .card-action { flex: 1 1 0; min-width: 0; }
   .app-header-actions { gap: 8px; }
   .auth-card { padding: 28px 22px; }
   .drawer { padding: 22px 18px; }
