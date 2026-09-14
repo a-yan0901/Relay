@@ -1,5 +1,9 @@
 import { useState, type FormEvent } from 'react';
 
+import { AppError } from '@shared/errors';
+
+const MASTER_PASSWORD_MIN_LENGTH = 8;
+
 export interface SetupGateProps {
   onSubmit: (masterPassword: string) => Promise<void>;
   errorMessage?: string | null;
@@ -13,6 +17,10 @@ export const SetupGate = ({ onSubmit, errorMessage }: SetupGateProps) => {
 
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
+    if (password.length < MASTER_PASSWORD_MIN_LENGTH) {
+      setError('主密码至少需要 8 个字符');
+      return;
+    }
     if (password !== confirmation) {
       setError('两次输入的主密码不一致');
       return;
@@ -23,8 +31,8 @@ export const SetupGate = ({ onSubmit, errorMessage }: SetupGateProps) => {
       await onSubmit(password);
       setPassword('');
       setConfirmation('');
-    } catch {
-      setError('初始化失败，请检查主密码');
+    } catch (reason) {
+      setError(reason instanceof AppError ? reason.message : '初始化失败，请稍后重试');
     } finally {
       setSubmitting(false);
     }

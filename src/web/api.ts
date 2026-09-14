@@ -29,6 +29,8 @@ interface ApiErrorBody {
   };
 }
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
 const parseErrorBody = async (response: Response): Promise<ApiErrorBody> => {
   try {
     return await response.json() as ApiErrorBody;
@@ -48,26 +50,38 @@ const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> =>
   if (init.body !== undefined && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
-  const response = await fetch(url, {
-    ...init,
-    headers,
-    credentials: 'same-origin'
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      ...init,
+      headers,
+      credentials: 'same-origin',
+      signal: controller.signal
+    });
 
-  if (!response.ok) {
-    const body = await parseErrorBody(response);
-    const candidateCode = body.error?.code;
-    const code = typeof candidateCode === 'string' && isAppErrorCode(candidateCode)
-      ? candidateCode
-      : 'INTERNAL_ERROR';
-    const message = typeof body.error?.message === 'string' ? body.error.message : '请求失败';
-    throw new AppError(code, message, response.status);
-  }
+    if (!response.ok) {
+      const body = await parseErrorBody(response);
+      const candidateCode = body.error?.code;
+      const code = typeof candidateCode === 'string' && isAppErrorCode(candidateCode)
+        ? candidateCode
+        : 'INTERNAL_ERROR';
+      const message = typeof body.error?.message === 'string' ? body.error.message : '请求失败';
+      throw new AppError(code, message, response.status);
+    }
 
-  if (response.status === 204) {
-    return undefined as T;
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    return await response.json() as T;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new AppError('INTERNAL_ERROR', '请求超时，请稍后重试', 408);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return await response.json() as T;
 };
 
 const json = (value: unknown): RequestOptions => ({ body: JSON.stringify(value) });

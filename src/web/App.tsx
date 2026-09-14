@@ -30,13 +30,13 @@ const createTerminalId = (): string => {
   return `terminal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 };
 
-const LoadingView = () => (
+const LoadingView = ({ errorMessage, onRetry }: { errorMessage: string | null; onRetry: () => void }) => (
   <main className="center-stage" aria-label="正在加载 Web SSH">
     <div className="loading-card">
       <span className="brand-mark" aria-hidden="true">⌁</span>
       <p className="eyebrow">SECURE WORKSPACE</p>
-      <h1>正在准备工作区</h1>
-      <span className="loading-line" aria-hidden="true" />
+      <h1>{errorMessage ? '工作区暂时无法加载' : '正在准备工作区'}</h1>
+      {errorMessage ? <><p className="form-error" role="alert">{errorMessage}</p><button className="button button-primary" type="button" onClick={onRetry}>重试</button></> : <span className="loading-line" aria-hidden="true" />}
     </div>
   </main>
 );
@@ -69,6 +69,7 @@ export const App = () => {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const [hostFormOpen, setHostFormOpen] = useState(false);
   const [terminalView, setTerminalView] = useState(false);
+  const [bootAttempt, setBootAttempt] = useState(0);
 
   const loadWorkspace = useCallback(async (): Promise<void> => {
     try {
@@ -97,18 +98,33 @@ export const App = () => {
     return () => {
       cancelled = true;
     };
-  }, [loadWorkspace]);
+  }, [bootAttempt, loadWorkspace]);
+
+  const retryBoot = (): void => {
+    dispatch({ type: 'error', message: null });
+    setBootAttempt((attempt) => attempt + 1);
+  };
 
   const completeSetup = async (masterPassword: string): Promise<void> => {
-    await setupVault(masterPassword);
-    dispatch({ type: 'setup', initialized: true, locked: false });
-    await loadWorkspace();
+    try {
+      await setupVault(masterPassword);
+      dispatch({ type: 'setup', initialized: true, locked: false });
+      await loadWorkspace();
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+      throw error;
+    }
   };
 
   const completeUnlock = async (masterPassword: string): Promise<void> => {
-    await unlockVault(masterPassword);
-    dispatch({ type: 'unlock' });
-    await loadWorkspace();
+    try {
+      await unlockVault(masterPassword);
+      dispatch({ type: 'unlock' });
+      await loadWorkspace();
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+      throw error;
+    }
   };
 
   const handleCreateHost = async (input: HostCreateInput): Promise<void> => {
@@ -160,9 +176,9 @@ export const App = () => {
     }
   };
 
-  if (state.phase === 'loading') return <LoadingView />;
-  if (state.phase === 'setup') return <SetupGate onSubmit={completeSetup} />;
-  if (state.phase === 'locked') return <UnlockView onSubmit={completeUnlock} />;
+  if (state.phase === 'loading') return <LoadingView errorMessage={state.errorMessage} onRetry={retryBoot} />;
+  if (state.phase === 'setup') return <SetupGate onSubmit={completeSetup} errorMessage={state.errorMessage} />;
+  if (state.phase === 'locked') return <UnlockView onSubmit={completeUnlock} errorMessage={state.errorMessage} />;
 
   return (
     <main className="app-shell">
