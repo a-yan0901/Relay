@@ -41,7 +41,13 @@ test.describe('host to terminal journey', () => {
     const hostKeyDialog = page.getByRole('dialog');
     await expect(hostKeyDialog).toContainText('127.0.0.1:');
     await expect(hostKeyDialog).toContainText('SHA256:');
-    await hostKeyDialog.getByRole('button', { name: '信任并连接' }).click({ force: true });
+    await page.waitForTimeout(1_000);
+    const dialogBox = await hostKeyDialog.boundingBox();
+    if (!dialogBox) throw new Error('host key dialog should have a layout box');
+    const viewportHeight = await page.evaluate(() => window.innerHeight);
+    expect(dialogBox.y).toBeGreaterThanOrEqual(0);
+    expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewportHeight);
+    await hostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
     await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
 
     const terminalInput = page.locator('.terminal-panel.is-active textarea.xterm-helper-textarea');
@@ -61,7 +67,7 @@ test.describe('host to terminal journey', () => {
     await page.getByRole('button', { name: '连接 Fixture SSH B' }).click();
     const secondHostKeyDialog = page.getByRole('dialog');
     await expect(secondHostKeyDialog).toBeVisible();
-    await secondHostKeyDialog.getByRole('button', { name: '信任并连接' }).click({ force: true });
+    await secondHostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
     await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('tab')).toHaveCount(2);
 
