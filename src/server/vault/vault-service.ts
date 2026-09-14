@@ -19,7 +19,7 @@ import {
 
 export type { EncryptedJson, VaultConfig, VaultCreation } from './types.js';
 
-const MASTER_PASSWORD_MIN_LENGTH = 12;
+const MASTER_PASSWORD_MIN_LENGTH = 8;
 const MASTER_PASSWORD_MAX_LENGTH = 4096;
 
 const assertMasterPassword = (masterPassword: string): void => {

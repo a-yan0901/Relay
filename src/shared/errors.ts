@@ -34,7 +34,7 @@ const DEFAULT_MESSAGES: Record<AppErrorCode, string> = {
   AUTH_REQUIRED: '请先解锁 Vault',
   VAULT_NOT_INITIALIZED: '请先完成初始化',
   VAULT_LOCKED: 'Vault 已锁定，请先解锁',
-  MASTER_PASSWORD_INVALID: '主密码至少需要 12 个字符',
+  MASTER_PASSWORD_INVALID: '主密码至少需要 8 个字符',
   VAULT_UNLOCK_FAILED: '主密码错误或 Vault 已损坏',
   VAULT_CONFIG_INVALID: 'Vault 配置无效',
   VAULT_CRYPTO_FAILED: '凭据加密数据无效',

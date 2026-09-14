@@ -36,12 +36,12 @@ export const SetupGate = ({ onSubmit, errorMessage }: SetupGateProps) => {
         <div className="brand-mark">W</div>
         <p className="eyebrow">WEB SSH WORKSPACE</p>
         <h1 id="setup-title">建立你的 Server Vault</h1>
-        <p className="auth-copy">所有服务器凭据只保存在当前实例的加密 Vault 中。</p>
+        <p className="auth-copy">所有服务器凭据只保存在当前实例的加密 Vault 中。主密码至少 8 个字符。</p>
         <form className="auth-form" onSubmit={submit} noValidate>
           <label htmlFor="setup-password">主密码</label>
-          <input id="setup-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
+          <input id="setup-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} />
           <label htmlFor="setup-confirmation">确认主密码</label>
-          <input id="setup-confirmation" type="password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="new-password" />
+          <input id="setup-confirmation" type="password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="new-password" minLength={8} />
           {(error ?? errorMessage) && <p className="form-error" role="alert">{error ?? errorMessage}</p>}
           <button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? '创建中…' : '创建 Vault'}</button>
         </form>

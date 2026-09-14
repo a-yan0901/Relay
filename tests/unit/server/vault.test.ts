@@ -5,6 +5,14 @@ import { VaultService, type EncryptedJson } from '../../../src/server/vault/vaul
 const masterPassword = 'correct horse battery staple';
 
 describe('VaultService', () => {
+  it('accepts an eight-character master password', async () => {
+    const minimumPassword = '12345678';
+    const created = await VaultService.create(minimumPassword);
+    const unlocked = await VaultService.unlock(minimumPassword, created.config);
+
+    expect(unlocked.equals(created.vaultKey)).toBe(true);
+  });
+
   it('creates a vault that can be unlocked with the same master password', async () => {
     const created = await VaultService.create(masterPassword);
     const unlocked = await VaultService.unlock(masterPassword, created.config);

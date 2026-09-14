@@ -26,10 +26,10 @@ export const UnlockView = ({ onSubmit, errorMessage }: UnlockViewProps) => {
         <div className="brand-mark">W</div>
         <p className="eyebrow">WEB SSH WORKSPACE</p>
         <h1 id="unlock-title">欢迎回来</h1>
-        <p className="auth-copy">输入主密码解锁你的服务器工作区。</p>
+        <p className="auth-copy">输入至少 8 个字符的主密码解锁你的服务器工作区。</p>
         <form className="auth-form" onSubmit={submit} noValidate>
           <label htmlFor="unlock-password">主密码</label>
-          <input id="unlock-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" autoFocus />
+          <input id="unlock-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" autoFocus minLength={8} />
           {errorMessage && <p className="form-error" role="alert">{errorMessage}</p>}
           <button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? '解锁中…' : '解锁 Vault'}</button>
         </form>

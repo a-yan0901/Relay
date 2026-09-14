@@ -59,7 +59,7 @@ describe('setup and unlock routes', () => {
     const weak = await app.inject({
       method: 'POST',
       url: '/api/setup',
-      payload: { masterPassword: 'short' }
+      payload: { masterPassword: '1234567' }
     });
     expect(weak.statusCode).toBe(400);
     expect(json<{ error: { code: string } }>(weak).error.code).toBe('MASTER_PASSWORD_INVALID');
