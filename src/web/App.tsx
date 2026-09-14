@@ -16,6 +16,7 @@ import {
 import { HostForm } from './components/HostForm';
 import { HostWorkspace } from './components/HostWorkspace';
 import { SetupGate } from './components/SetupGate';
+import { TerminalWorkspace } from './components/TerminalWorkspace';
 import { UnlockView } from './components/UnlockView';
 import { appReducer, initialAppState, type HostMetadataState } from './state/app-state';
 
@@ -44,7 +45,7 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ onLock }: { onLock: () => void }) => (
+const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void }) => (
   <header className="app-header">
     <Brand />
     <div className="app-header-actions">
@@ -52,6 +53,7 @@ const WorkspaceHeader = ({ onLock }: { onLock: () => void }) => (
       <button className="button button-ghost button-small" type="button" onClick={onLock}>
         <span aria-hidden="true">↥</span> 锁定
       </button>
+      {terminalCount > 0 && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
   </header>
@@ -60,6 +62,7 @@ const WorkspaceHeader = ({ onLock }: { onLock: () => void }) => (
 export const App = () => {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const [hostFormOpen, setHostFormOpen] = useState(false);
+  const [terminalView, setTerminalView] = useState(false);
 
   const loadWorkspace = useCallback(async (): Promise<void> => {
     try {
@@ -121,6 +124,21 @@ export const App = () => {
     }
   };
 
+  const handleOpenTerminal = (host: HostMetadataState): void => {
+    const existing = state.terminals.find((terminal) => terminal.hostId === host.id);
+    if (existing) {
+      dispatch({ type: 'terminalActivated', terminalId: existing.terminalId });
+    } else {
+      dispatch({ type: 'terminalOpened', terminalId: `terminal-${host.id}-${Date.now().toString(36)}`, hostId: host.id });
+    }
+    setTerminalView(true);
+  };
+
+  const handleCloseTerminal = (terminalId: string): void => {
+    dispatch({ type: 'terminalClosed', terminalId });
+    if (state.terminals.length <= 1) setTerminalView(false);
+  };
+
   const handleLock = async (): Promise<void> => {
     try {
       await lockVault();
@@ -137,7 +155,7 @@ export const App = () => {
 
   return (
     <main className="app-shell">
-      <WorkspaceHeader onLock={() => void handleLock()} />
+      <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} />
       {state.errorMessage && (
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
@@ -145,21 +163,31 @@ export const App = () => {
         </div>
       )}
       <div className="app-body">
-        <HostWorkspace
-          hosts={state.hosts}
-          groups={state.groups}
-          query={state.query}
-          selectedGroupId={state.selectedGroupId}
-          favoriteOnly={state.favoriteOnly}
-          onQueryChange={(query) => dispatch({ type: 'queryChanged', query })}
-          onGroupSelected={(groupId) => dispatch({ type: 'groupSelected', groupId })}
-          onFavoriteFilter={(favoriteOnly) => dispatch({ type: 'favoriteFilterChanged', favoriteOnly })}
-          onFavoriteToggle={(host) => void handleFavoriteToggle(host)}
-          onConnect={(host) => {
-            dispatch({ type: 'terminalOpened', terminalId: `terminal-${host.id}`, hostId: host.id });
-          }}
-          onAddHost={() => setHostFormOpen(true)}
-        />
+        {terminalView ? (
+          <TerminalWorkspace
+            hosts={state.hosts}
+            terminals={state.terminals}
+            activeTerminalId={state.activeTerminalId}
+            onActivate={(terminalId) => dispatch({ type: 'terminalActivated', terminalId })}
+            onClose={handleCloseTerminal}
+            onConnectHost={handleOpenTerminal}
+            onBackToHosts={() => setTerminalView(false)}
+          />
+        ) : (
+          <HostWorkspace
+            hosts={state.hosts}
+            groups={state.groups}
+            query={state.query}
+            selectedGroupId={state.selectedGroupId}
+            favoriteOnly={state.favoriteOnly}
+            onQueryChange={(query) => dispatch({ type: 'queryChanged', query })}
+            onGroupSelected={(groupId) => dispatch({ type: 'groupSelected', groupId })}
+            onFavoriteFilter={(favoriteOnly) => dispatch({ type: 'favoriteFilterChanged', favoriteOnly })}
+            onFavoriteToggle={(host) => void handleFavoriteToggle(host)}
+            onConnect={handleOpenTerminal}
+            onAddHost={() => setHostFormOpen(true)}
+          />
+        )}
       </div>
       {hostFormOpen && (
         <div className="drawer-backdrop" role="presentation">
