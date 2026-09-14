@@ -89,3 +89,7 @@ export class AppError extends Error {
     this.statusCode = statusCode;
   }
 }
+
+export const isAppErrorCode = (value: string): value is AppErrorCode => (
+  (APP_ERROR_CODES as readonly string[]).includes(value)
+);

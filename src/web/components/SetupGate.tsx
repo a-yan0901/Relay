@@ -1,0 +1,52 @@
+import { useState, type FormEvent } from 'react';
+
+export interface SetupGateProps {
+  onSubmit: (masterPassword: string) => Promise<void>;
+  errorMessage?: string | null;
+}
+
+export const SetupGate = ({ onSubmit, errorMessage }: SetupGateProps) => {
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (password !== confirmation) {
+      setError('两次输入的主密码不一致');
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onSubmit(password);
+      setPassword('');
+      setConfirmation('');
+    } catch {
+      setError('初始化失败，请检查主密码');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <main className="auth-stage">
+      <section className="auth-card" aria-labelledby="setup-title">
+        <div className="brand-mark">W</div>
+        <p className="eyebrow">WEB SSH WORKSPACE</p>
+        <h1 id="setup-title">建立你的 Server Vault</h1>
+        <p className="auth-copy">所有服务器凭据只保存在当前实例的加密 Vault 中。</p>
+        <form className="auth-form" onSubmit={submit} noValidate>
+          <label htmlFor="setup-password">主密码</label>
+          <input id="setup-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
+          <label htmlFor="setup-confirmation">确认主密码</label>
+          <input id="setup-confirmation" type="password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="new-password" />
+          {(error ?? errorMessage) && <p className="form-error" role="alert">{error ?? errorMessage}</p>}
+          <button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? '创建中…' : '创建 Vault'}</button>
+        </form>
+        <p className="security-note">主密码不会上传或落库。遗失后无法恢复已保存凭据。</p>
+      </section>
+    </main>
+  );
+};
