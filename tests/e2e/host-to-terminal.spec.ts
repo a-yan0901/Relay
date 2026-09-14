@@ -37,7 +37,10 @@ test.describe('host to terminal journey', () => {
     await page.getByRole('button', { name: '保存 Server' }).click();
     await expect(page.getByText('Fixture SSH A')).toBeVisible();
 
-    await page.getByRole('button', { name: '连接 Fixture SSH A' }).click();
+    await page.keyboard.press('Control+K');
+    await expect(page.locator('#host-search')).toBeFocused();
+
+    await page.getByRole('button', { name: '连接 Fixture SSH A', exact: true }).click();
     const hostKeyDialog = page.getByRole('dialog');
     await expect(hostKeyDialog).toContainText('127.0.0.1:');
     await expect(hostKeyDialog).toContainText('SHA256:');
@@ -65,6 +68,10 @@ test.describe('host to terminal journey', () => {
     const workspaceHeight = await page.locator('.terminal-workspace-shell').evaluate((element) => element.getBoundingClientRect().height);
     expect(workspaceHeight).toBeGreaterThan(580);
 
+    await page.reload();
+    await expect(page.getByRole('tab', { name: '切换 Fixture SSH A · 1' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('tab', { name: '切换 Fixture SSH A · 2' })).toBeVisible({ timeout: 15_000 });
+
     await page.getByRole('button', { name: '← Server 列表' }).click();
     await page.getByRole('button', { name: '添加 Server', exact: true }).last().click();
     await page.getByLabel('服务器名称').fill('Fixture SSH B');
@@ -73,12 +80,14 @@ test.describe('host to terminal journey', () => {
     await page.getByLabel('用户名').fill(fixture.username);
     await page.getByLabel('密码').fill(fixture.password);
     await page.getByRole('button', { name: '保存 Server' }).click();
-    await page.getByRole('button', { name: '连接 Fixture SSH B' }).click();
+    await page.getByRole('button', { name: '连接 Fixture SSH B', exact: true }).click();
     const secondHostKeyDialog = page.getByRole('dialog');
     await expect(secondHostKeyDialog).toBeVisible();
     await secondHostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
     await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('tab')).toHaveCount(3);
+    await page.keyboard.press('Control+W');
+    await expect(page.getByRole('tab')).toHaveCount(2);
 
     const rail = page.getByRole('complementary', { name: '终端 Server 列表' });
     await rail.getByRole('textbox', { name: '搜索 Server' }).fill('Fixture SSH B');

@@ -17,6 +17,66 @@ export interface TerminalTabState {
   errorMessage: string | null;
 }
 
+export interface TerminalDescriptor {
+  terminalId: string;
+  hostId: string;
+}
+
+export const TERMINAL_DESCRIPTORS_STORAGE_KEY = 'relay.terminal.descriptors.v1';
+
+const sessionStorageOrNull = (): Storage | null => {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const loadTerminalDescriptors = (): TerminalDescriptor[] => {
+  const storage = sessionStorageOrNull();
+  if (!storage) return [];
+  try {
+    const parsed: unknown = JSON.parse(storage.getItem(TERMINAL_DESCRIPTORS_STORAGE_KEY) ?? 'null');
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set<string>();
+    return parsed.filter((value): value is TerminalDescriptor => {
+      if (typeof value !== 'object' || value === null || !('terminalId' in value) || !('hostId' in value)) return false;
+      const descriptor = value as { terminalId?: unknown; hostId?: unknown };
+      if (typeof descriptor.terminalId !== 'string' || descriptor.terminalId.length === 0 || typeof descriptor.hostId !== 'string' || descriptor.hostId.length === 0 || seen.has(descriptor.terminalId)) return false;
+      seen.add(descriptor.terminalId);
+      return true;
+    }).slice(0, 32);
+  } catch {
+    return [];
+  }
+};
+
+export const saveTerminalDescriptors = (descriptors: readonly TerminalDescriptor[]): void => {
+  const storage = sessionStorageOrNull();
+  if (!storage) return;
+  try {
+    const seen = new Set<string>();
+    const safeDescriptors = descriptors.filter((descriptor) => {
+      if (!descriptor.terminalId || !descriptor.hostId || seen.has(descriptor.terminalId)) return false;
+      seen.add(descriptor.terminalId);
+      return true;
+    }).slice(0, 32);
+    storage.setItem(TERMINAL_DESCRIPTORS_STORAGE_KEY, JSON.stringify(safeDescriptors));
+  } catch {
+    // Refresh recovery is best effort when browser session storage is unavailable.
+  }
+};
+
+export const clearTerminalDescriptors = (): void => {
+  const storage = sessionStorageOrNull();
+  if (!storage) return;
+  try {
+    storage.removeItem(TERMINAL_DESCRIPTORS_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures; the Vault and live sessions remain unaffected.
+  }
+};
+
 export type AppPhase = 'loading' | 'setup' | 'locked' | 'ready';
 
 export interface AppState {

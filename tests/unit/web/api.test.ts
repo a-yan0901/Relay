@@ -10,7 +10,7 @@ describe('web API request lifecycle', () => {
 
   it('converts a stalled request into an actionable timeout error', async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    const fetchMock = vi.fn((_input: unknown, init?: { signal?: AbortSignal }) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
     }));
     vi.stubGlobal('fetch', fetchMock);

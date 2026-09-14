@@ -21,7 +21,14 @@ import { SetupGate } from './components/SetupGate';
 import { TerminalWorkspace } from './components/TerminalWorkspace';
 import { UnlockView } from './components/UnlockView';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
-import { appReducer, initialAppState, type HostMetadataState } from './state/app-state';
+import {
+  appReducer,
+  clearTerminalDescriptors,
+  initialAppState,
+  loadTerminalDescriptors,
+  saveTerminalDescriptors,
+  type HostMetadataState
+} from './state/app-state';
 import {
   applyPreferences,
   fontSizeOptions,
@@ -106,6 +113,7 @@ export const App = () => {
   const [editingHost, setEditingHost] = useState<HostMetadataState | null>(null);
   const [terminalView, setTerminalView] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
   const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
   const [preferencesOpen, setPreferencesOpen] = useState(false);
 
@@ -119,6 +127,12 @@ export const App = () => {
       const [hosts, groups] = await Promise.all([listHosts(), listGroups()]);
       dispatch({ type: 'hostsLoaded', hosts });
       dispatch({ type: 'groupsLoaded', groups });
+      const availableHostIds = new Set(hosts.map((host) => host.id));
+      const restored = loadTerminalDescriptors().filter((descriptor) => availableHostIds.has(descriptor.hostId));
+      saveTerminalDescriptors(restored);
+      restored.forEach((descriptor) => dispatch({ type: 'terminalOpened', terminalId: descriptor.terminalId, hostId: descriptor.hostId }));
+      if (restored.length > 0) setTerminalView(true);
+      setWorkspaceHydrated(true);
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
     }
@@ -132,6 +146,8 @@ export const App = () => {
         dispatch({ type: 'setup', initialized: status.initialized, locked: status.locked });
         if (status.initialized && !status.locked) {
           void loadWorkspace();
+        } else if (!status.initialized) {
+          clearTerminalDescriptors();
         }
       })
       .catch((error: unknown) => {
@@ -142,6 +158,11 @@ export const App = () => {
       cancelled = true;
     };
   }, [bootAttempt, loadWorkspace]);
+
+  useEffect(() => {
+    if (!workspaceHydrated || state.phase !== 'ready') return;
+    saveTerminalDescriptors(state.terminals.map(({ terminalId, hostId }) => ({ terminalId, hostId })));
+  }, [state.phase, state.terminals, workspaceHydrated]);
 
   const retryBoot = (): void => {
     dispatch({ type: 'error', message: null });
@@ -218,6 +239,7 @@ export const App = () => {
       await deleteHost(host.id);
       const remainingTerminals = state.terminals.filter((terminal) => terminal.hostId !== host.id);
       dispatch({ type: 'hostDeleted', hostId: host.id });
+      saveTerminalDescriptors(remainingTerminals.map(({ terminalId, hostId }) => ({ terminalId, hostId })));
       if (state.terminals.length > 0 && remainingTerminals.length === 0) setTerminalView(false);
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
@@ -255,8 +277,27 @@ export const App = () => {
 
   const handleCloseTerminal = (terminalId: string): void => {
     dispatch({ type: 'terminalClosed', terminalId });
+    saveTerminalDescriptors(loadTerminalDescriptors().filter((descriptor) => descriptor.terminalId !== terminalId));
     if (state.terminals.length <= 1) setTerminalView(false);
   };
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent): void => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === 'k') {
+        event.preventDefault();
+        document.getElementById(terminalView ? 'terminal-host-search' : 'host-search')?.focus();
+      } else if (key === 'w' && terminalView && state.activeTerminalId) {
+        event.preventDefault();
+        handleCloseTerminal(state.activeTerminalId);
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [state.activeTerminalId, terminalView]);
 
   const handleTerminalStatus = (terminalId: string, snapshot: TerminalSessionSnapshot): void => {
     dispatch({
@@ -272,6 +313,7 @@ export const App = () => {
     try {
       await lockVault();
       dispatch({ type: 'lock' });
+      clearTerminalDescriptors();
       closeHostForm();
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });

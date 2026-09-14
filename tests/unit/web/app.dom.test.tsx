@@ -55,4 +55,17 @@ describe('App boot recovery', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
   });
+
+  it('focuses the active Server search with the platform shortcut', async () => {
+    const user = userEvent.setup();
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.keyboard('{Control>}k{/Control}');
+
+    expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: '搜索 Server' }));
+  });
 });

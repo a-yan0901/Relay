@@ -15,6 +15,14 @@ docker compose up -d --build
 
 应用只需要一个持久化数据卷 `/data`。备份整个 Docker volume 或宿主机绑定目录，并将备份视为敏感数据：数据库中的 Server 密码、私钥和 passphrase 是密文，但解锁后的运行中实例能够暂时使用这些凭据建立 SSH 连接。
 
+## 工作区使用
+
+- 同一台 Server 可以打开多个独立 Console；顶部 tab 会显示 `Server · 1`、`Server · 2`，每个窗口拥有自己的输入、尺寸、Host Key 确认和重连状态。
+- 终端工作区优先占用屏幕空间，左侧 rail 可搜索 Server 并使用 `＋` 快速新建 Console；`Ctrl/Cmd+K` 聚焦当前 Server 搜索，`Ctrl/Cmd+W` 关闭当前 Console。
+- 浏览器刷新会在约 30 秒的会话保留窗口内尝试恢复已打开的 Console。恢复描述只保存 `terminalId` 和 `hostId` 到当前标签页的 `sessionStorage`；锁定 Vault 或显式关闭 Console 后会清除描述。
+- “偏好”中可切换深夜蓝、浅色、高对比主题和终端字号。偏好只保存在当前浏览器，不包含任何密码、私钥或会话 token。
+- Server 卡片支持最近连接排序、编辑、测试连接和删除；编辑时凭据留空表示保留原凭据，测试连接不会保存新的认证材料。
+
 ## 反向代理要求
 
 - 代理必须终止 TLS，并将 HTTP Upgrade 请求转发到 `/ws/terminal`。
@@ -56,6 +64,8 @@ DATA_DIR=.local-data NODE_ENV=test TRUSTED_ORIGINS=http://127.0.0.1:4173 PORT=41
 ```
 
 开发模式未显式设置 `TRUSTED_ORIGINS` 时，会自动信任 localhost、回环地址、`0.0.0.0` 和本机网卡地址对应的 Vite 端口；生产模式仍必须显式配置完整浏览器 origin。
+
+如果从公网 IP 访问开发服务器，必须把浏览器地址栏中的完整 origin 加入配置，例如 `TRUSTED_ORIGINS=http://106.14.61.92:5173`。生产部署仍建议使用 HTTPS 反向代理；Origin 校验用于防止其他网站借助浏览器会话发起 WebSocket 操作，不是登录认证的替代品。
 
 验证命令：
 
