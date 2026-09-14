@@ -136,6 +136,10 @@ export const hostCreateSchema = z.object({
 
 export type HostCreateInput = z.infer<typeof hostCreateSchema>;
 
+export const hostPatchSchema = hostCreateSchema.partial();
+
+export type HostPatchInput = z.infer<typeof hostPatchSchema>;
+
 export interface HostMetadata {
   id: string;
   name: string;
@@ -163,6 +167,14 @@ export type GroupInput = z.infer<typeof groupSchema>;
 export const parseHostCreateInput = (input: unknown): HostCreateInput => {
   try {
     return hostCreateSchema.parse(input);
+  } catch {
+    throw new AppError('HOST_VALIDATION_FAILED');
+  }
+};
+
+export const parseHostPatchInput = (input: unknown): HostPatchInput => {
+  try {
+    return hostPatchSchema.parse(input);
   } catch {
     throw new AppError('HOST_VALIDATION_FAILED');
   }

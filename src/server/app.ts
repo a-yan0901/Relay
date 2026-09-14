@@ -14,6 +14,8 @@ import {
   HostRepository
 } from './db/repositories.js';
 import { registerSetupRoutes, type AppRuntimeConfig } from './api/setup-routes.js';
+import { registerGroupRoutes } from './api/group-routes.js';
+import { registerHostRoutes } from './api/host-routes.js';
 import { SessionStore } from './auth/session-store.js';
 import type { SqliteDatabase } from './db/database.js';
 import { VaultService } from './vault/vault-service.js';
@@ -136,6 +138,18 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   await registerSetupRoutes(app, {
     ...appDependencies,
     config: dependencies.config,
+    sshSessionManager: dependencies.sshSessionManager
+  });
+  await registerGroupRoutes(app, {
+    groupRepository,
+    sessionStore
+  });
+  await registerHostRoutes(app, {
+    ownerId: 'default',
+    hostRepository,
+    sessionStore,
+    vaultService,
+    auditRepository,
     sshSessionManager: dependencies.sshSessionManager
   });
 
