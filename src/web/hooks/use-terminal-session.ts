@@ -335,7 +335,8 @@ export const useTerminalSession = (options: UseTerminalSessionOptions) => {
     controllerRef.current = new TerminalSessionController({
       ...options,
       onOutput: (data) => latestOptions.current.onOutput?.(data),
-      onExit: (event) => latestOptions.current.onExit?.(event)
+      onExit: (event) => latestOptions.current.onExit?.(event),
+      onSnapshot: (snapshot) => latestOptions.current.onSnapshot?.(snapshot)
     });
   }
 

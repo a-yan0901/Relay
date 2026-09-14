@@ -18,6 +18,7 @@ import { HostWorkspace } from './components/HostWorkspace';
 import { SetupGate } from './components/SetupGate';
 import { TerminalWorkspace } from './components/TerminalWorkspace';
 import { UnlockView } from './components/UnlockView';
+import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { appReducer, initialAppState, type HostMetadataState } from './state/app-state';
 
 const messageFromError = (error: unknown): string => (
@@ -139,6 +140,16 @@ export const App = () => {
     if (state.terminals.length <= 1) setTerminalView(false);
   };
 
+  const handleTerminalStatus = (terminalId: string, snapshot: TerminalSessionSnapshot): void => {
+    dispatch({
+      type: 'terminalStatusUpdated',
+      terminalId,
+      state: snapshot.state,
+      reconnectDelayMs: snapshot.reconnectDelayMs,
+      errorMessage: snapshot.error?.message ?? null
+    });
+  };
+
   const handleLock = async (): Promise<void> => {
     try {
       await lockVault();
@@ -171,6 +182,7 @@ export const App = () => {
             onActivate={(terminalId) => dispatch({ type: 'terminalActivated', terminalId })}
             onClose={handleCloseTerminal}
             onConnectHost={handleOpenTerminal}
+            onStatusChange={handleTerminalStatus}
             onBackToHosts={() => setTerminalView(false)}
           />
         ) : (

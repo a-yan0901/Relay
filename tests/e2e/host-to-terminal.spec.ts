@@ -59,6 +59,12 @@ test.describe('host to terminal journey', () => {
     await terminalInput.press('Enter');
     await expect(page.locator('.terminal-panel.is-active .terminal-canvas')).toContainText('web-ssh-e2e', { timeout: 15_000 });
 
+    await page.getByRole('button', { name: '新建终端：Fixture SSH A' }).click();
+    await expect(page.getByRole('tab', { name: '切换 Fixture SSH A · 2' })).toBeVisible();
+    await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
+    const workspaceHeight = await page.locator('.terminal-workspace-shell').evaluate((element) => element.getBoundingClientRect().height);
+    expect(workspaceHeight).toBeGreaterThan(580);
+
     await page.getByRole('button', { name: '← Server 列表' }).click();
     await page.getByRole('button', { name: '添加 Server', exact: true }).last().click();
     await page.getByLabel('服务器名称').fill('Fixture SSH B');
@@ -72,7 +78,7 @@ test.describe('host to terminal journey', () => {
     await expect(secondHostKeyDialog).toBeVisible();
     await secondHostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
     await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('tab')).toHaveCount(2);
+    await expect(page.getByRole('tab')).toHaveCount(3);
 
     const rail = page.getByRole('complementary', { name: '终端 Server 列表' });
     await rail.getByRole('textbox', { name: '搜索 Server' }).fill('Fixture SSH B');

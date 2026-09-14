@@ -6,7 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
 
 import type { HostMetadataState } from '../state/app-state';
-import { useTerminalSession } from '../hooks/use-terminal-session';
+import { useTerminalSession, type TerminalSessionSnapshot } from '../hooks/use-terminal-session';
 import { HostKeyDialog } from './HostKeyDialog';
 import { TerminalToolbar } from './TerminalToolbar';
 
@@ -16,13 +16,15 @@ export interface TerminalPanelProps {
   active: boolean;
   onClose: () => void;
   onNewTerminal?: () => void;
+  onStatusChange?: (snapshot: TerminalSessionSnapshot) => void;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal, onStatusChange }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
+  const fitRef = useRef<(() => void) | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const session = useTerminalSession({
@@ -32,7 +34,8 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
       cols: terminalRef.current?.cols ?? 80,
       rows: terminalRef.current?.rows ?? 24
     }),
-    onOutput: (data) => terminalRef.current?.write(data)
+    onOutput: (data) => terminalRef.current?.write(data),
+    onSnapshot: onStatusChange
   });
 
   useEffect(() => {
@@ -78,22 +81,36 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
 
+    let fitFrame: number | null = null;
+    let lastSize: { cols: number; rows: number } | null = null;
+    const sendResizeIfChanged = (cols: number, rows: number): void => {
+      if (lastSize?.cols === cols && lastSize.rows === rows) return;
+      lastSize = { cols, rows };
+      session.resize(cols, rows);
+    };
     const fit = (): void => {
-      try {
-        fitAddon.fit();
-        session.resize(terminal.cols, terminal.rows);
-      } catch {
-        // The browser may report zero dimensions while a tab is being mounted.
-      }
+      if (fitFrame !== null) return;
+      fitFrame = window.requestAnimationFrame(() => {
+        fitFrame = null;
+        try {
+          fitAddon.fit();
+          sendResizeIfChanged(terminal.cols, terminal.rows);
+        } catch {
+          // The browser may report zero dimensions while a tab is being mounted.
+        }
+      });
     };
     const dataDisposable = terminal.onData((data) => session.sendInput(data));
     const binaryDisposable = terminal.onBinary((data) => session.sendInput(data));
-    const resizeDisposable = terminal.onResize(({ cols, rows }) => session.resize(cols, rows));
+    const resizeDisposable = terminal.onResize(({ cols, rows }) => sendResizeIfChanged(cols, rows));
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
     observer?.observe(mountRef.current);
+    fitRef.current = fit;
     fit();
 
     return () => {
+      if (fitFrame !== null) window.cancelAnimationFrame(fitFrame);
+      fitRef.current = null;
       observer?.disconnect();
       dataDisposable.dispose();
       binaryDisposable.dispose();
@@ -107,17 +124,8 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
 
   useEffect(() => {
     if (!active) return;
-    const frame = window.requestAnimationFrame(() => {
-      try {
-        fitAddonRef.current?.fit();
-        const terminal = terminalRef.current;
-        if (terminal) session.resize(terminal.cols, terminal.rows);
-      } catch {
-        // See the mount-time dimension note above.
-      }
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [active, session.resize]);
+    fitRef.current?.();
+  }, [active]);
 
   const toggleSearch = (): void => {
     setSearchOpen((open) => !open);

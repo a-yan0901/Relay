@@ -122,10 +122,12 @@ describe('TerminalSessionController', () => {
     vi.useFakeTimers();
     try {
       FakeSocket.instances = [];
+      const snapshots: Array<{ state: string; reconnectDelayMs: number }> = [];
       const controller = new TerminalSessionController({
         hostId: 'host-1',
         terminalId: 'terminal-1',
         webSocketFactory: (url) => new FakeSocket(url),
+        onSnapshot: (snapshot) => snapshots.push({ state: snapshot.state, reconnectDelayMs: snapshot.reconnectDelayMs }),
         reconnectBaseMs: 250,
         reconnectMaxMs: 5_000
       });
@@ -134,6 +136,7 @@ describe('TerminalSessionController', () => {
       lastSocket().open();
       lastSocket().close();
       expect(controller.snapshot.state).toBe('reconnecting');
+      expect(snapshots).toContainEqual({ state: 'reconnecting', reconnectDelayMs: 250 });
       expect(FakeSocket.instances).toHaveLength(1);
 
       vi.advanceTimersByTime(249);

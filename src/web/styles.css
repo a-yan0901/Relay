@@ -57,7 +57,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: 0;
 }
 
-.app-shell { min-height: 100vh; position: relative; overflow: hidden; }
+.app-shell { min-height: 100vh; min-height: 100dvh; position: relative; overflow-x: hidden; }
 
 .app-header {
   align-items: center;
@@ -123,7 +123,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   width: 30px;
 }
 
-.app-body { padding: 28px 34px 44px; }
+.app-body { min-height: 0; padding: 20px 34px 24px; }
 
 .workspace-shell {
   display: grid;
@@ -392,7 +392,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-empty-state > p:not(.eyebrow) { color: var(--muted); font-size: 12px; margin: 0 0 20px; }
 
-.terminal-workspace-shell { display: grid; gap: 16px; grid-template-columns: 206px minmax(0, 1fr); height: min(720px, calc(100vh - 150px)); min-height: 0; }
+.terminal-workspace-shell { display: grid; gap: 14px; grid-template-columns: 184px minmax(0, 1fr); height: clamp(540px, calc(100vh - 120px), 900px); height: clamp(540px, calc(100dvh - 120px), 900px); min-height: 0; }
 
 .terminal-host-rail { background: rgba(8, 20, 35, 0.76); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; min-width: 0; padding: 14px; }
 
@@ -440,7 +440,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-main { background: #07111f; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
 
-.terminal-tabs { background: rgba(10, 24, 41, 0.92); border-bottom: 1px solid var(--border); display: flex; min-height: 64px; overflow-x: auto; padding: 0 8px; }
+.terminal-tabs { background: rgba(10, 24, 41, 0.92); border-bottom: 1px solid var(--border); display: flex; min-height: 54px; overflow-x: auto; padding: 0 8px; }
 
 .terminal-tab { align-items: stretch; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); display: flex; max-width: 250px; min-width: 190px; padding: 0; text-align: left; }
 
@@ -470,7 +470,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-panel:not(.is-active) { opacity: 0; pointer-events: none; position: absolute; inset: 0; visibility: hidden; }
 
-.terminal-panel-heading { align-items: center; background: rgba(10, 24, 41, 0.6); border-bottom: 1px solid rgba(154, 181, 215, 0.09); display: flex; justify-content: space-between; min-height: 64px; padding: 12px 18px; }
+.terminal-panel-heading { align-items: center; background: rgba(10, 24, 41, 0.6); border-bottom: 1px solid rgba(154, 181, 215, 0.09); display: flex; justify-content: space-between; min-height: 56px; padding: 9px 16px; }
 
 .terminal-panel-heading .eyebrow { margin-bottom: 3px; }
 
@@ -565,7 +565,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .form-grid { display: block; }
   .field, .checkbox-field { margin-bottom: 15px; }
   .app-watermark { display: none; }
-  .terminal-workspace-shell { display: block; height: auto; min-height: calc(100vh - 110px); }
+  .terminal-workspace-shell { display: block; height: auto; min-height: calc(100vh - 110px); min-height: calc(100dvh - 110px); }
   .terminal-host-rail { border-radius: 10px; margin-bottom: 10px; min-height: 0; }
   .terminal-host-rail .terminal-rail-footer { display: none; }
   .terminal-rail-tabs { display: flex; overflow-x: auto; }
