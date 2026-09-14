@@ -39,4 +39,20 @@ describe('App boot recovery', () => {
     expect(await screen.findByRole('heading', { name: '建立你的 Server Vault' })).toBeInTheDocument();
     expect(apiMocks.getSetupStatus).toHaveBeenCalledTimes(2);
   });
+
+  it('applies theme and font preferences from the workspace settings', async () => {
+    const user = userEvent.setup();
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.click(screen.getByRole('button', { name: '偏好设置' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: '色彩主题' }), 'light');
+    await user.selectOptions(screen.getByRole('combobox', { name: '终端字号' }), '16');
+
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
+  });
 });

@@ -7,6 +7,7 @@ import { Terminal } from '@xterm/xterm';
 
 import type { HostMetadataState } from '../state/app-state';
 import { useTerminalSession, type TerminalSessionSnapshot } from '../hooks/use-terminal-session';
+import { getTerminalTheme, DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
 import { HostKeyDialog } from './HostKeyDialog';
 import { TerminalToolbar } from './TerminalToolbar';
 
@@ -17,9 +18,10 @@ export interface TerminalPanelProps {
   onClose: () => void;
   onNewTerminal?: () => void;
   onStatusChange?: (snapshot: TerminalSessionSnapshot) => void;
+  preferences?: UiPreferences;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal, onStatusChange }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal, onStatusChange, preferences = DEFAULT_PREFERENCES }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -43,31 +45,10 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
     const terminal = new Terminal({
       cursorBlink: true,
       fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-      fontSize: 13,
+      fontSize: preferences.fontSize,
       lineHeight: 1.25,
       scrollback: 5_000,
-      theme: {
-        background: '#07111f',
-        foreground: '#d9e7f7',
-        cursor: '#73b7ff',
-        selectionBackground: 'rgba(93, 168, 255, 0.35)',
-        black: '#07111f',
-        brightBlack: '#5e7490',
-        blue: '#5da8ff',
-        brightBlue: '#8bc7ff',
-        green: '#52d39a',
-        brightGreen: '#83e9ba',
-        red: '#ff7d7d',
-        brightRed: '#ffacac',
-        yellow: '#f6c66a',
-        brightYellow: '#ffe3a2',
-        cyan: '#6ad9d1',
-        brightCyan: '#9af3ec',
-        magenta: '#c59bff',
-        brightMagenta: '#ddc5ff',
-        white: '#d9e7f7',
-        brightWhite: '#ffffff'
-      }
+      theme: getTerminalTheme(preferences.theme)
     });
     const fitAddon = new FitAddon();
     const searchAddon = new SearchAddon();
@@ -121,6 +102,14 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
       searchAddonRef.current = null;
     };
   }, [session.resize, session.sendInput]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.options.fontSize = preferences.fontSize;
+    terminal.options.theme = getTerminalTheme(preferences.theme);
+    fitRef.current?.();
+  }, [preferences]);
 
   useEffect(() => {
     if (!active) return;

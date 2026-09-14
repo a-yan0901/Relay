@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+
 import type { TerminalHostKeyEvent } from '@shared/protocol';
 
 export interface HostKeyDialogProps {
@@ -5,9 +7,41 @@ export interface HostKeyDialogProps {
   onDecision: (decision: 'trust' | 'reject') => void;
 }
 
-export const HostKeyDialog = ({ challenge, onDecision }: HostKeyDialogProps) => (
+export const HostKeyDialog = ({ challenge, onDecision }: HostKeyDialogProps) => {
+  const dialogRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = (): HTMLElement[] => Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+    const first = focusable()[0];
+    first?.focus();
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onDecision('reject');
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const elements = focusable();
+      if (elements.length === 0) return;
+      const current = document.activeElement;
+      const index = elements.indexOf(current as HTMLElement);
+      if (event.shiftKey && (index <= 0 || index === -1)) {
+        event.preventDefault();
+        elements.at(-1)?.focus();
+      } else if (!event.shiftKey && index === elements.length - 1) {
+        event.preventDefault();
+        elements[0]?.focus();
+      }
+    };
+    dialog.addEventListener('keydown', handleKeyDown);
+    return () => dialog.removeEventListener('keydown', handleKeyDown);
+  }, [onDecision]);
+
+  return (
   <div className="modal-backdrop" role="presentation">
-    <section className="host-key-dialog" role="dialog" aria-modal="true" aria-labelledby="host-key-title">
+    <section ref={dialogRef} className="host-key-dialog" role="dialog" aria-modal="true" aria-labelledby="host-key-title">
       <div className="danger-icon" aria-hidden="true">!</div>
       <p className="eyebrow">FIRST CONNECTION</p>
       <h2 id="host-key-title">确认 Server 指纹</h2>
@@ -24,4 +58,5 @@ export const HostKeyDialog = ({ challenge, onDecision }: HostKeyDialogProps) => 
       </div>
     </section>
   </div>
-);
+  );
+};

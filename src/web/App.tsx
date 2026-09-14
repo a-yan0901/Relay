@@ -22,6 +22,16 @@ import { TerminalWorkspace } from './components/TerminalWorkspace';
 import { UnlockView } from './components/UnlockView';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { appReducer, initialAppState, type HostMetadataState } from './state/app-state';
+import {
+  applyPreferences,
+  fontSizeOptions,
+  loadPreferences,
+  savePreferences,
+  themeOptions,
+  type TerminalFontSize,
+  type ThemeName,
+  type UiPreferences
+} from './theme';
 
 const messageFromError = (error: unknown): string => (
   error instanceof AppError ? error.message : '服务暂时不可用，请稍后重试'
@@ -53,7 +63,7 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void }) => (
+const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void }) => (
   <header className="app-header">
     <Brand />
     <div className="app-header-actions">
@@ -62,9 +72,32 @@ const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals }: { onLock: (
         <span aria-hidden="true">↥</span> 锁定
       </button>
       {terminalCount > 0 && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
+      <button className="button button-ghost button-small" type="button" aria-label="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
   </header>
+);
+
+const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiPreferences; onChange: (preferences: UiPreferences) => void; onClose: () => void }) => (
+  <div className="preferences-backdrop" role="presentation" onMouseDown={onClose}>
+    <aside className="preferences-panel" role="dialog" aria-modal="true" aria-labelledby="preferences-title" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="form-heading">
+        <div><p className="eyebrow">WORKSPACE PREFERENCES</p><h2 id="preferences-title">偏好设置</h2></div>
+        <button className="icon-button" type="button" aria-label="关闭偏好设置" onClick={onClose}>×</button>
+      </div>
+      <div className="preferences-fields">
+        <label htmlFor="theme-select">色彩主题</label>
+        <select id="theme-select" aria-label="色彩主题" value={preferences.theme} onChange={(event) => onChange({ ...preferences, theme: event.target.value as ThemeName })}>
+          {themeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
+        </select>
+        <label htmlFor="font-size-select">终端字号</label>
+        <select id="font-size-select" aria-label="终端字号" value={preferences.fontSize} onChange={(event) => onChange({ ...preferences, fontSize: Number(event.target.value) as TerminalFontSize })}>
+          {fontSizeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
+        </select>
+      </div>
+      <p className="preferences-note">偏好只保存在当前浏览器，不包含主密码、服务器密码或私钥。</p>
+    </aside>
+  </div>
 );
 
 export const App = () => {
@@ -73,6 +106,13 @@ export const App = () => {
   const [editingHost, setEditingHost] = useState<HostMetadataState | null>(null);
   const [terminalView, setTerminalView] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
+  const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+
+  useEffect(() => {
+    applyPreferences(preferences);
+    savePreferences(preferences);
+  }, [preferences]);
 
   const loadWorkspace = useCallback(async (): Promise<void> => {
     try {
@@ -244,7 +284,7 @@ export const App = () => {
 
   return (
     <main className="app-shell">
-      <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} />
+      <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} />
       {state.errorMessage && (
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
@@ -261,6 +301,7 @@ export const App = () => {
             onClose={handleCloseTerminal}
             onConnectHost={handleOpenTerminal}
             onStatusChange={handleTerminalStatus}
+            preferences={preferences}
             onBackToHosts={() => setTerminalView(false)}
           />
         ) : (
@@ -289,6 +330,7 @@ export const App = () => {
           </aside>
         </div>
       )}
+      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} />}
       <div className="app-watermark" aria-hidden="true">LOCAL-FIRST · ENCRYPTED BY DEFAULT</div>
     </main>
   );

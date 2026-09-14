@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
 import type { TerminalSessionSnapshot } from '../hooks/use-terminal-session';
+import { DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
 import { terminalStatusDotClass, terminalStatusLabels } from './TerminalToolbar';
 import { TerminalPanel } from './TerminalPanel';
 
@@ -13,6 +14,7 @@ export interface TerminalWorkspaceProps {
   onClose: (terminalId: string) => void;
   onConnectHost?: (host: HostMetadataState) => void;
   onStatusChange?: (terminalId: string, snapshot: TerminalSessionSnapshot) => void;
+  preferences?: UiPreferences;
   onBackToHosts?: () => void;
 }
 
@@ -24,6 +26,7 @@ export const TerminalWorkspace = ({
   onClose,
   onConnectHost,
   onStatusChange,
+  preferences = DEFAULT_PREFERENCES,
   onBackToHosts
 }: TerminalWorkspaceProps) => {
   const [hostQuery, setHostQuery] = useState('');
@@ -98,7 +101,7 @@ export const TerminalWorkspace = ({
           {terminals.map((terminal) => {
             const host = hostById.get(terminal.hostId);
             if (!host) return null;
-            return <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={terminal.terminalId === activeTerminalId} onClose={() => onClose(terminal.terminalId)} onNewTerminal={onConnectHost ? () => onConnectHost(host) : undefined} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} />;
+            return <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={terminal.terminalId === activeTerminalId} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onNewTerminal={onConnectHost ? () => onConnectHost(host) : undefined} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} />;
           })}
         </div>
       </section>
