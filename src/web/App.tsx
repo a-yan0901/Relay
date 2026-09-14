@@ -70,15 +70,15 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void }) => (
-  <header className="app-header">
+const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, terminalView }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void; terminalView: boolean }) => (
+  <header className={`app-header ${terminalView ? 'app-header-terminal' : ''}`}>
     <Brand />
     <div className="app-header-actions">
       <span className="secure-pill"><span className="status-dot status-dot-green" />Vault 已解锁</span>
       <button className="button button-ghost button-small" type="button" onClick={onLock}>
         <span aria-hidden="true">↥</span> 锁定
       </button>
-      {terminalCount > 0 && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
+      {terminalCount > 0 && !terminalView && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
       <button className="button button-ghost button-small" type="button" aria-label="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
@@ -289,7 +289,13 @@ export const App = () => {
       const key = event.key.toLowerCase();
       if (key === 'k') {
         event.preventDefault();
-        document.getElementById(terminalView ? 'terminal-host-search' : 'host-search')?.focus();
+        if (terminalView) {
+          const terminalSearch = document.getElementById('terminal-host-search');
+          if (terminalSearch) terminalSearch.focus();
+          else document.getElementById('terminal-new-terminal')?.click();
+        } else {
+          document.getElementById('host-search')?.focus();
+        }
       } else if (key === 'w' && terminalView && state.activeTerminalId) {
         event.preventDefault();
         handleCloseTerminal(state.activeTerminalId);
@@ -326,14 +332,14 @@ export const App = () => {
 
   return (
     <main className="app-shell">
-      <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} />
+      <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} terminalView={terminalView} />
       {state.errorMessage && (
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
           <button className="icon-button" type="button" aria-label="关闭提示" onClick={() => dispatch({ type: 'error', message: null })}>×</button>
         </div>
       )}
-      <div className="app-body">
+      <div className={`app-body ${terminalView ? 'app-body-terminal' : ''}`}>
         {terminalView ? (
           <TerminalWorkspace
             hosts={state.hosts}

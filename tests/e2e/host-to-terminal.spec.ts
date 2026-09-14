@@ -44,9 +44,9 @@ test.describe('host to terminal journey', () => {
     const hostKeyDialog = page.getByRole('dialog');
     await expect(hostKeyDialog).toContainText('127.0.0.1:');
     await expect(hostKeyDialog).toContainText('SHA256:');
-    const initialTerminalPanelsHeight = await page.locator('.terminal-panels').evaluate((element) => element.getBoundingClientRect().height);
+    const initialTerminalPanelsHeight = await page.locator('.terminal-layout').evaluate((element) => element.getBoundingClientRect().height);
     await page.waitForTimeout(1_000);
-    const delayedTerminalPanelsHeight = await page.locator('.terminal-panels').evaluate((element) => element.getBoundingClientRect().height);
+    const delayedTerminalPanelsHeight = await page.locator('.terminal-layout').evaluate((element) => element.getBoundingClientRect().height);
     expect(Math.abs(delayedTerminalPanelsHeight - initialTerminalPanelsHeight)).toBeLessThanOrEqual(1);
     const dialogBox = await hostKeyDialog.boundingBox();
     if (!dialogBox) throw new Error('host key dialog should have a layout box');
@@ -55,6 +55,9 @@ test.describe('host to terminal journey', () => {
     expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewportHeight);
     await hostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
     await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await page.keyboard.press('Control+K');
+    await expect(page.locator('#terminal-host-search')).toBeFocused();
+    await page.getByRole('button', { name: '关闭 Server 选择器' }).click();
 
     const terminalInput = page.locator('.terminal-panel.is-active textarea.xterm-helper-textarea');
     await terminalInput.click();
@@ -62,7 +65,8 @@ test.describe('host to terminal journey', () => {
     await terminalInput.press('Enter');
     await expect(page.locator('.terminal-panel.is-active .terminal-canvas')).toContainText('web-ssh-e2e', { timeout: 15_000 });
 
-    await page.getByRole('button', { name: '新建终端：Fixture SSH A' }).click();
+    await page.getByRole('button', { name: '新建终端' }).first().click();
+    await page.getByRole('dialog', { name: '选择 Server' }).getByRole('button', { name: '新建终端：Fixture SSH A' }).click();
     await expect(page.getByRole('tab', { name: '切换 Fixture SSH A · 2' })).toBeVisible();
     await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
     const workspaceHeight = await page.locator('.terminal-workspace-shell').evaluate((element) => element.getBoundingClientRect().height);
@@ -89,10 +93,18 @@ test.describe('host to terminal journey', () => {
     await page.keyboard.press('Control+W');
     await expect(page.getByRole('tab')).toHaveCount(2);
 
-    const rail = page.getByRole('complementary', { name: '终端 Server 列表' });
-    await rail.getByRole('textbox', { name: '搜索 Server' }).fill('Fixture SSH B');
-    await expect(rail.locator('.rail-hosts button')).toHaveCount(1);
-    await expect(rail.locator('.rail-hosts button')).toContainText('Fixture SSH B');
+    await page.getByRole('button', { name: '新建终端' }).first().click();
+    const hostPicker = page.getByRole('dialog', { name: '选择 Server' });
+    await hostPicker.getByRole('textbox', { name: '搜索 Server' }).fill('Fixture SSH B');
+    await expect(hostPicker.getByRole('button', { name: '新建终端：Fixture SSH B' })).toHaveCount(1);
+
+    await page.getByRole('button', { name: '关闭 Server 选择器' }).click();
+    await page.getByRole('button', { name: '左右分屏' }).click();
+    await expect(page.locator('.terminal-pane.is-visible')).toHaveCount(2);
+    await expect(page.getByRole('separator', { name: '调整左右分屏大小' })).toBeVisible();
+    await page.getByRole('button', { name: '上下分屏' }).click();
+    await expect(page.getByRole('separator', { name: '调整上下分屏大小' })).toBeVisible();
+    await page.getByRole('button', { name: '退出分屏' }).click();
 
     await page.getByRole('button', { name: '锁定' }).click();
     await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible();

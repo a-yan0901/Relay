@@ -59,6 +59,7 @@ describe('TerminalWorkspace', () => {
 
     expect(screen.getByTestId('terminal-panel-tab-1')).toBeVisible();
     expect(screen.getByTestId('terminal-panel-tab-2')).not.toBeVisible();
+    expect(screen.queryByRole('complementary', { name: '终端 Server 列表' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: '切换 Staging · 1' }));
     expect(onActivate).toHaveBeenCalledWith('tab-2');
     expect(screen.getByTestId('terminal-panel-tab-1')).toBeInTheDocument();
@@ -66,7 +67,7 @@ describe('TerminalWorkspace', () => {
     expect(onClose).toHaveBeenCalledWith('tab-1');
   });
 
-  it('labels same-host consoles independently and exposes per-host new-console actions', async () => {
+  it('opens a compact host picker from the top bar for new consoles', async () => {
     const user = userEvent.setup();
     const hosts = [host('host-1', 'Production'), host('host-2', 'Staging')];
     const terminals: TerminalTabState[] = [
@@ -88,15 +89,50 @@ describe('TerminalWorkspace', () => {
 
     expect(screen.getByRole('tab', { name: '切换 Production · 1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '切换 Production · 2' })).toBeInTheDocument();
-    expect(screen.getAllByText('重连中')).toHaveLength(2);
-    expect(screen.getAllByRole('button', { name: /新建终端/iu })).toHaveLength(2);
+    expect(screen.getAllByText('重连中')).toHaveLength(1);
 
-    const newConsoleButtons = screen.getAllByRole('button', { name: /新建终端/iu });
-    await user.click(newConsoleButtons[1]);
+    await user.click(screen.getByRole('button', { name: '新建终端' }));
+    expect(screen.getByRole('dialog', { name: '选择 Server' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '新建终端：Staging' }));
     expect(onConnectHost).toHaveBeenCalledWith(hosts[1]);
 
     await user.click(screen.getByRole('button', { name: '关闭 Production · 2' }));
     expect(onClose).toHaveBeenCalledWith('tab-2');
+  });
+
+  it('splits the workspace into independently selectable console panes', async () => {
+    const user = userEvent.setup();
+    const hosts = [host('host-1', 'Production'), host('host-2', 'Staging'), host('host-3', 'QA')];
+    const terminals: TerminalTabState[] = [
+      { terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null },
+      { terminalId: 'tab-2', hostId: 'host-2', state: 'connected', reconnectDelayMs: 0, errorMessage: null },
+      { terminalId: 'tab-3', hostId: 'host-3', state: 'closed', reconnectDelayMs: 0, errorMessage: null }
+    ];
+    const onActivate = vi.fn();
+    render(
+      <TerminalWorkspace
+        hosts={hosts}
+        terminals={terminals}
+        activeTerminalId="tab-1"
+        onActivate={onActivate}
+        onClose={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '左右分屏' }));
+    expect(screen.getByRole('region', { name: '左侧 Console' })).toBeVisible();
+    expect(screen.getByRole('region', { name: '右侧 Console' })).toBeVisible();
+    expect(screen.getByRole('separator', { name: '调整左右分屏大小' })).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-panel-tab-1')).toBeVisible();
+    expect(screen.getByTestId('terminal-panel-tab-2')).toBeVisible();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: '右侧 Console' }), 'tab-3');
+    expect(screen.getByTestId('terminal-panel-tab-3')).toBeVisible();
+    expect(onActivate).toHaveBeenCalledWith('tab-3');
+
+    await user.click(screen.getByRole('button', { name: '上下分屏' }));
+    expect(screen.getByRole('separator', { name: '调整上下分屏大小' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '上下分屏' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('requires an explicit decision for a new host key', async () => {
