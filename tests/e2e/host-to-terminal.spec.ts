@@ -55,6 +55,16 @@ test.describe('host to terminal journey', () => {
     expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewportHeight);
     await hostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
     await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
+    const scrollPolicy = await page.locator('.terminal-panel.is-active .terminal-canvas .xterm-viewport').evaluate((element) => ({
+      rootOverscroll: getComputedStyle(document.documentElement).overscrollBehaviorY,
+      bodyOverscroll: getComputedStyle(document.body).overscrollBehaviorY,
+      viewportOverscroll: getComputedStyle(element).overscrollBehaviorY,
+      viewportOverflowY: getComputedStyle(element).overflowY
+    }));
+    expect(scrollPolicy.rootOverscroll).toBe('none');
+    expect(scrollPolicy.bodyOverscroll).toBe('none');
+    expect(scrollPolicy.viewportOverscroll).toBe('contain');
+    expect(['auto', 'scroll']).toContain(scrollPolicy.viewportOverflowY);
     await page.keyboard.press('Control+K');
     await expect(page.locator('#terminal-host-search')).toBeFocused();
     await page.getByRole('button', { name: '关闭 Server 选择器' }).click();
