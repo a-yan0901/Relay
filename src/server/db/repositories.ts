@@ -575,7 +575,10 @@ export class HostRepository {
              is_favorite, last_connected_at, created_at, updated_at
       FROM hosts
       WHERE ${clauses.join(' AND ')}
-      ORDER BY is_favorite DESC, name COLLATE NOCASE ASC
+      ORDER BY is_favorite DESC,
+               CASE WHEN last_connected_at IS NULL THEN 1 ELSE 0 END ASC,
+               last_connected_at DESC,
+               name COLLATE NOCASE ASC
     `).all(parameters) as HostMetadataSqlRow[];
     return rows.map(toHostMetadata);
   }

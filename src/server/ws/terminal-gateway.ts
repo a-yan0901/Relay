@@ -272,6 +272,7 @@ export const registerTerminalGateway = async (
       if (reattached) {
         attachChannel(reattached);
         sendStatus('connected');
+        dependencies.hostRepository.markConnected(row.id);
         return;
       }
 
@@ -326,6 +327,7 @@ export const registerTerminalGateway = async (
       try {
         attachChannel(await dependencies.sessionManager.open(managerSessionId, config, callbacks));
         sendStatus('connected');
+        dependencies.hostRepository.markConnected(row.id);
         dependencies.auditRepository.insert({ eventType: 'ssh_connected', hostId: row.id, requestId: message.requestId });
       } catch (error) {
         if (hostKeyPolicy?.hasMismatch) {

@@ -102,4 +102,33 @@ describe('HostWorkspace', () => {
     screen.getByRole('button', { name: '添加第一台 Server' }).click();
     expect(onAddHost).toHaveBeenCalledOnce();
   });
+
+  it('sorts favorite servers by most recent connection first', () => {
+    const recentHosts = [
+      { ...hosts[0], lastConnectedAt: '2026-09-14T08:00:00.000Z' },
+      { ...hosts[1], isFavorite: true, lastConnectedAt: '2026-09-14T09:00:00.000Z' }
+    ];
+    render(
+      <HostWorkspace
+        hosts={recentHosts}
+        groups={groups}
+        query=""
+        selectedGroupId={null}
+        favoriteOnly={false}
+        onQueryChange={vi.fn()}
+        onGroupSelected={vi.fn()}
+        onFavoriteFilter={vi.fn()}
+        onFavoriteToggle={vi.fn()}
+        onConnect={vi.fn()}
+        onAddHost={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onTestConnection={vi.fn()}
+      />
+    );
+
+    const cards = screen.getByLabelText('Server 列表').querySelectorAll('.host-card');
+    expect(cards[0]).toHaveTextContent('Staging Shell');
+    expect(cards[1]).toHaveTextContent('Production API');
+  });
 });

@@ -6,9 +6,12 @@ export interface HostListProps {
   onConnect: (host: HostMetadataState) => void;
   onFavoriteToggle: (host: HostMetadataState) => void;
   onAddHost: () => void;
+  onEdit?: (host: HostMetadataState) => void;
+  onDelete?: (host: HostMetadataState) => void;
+  onTestConnection?: (host: HostMetadataState) => void;
 }
 
-export const HostList = ({ hosts, onConnect, onFavoriteToggle, onAddHost }: HostListProps) => {
+export const HostList = ({ hosts, onConnect, onFavoriteToggle, onAddHost, onEdit, onDelete, onTestConnection }: HostListProps) => {
   if (hosts.length === 0) {
     return (
       <div className="empty-state">
@@ -22,7 +25,7 @@ export const HostList = ({ hosts, onConnect, onFavoriteToggle, onAddHost }: Host
 
   return (
     <div className="host-list" aria-label="Server 列表">
-      {hosts.map((host) => <HostCard key={host.id} host={host} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} />)}
+      {hosts.map((host) => <HostCard key={host.id} host={host} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} />)}
     </div>
   );
 };

@@ -115,12 +115,18 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       return { ...state, hosts: replaceHost(state.hosts, action.host), errorMessage: null };
     case 'hostUpdated':
       return { ...state, hosts: replaceHost(state.hosts, action.host), errorMessage: null };
-    case 'hostDeleted':
+    case 'hostDeleted': {
+      const terminals = state.terminals.filter((terminal) => terminal.hostId !== action.hostId);
+      const activeTerminalId = terminals.some((terminal) => terminal.terminalId === state.activeTerminalId)
+        ? state.activeTerminalId
+        : terminals.at(-1)?.terminalId ?? null;
       return {
         ...state,
         hosts: state.hosts.filter((host) => host.id !== action.hostId),
-        terminals: state.terminals.filter((terminal) => terminal.hostId !== action.hostId)
+        terminals,
+        activeTerminalId
       };
+    }
     case 'favoriteOptimistic': {
       const host = state.hosts.find((candidate) => candidate.id === action.hostId);
       if (!host) return state;

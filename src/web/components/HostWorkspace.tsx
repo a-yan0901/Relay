@@ -17,6 +17,9 @@ export interface HostWorkspaceProps {
   onFavoriteToggle: (host: HostMetadataState) => void;
   onConnect: (host: HostMetadataState) => void;
   onAddHost: () => void;
+  onEdit?: (host: HostMetadataState) => void;
+  onDelete?: (host: HostMetadataState) => void;
+  onTestConnection?: (host: HostMetadataState) => void;
 }
 
 export const HostWorkspace = ({
@@ -30,7 +33,10 @@ export const HostWorkspace = ({
   onFavoriteFilter,
   onFavoriteToggle,
   onConnect,
-  onAddHost
+  onAddHost,
+  onEdit,
+  onDelete,
+  onTestConnection
 }: HostWorkspaceProps) => {
   const visibleHosts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -39,6 +45,12 @@ export const HostWorkspace = ({
       return (!normalizedQuery || searchable.includes(normalizedQuery)) &&
         (selectedGroupId === null || host.groupId === selectedGroupId) &&
         (!favoriteOnly || host.isFavorite);
+    }).sort((left, right) => {
+      if (left.isFavorite !== right.isFavorite) return left.isFavorite ? -1 : 1;
+      const leftTime = left.lastConnectedAt ? Date.parse(left.lastConnectedAt) : Number.NEGATIVE_INFINITY;
+      const rightTime = right.lastConnectedAt ? Date.parse(right.lastConnectedAt) : Number.NEGATIVE_INFINITY;
+      if (leftTime !== rightTime) return rightTime - leftTime;
+      return left.name.localeCompare(right.name);
     });
   }, [favoriteOnly, hosts, query, selectedGroupId]);
 
@@ -70,7 +82,7 @@ export const HostWorkspace = ({
         </div>
         {isFilteredEmpty ? (
           <div className="empty-state empty-state-compact"><h2>没有匹配的 Server</h2><p>试试名称、IP、用户名或标签。</p></div>
-        ) : <HostList hosts={visibleHosts} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onAddHost={onAddHost} />}
+        ) : <HostList hosts={visibleHosts} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onAddHost={onAddHost} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} />}
       </section>
     </div>
   );

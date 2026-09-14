@@ -43,6 +43,7 @@ type RequestOptions = {
   method?: string;
   headers?: Headers;
   body?: string;
+  acceptedStatuses?: readonly number[];
 };
 
 const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> => {
@@ -50,17 +51,18 @@ const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> =>
   if (init.body !== undefined && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
+  const { acceptedStatuses = [], ...fetchOptions } = init;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
-      ...init,
+      ...fetchOptions,
       headers,
       credentials: 'same-origin',
       signal: controller.signal
     });
 
-    if (!response.ok) {
+    if (!response.ok && !acceptedStatuses.includes(response.status)) {
       const body = await parseErrorBody(response);
       const candidateCode = body.error?.code;
       const code = typeof candidateCode === 'string' && isAppErrorCode(candidateCode)
@@ -126,5 +128,6 @@ export const deleteHost = (id: string): Promise<void> => request<void>(`/api/hos
 export const listGroups = (): Promise<GroupSummaryResponse[]> => request<GroupSummaryResponse[]>('/api/groups');
 
 export const testConnection = (id: string): Promise<ConnectionTestResult> => request<ConnectionTestResult>(`/api/hosts/${encodeURIComponent(id)}/test-connection`, {
-  method: 'POST'
+  method: 'POST',
+  acceptedStatuses: [409]
 });

@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HostForm } from '../../../src/web/components/HostForm';
+import type { HostMetadataState } from '../../../src/web/state/app-state';
 
 describe('HostForm', () => {
   afterEach(() => cleanup());
@@ -46,5 +47,54 @@ describe('HostForm', () => {
       username: 'deploy',
       auth: { type: 'password', password: 'form-secret' }
     }));
+  });
+
+  it('prefills edit metadata and preserves the existing credential when left blank', async () => {
+    const user = userEvent.setup();
+    const onEditSubmit = vi.fn().mockResolvedValue(undefined);
+    const initialHost: HostMetadataState = {
+      id: 'host-1',
+      name: 'Production API',
+      address: '10.0.0.8',
+      port: 2222,
+      username: 'deploy',
+      authType: 'password',
+      groupId: 'group-1',
+      tags: ['prod', 'api'],
+      isFavorite: true,
+      hostKeyAlgorithm: 'ssh-ed25519',
+      hostKeyFingerprint: 'SHA256:fixture',
+      lastConnectedAt: null,
+      createdAt: '2026-09-14T00:00:00.000Z',
+      updatedAt: '2026-09-14T00:00:00.000Z'
+    };
+    render(
+      <HostForm
+        mode="edit"
+        initialHost={initialHost}
+        groups={[{ id: 'group-1', name: 'Production', sortOrder: 0 }]}
+        onEditSubmit={onEditSubmit}
+        onCancel={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: '编辑 Server' })).toBeInTheDocument();
+    expect(screen.getByLabelText('服务器名称')).toHaveValue('Production API');
+    expect(screen.getByLabelText('端口')).toHaveValue(2222);
+    expect(screen.getByLabelText('分组')).toHaveValue('group-1');
+    await user.clear(screen.getByLabelText('服务器名称'));
+    await user.type(screen.getByLabelText('服务器名称'), 'Production Shell');
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    expect(onEditSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Production Shell',
+      address: '10.0.0.8',
+      port: 2222,
+      username: 'deploy',
+      groupId: 'group-1',
+      tags: ['prod', 'api'],
+      isFavorite: true
+    }));
+    expect(onEditSubmit.mock.calls[0][0]).not.toHaveProperty('auth');
   });
 });

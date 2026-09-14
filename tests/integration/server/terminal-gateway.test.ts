@@ -202,6 +202,10 @@ describe('terminal WebSocket gateway', () => {
     const connected = await nextJson<{ type: string; state?: string }>(socket);
     expect(connected).toEqual(expect.objectContaining({ type: 'status', state: 'connected' }));
     expect(statuses).toEqual(['connecting']);
+    const listedHosts = await app.inject({ method: 'GET', url: '/api/hosts', headers: { cookie } });
+    expect(json<Array<{ id: string; lastConnectedAt: string | null }>>(listedHosts)).toEqual([
+      expect.objectContaining({ id: hostId, lastConnectedAt: expect.any(String) })
+    ]);
 
     const channel = adapter.channels[0];
     expect(channel.resizes).toEqual([{ cols: 100, rows: 30 }]);

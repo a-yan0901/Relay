@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useReducer, useState } from 'react';
 
 import { AppError } from '@shared/errors';
-import type { HostCreateInput } from '@shared/validation';
+import type { HostCreateInput, HostPatchInput } from '@shared/validation';
 
 import {
   createHost,
+  deleteHost,
   getSetupStatus,
   listGroups,
   listHosts,
   lockVault,
   setupVault,
+  testConnection,
   unlockVault,
   updateHost
 } from './api';
@@ -68,6 +70,7 @@ const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals }: { onLock: (
 export const App = () => {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const [hostFormOpen, setHostFormOpen] = useState(false);
+  const [editingHost, setEditingHost] = useState<HostMetadataState | null>(null);
   const [terminalView, setTerminalView] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
 
@@ -128,9 +131,27 @@ export const App = () => {
   };
 
   const handleCreateHost = async (input: HostCreateInput): Promise<void> => {
-    const host = await createHost(input);
-    dispatch({ type: 'hostCreated', host });
-    setHostFormOpen(false);
+    try {
+      const host = await createHost(input);
+      dispatch({ type: 'hostCreated', host });
+      setHostFormOpen(false);
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+      throw error;
+    }
+  };
+
+  const handleUpdateHost = async (input: HostPatchInput): Promise<void> => {
+    if (!editingHost) return;
+    try {
+      const host = await updateHost(editingHost.id, input);
+      dispatch({ type: 'hostUpdated', host });
+      setEditingHost(null);
+      setHostFormOpen(false);
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+      throw error;
+    }
   };
 
   const handleFavoriteToggle = async (host: HostMetadataState): Promise<void> => {
@@ -149,6 +170,47 @@ export const App = () => {
   const handleOpenTerminal = (host: HostMetadataState): void => {
     dispatch({ type: 'terminalOpened', terminalId: createTerminalId(), hostId: host.id });
     setTerminalView(true);
+  };
+
+  const handleDeleteHost = async (host: HostMetadataState): Promise<void> => {
+    if (!window.confirm(`确定删除 Server「${host.name}」吗？`)) return;
+    try {
+      await deleteHost(host.id);
+      const remainingTerminals = state.terminals.filter((terminal) => terminal.hostId !== host.id);
+      dispatch({ type: 'hostDeleted', hostId: host.id });
+      if (state.terminals.length > 0 && remainingTerminals.length === 0) setTerminalView(false);
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+    }
+  };
+
+  const handleTestConnection = async (host: HostMetadataState): Promise<void> => {
+    try {
+      const result = await testConnection(host.id);
+      const message = result.ok
+        ? `连接测试成功：${host.name}`
+        : result.hostKey
+          ? `需要确认远程主机指纹：${result.hostKey.fingerprint}`
+          : `无法连接：${host.name}`;
+      dispatch({ type: 'error', message });
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+    }
+  };
+
+  const openCreateHost = (): void => {
+    setEditingHost(null);
+    setHostFormOpen(true);
+  };
+
+  const openEditHost = (host: HostMetadataState): void => {
+    setEditingHost(host);
+    setHostFormOpen(true);
+  };
+
+  const closeHostForm = (): void => {
+    setEditingHost(null);
+    setHostFormOpen(false);
   };
 
   const handleCloseTerminal = (terminalId: string): void => {
@@ -170,7 +232,7 @@ export const App = () => {
     try {
       await lockVault();
       dispatch({ type: 'lock' });
-      setHostFormOpen(false);
+      closeHostForm();
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
     }
@@ -213,14 +275,17 @@ export const App = () => {
             onFavoriteFilter={(favoriteOnly) => dispatch({ type: 'favoriteFilterChanged', favoriteOnly })}
             onFavoriteToggle={(host) => void handleFavoriteToggle(host)}
             onConnect={handleOpenTerminal}
-            onAddHost={() => setHostFormOpen(true)}
+            onAddHost={openCreateHost}
+            onEdit={openEditHost}
+            onDelete={(host) => void handleDeleteHost(host)}
+            onTestConnection={(host) => void handleTestConnection(host)}
           />
         )}
       </div>
       {hostFormOpen && (
         <div className="drawer-backdrop" role="presentation">
-          <aside className="drawer" aria-label="添加 Server">
-            <HostForm onSubmit={handleCreateHost} onCancel={() => setHostFormOpen(false)} />
+          <aside className="drawer" aria-label={editingHost ? '编辑 Server' : '添加 Server'}>
+            {editingHost ? <HostForm mode="edit" initialHost={editingHost} groups={state.groups} onEditSubmit={handleUpdateHost} onCancel={closeHostForm} /> : <HostForm groups={state.groups} onSubmit={handleCreateHost} onCancel={closeHostForm} />}
           </aside>
         </div>
       )}

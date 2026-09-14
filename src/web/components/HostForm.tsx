@@ -1,11 +1,22 @@
 import { useState, type FormEvent } from 'react';
 
 import { AppError } from '@shared/errors';
-import { parseHostCreateInput, type HostCreateInput } from '@shared/validation';
+import {
+  parseHostCreateInput,
+  parseHostPatchInput,
+  type HostCreateInput,
+  type HostPatchInput
+} from '@shared/validation';
+
+import type { GroupSummary, HostMetadataState } from '../state/app-state';
 
 export interface HostFormProps {
-  onSubmit: (input: HostCreateInput) => Promise<void> | void;
+  onSubmit?: (input: HostCreateInput) => Promise<void> | void;
+  onEditSubmit?: (input: HostPatchInput) => Promise<void> | void;
   onCancel: () => void;
+  mode?: 'create' | 'edit';
+  initialHost?: HostMetadataState;
+  groups?: GroupSummary[];
 }
 
 interface HostFormState {
@@ -36,8 +47,30 @@ const initialForm: HostFormState = {
   isFavorite: false
 };
 
-export const HostForm = ({ onSubmit, onCancel }: HostFormProps) => {
-  const [form, setForm] = useState(initialForm);
+const formFromHost = (host: HostMetadataState): HostFormState => ({
+  name: host.name,
+  address: host.address,
+  port: String(host.port),
+  username: host.username,
+  authType: host.authType,
+  password: '',
+  privateKey: '',
+  passphrase: '',
+  groupId: host.groupId ?? '',
+  tags: host.tags.join(', '),
+  isFavorite: host.isFavorite
+});
+
+export const HostForm = ({
+  onSubmit,
+  onEditSubmit,
+  onCancel,
+  mode = 'create',
+  initialHost,
+  groups = []
+}: HostFormProps) => {
+  const isEdit = mode === 'edit';
+  const [form, setForm] = useState(() => initialHost ? formFromHost(initialHost) : initialForm);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -48,22 +81,25 @@ export const HostForm = ({ onSubmit, onCancel }: HostFormProps) => {
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setError(null);
-    const raw: unknown = {
+    const raw: Record<string, unknown> = {
       name: form.name,
       address: form.address,
       port: Number(form.port),
       username: form.username,
       groupId: form.groupId || null,
       tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-      isFavorite: form.isFavorite,
-      auth: form.authType === 'password'
-        ? { type: 'password', password: form.password }
-        : { type: 'private_key', privateKey: form.privateKey, passphrase: form.passphrase || undefined }
+      isFavorite: form.isFavorite
     };
+    const credentialChanged = !isEdit || initialHost === undefined || initialHost.authType !== form.authType || form.password.length > 0 || form.privateKey.length > 0 || form.passphrase.length > 0;
+    if (credentialChanged) {
+      raw.auth = form.authType === 'password'
+        ? { type: 'password', password: form.password }
+        : { type: 'private_key', privateKey: form.privateKey, passphrase: form.passphrase || undefined };
+    }
 
-    let parsed: HostCreateInput;
+    let parsed: HostCreateInput | HostPatchInput;
     try {
-      parsed = parseHostCreateInput(raw);
+      parsed = isEdit ? parseHostPatchInput(raw) : parseHostCreateInput(raw);
     } catch (validationError) {
       setError(validationError instanceof AppError ? validationError.message : '请检查服务器配置');
       return;
@@ -71,8 +107,14 @@ export const HostForm = ({ onSubmit, onCancel }: HostFormProps) => {
 
     setSubmitting(true);
     try {
-      await onSubmit(parsed);
-      setForm(initialForm);
+      if (isEdit) {
+        if (!onEditSubmit) throw new Error('编辑回调缺失');
+        await onEditSubmit(parsed as HostPatchInput);
+      } else {
+        if (!onSubmit) throw new Error('保存回调缺失');
+        await onSubmit(parsed as HostCreateInput);
+        setForm(initialForm);
+      }
     } catch (submitError) {
       setError(submitError instanceof AppError ? submitError.message : '保存失败，请稍后重试');
     } finally {
@@ -84,8 +126,8 @@ export const HostForm = ({ onSubmit, onCancel }: HostFormProps) => {
     <form className="host-form" onSubmit={submit} noValidate>
       <div className="form-heading">
         <div>
-          <p className="eyebrow">NEW CONNECTION</p>
-          <h2>添加 Server</h2>
+          <p className="eyebrow">{isEdit ? 'EDIT CONNECTION' : 'NEW CONNECTION'}</p>
+          <h2>{isEdit ? '编辑 Server' : '添加 Server'}</h2>
         </div>
         <button className="icon-button" type="button" onClick={onCancel} aria-label="关闭表单">×</button>
       </div>
@@ -114,16 +156,23 @@ export const HostForm = ({ onSubmit, onCancel }: HostFormProps) => {
             <option value="private_key">私钥</option>
           </select>
         </div>
+        <div className="field field-wide">
+          <label htmlFor="host-group">分组</label>
+          <select id="host-group" value={form.groupId} onChange={(event) => update('groupId', event.target.value)}>
+            <option value="">未分组</option>
+            {groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}
+          </select>
+        </div>
         {form.authType === 'password' ? (
           <div className="field field-wide">
-            <label htmlFor="host-password">密码</label>
-            <input id="host-password" type="password" value={form.password} onChange={(event) => update('password', event.target.value)} autoComplete="new-password" />
+            <label htmlFor="host-password">密码{isEdit ? '（留空保留现有）' : ''}</label>
+            <input id="host-password" type="password" value={form.password} onChange={(event) => update('password', event.target.value)} autoComplete="new-password" placeholder={isEdit ? '留空保留现有密码' : undefined} />
           </div>
         ) : (
           <>
             <div className="field field-wide">
-              <label htmlFor="host-private-key">私钥</label>
-              <textarea id="host-private-key" value={form.privateKey} onChange={(event) => update('privateKey', event.target.value)} rows={6} spellCheck={false} />
+              <label htmlFor="host-private-key">私钥{isEdit ? '（留空保留现有）' : ''}</label>
+              <textarea id="host-private-key" value={form.privateKey} onChange={(event) => update('privateKey', event.target.value)} rows={6} spellCheck={false} placeholder={isEdit ? '留空保留现有私钥' : undefined} />
             </div>
             <div className="field field-wide">
               <label htmlFor="host-passphrase">私钥口令</label>
@@ -143,7 +192,7 @@ export const HostForm = ({ onSubmit, onCancel }: HostFormProps) => {
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="form-actions">
         <button className="button button-ghost" type="button" onClick={onCancel}>取消</button>
-        <button className="button button-primary" type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存 Server'}</button>
+        <button className="button button-primary" type="submit" disabled={submitting}>{submitting ? '保存中…' : isEdit ? '保存修改' : '保存 Server'}</button>
       </div>
     </form>
   );
