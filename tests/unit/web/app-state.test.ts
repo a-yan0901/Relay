@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { TerminalStatus } from '@shared/protocol';
 import {
   appReducer,
   initialAppState,
@@ -72,9 +73,53 @@ describe('appReducer', () => {
     state = appReducer(state, { type: 'terminalOpened', terminalId: 'tab-1', hostId: 'host-1' });
     state = appReducer(state, { type: 'terminalOpened', terminalId: 'tab-2', hostId: 'host-2' });
     expect(state.terminals).toEqual([
-      { terminalId: 'tab-1', hostId: 'host-1' },
-      { terminalId: 'tab-2', hostId: 'host-2' }
+      { terminalId: 'tab-1', hostId: 'host-1', state: 'closed', reconnectDelayMs: 0, errorMessage: null },
+      { terminalId: 'tab-2', hostId: 'host-2', state: 'closed', reconnectDelayMs: 0, errorMessage: null }
     ]);
     expect(state.activeTerminalId).toBe('tab-2');
+  });
+
+  it('opens multiple consoles for the same host and keeps them independent', () => {
+    let state = initialAppState;
+    state = appReducer(state, { type: 'terminalOpened', terminalId: 'tab-1', hostId: 'host-1' });
+    state = appReducer(state, { type: 'terminalOpened', terminalId: 'tab-2', hostId: 'host-1' });
+    state = appReducer(state, {
+      type: 'terminalStatusUpdated',
+      terminalId: 'tab-1',
+      state: 'connected',
+      reconnectDelayMs: 0,
+      errorMessage: null
+    });
+
+    expect(state.terminals).toHaveLength(2);
+    expect(state.terminals.find((tab) => tab.terminalId === 'tab-1')?.state).toBe('connected');
+    expect(state.terminals.find((tab) => tab.terminalId === 'tab-2')?.state).toBe('closed');
+  });
+
+  it('removes only the requested console and activates the adjacent remaining tab', () => {
+    let state = initialAppState;
+    state = appReducer(state, { type: 'terminalOpened', terminalId: 'tab-1', hostId: 'host-1' });
+    state = appReducer(state, { type: 'terminalOpened', terminalId: 'tab-2', hostId: 'host-1' });
+    state = appReducer(state, { type: 'terminalOpened', terminalId: 'tab-3', hostId: 'host-2' });
+    state = appReducer(state, { type: 'terminalActivated', terminalId: 'tab-2' });
+    state = appReducer(state, { type: 'terminalClosed', terminalId: 'tab-2' });
+
+    expect(state.terminals.map((tab) => tab.terminalId)).toEqual(['tab-1', 'tab-3']);
+    expect(state.activeTerminalId).toBe('tab-1');
+  });
+
+  it('keeps terminal status values typed as shared protocol statuses', () => {
+    const statuses: TerminalStatus[] = ['connecting', 'awaiting-host-key', 'connected', 'reconnecting', 'closed', 'failed'];
+    let state = appReducer(initialAppState, { type: 'terminalOpened', terminalId: 'tab-1', hostId: 'host-1' });
+    for (const status of statuses) {
+      state = appReducer(state, {
+        type: 'terminalStatusUpdated',
+        terminalId: 'tab-1',
+        state: status,
+        reconnectDelayMs: status === 'reconnecting' ? 500 : 0,
+        errorMessage: status === 'failed' ? '连接失败' : null
+      });
+    }
+    expect(state.terminals[0]).toMatchObject({ state: 'failed', reconnectDelayMs: 0, errorMessage: '连接失败' });
   });
 });

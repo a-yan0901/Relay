@@ -1,4 +1,5 @@
 import type { HostMetadata } from '@shared/validation';
+import type { TerminalStatus } from '@shared/protocol';
 
 export type HostMetadataState = HostMetadata;
 
@@ -11,6 +12,9 @@ export interface GroupSummary {
 export interface TerminalTabState {
   terminalId: string;
   hostId: string;
+  state: TerminalStatus;
+  reconnectDelayMs: number;
+  errorMessage: string | null;
 }
 
 export type AppPhase = 'loading' | 'setup' | 'locked' | 'ready';
@@ -57,6 +61,7 @@ export type AppAction =
   | { type: 'favoriteFilterChanged'; favoriteOnly: boolean }
   | { type: 'terminalOpened'; terminalId: string; hostId: string }
   | { type: 'terminalActivated'; terminalId: string }
+  | { type: 'terminalStatusUpdated'; terminalId: string; state: TerminalStatus; reconnectDelayMs: number; errorMessage: string | null }
   | { type: 'terminalClosed'; terminalId: string }
   | { type: 'error'; message: string | null };
 
@@ -153,7 +158,13 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         ...state,
         terminals: existing
           ? state.terminals
-          : [...state.terminals, { terminalId: action.terminalId, hostId: action.hostId }],
+          : [...state.terminals, {
+            terminalId: action.terminalId,
+            hostId: action.hostId,
+            state: 'closed',
+            reconnectDelayMs: 0,
+            errorMessage: null
+          }],
         activeTerminalId: action.terminalId
       };
     }
@@ -161,10 +172,23 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       return state.terminals.some((terminal) => terminal.terminalId === action.terminalId)
         ? { ...state, activeTerminalId: action.terminalId }
         : state;
+    case 'terminalStatusUpdated':
+      return {
+        ...state,
+        terminals: state.terminals.map((terminal) => terminal.terminalId === action.terminalId
+          ? {
+            ...terminal,
+            state: action.state,
+            reconnectDelayMs: action.reconnectDelayMs,
+            errorMessage: action.errorMessage
+          }
+          : terminal)
+      };
     case 'terminalClosed': {
+      const closingIndex = state.terminals.findIndex((terminal) => terminal.terminalId === action.terminalId);
       const terminals = state.terminals.filter((terminal) => terminal.terminalId !== action.terminalId);
       const activeTerminalId = state.activeTerminalId === action.terminalId
-        ? terminals.at(-1)?.terminalId ?? null
+        ? terminals[Math.max(0, Math.min(closingIndex - 1, terminals.length - 1))]?.terminalId ?? null
         : state.activeTerminalId;
       return { ...state, terminals, activeTerminalId };
     }
