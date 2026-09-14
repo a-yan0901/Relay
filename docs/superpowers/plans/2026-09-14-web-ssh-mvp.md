@@ -6,7 +6,7 @@
 
 **Architecture:** Use one TypeScript repository containing a React/Vite browser UI and a Fastify Node.js service. The service owns SQLite persistence, an instance-level encrypted Vault, HTTP APIs, a WebSocket terminal gateway, and an injected SSH adapter backed by `ssh2`; the browser renders remote PTY bytes with xterm.js. Keep the boundaries explicit so the SSH session manager can become a separate worker without changing the UI or protocol later.
 
-**Tech Stack:** Node.js 22+, TypeScript, React, Vite, Fastify, `@fastify/cookie`, `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/static`, `@fastify/websocket`, `ssh2`, `argon2`, `better-sqlite3`, `zod`, `pino`, `@xterm/xterm`, xterm addons, Vitest, React Testing Library, Playwright, Docker Compose, and an OpenSSH integration fixture.
+**Tech Stack:** Node.js 22+, TypeScript, React, Vite, Fastify, `@fastify/cookie`, `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/static`, `@fastify/websocket`, `ssh2`, `argon2`, `better-sqlite3`, `zod`, `pino`, `@xterm/xterm`, xterm addons, Vitest, React Testing Library, Playwright, `tsup`, Docker Compose, and an OpenSSH integration fixture.
 
 **Spec:** `docs/superpowers/specs/2026-09-14-web-ssh-design.md`
 
@@ -106,7 +106,7 @@ The manifest must expose these scripts:
   "scripts": {
     "dev": "concurrently -k \\"vite --host 0.0.0.0\\" \\"tsx src/server/index.ts\\"",
     "build:web": "vite build --outDir dist/web",
-    "build:server": "tsc -p tsconfig.server.json",
+    "build:server": "tsup src/server/index.ts --format esm --target node22 --out-dir dist/server --sourcemap --clean",
     "build": "npm run build:web && npm run build:server",
     "start": "node dist/server/index.js",
     "test": "vitest run",
@@ -118,11 +118,11 @@ The manifest must expose these scripts:
 }
 ~~~
 
-Add `"type": "module"` and runtime dependencies `@fastify/cookie`, `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/static`, `@fastify/websocket`, `argon2`, `better-sqlite3`, `fastify`, `pino`, `react`, `react-dom`, `ssh2`, `zod`, `@xterm/addon-fit`, `@xterm/addon-search`, `@xterm/addon-web-links`, and `@xterm/xterm`. Add development dependencies `@eslint/js`, `@playwright/test`, `@testing-library/jest-dom`, `@testing-library/react`, `@testing-library/user-event`, `@types/better-sqlite3`, `@types/node`, `@types/react`, `@types/react-dom`, `@types/ssh2`, `@vitejs/plugin-react`, `@typescript-eslint/eslint-plugin`, `@typescript-eslint/parser`, `concurrently`, `eslint`, `globals`, `jsdom`, `tsx`, `typescript`, and `vitest`.
+Add `"type": "module"` and runtime dependencies `@fastify/cookie`, `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/static`, `@fastify/websocket`, `argon2`, `better-sqlite3`, `fastify`, `pino`, `react`, `react-dom`, `ssh2`, `zod`, `@xterm/addon-fit`, `@xterm/addon-search`, `@xterm/addon-web-links`, and `@xterm/xterm`. Add development dependencies `@eslint/js`, `@playwright/test`, `@testing-library/jest-dom`, `@testing-library/react`, `@testing-library/user-event`, `@types/better-sqlite3`, `@types/node`, `@types/react`, `@types/react-dom`, `@types/ssh2`, `@vitejs/plugin-react`, `@typescript-eslint/eslint-plugin`, `@typescript-eslint/parser`, `concurrently`, `eslint`, `globals`, `jsdom`, `tsup`, `tsx`, `typescript`, and `vitest`.
 
 - [ ] **Step 3: Add compiler, Vite, test, and ignore configuration.**
 
-Configure the browser TypeScript project with strict mode, JSX `react-jsx`, ES2022, and `noEmit`; configure the server project with strict mode, Node ESM resolution, `rootDir: src`, `outDir: dist/server`, and only `src/server/**/*.ts` plus `src/shared/**/*.ts`. Configure Vite to use `@vitejs/plugin-react`, resolve `@shared` to `src/shared`, and proxy `/api` and `/ws` to `http://localhost:3000` during development. Configure Vitest with `src` aliases and jsdom for files ending `.dom.test.tsx`; configure Playwright to start the built server on port 4173. Configure `eslint.config.js` with `@eslint/js`, the TypeScript parser/plugin, browser globals for `src/web`, Node globals for `src/server`, and a no-explicit-any error. Ignore `node_modules`, `dist`, `.env*`, `data`, `.tmp-smoke-data`, Playwright output, coverage, and `.worktrees`.
+Configure the browser TypeScript project with strict mode, JSX `react-jsx`, ES2022, and `noEmit`; configure the server project with strict mode, Node ESM resolution, and only `src/server/**/*.ts` plus `src/shared/**/*.ts` for no-emit typechecking. Use `tsup` to bundle `src/server/index.ts` to `dist/server/index.js`. Configure Vite to use `@vitejs/plugin-react`, resolve `@shared` to `src/shared`, and proxy `/api` and `/ws` to `http://localhost:3000` during development. Configure Vitest with `src` aliases, Node as the default environment, and `// @vitest-environment jsdom` at the top of browser DOM tests; configure Playwright to start the built server on port 4173. Configure `eslint.config.js` with `@eslint/js`, the TypeScript parser/plugin, browser globals for `src/web`, Node globals for `src/server`, and a no-explicit-any error. Ignore `node_modules`, `dist`, `.env*`, `data`, `.tmp-smoke-data`, Playwright output, coverage, and `.worktrees`.
 
 - [ ] **Step 4: Write the harness smoke test before application code.**
 
