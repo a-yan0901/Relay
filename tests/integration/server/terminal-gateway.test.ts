@@ -1,0 +1,234 @@
+import { EventEmitter } from 'node:events';
+
+import WebSocket from 'ws';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { buildApp } from '../../../src/server/app.js';
+import { AppError } from '../../../src/shared/errors.js';
+import { openDatabase } from '../../../src/server/db/database.js';
+import { migrate } from '../../../src/server/db/migrations.js';
+import { SshSessionManager } from '../../../src/server/ssh/session-manager.js';
+import type {
+  SshAdapterPort,
+  SshChannel,
+  SshConnectCallbacks,
+  SshConnectConfig
+} from '../../../src/server/ssh/types.js';
+
+const MASTER_PASSWORD = 'correct horse battery staple';
+const ORIGIN = 'http://localhost:4173';
+const databases: ReturnType<typeof openDatabase>[] = [];
+const apps: Array<{ close: () => Promise<unknown>; listen: (options: { port: number; host: string }) => Promise<string>; server: { address: () => string | { port: number } | null } }> = [];
+
+class FakeChannel extends EventEmitter implements SshChannel {
+  readonly writes: Array<string | Buffer> = [];
+  readonly resizes: Array<{ cols: number; rows: number }> = [];
+  closeCalls = 0;
+
+  write(data: string | Buffer): void { this.writes.push(data); }
+  resize(cols: number, rows: number): void { this.resizes.push({ cols, rows }); }
+  close(): void {
+    this.closeCalls += 1;
+    this.emit('close');
+  }
+}
+
+class ChallengeAdapter implements SshAdapterPort {
+  readonly channels: FakeChannel[] = [];
+
+  async connect(config: SshConnectConfig, callbacks: SshConnectCallbacks): Promise<SshChannel> {
+    const challenge = {
+      algorithm: 'ssh-ed25519',
+      fingerprint: 'SHA256:fixture-key',
+      address: config.address,
+      port: config.port
+    };
+    const accepted = await callbacks.onHostKey(challenge);
+    if (!accepted) {
+      throw new AppError('HOST_KEY_MISMATCH');
+    }
+    const channel = new FakeChannel();
+    this.channels.push(channel);
+    return channel;
+  }
+
+  async testConnection(): Promise<{ ok: boolean }> { return { ok: true }; }
+}
+
+const json = <T>(response: { body: string }): T => JSON.parse(response.body) as T;
+
+const cookieFrom = (response: { headers: Record<string, string | string[] | undefined> }): string => {
+  const header = response.headers['set-cookie'];
+  const value = Array.isArray(header) ? header[0] : header;
+  if (!value) throw new Error('expected session cookie');
+  return value.split(';', 1)[0];
+};
+
+const makeApp = async () => {
+  const database = openDatabase(':memory:');
+  migrate(database);
+  databases.push(database);
+  const adapter = new ChallengeAdapter();
+  const manager = new SshSessionManager({ adapter, maxSessions: 4, detachGraceMs: 30_000 });
+  const app = await buildApp({
+    database,
+    sshSessionManager: manager,
+    config: {
+      nodeEnv: 'test',
+      port: 3000,
+      dataDir: ':memory:',
+      trustedOrigins: [ORIGIN],
+      sessionIdleTimeoutMs: 60_000,
+      maxSessions: 4,
+      logLevel: 'silent'
+    }
+  });
+  apps.push(app);
+  return { app, adapter };
+};
+
+const listen = async (app: Awaited<ReturnType<typeof buildApp>>): Promise<string> => {
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
+  return address.replace(/^http/u, 'ws');
+};
+
+const connectSocket = (url: string, options: { cookie?: string; origin?: string } = {}): Promise<WebSocket> => new Promise((resolve, reject) => {
+  const socket = new WebSocket(`${url}/ws/terminal`, {
+    headers: {
+      ...(options.cookie ? { Cookie: options.cookie } : {}),
+      ...(options.origin ? { Origin: options.origin } : {})
+    }
+  });
+  socket.once('open', () => resolve(socket));
+  socket.once('unexpected-response', (_request, response) => {
+    reject(Object.assign(new Error('websocket rejected'), { statusCode: response.statusCode }));
+  });
+  socket.once('error', reject);
+});
+
+interface MessageReader {
+  queue: Array<string | Buffer>;
+  waiters: Array<{ resolve: (message: string | Buffer) => void; reject: (error: Error) => void }>;
+}
+
+const messageReaders = new WeakMap<WebSocket, MessageReader>();
+
+const nextMessage = (socket: WebSocket): Promise<string | Buffer> => {
+  let reader = messageReaders.get(socket);
+  if (!reader) {
+    reader = { queue: [], waiters: [] };
+    messageReaders.set(socket, reader);
+    socket.on('message', (data: WebSocket.RawData) => {
+      const message = Buffer.isBuffer(data) ? data : data.toString();
+      const waiter = reader?.waiters.shift();
+      if (waiter) {
+        waiter.resolve(message);
+      } else {
+        reader?.queue.push(message);
+      }
+    });
+    socket.on('error', (error: Error) => {
+      const waiters = reader?.waiters.splice(0) ?? [];
+      for (const waiter of waiters) waiter.reject(error);
+    });
+  }
+
+  if (reader.queue.length > 0) {
+    return Promise.resolve(reader.queue.shift() as string | Buffer);
+  }
+  return new Promise((resolve, reject) => reader?.waiters.push({ resolve, reject }));
+};
+
+const nextJson = async <T>(socket: WebSocket): Promise<T> => {
+  const message = await nextMessage(socket);
+  return JSON.parse(Buffer.isBuffer(message) ? message.toString('utf8') : message) as T;
+};
+
+const waitFor = async (predicate: () => boolean, timeoutMs = 1_000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  expect(predicate()).toBe(true);
+};
+
+afterEach(async () => {
+  for (const app of apps.splice(0)) await app.close();
+  for (const database of databases.splice(0)) database.close();
+});
+
+describe('terminal WebSocket gateway', () => {
+  it('rejects missing sessions and untrusted origins before accepting the socket', async () => {
+    const { app } = await makeApp();
+    const url = await listen(app);
+
+    await expect(connectSocket(url, { origin: ORIGIN })).rejects.toMatchObject({ statusCode: 401 });
+
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const cookie = cookieFrom(setup);
+    await expect(connectSocket(url, { cookie, origin: 'https://evil.example' })).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('opens a real terminal session, handles host-key trust, binary I/O, resize, and close', async () => {
+    const { app, adapter } = await makeApp();
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const cookie = cookieFrom(setup);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: {
+        name: 'Fixture SSH',
+        address: 'ssh-fixture',
+        username: 'fixture',
+        auth: { type: 'password', password: 'fixture-password' }
+      }
+    });
+    const hostId = json<{ id: string }>(created).id;
+    const url = await listen(app);
+    const socket = await connectSocket(url, { cookie, origin: ORIGIN });
+    const statuses: string[] = [];
+    socket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'tab-1' }));
+
+    const first = await nextJson<{ type: string; state?: string; fingerprint?: string }>(socket);
+    if (first.type === 'status' && first.state === 'connecting') statuses.push(first.state);
+    const awaiting = await nextJson<{ type: string; state?: string }>(socket);
+    expect(awaiting).toEqual(expect.objectContaining({ type: 'status', state: 'awaiting-host-key' }));
+    const challenge = await nextJson<{ type: string; fingerprint: string }>(socket);
+    expect(challenge).toEqual(expect.objectContaining({ type: 'host-key', fingerprint: 'SHA256:fixture-key' }));
+    socket.send(JSON.stringify({ type: 'host-key-decision', decision: 'trust', fingerprint: 'SHA256:fixture-key' }));
+
+    const connected = await nextJson<{ type: string; state?: string }>(socket);
+    expect(connected).toEqual(expect.objectContaining({ type: 'status', state: 'connected' }));
+    expect(statuses).toEqual(['connecting']);
+
+    const channel = adapter.channels[0];
+    channel.emit('data', Buffer.from('fixture output'));
+    expect((await nextMessage(socket)).toString()).toBe('fixture output');
+    socket.send(JSON.stringify({ type: 'resize', cols: 80, rows: 24 }));
+    socket.send(Buffer.from('printf gateway\\n'));
+    await waitFor(() => channel.resizes.length === 1 && channel.writes.length === 1);
+    expect(channel.resizes).toEqual([{ cols: 80, rows: 24 }]);
+    expect(channel.writes[0].toString()).toBe('printf gateway\\n');
+
+    socket.send(JSON.stringify({ type: 'close' }));
+    expect((await nextJson<{ type: string; state?: string }>(socket)).state).toBe('closed');
+    expect(channel.closeCalls).toBe(1);
+    socket.close();
+  });
+
+  it('returns stable errors for unknown hosts and malformed control frames', async () => {
+    const { app } = await makeApp();
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const cookie = cookieFrom(setup);
+    const url = await listen(app);
+    const socket = await connectSocket(url, { cookie, origin: ORIGIN });
+
+    socket.send(JSON.stringify({ type: 'open', hostId: 'unknown-host', cols: 80, rows: 24, requestId: 'tab-1' }));
+    expect(await nextJson<{ type: string; code: string }>(socket)).toEqual(expect.objectContaining({
+      type: 'error',
+      code: 'HOST_NOT_FOUND'
+    }));
+    socket.close();
+  });
+});

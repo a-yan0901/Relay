@@ -51,7 +51,7 @@ export interface SshSessionManagerPort {
     hostKey?: SshHostKeyChallenge;
   }>;
   detach(sessionId: string): void;
-  reattach(sessionId: string): SshChannel | null;
+  reattach(sessionId: string, expectedHostId?: string): SshChannel | null;
   close(sessionId: string): void;
   closeAll?(): void;
 }

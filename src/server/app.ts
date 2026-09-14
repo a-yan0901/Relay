@@ -19,7 +19,10 @@ import { registerHostRoutes } from './api/host-routes.js';
 import { SessionStore } from './auth/session-store.js';
 import type { SqliteDatabase } from './db/database.js';
 import { VaultService } from './vault/vault-service.js';
+import { Ssh2Adapter } from './ssh/ssh2-adapter.js';
+import { SshSessionManager } from './ssh/session-manager.js';
 import type { SshSessionManagerPort } from './ssh/types.js';
+import { registerTerminalGateway } from './ws/terminal-gateway.js';
 
 export interface AppDependencies {
   database: SqliteDatabase;
@@ -53,6 +56,10 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   const hostRepository = dependencies.hostRepository ?? new HostRepository(dependencies.database, 'default');
   const groupRepository = dependencies.groupRepository ?? new GroupRepository(dependencies.database, 'default');
   const auditRepository = dependencies.auditRepository ?? new AuditRepository(dependencies.database, 'default');
+  const sshSessionManager = dependencies.sshSessionManager ?? new SshSessionManager({
+    adapter: new Ssh2Adapter(),
+    maxSessions: dependencies.config.maxSessions
+  });
   const appDependencies: BuiltAppDependencies = {
     appConfigRepository,
     sessionStore,
@@ -138,7 +145,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   await registerSetupRoutes(app, {
     ...appDependencies,
     config: dependencies.config,
-    sshSessionManager: dependencies.sshSessionManager
+    sshSessionManager
   });
   await registerGroupRoutes(app, {
     groupRepository,
@@ -150,7 +157,16 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     sessionStore,
     vaultService,
     auditRepository,
-    sshSessionManager: dependencies.sshSessionManager
+    sshSessionManager
+  });
+  await registerTerminalGateway(app, {
+    ownerId: 'default',
+    config: dependencies.config,
+    sessionStore,
+    hostRepository,
+    auditRepository,
+    vaultService,
+    sessionManager: sshSessionManager
   });
 
   return app;

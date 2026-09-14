@@ -16,6 +16,7 @@ export interface SshSessionManagerOptions {
 
 interface ManagedSession {
   id: string;
+  hostId: string;
   channel: SshChannel;
   detached: boolean;
   timer?: ReturnType<typeof setTimeout>;
@@ -58,6 +59,7 @@ export class SshSessionManager implements SshSessionManagerPort {
       const channel = await this.adapter.connect(config, callbacks);
       const managed: ManagedSession = {
         id: sessionId,
+        hostId: config.hostId,
         channel,
         detached: false,
         closed: false
@@ -90,9 +92,9 @@ export class SshSessionManager implements SshSessionManagerPort {
     managed.timer.unref?.();
   }
 
-  reattach(sessionId: string): SshChannel | null {
+  reattach(sessionId: string, expectedHostId?: string): SshChannel | null {
     const managed = this.sessions.get(sessionId);
-    if (!managed || managed.closed) {
+    if (!managed || managed.closed || (expectedHostId !== undefined && managed.hostId !== expectedHostId)) {
       return null;
     }
     managed.detached = false;
