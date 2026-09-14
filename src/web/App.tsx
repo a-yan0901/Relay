@@ -24,6 +24,11 @@ const messageFromError = (error: unknown): string => (
   error instanceof AppError ? error.message : '服务暂时不可用，请稍后重试'
 );
 
+const createTerminalId = (): string => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return `terminal-${globalThis.crypto.randomUUID()}`;
+  return `terminal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+};
+
 const LoadingView = () => (
   <main className="center-stage" aria-label="正在加载 Web SSH">
     <div className="loading-card">
@@ -125,12 +130,7 @@ export const App = () => {
   };
 
   const handleOpenTerminal = (host: HostMetadataState): void => {
-    const existing = state.terminals.find((terminal) => terminal.hostId === host.id);
-    if (existing) {
-      dispatch({ type: 'terminalActivated', terminalId: existing.terminalId });
-    } else {
-      dispatch({ type: 'terminalOpened', terminalId: `terminal-${host.id}-${Date.now().toString(36)}`, hostId: host.id });
-    }
+    dispatch({ type: 'terminalOpened', terminalId: createTerminalId(), hostId: host.id });
     setTerminalView(true);
   };
 

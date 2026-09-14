@@ -184,6 +184,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .status-dot-red { background: var(--red); box-shadow: 0 0 0 3px rgba(255, 125, 125, 0.12); }
 
+.status-dot-amber { background: var(--yellow); box-shadow: 0 0 0 3px rgba(246, 198, 106, 0.12); }
+
+.status-dot-blue { background: var(--blue); box-shadow: 0 0 0 3px rgba(93, 168, 255, 0.12); }
+
 .status-dot-muted { background: #70829a; box-shadow: 0 0 0 3px rgba(112, 130, 154, 0.12); }
 
 .host-pane { min-width: 0; }
@@ -412,6 +416,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .rail-tab.is-active { background: rgba(93, 168, 255, 0.12); border-color: rgba(93, 168, 255, 0.16); color: #d2e8ff; }
 
+.rail-tab-label { overflow: hidden; text-overflow: ellipsis; }
+
+.rail-tab-status { color: var(--faint); font-size: 9px; margin-left: auto; }
+
 .rail-search { align-items: center; background: rgba(5, 15, 28, 0.56); border: 1px solid var(--border); border-radius: 6px; display: flex; gap: 6px; margin-bottom: 8px; padding: 0 8px; }
 
 .rail-search input { background: transparent; border: 0; color: var(--text); font-size: 11px; min-height: 31px; outline: 0; min-width: 0; width: 100%; }
@@ -421,6 +429,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .rail-hosts { max-height: 215px; overflow: auto; }
 
 .rail-hosts button { align-items: flex-start; flex-direction: column; gap: 3px; }
+
+.rail-host-new > span { align-items: center; display: flex; gap: 4px; }
 
 .rail-hosts small { color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; overflow: hidden; text-overflow: ellipsis; width: 100%; }
 
@@ -432,13 +442,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-tabs { background: rgba(10, 24, 41, 0.92); border-bottom: 1px solid var(--border); display: flex; min-height: 64px; overflow-x: auto; padding: 0 8px; }
 
-.terminal-tab { align-items: center; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); display: flex; gap: 9px; max-width: 210px; min-width: 160px; padding: 0 14px; text-align: left; }
+.terminal-tab { align-items: stretch; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); display: flex; max-width: 250px; min-width: 190px; padding: 0; text-align: left; }
 
 .terminal-tab:hover { background: rgba(255, 255, 255, 0.035); color: var(--text); }
 
 .terminal-tab.is-active { border-bottom-color: var(--blue); color: var(--text); }
 
-.terminal-tab-meta { flex-direction: column; gap: 3px; min-width: 0; }
+.terminal-tab-trigger { align-items: center; background: transparent; border: 0; color: inherit; display: flex; flex: 1; gap: 9px; min-width: 0; padding: 0 7px 0 14px; text-align: left; }
+
+.terminal-tab-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 
 .terminal-tab-meta strong, .terminal-tab-meta small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
 
@@ -446,7 +458,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-tab-meta small { color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; }
 
-.tab-close { color: var(--faint); font-size: 16px; margin-left: auto; }
+.terminal-tab-status { color: var(--faint); font-size: 9px; white-space: nowrap; }
+
+.terminal-tab-close { align-self: center; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--faint); font-size: 16px; line-height: 1; margin-right: 7px; min-height: 28px; min-width: 28px; padding: 0; }
+
+.terminal-tab-close:hover { background: rgba(255, 125, 125, 0.1); border-color: rgba(255, 125, 125, 0.16); color: #ffabab; }
 
 .terminal-panels { flex: 1; min-height: 0; position: relative; }
 
@@ -559,7 +575,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .terminal-panel-heading { align-items: flex-start; flex-direction: column; gap: 9px; }
   .terminal-toolbar { justify-content: space-between; width: 100%; }
   .terminal-toolbar-actions span { display: none; }
-  .terminal-tab { min-width: 142px; }
+  .terminal-tab { min-width: 170px; }
   .host-key-dialog { padding: 21px; }
 }
 

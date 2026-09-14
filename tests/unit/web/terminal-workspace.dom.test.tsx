@@ -42,8 +42,8 @@ describe('TerminalWorkspace', () => {
     const user = userEvent.setup();
     const hosts = [host('host-1', 'Production'), host('host-2', 'Staging')];
     const terminals: TerminalTabState[] = [
-      { terminalId: 'tab-1', hostId: 'host-1' },
-      { terminalId: 'tab-2', hostId: 'host-2' }
+      { terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null },
+      { terminalId: 'tab-2', hostId: 'host-2', state: 'closed', reconnectDelayMs: 0, errorMessage: null }
     ];
     const onActivate = vi.fn();
     const onClose = vi.fn();
@@ -59,11 +59,44 @@ describe('TerminalWorkspace', () => {
 
     expect(screen.getByTestId('terminal-panel-tab-1')).toBeVisible();
     expect(screen.getByTestId('terminal-panel-tab-2')).not.toBeVisible();
-    await user.click(screen.getByRole('tab', { name: '切换 Staging' }));
+    await user.click(screen.getByRole('tab', { name: '切换 Staging · 1' }));
     expect(onActivate).toHaveBeenCalledWith('tab-2');
     expect(screen.getByTestId('terminal-panel-tab-1')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '关闭模拟终端' }));
     expect(onClose).toHaveBeenCalledWith('tab-1');
+  });
+
+  it('labels same-host consoles independently and exposes per-host new-console actions', async () => {
+    const user = userEvent.setup();
+    const hosts = [host('host-1', 'Production'), host('host-2', 'Staging')];
+    const terminals: TerminalTabState[] = [
+      { terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null },
+      { terminalId: 'tab-2', hostId: 'host-1', state: 'reconnecting', reconnectDelayMs: 500, errorMessage: null }
+    ];
+    const onConnectHost = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <TerminalWorkspace
+        hosts={hosts}
+        terminals={terminals}
+        activeTerminalId="tab-1"
+        onActivate={vi.fn()}
+        onClose={onClose}
+        onConnectHost={onConnectHost}
+      />
+    );
+
+    expect(screen.getByRole('tab', { name: '切换 Production · 1' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '切换 Production · 2' })).toBeInTheDocument();
+    expect(screen.getAllByText('重连中')).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /新建终端/iu })).toHaveLength(2);
+
+    const newConsoleButtons = screen.getAllByRole('button', { name: /新建终端/iu });
+    await user.click(newConsoleButtons[1]);
+    expect(onConnectHost).toHaveBeenCalledWith(hosts[1]);
+
+    await user.click(screen.getByRole('button', { name: '关闭 Production · 2' }));
+    expect(onClose).toHaveBeenCalledWith('tab-2');
   });
 
   it('requires an explicit decision for a new host key', async () => {

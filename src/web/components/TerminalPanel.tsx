@@ -15,9 +15,10 @@ export interface TerminalPanelProps {
   host: HostMetadataState;
   active: boolean;
   onClose: () => void;
+  onNewTerminal?: () => void;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -153,6 +154,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose }: TerminalPan
           onReconnect={session.reconnect}
           onClose={onClose}
           onClear={clear}
+          onNewTerminal={onNewTerminal}
           onSearch={toggleSearch}
           onFullscreen={fullscreen}
           searchActive={searchOpen}

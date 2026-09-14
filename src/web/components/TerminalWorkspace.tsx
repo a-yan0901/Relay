@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
+import { terminalStatusDotClass, terminalStatusLabels } from './TerminalToolbar';
 import { TerminalPanel } from './TerminalPanel';
 
 export interface TerminalWorkspaceProps {
@@ -30,6 +31,15 @@ export const TerminalWorkspace = ({
 
   const hostById = new Map(hosts.map((host) => [host.id, host]));
   const activeHost = terminals.find((terminal) => terminal.terminalId === activeTerminalId);
+  const terminalLabels = new Map<string, string>();
+  const hostOrdinals = new Map<string, number>();
+  terminals.forEach((terminal) => {
+    const host = hostById.get(terminal.hostId);
+    if (!host) return;
+    const ordinal = (hostOrdinals.get(host.id) ?? 0) + 1;
+    hostOrdinals.set(host.id, ordinal);
+    terminalLabels.set(terminal.terminalId, `${host.name} · ${ordinal}`);
+  });
 
   if (terminals.length === 0) {
     return (
@@ -52,14 +62,15 @@ export const TerminalWorkspace = ({
           {terminals.map((terminal) => {
             const host = hostById.get(terminal.hostId);
             if (!host) return null;
-            return <button className={`rail-tab ${terminal.terminalId === activeTerminalId ? 'is-active' : ''}`} type="button" key={terminal.terminalId} onClick={() => onActivate(terminal.terminalId)}><span className="status-dot status-dot-green" /><span>{host.name}</span></button>;
+            const label = terminalLabels.get(terminal.terminalId) ?? host.name;
+            return <button className={`rail-tab ${terminal.terminalId === activeTerminalId ? 'is-active' : ''}`} type="button" key={terminal.terminalId} onClick={() => onActivate(terminal.terminalId)}><span className={`status-dot ${terminalStatusDotClass(terminal.state)}`} aria-hidden="true" /><span className="rail-tab-label">{label}</span><span className="rail-tab-status">{terminalStatusLabels[terminal.state]}</span></button>;
           })}
         </div>
         {onConnectHost && <>
           <div className="terminal-rail-heading terminal-rail-heading-spaced"><p className="sidebar-label">连接另一台</p></div>
           <label className="rail-search" htmlFor="terminal-host-search"><span aria-hidden="true">⌕</span><span className="visually-hidden">搜索 Server</span><input id="terminal-host-search" aria-label="搜索 Server" value={hostQuery} onChange={(event) => setHostQuery(event.target.value)} placeholder="搜索 Server" /></label>
           <div className="rail-hosts">
-            {visibleHosts.map((host) => <button type="button" key={host.id} onClick={() => onConnectHost(host)}>{host.name}<small>{host.username}@{host.address}</small></button>)}
+            {visibleHosts.map((host) => <button className="rail-host-new" type="button" key={host.id} aria-label={`新建终端：${host.name}`} onClick={() => onConnectHost(host)}><span><span aria-hidden="true">＋</span>{host.name}</span><small>{host.username}@{host.address}</small></button>)}
           </div>
         </>}
         {activeHost && <div className="terminal-rail-footer">活动会话<br /><strong>{hostById.get(activeHost.hostId)?.name ?? 'Server'}</strong></div>}
@@ -69,10 +80,14 @@ export const TerminalWorkspace = ({
           {terminals.map((terminal) => {
             const host = hostById.get(terminal.hostId);
             if (!host) return null;
+            const label = terminalLabels.get(terminal.terminalId) ?? host.name;
             return (
-              <button className={`terminal-tab ${terminal.terminalId === activeTerminalId ? 'is-active' : ''}`} type="button" role="tab" aria-selected={terminal.terminalId === activeTerminalId} aria-label={`切换 ${host.name}`} key={terminal.terminalId} onClick={() => onActivate(terminal.terminalId)}>
-                <span className="status-dot status-dot-green" /><span className="terminal-tab-meta"><strong>{host.name}</strong><small>{host.username}@{host.address}</small></span><span className="tab-close" aria-hidden="true">×</span>
-              </button>
+              <div className={`terminal-tab ${terminal.terminalId === activeTerminalId ? 'is-active' : ''}`} key={terminal.terminalId}>
+                <button className="terminal-tab-trigger" type="button" role="tab" aria-selected={terminal.terminalId === activeTerminalId} aria-label={`切换 ${label}`} onClick={() => onActivate(terminal.terminalId)}>
+                  <span className={`status-dot ${terminalStatusDotClass(terminal.state)}`} aria-hidden="true" /><span className="terminal-tab-meta"><strong>{label}</strong><small>{host.username}@{host.address}</small></span><span className="terminal-tab-status">{terminalStatusLabels[terminal.state]}</span>
+                </button>
+                <button className="terminal-tab-close" type="button" aria-label={`关闭 ${label}`} onClick={(event) => { event.stopPropagation(); onClose(terminal.terminalId); }}>×</button>
+              </div>
             );
           })}
         </div>
@@ -80,7 +95,7 @@ export const TerminalWorkspace = ({
           {terminals.map((terminal) => {
             const host = hostById.get(terminal.hostId);
             if (!host) return null;
-            return <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={terminal.terminalId === activeTerminalId} onClose={() => onClose(terminal.terminalId)} />;
+            return <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={terminal.terminalId === activeTerminalId} onClose={() => onClose(terminal.terminalId)} onNewTerminal={onConnectHost ? () => onConnectHost(host) : undefined} />;
           })}
         </div>
       </section>
