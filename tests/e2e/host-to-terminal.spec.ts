@@ -41,7 +41,10 @@ test.describe('host to terminal journey', () => {
     const hostKeyDialog = page.getByRole('dialog');
     await expect(hostKeyDialog).toContainText('127.0.0.1:');
     await expect(hostKeyDialog).toContainText('SHA256:');
+    const initialTerminalPanelsHeight = await page.locator('.terminal-panels').evaluate((element) => element.getBoundingClientRect().height);
     await page.waitForTimeout(1_000);
+    const delayedTerminalPanelsHeight = await page.locator('.terminal-panels').evaluate((element) => element.getBoundingClientRect().height);
+    expect(Math.abs(delayedTerminalPanelsHeight - initialTerminalPanelsHeight)).toBeLessThanOrEqual(1);
     const dialogBox = await hostKeyDialog.boundingBox();
     if (!dialogBox) throw new Error('host key dialog should have a layout box');
     const viewportHeight = await page.evaluate(() => window.innerHeight);
