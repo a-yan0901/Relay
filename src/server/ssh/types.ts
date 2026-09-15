@@ -52,6 +52,7 @@ export interface SshSessionManagerPort {
   }>;
   detach(sessionId: string): void;
   reattach(sessionId: string, expectedHostId?: string): SshChannel | null;
+  getBufferedOutput(sessionId: string, expectedHostId?: string): Buffer | null;
   close(sessionId: string): void;
   closeAll?(): void;
 }

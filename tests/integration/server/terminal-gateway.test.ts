@@ -223,6 +223,50 @@ describe('terminal WebSocket gateway', () => {
     socket.close();
   });
 
+  it('replays buffered output when a refreshed browser reattaches the terminal session', async () => {
+    const { app, adapter } = await makeApp();
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const cookie = cookieFrom(setup);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: {
+        name: 'Fixture SSH',
+        address: 'ssh-fixture',
+        username: 'fixture',
+        auth: { type: 'password', password: 'fixture-password' }
+      }
+    });
+    const hostId = json<{ id: string }>(created).id;
+    const url = await listen(app);
+    const firstSocket = await connectSocket(url, { cookie, origin: ORIGIN });
+    firstSocket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'tab-refresh' }));
+    const firstStatus = await nextJson<{ type: string; state?: string }>(firstSocket);
+    if (firstStatus.state === 'connecting') {
+      expect(await nextJson<{ type: string; state?: string }>(firstSocket)).toEqual({ type: 'status', state: 'awaiting-host-key' });
+    }
+    const challenge = await nextJson<{ type: string; fingerprint: string }>(firstSocket);
+    expect(challenge).toEqual(expect.objectContaining({ type: 'host-key', fingerprint: 'SHA256:fixture-key' }));
+    firstSocket.send(JSON.stringify({ type: 'host-key-decision', decision: 'trust', fingerprint: 'SHA256:fixture-key' }));
+    await nextJson(firstSocket);
+
+    const channel = adapter.channels[0];
+    channel.emit('data', Buffer.from('output before refresh\n'));
+    expect((await nextMessage(firstSocket)).toString()).toBe('output before refresh\n');
+
+    const firstSocketClosed = new Promise<void>((resolve) => firstSocket.once('close', () => resolve()));
+    firstSocket.close();
+    await firstSocketClosed;
+
+    const refreshedSocket = await connectSocket(url, { cookie, origin: ORIGIN });
+    refreshedSocket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'tab-refresh' }));
+
+    expect(await nextJson<{ type: string; state?: string }>(refreshedSocket)).toEqual({ type: 'status', state: 'connected' });
+    expect((await nextMessage(refreshedSocket)).toString()).toBe('output before refresh\n');
+    refreshedSocket.close();
+  });
+
   it('returns stable errors for unknown hosts and malformed control frames', async () => {
     const { app } = await makeApp();
     const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });

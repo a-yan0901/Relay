@@ -12,6 +12,7 @@ export interface SshSessionManagerOptions {
   adapter: SshAdapterPort;
   maxSessions: number;
   detachGraceMs?: number;
+  outputBufferBytes?: number;
 }
 
 interface ManagedSession {
@@ -21,15 +22,19 @@ interface ManagedSession {
   detached: boolean;
   timer?: ReturnType<typeof setTimeout>;
   closed: boolean;
+  outputBuffer: Buffer[];
+  outputBufferBytes: number;
 }
 
 const DEFAULT_DETACH_GRACE_MS = 30_000;
+const DEFAULT_OUTPUT_BUFFER_BYTES = 256 * 1024;
 
 export class SshSessionManager implements SshSessionManagerPort {
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly adapter: SshAdapterPort;
   private readonly maxSessions: number;
   private readonly detachGraceMs: number;
+  private readonly outputBufferLimit: number;
   private pendingConnections = 0;
 
   constructor(options: SshSessionManagerOptions) {
@@ -40,10 +45,15 @@ export class SshSessionManager implements SshSessionManagerPort {
     if (!Number.isInteger(detachGraceMs) || detachGraceMs < 1 || detachGraceMs > 5 * 60 * 1000) {
       throw new AppError('SSH_CONNECTION_FAILED');
     }
+    const outputBufferBytes = options.outputBufferBytes ?? DEFAULT_OUTPUT_BUFFER_BYTES;
+    if (!Number.isInteger(outputBufferBytes) || outputBufferBytes < 1 || outputBufferBytes > 10 * 1024 * 1024) {
+      throw new AppError('SSH_CONNECTION_FAILED');
+    }
 
     this.adapter = options.adapter;
     this.maxSessions = options.maxSessions;
     this.detachGraceMs = detachGraceMs;
+    this.outputBufferLimit = outputBufferBytes;
   }
 
   async open(sessionId: string, config: SshConnectConfig, callbacks: SshConnectCallbacks): Promise<SshChannel> {
@@ -62,9 +72,13 @@ export class SshSessionManager implements SshSessionManagerPort {
         hostId: config.hostId,
         channel,
         detached: false,
-        closed: false
+        closed: false,
+        outputBuffer: [],
+        outputBufferBytes: 0
       };
       this.sessions.set(sessionId, managed);
+      channel.on('data', (data) => this.appendOutput(managed, data));
+      channel.on('stderr', (data) => this.appendOutput(managed, data));
       channel.on('close', () => this.release(sessionId, managed));
       return channel;
     } finally {
@@ -105,6 +119,14 @@ export class SshSessionManager implements SshSessionManagerPort {
     return managed.channel;
   }
 
+  getBufferedOutput(sessionId: string, expectedHostId?: string): Buffer | null {
+    const managed = this.sessions.get(sessionId);
+    if (!managed || managed.closed || (expectedHostId !== undefined && managed.hostId !== expectedHostId)) {
+      return null;
+    }
+    return managed.outputBufferBytes === 0 ? Buffer.alloc(0) : Buffer.concat(managed.outputBuffer);
+  }
+
   close(sessionId: string): void {
     const managed = this.sessions.get(sessionId);
     if (!managed || managed.closed) {
@@ -134,6 +156,31 @@ export class SshSessionManager implements SshSessionManagerPort {
     if (managed.timer) {
       clearTimeout(managed.timer);
       managed.timer = undefined;
+    }
+  }
+
+  private appendOutput(managed: ManagedSession, data: Buffer): void {
+    if (managed.closed || data.length === 0) return;
+
+    const chunk = Buffer.from(data);
+    if (chunk.length >= this.outputBufferLimit) {
+      managed.outputBuffer = [chunk.subarray(chunk.length - this.outputBufferLimit)];
+      managed.outputBufferBytes = this.outputBufferLimit;
+      return;
+    }
+
+    managed.outputBuffer.push(chunk);
+    managed.outputBufferBytes += chunk.length;
+    while (managed.outputBufferBytes > this.outputBufferLimit) {
+      const first = managed.outputBuffer[0];
+      const excess = managed.outputBufferBytes - this.outputBufferLimit;
+      if (first.length <= excess) {
+        managed.outputBuffer.shift();
+        managed.outputBufferBytes -= first.length;
+      } else {
+        managed.outputBuffer[0] = first.subarray(excess);
+        managed.outputBufferBytes -= excess;
+      }
     }
   }
 }

@@ -209,6 +209,12 @@ export const registerTerminalGateway = async (
       }
     };
 
+    const sendOutput = (data: Buffer): void => {
+      if (active && socket.readyState === 1) {
+        socket.send(data);
+      }
+    };
+
     const sendStatus = (state: Extract<TerminalServerEvent, { type: 'status' }>['state']): void => {
       if (lastStatus === state) {
         return;
@@ -238,10 +244,10 @@ export const registerTerminalGateway = async (
     const attachChannel = (nextChannel: SshChannel): void => {
       channel = nextChannel;
       nextChannel.on('data', (data) => {
-        if (active && socket.readyState === 1) socket.send(data);
+        sendOutput(data);
       });
       nextChannel.on('stderr', (data) => {
-        if (active && socket.readyState === 1) socket.send(data);
+        sendOutput(data);
       });
       nextChannel.on('exit', (code, signal) => {
         send({ type: 'exit', code, ...(signal === undefined ? {} : { signal }) });
@@ -272,6 +278,10 @@ export const registerTerminalGateway = async (
       if (reattached) {
         attachChannel(reattached);
         sendStatus('connected');
+        const bufferedOutput = dependencies.sessionManager.getBufferedOutput(managerSessionId, row.id);
+        if (bufferedOutput && bufferedOutput.length > 0) {
+          sendOutput(bufferedOutput);
+        }
         dependencies.hostRepository.markConnected(row.id);
         return;
       }

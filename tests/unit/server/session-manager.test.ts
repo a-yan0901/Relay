@@ -85,6 +85,19 @@ describe('SshSessionManager', () => {
     }
   });
 
+  it('retains recent terminal output so a reattached session can replay it', async () => {
+    const adapter = new FakeAdapter();
+    const manager = new SshSessionManager({ adapter, maxSessions: 2, detachGraceMs: 30_000, outputBufferBytes: 64 });
+    const channel = await manager.open('tab-1', config, { onHostKey: async () => true });
+
+    channel.emit('data', Buffer.from('first line\n'));
+    channel.emit('stderr', Buffer.from('warning\n'));
+    manager.detach('tab-1');
+
+    expect(manager.reattach('tab-1')).toBe(channel);
+    expect(manager.getBufferedOutput('tab-1')?.toString()).toBe('first line\nwarning\n');
+  });
+
   it('closes exactly once and does not reuse sessions after closeAll', async () => {
     const adapter = new FakeAdapter();
     const manager = new SshSessionManager({ adapter, maxSessions: 2, detachGraceMs: 30_000 });
