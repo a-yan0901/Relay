@@ -22,12 +22,11 @@ export interface TerminalPanelProps {
   host: HostMetadataState;
   active: boolean;
   onClose: () => void;
-  onNewTerminal?: () => void;
   onStatusChange?: (snapshot: TerminalSessionSnapshot) => void;
   preferences?: UiPreferences;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal, onStatusChange, preferences = DEFAULT_PREFERENCES }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onStatusChange, preferences = DEFAULT_PREFERENCES }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -154,14 +153,13 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
   return (
     <section className={`terminal-panel ${active ? 'is-active' : ''}`} aria-hidden={!active}>
       <div className="terminal-panel-heading">
-        <div><p className="eyebrow">SSH SESSION</p><h2>{host.name}</h2><span>{host.username}@{host.address}:{host.port}</span></div>
+        <div className="terminal-panel-identity"><h2>{host.name}</h2><span>{host.username}@{host.address}:{host.port}</span></div>
         <TerminalToolbar
           state={session.state.state}
           reconnectDelayMs={session.state.reconnectDelayMs}
           onReconnect={session.reconnect}
           onClose={onClose}
           onClear={clear}
-          onNewTerminal={onNewTerminal}
           onSearch={toggleSearch}
           onFullscreen={fullscreen}
           searchActive={searchOpen}

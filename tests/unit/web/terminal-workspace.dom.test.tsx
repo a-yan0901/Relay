@@ -10,10 +10,11 @@ import { TerminalToolbar } from '../../../src/web/components/TerminalToolbar';
 import { TerminalWorkspace } from '../../../src/web/components/TerminalWorkspace';
 
 vi.mock('../../../src/web/components/TerminalPanel', () => ({
-  TerminalPanel: ({ terminalId, host, active, onClose }: { terminalId: string; host: HostMetadataState; active: boolean; onClose: () => void }) => (
+  TerminalPanel: ({ terminalId, host, active, onClose, onNewTerminal }: { terminalId: string; host: HostMetadataState; active: boolean; onClose: () => void; onNewTerminal?: () => void }) => (
     <section data-testid={`terminal-panel-${terminalId}`} hidden={!active}>
       <h2>{host.name}</h2>
       <button type="button" onClick={onClose}>关闭模拟终端</button>
+      {onNewTerminal && <button type="button" aria-label="新建终端" onClick={onNewTerminal}>面板新建终端</button>}
     </section>
   )
 }));
@@ -98,6 +99,33 @@ describe('TerminalWorkspace', () => {
 
     await user.click(screen.getByRole('button', { name: '关闭 Production · 2' }));
     expect(onClose).toHaveBeenCalledWith('tab-2');
+  });
+
+  it('integrates workspace utilities into the terminal bar without duplicate new-console controls', async () => {
+    const user = userEvent.setup();
+    const onLock = vi.fn();
+    const onSettings = vi.fn();
+    render(
+      <TerminalWorkspace
+        hosts={[host('host-1', 'Production')]}
+        terminals={[{ terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null }]}
+        activeTerminalId="tab-1"
+        onActivate={vi.fn()}
+        onClose={vi.fn()}
+        onConnectHost={vi.fn()}
+        onLock={onLock}
+        onSettings={onSettings}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '锁定 Vault' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '偏好设置' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '新建终端' })).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: '锁定 Vault' }));
+    await user.click(screen.getByRole('button', { name: '偏好设置' }));
+    expect(onLock).toHaveBeenCalledOnce();
+    expect(onSettings).toHaveBeenCalledOnce();
   });
 
   it('splits the workspace into independently selectable console panes', async () => {

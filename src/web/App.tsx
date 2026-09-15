@@ -76,15 +76,15 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, terminalView }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void; terminalView: boolean }) => (
-  <header className={`app-header ${terminalView ? 'app-header-terminal' : ''}`}>
+const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void }) => (
+  <header className="app-header">
     <Brand />
     <div className="app-header-actions">
       <span className="secure-pill"><span className="status-dot status-dot-green" />Vault 已解锁</span>
       <button className="button button-ghost button-small" type="button" onClick={onLock}>
         <span aria-hidden="true">↥</span> 锁定
       </button>
-      {terminalCount > 0 && !terminalView && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
+      {terminalCount > 0 && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
       <button className="button button-ghost button-small" type="button" aria-label="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
@@ -366,7 +366,7 @@ export const App = () => {
 
   return (
     <main className="app-shell">
-      <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} terminalView={terminalView} />
+      {!terminalView && <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} />}
       {state.errorMessage && (
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
@@ -391,6 +391,8 @@ export const App = () => {
             onStatusChange={handleTerminalStatus}
             preferences={preferences}
             onBackToHosts={() => setTerminalView(false)}
+            onLock={() => void handleLock()}
+            onSettings={() => setPreferencesOpen(true)}
           />
         ) : (
           <HostWorkspace
