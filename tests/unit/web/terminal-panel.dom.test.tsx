@@ -7,7 +7,9 @@ import type { HostMetadataState } from '../../../src/web/state/app-state';
 import { TerminalPanel } from '../../../src/web/components/TerminalPanel';
 
 const testState = vi.hoisted(() => ({
-  terminalInstances: [] as Array<{ constructorOptions: Record<string, unknown> }>
+  terminalInstances: [] as Array<{ constructorOptions: Record<string, unknown> }>,
+  terminalOutputs: [] as Array<string | Uint8Array>,
+  onOutput: null as ((data: Uint8Array) => void) | null
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -18,6 +20,10 @@ vi.mock('@xterm/xterm', () => ({
 
     constructor(readonly constructorOptions: Record<string, unknown>) {
       testState.terminalInstances.push(this);
+    }
+
+    write(data: string | Uint8Array): void {
+      testState.terminalOutputs.push(data);
     }
 
     loadAddon(): void {}
@@ -68,13 +74,16 @@ vi.mock('@xterm/addon-web-links', () => ({
 }));
 
 vi.mock('../../../src/web/hooks/use-terminal-session', () => ({
-  useTerminalSession: () => ({
-    state: { state: 'connected', reconnectDelayMs: 0, error: null, hostKey: null },
-    resize: () => {},
-    sendInput: () => {},
-    decideHostKey: () => {},
-    reconnect: () => {}
-  })
+  useTerminalSession: (options: { onOutput?: (data: Uint8Array) => void }) => {
+    testState.onOutput = options.onOutput ?? null;
+    return {
+      state: { state: 'connected', reconnectDelayMs: 0, error: null, hostKey: null },
+      resize: () => {},
+      sendInput: () => {},
+      decideHostKey: () => {},
+      reconnect: () => {}
+    };
+  }
 }));
 
 const host: HostMetadataState = {
@@ -97,6 +106,8 @@ const host: HostMetadataState = {
 describe('TerminalPanel mobile selection', () => {
   beforeEach(() => {
     testState.terminalInstances.length = 0;
+    testState.terminalOutputs.length = 0;
+    testState.onOutput = null;
     vi.stubGlobal('requestAnimationFrame', (callback: (timestamp: number) => void) => {
       callback(0);
       return 1;
@@ -130,5 +141,24 @@ describe('TerminalPanel mobile selection', () => {
     expect(document.querySelector('.terminal-panel-heading')).not.toBeInTheDocument();
     expect(onToolbarChange).toHaveBeenCalledWith('terminal-1', expect.objectContaining({ state: 'connected' }));
     expect(screen.queryByText('SSH SESSION')).not.toBeInTheDocument();
+  });
+
+  it('keeps binary log control bytes from hiding later terminal output', () => {
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} />);
+
+    testState.onOutput?.(Uint8Array.from([0x1b, 0x5b, 0x33, 0x31, 0x6d, 0x72, 0x65, 0x64, 0xc2]));
+    testState.onOutput?.(Uint8Array.from([0x9b, 0x38, 0x6d, 0x70, 0x72, 0x6f, 0x6d, 0x70, 0x74]));
+
+    const output = testState.terminalOutputs.flatMap((data) => typeof data === 'string' ? [...data].map((character) => character.codePointAt(0) ?? 0) : [...data]);
+    expect(output).toEqual([0x1b, 0x5b, 0x33, 0x31, 0x6d, 0x72, 0x65, 0x64, 0x38, 0x6d, 0x70, 0x72, 0x6f, 0x6d, 0x70, 0x74]);
+  });
+
+  it('preserves regular UTF-8 characters while filtering C1 controls', () => {
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} />);
+
+    testState.onOutput?.(Uint8Array.from([0xc2, 0xa0, 0xe7, 0xbb, 0x88]));
+
+    const output = testState.terminalOutputs.flatMap((data) => typeof data === 'string' ? [...data].map((character) => character.codePointAt(0) ?? 0) : [...data]);
+    expect(output).toEqual([0xc2, 0xa0, 0xe7, 0xbb, 0x88]);
   });
 });

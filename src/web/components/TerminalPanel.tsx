@@ -8,6 +8,7 @@ import { Terminal } from '@xterm/xterm';
 import type { TerminalStatus } from '@shared/protocol';
 
 import type { HostMetadataState } from '../state/app-state';
+import { TerminalOutputSanitizer } from '../terminal-output';
 import { useTerminalSession, type TerminalSessionSnapshot } from '../hooks/use-terminal-session';
 import { getTerminalTheme, DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
 import { HostKeyDialog } from './HostKeyDialog';
@@ -41,6 +42,7 @@ export interface TerminalPanelProps {
 export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onToolbarChange, preferences = DEFAULT_PREFERENCES }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const outputSanitizerRef = useRef(new TerminalOutputSanitizer());
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
@@ -53,9 +55,19 @@ export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onTool
       cols: terminalRef.current?.cols ?? 80,
       rows: terminalRef.current?.rows ?? 24
     }),
-    onOutput: (data) => terminalRef.current?.write(data),
+    onOutput: (data) => {
+      const terminal = terminalRef.current;
+      if (!terminal) return;
+      const sanitized = outputSanitizerRef.current.sanitize(data);
+      if (sanitized.length > 0) terminal.write(sanitized);
+    },
     onSnapshot: onStatusChange
   });
+
+  useEffect(() => {
+    if (session.state.state !== 'connecting' && session.state.state !== 'reconnecting' && session.state.state !== 'closed' && session.state.state !== 'failed') return;
+    outputSanitizerRef.current.reset();
+  }, [session.state.state]);
 
   useEffect(() => {
     if (!mountRef.current || terminalRef.current) return;
@@ -117,6 +129,7 @@ export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onTool
       resizeDisposable.dispose();
       terminal.dispose();
       terminalRef.current = null;
+      outputSanitizerRef.current.reset();
       fitAddonRef.current = null;
       searchAddonRef.current = null;
     };
