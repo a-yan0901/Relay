@@ -521,11 +521,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .toolbar-button-close:hover { background: rgba(255, 125, 125, 0.1); border-color: rgba(255, 125, 125, 0.16); color: #ffabab; }
 
-.terminal-canvas { flex: 1; min-height: 0; padding: 10px 12px; }
+.terminal-canvas { flex: 1; min-height: 0; padding: 10px 12px; touch-action: pan-y; }
 
-.terminal-canvas .xterm { height: 100%; }
+.terminal-canvas .xterm { height: 100%; touch-action: pan-y; }
 
-.terminal-canvas .xterm-viewport { background: transparent !important; overflow-y: scroll; overscroll-behavior-y: contain; }
+.terminal-canvas .xterm-viewport { background: transparent !important; overflow-y: scroll; overscroll-behavior-y: contain; touch-action: pan-y; }
 
 .terminal-search { align-items: center; background: rgba(16, 32, 53, 0.9); border-bottom: 1px solid var(--border); display: flex; gap: 10px; padding: 7px 12px; }
 

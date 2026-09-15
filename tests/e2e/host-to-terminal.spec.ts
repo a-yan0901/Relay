@@ -17,6 +17,9 @@ test.describe('host to terminal journey', () => {
 
   test('initializes a vault, trusts a host key, opens two tabs, and locks', async ({ page }) => {
     test.setTimeout(120_000);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 1 });
+    });
     await page.goto('/');
     await page.getByLabel('主密码', { exact: true }).fill(MASTER_PASSWORD);
     await page.getByLabel('确认主密码', { exact: true }).fill(MASTER_PASSWORD);
@@ -57,16 +60,35 @@ test.describe('host to terminal journey', () => {
     await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
     const terminalInput = page.locator('.terminal-panel.is-active textarea.xterm-helper-textarea');
     await expect(terminalInput).toBeFocused();
+    await terminalInput.pressSequentially("printf '\\033[2J\\033[Hmobile-copy-target\\n'");
+    await terminalInput.press('Enter');
+    await expect(page.locator('.terminal-panel.is-active .terminal-canvas')).toContainText('mobile-copy-target', { timeout: 15_000 });
+    const terminalElement = page.locator('.terminal-panel.is-active .xterm-screen');
+    const terminalBounds = await terminalElement.boundingBox();
+    if (!terminalBounds) throw new Error('terminal should have a layout box');
+    const cellWidth = terminalBounds.width / 80;
+    const cellHeight = terminalBounds.height / 24;
+    await page.mouse.click(
+      terminalBounds.x + cellWidth * 5.5,
+      terminalBounds.y + cellHeight * 0.5,
+      { button: 'right' }
+    );
+    await expect(terminalInput).toHaveValue('mobile-copy-target');
+    await expect(terminalInput).toBeFocused();
     const scrollPolicy = await page.locator('.terminal-panel.is-active .terminal-canvas .xterm-viewport').evaluate((element) => ({
       rootOverscroll: getComputedStyle(document.documentElement).overscrollBehaviorY,
       bodyOverscroll: getComputedStyle(document.body).overscrollBehaviorY,
       viewportOverscroll: getComputedStyle(element).overscrollBehaviorY,
-      viewportOverflowY: getComputedStyle(element).overflowY
+      viewportOverflowY: getComputedStyle(element).overflowY,
+      viewportTouchAction: getComputedStyle(element).touchAction,
+      terminalTouchAction: getComputedStyle(element.closest('.xterm') as Element).touchAction
     }));
     expect(scrollPolicy.rootOverscroll).toBe('none');
     expect(scrollPolicy.bodyOverscroll).toBe('none');
     expect(scrollPolicy.viewportOverscroll).toBe('contain');
     expect(['auto', 'scroll']).toContain(scrollPolicy.viewportOverflowY);
+    expect(scrollPolicy.viewportTouchAction).toBe('pan-y');
+    expect(scrollPolicy.terminalTouchAction).toBe('pan-y');
     await page.getByRole('button', { name: '← Server 列表' }).click();
     await expect(page.getByText('指纹已验证', { exact: true })).toBeVisible();
     await expect(page.locator('.host-last-connected')).toContainText('最近连接：');

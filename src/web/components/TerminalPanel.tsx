@@ -11,6 +11,12 @@ import { getTerminalTheme, DEFAULT_PREFERENCES, type UiPreferences } from '../th
 import { HostKeyDialog } from './HostKeyDialog';
 import { TerminalToolbar } from './TerminalToolbar';
 
+const isTouchDevice = (): boolean => {
+  const coarsePointer = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches ?? false);
+  const touchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  return coarsePointer || touchPoints;
+};
+
 export interface TerminalPanelProps {
   terminalId: string;
   host: HostMetadataState;
@@ -47,6 +53,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onNewTerminal
       fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
       fontSize: preferences.fontSize,
       lineHeight: 1.25,
+      rightClickSelectsWord: isTouchDevice(),
       scrollback: 5_000,
       theme: getTerminalTheme(preferences.theme)
     });
