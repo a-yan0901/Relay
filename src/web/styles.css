@@ -483,14 +483,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-panel:not(.is-active) { opacity: 0; pointer-events: none; position: absolute; inset: 0; visibility: hidden; }
 
-.terminal-panel-heading { align-items: center; background: rgba(10, 24, 41, 0.6); border-bottom: 1px solid rgba(154, 181, 215, 0.09); display: flex; gap: 12px; justify-content: space-between; min-height: 38px; padding: 4px 12px; }
-
-.terminal-panel-identity { align-items: baseline; display: flex; gap: 9px; min-width: 0; }
-
-.terminal-panel-heading h2 { flex: 0 1 auto; font-size: 12px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.terminal-panel-identity > span { color: var(--faint); flex: 0 1 auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 .terminal-toolbar { align-items: center; display: flex; flex: 0 0 auto; gap: 10px; }
 
 .terminal-status { align-items: center; color: var(--muted); display: flex; font-size: 10px; gap: 6px; white-space: nowrap; }
@@ -528,6 +520,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-topbar { align-items: stretch; background: rgba(10, 24, 41, 0.96); border-bottom: 1px solid var(--border); display: flex; min-height: 38px; position: relative; z-index: 5; }
 
+.terminal-topbar > .app-header { align-items: center; border-bottom: 0; border-right: 1px solid var(--border); flex: 0 0 auto; min-height: 38px; padding: 0 7px; position: relative; }
+
+.terminal-topbar .app-header-embedded .brand-lockup { gap: 7px; }
+
+.terminal-topbar .app-header-embedded .brand-mark { border-radius: 7px; font-size: 17px; height: 26px; width: 26px; }
+
+.terminal-topbar .app-header-embedded .brand-lockup strong { font-size: 12px; }
+
+.terminal-topbar .app-header-embedded .brand-lockup small { display: none; }
+
+.terminal-topbar .app-header-embedded .app-header-actions { gap: 3px; }
+
+.terminal-topbar .app-header-embedded .secure-pill { font-size: 9px; gap: 4px; padding: 4px 7px; }
+
+.terminal-topbar .app-header-embedded .button-small { min-height: 28px; padding: 0 6px; }
+
+.terminal-topbar .app-header-embedded .avatar { height: 24px; width: 24px; }
+
+.terminal-topbar .app-header-embedded .settings-label { display: none; }
+
 .terminal-back-button { background: transparent; border: 0; border-right: 1px solid var(--border); color: var(--muted); flex: 0 0 auto; font-size: 10px; min-width: 78px; padding: 0 10px; }
 
 .terminal-back-button:hover { background: rgba(93, 168, 255, 0.08); color: var(--text); }
@@ -548,7 +560,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-tab-close { font-size: 14px; margin-right: 4px; min-height: 24px; min-width: 24px; }
 
-.terminal-topbar-actions { align-items: center; display: flex; flex: 0 0 auto; gap: 3px; padding: 0 6px 0 4px; }
+.terminal-topbar-actions { align-items: center; display: flex; flex: 0 0 auto; gap: 3px; padding: 0 6px 0 4px; white-space: nowrap; }
+
+.terminal-topbar .terminal-toolbar { gap: 0; }
+
+.terminal-topbar .terminal-status { display: none; }
+
+.terminal-topbar .terminal-toolbar-actions { gap: 2px; }
+
+.terminal-topbar .toolbar-button { min-height: 28px; min-width: 28px; padding: 0 6px; }
+
+.terminal-topbar .toolbar-button span { display: none; }
 
 .terminal-topbar-button { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--faint); display: inline-flex; font-size: 12px; gap: 4px; justify-content: center; min-height: 28px; min-width: 28px; padding: 0 6px; }
 
@@ -557,10 +579,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .terminal-new-button { color: #a7d1ff; }
 
 .terminal-new-button span, .terminal-exit-split-button span { font-size: 9px; }
-
-.terminal-topbar-divider { background: var(--border); height: 18px; margin: 0 2px; width: 1px; }
-
-.terminal-utility-button { color: var(--muted); }
 
 .terminal-host-picker-anchor { position: relative; }
 
@@ -640,12 +658,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-divider:hover::after, .terminal-layout.is-dragging .terminal-divider::after { opacity: 1; }
 
-.terminal-panel-heading { min-height: 36px; padding: 3px 10px; }
-
-.terminal-panel-heading h2 { font-size: 11px; }
-
-.terminal-panel-identity > span { font-size: 8px; }
-
 .terminal-canvas { padding: 7px 9px; }
 
 :root[data-theme='light'] .terminal-topbar,
@@ -679,11 +691,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 :root[data-theme='contrast'] .host-key-dialog { background: #000; }
 
 :root[data-theme='light'] .terminal-tabs,
-:root[data-theme='light'] .terminal-panel-heading,
 :root[data-theme='light'] .terminal-search { background: rgba(233, 240, 249, 0.96); }
 
 :root[data-theme='contrast'] .terminal-tabs,
-:root[data-theme='contrast'] .terminal-panel-heading,
 :root[data-theme='contrast'] .terminal-search { background: #090909; }
 
 .danger-icon { align-items: center; background: rgba(246, 198, 106, 0.14); border: 1px solid rgba(246, 198, 106, 0.24); border-radius: 50%; color: #f6c66a; display: flex; font-weight: 800; height: 32px; justify-content: center; margin-bottom: 16px; width: 32px; }
@@ -752,9 +762,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .terminal-tab { min-width: 138px; }
   .terminal-tab-meta small, .terminal-tab-status { display: none; }
   .terminal-new-button span, .terminal-exit-split-button span { display: none; }
-  .terminal-utility-button span { display: none; }
   .terminal-topbar-actions { padding-right: 3px; }
-  .terminal-panel-identity > span { display: none; }
+  .terminal-topbar .app-header-embedded .secure-pill,
+  .terminal-topbar .app-header-embedded .avatar,
+  .terminal-topbar .app-header-embedded .brand-lockup > span:last-child { display: none; }
+  .terminal-topbar > .app-header { min-height: 36px; padding: 0 4px; }
   .terminal-toolbar { gap: 5px; }
   .terminal-status small { display: none; }
   .terminal-toolbar-actions span { display: none; }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { HostMetadataState } from '../../../src/web/state/app-state';
@@ -121,5 +121,14 @@ describe('TerminalPanel mobile selection', () => {
     render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} />);
 
     expect(testState.terminalInstances[0]?.constructorOptions.rightClickSelectsWord).toBe(false);
+  });
+
+  it('removes the redundant session heading and exposes its tools to the workspace bar', () => {
+    const onToolbarChange = vi.fn();
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} onToolbarChange={onToolbarChange} />);
+
+    expect(document.querySelector('.terminal-panel-heading')).not.toBeInTheDocument();
+    expect(onToolbarChange).toHaveBeenCalledWith('terminal-1', expect.objectContaining({ state: 'connected' }));
+    expect(screen.queryByText('SSH SESSION')).not.toBeInTheDocument();
   });
 });

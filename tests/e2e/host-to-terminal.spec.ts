@@ -57,16 +57,17 @@ test.describe('host to terminal journey', () => {
     expect(dialogBox.y).toBeGreaterThanOrEqual(0);
     expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewportHeight);
     await hostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
-    await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('.app-header')).toHaveCount(0);
+    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(page.locator('.terminal-topbar .app-header-embedded')).toBeVisible();
+    await expect(page.locator('.terminal-topbar .brand-lockup strong')).toHaveText('Relay');
     await expect(page.getByRole('toolbar', { name: '终端导航与工作区操作' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '锁定 Vault' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '锁定' })).toBeVisible();
     await expect(page.getByRole('button', { name: '偏好设置' })).toBeVisible();
     await expect(page.getByRole('button', { name: '新建终端' })).toHaveCount(1);
+    await expect(page.locator('.terminal-topbar .terminal-toolbar')).toBeVisible();
+    await expect(page.locator('.terminal-panel.is-active .terminal-panel-heading')).toHaveCount(0);
     const terminalTopbarHeight = await page.locator('.terminal-topbar').evaluate((element) => element.getBoundingClientRect().height);
-    const terminalPanelHeadingHeight = await page.locator('.terminal-panel.is-active .terminal-panel-heading').evaluate((element) => element.getBoundingClientRect().height);
-    expect(terminalTopbarHeight).toBeLessThanOrEqual(40);
-    expect(terminalPanelHeadingHeight).toBeLessThanOrEqual(38);
+    expect(terminalTopbarHeight).toBeLessThanOrEqual(44);
     const terminalInput = page.locator('.terminal-panel.is-active textarea.xterm-helper-textarea');
     await expect(terminalInput).toBeFocused();
     await terminalInput.pressSequentially("printf '\\033[2J\\033[Hmobile-copy-target\\n'");
@@ -114,7 +115,7 @@ test.describe('host to terminal journey', () => {
     await page.getByRole('button', { name: '新建终端' }).first().click();
     await page.getByRole('dialog', { name: '选择 Server' }).getByRole('button', { name: '新建终端：Fixture SSH A' }).click();
     await expect(page.getByRole('tab', { name: '切换 Fixture SSH A · 2' })).toBeVisible();
-    await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
     const workspaceHeight = await page.locator('.terminal-workspace-shell').evaluate((element) => element.getBoundingClientRect().height);
     expect(workspaceHeight).toBeGreaterThan(580);
 
@@ -134,7 +135,7 @@ test.describe('host to terminal journey', () => {
     const secondHostKeyDialog = page.getByRole('dialog');
     await expect(secondHostKeyDialog).toBeVisible();
     await secondHostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
-    await expect(page.locator('.terminal-panel.is-active').getByText('已连接', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
     await expect(page.getByRole('tab')).toHaveCount(3);
     await page.keyboard.press('Control+W');
     await expect(page.getByRole('tab')).toHaveCount(2);

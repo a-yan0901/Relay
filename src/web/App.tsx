@@ -76,15 +76,15 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void }) => (
-  <header className="app-header">
+const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, compact = false }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void; compact?: boolean }) => (
+  <header className={`app-header ${compact ? 'app-header-embedded' : ''}`}>
     <Brand />
     <div className="app-header-actions">
       <span className="secure-pill"><span className="status-dot status-dot-green" />Vault 已解锁</span>
       <button className="button button-ghost button-small" type="button" onClick={onLock}>
         <span aria-hidden="true">↥</span> 锁定
       </button>
-      {terminalCount > 0 && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
+      {terminalCount > 0 && !compact && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
       <button className="button button-ghost button-small" type="button" aria-label="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
@@ -391,8 +391,7 @@ export const App = () => {
             onStatusChange={handleTerminalStatus}
             preferences={preferences}
             onBackToHosts={() => setTerminalView(false)}
-            onLock={() => void handleLock()}
-            onSettings={() => setPreferencesOpen(true)}
+            workspaceHeader={<WorkspaceHeader compact onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} />}
           />
         ) : (
           <HostWorkspace

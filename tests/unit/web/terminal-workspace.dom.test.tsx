@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { HostMetadataState, TerminalTabState } from '../../../src/web/state/app-state';
@@ -10,14 +11,38 @@ import { TerminalToolbar } from '../../../src/web/components/TerminalToolbar';
 import { TerminalWorkspace } from '../../../src/web/components/TerminalWorkspace';
 
 vi.mock('../../../src/web/components/TerminalPanel', () => ({
-  TerminalPanel: ({ terminalId, host, active, onClose, onNewTerminal }: { terminalId: string; host: HostMetadataState; active: boolean; onClose: () => void; onNewTerminal?: () => void }) => (
-    <section data-testid={`terminal-panel-${terminalId}`} hidden={!active}>
-      <h2>{host.name}</h2>
-      <button type="button" onClick={onClose}>关闭模拟终端</button>
-      {onNewTerminal && <button type="button" aria-label="新建终端" onClick={onNewTerminal}>面板新建终端</button>}
-    </section>
-  )
+  TerminalPanel: ({ terminalId, host, active, onClose, onToolbarChange }: { terminalId: string; host: HostMetadataState; active: boolean; onClose: () => void; onToolbarChange?: (terminalId: string, toolbar: MockTerminalToolbar | null) => void }) => {
+    useEffect(() => {
+      onToolbarChange?.(terminalId, {
+        state: 'connected',
+        reconnectDelayMs: 0,
+        onReconnect: vi.fn(),
+        onClear: vi.fn(),
+        onSearch: vi.fn(),
+        onFullscreen: vi.fn(),
+        searchActive: false
+      });
+      return () => onToolbarChange?.(terminalId, null);
+    }, [onToolbarChange, terminalId]);
+
+    return (
+      <section data-testid={`terminal-panel-${terminalId}`} hidden={!active}>
+        <h2>{host.name}</h2>
+        <button type="button" onClick={onClose}>关闭模拟终端</button>
+      </section>
+    );
+  }
 }));
+
+interface MockTerminalToolbar {
+  state: 'connected';
+  reconnectDelayMs: number;
+  onReconnect: () => void;
+  onClear: () => void;
+  onSearch: () => void;
+  onFullscreen: () => void;
+  searchActive: boolean;
+}
 
 const host = (id: string, name: string): HostMetadataState => ({
   id,
@@ -101,10 +126,17 @@ describe('TerminalWorkspace', () => {
     expect(onClose).toHaveBeenCalledWith('tab-2');
   });
 
-  it('integrates workspace utilities into the terminal bar without duplicate new-console controls', async () => {
+  it('embeds the global header and session tools into the single terminal bar', async () => {
     const user = userEvent.setup();
     const onLock = vi.fn();
     const onSettings = vi.fn();
+    const workspaceHeader = (
+      <header className="app-header app-header-embedded" data-testid="embedded-workspace-header">
+        <div className="brand-lockup"><strong>Relay</strong></div>
+        <button type="button" onClick={onLock}>锁定</button>
+        <button type="button" aria-label="偏好设置" onClick={onSettings}>⚙</button>
+      </header>
+    );
     render(
       <TerminalWorkspace
         hosts={[host('host-1', 'Production')]}
@@ -113,16 +145,22 @@ describe('TerminalWorkspace', () => {
         onActivate={vi.fn()}
         onClose={vi.fn()}
         onConnectHost={vi.fn()}
-        onLock={onLock}
-        onSettings={onSettings}
+        workspaceHeader={workspaceHeader}
       />
     );
 
-    expect(screen.getByRole('button', { name: '锁定 Vault' })).toBeInTheDocument();
+    const embeddedHeader = screen.getByTestId('embedded-workspace-header');
+    expect(embeddedHeader.parentElement).toHaveClass('terminal-topbar');
+    expect(screen.getByText('Relay')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '偏好设置' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: '新建终端' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '清屏' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '全屏' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新连接' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '关闭终端' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '锁定 Vault' }));
+    await user.click(screen.getByRole('button', { name: '锁定' }));
     await user.click(screen.getByRole('button', { name: '偏好设置' }));
     expect(onLock).toHaveBeenCalledOnce();
     expect(onSettings).toHaveBeenCalledOnce();

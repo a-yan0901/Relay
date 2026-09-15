@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
 import type { TerminalSessionSnapshot } from '../hooks/use-terminal-session';
 import { DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
-import { terminalStatusDotClass, terminalStatusLabels } from './TerminalToolbar';
-import { TerminalPanel } from './TerminalPanel';
+import { terminalStatusDotClass, terminalStatusLabels, TerminalToolbar } from './TerminalToolbar';
+import { TerminalPanel, type TerminalPanelToolbarState } from './TerminalPanel';
 
 type SplitOrientation = 'horizontal' | 'vertical';
 type PaneKey = 'primary' | 'secondary';
@@ -25,8 +25,7 @@ export interface TerminalWorkspaceProps {
   onStatusChange?: (terminalId: string, snapshot: TerminalSessionSnapshot) => void;
   preferences?: UiPreferences;
   onBackToHosts?: () => void;
-  onLock?: () => void;
-  onSettings?: () => void;
+  workspaceHeader?: ReactNode;
 }
 
 const clampSplitRatio = (ratio: number): number => Math.min(0.8, Math.max(0.2, ratio));
@@ -47,8 +46,7 @@ export const TerminalWorkspace = ({
   onStatusChange,
   preferences = DEFAULT_PREFERENCES,
   onBackToHosts,
-  onLock,
-  onSettings
+  workspaceHeader
 }: TerminalWorkspaceProps) => {
   const [hostQuery, setHostQuery] = useState('');
   const [hostPickerOpen, setHostPickerOpen] = useState(false);
@@ -56,9 +54,14 @@ export const TerminalWorkspace = ({
   const [focusedPane, setFocusedPane] = useState<PaneKey>('primary');
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isDraggingDivider, setIsDraggingDivider] = useState(false);
+  const [toolbarByTerminalId, setToolbarByTerminalId] = useState<Record<string, TerminalPanelToolbarState | null>>({});
   const layoutRef = useRef<HTMLDivElement>(null);
   const pendingPaneRef = useRef<PaneKey | null>(null);
   const previousTerminalIdsRef = useRef(new Set(terminals.map((terminal) => terminal.terminalId)));
+
+  const handleToolbarChange = useCallback((terminalId: string, toolbar: TerminalPanelToolbarState | null): void => {
+    setToolbarByTerminalId((current) => current[terminalId] === toolbar ? current : { ...current, [terminalId]: toolbar });
+  }, []);
 
   const visibleHosts = useMemo(() => {
     const normalized = hostQuery.trim().toLowerCase();
@@ -103,6 +106,7 @@ export const TerminalWorkspace = ({
       ? splitLayout.secondaryId
       : secondaryCandidate
     : null;
+  const activeToolbar = activeTerminalId ? toolbarByTerminalId[activeTerminalId] : null;
 
   const labelForTerminal = (terminalId: string | null): string => {
     if (!terminalId) return '选择 Console';
@@ -202,6 +206,7 @@ export const TerminalWorkspace = ({
     <div className="terminal-workspace-shell">
       <section className="terminal-main" aria-label="终端标签工作区">
         <div className="terminal-topbar" role="toolbar" aria-label="终端导航与工作区操作">
+          {workspaceHeader}
           {onBackToHosts && <button className="terminal-back-button" type="button" aria-label="← Server 列表" onClick={onBackToHosts}>← Server</button>}
           <div className="terminal-tabs" role="tablist" aria-label="终端标签">
             {terminals.map((terminal) => {
@@ -222,6 +227,17 @@ export const TerminalWorkspace = ({
             })}
           </div>
           <div className="terminal-topbar-actions">
+            {activeToolbar && activeTerminalId && <TerminalToolbar
+              state={activeToolbar.state}
+              reconnectDelayMs={activeToolbar.reconnectDelayMs}
+              onReconnect={activeToolbar.onReconnect}
+              onClose={() => onClose(activeTerminalId)}
+              onClear={activeToolbar.onClear}
+              onSearch={activeToolbar.onSearch}
+              onFullscreen={activeToolbar.onFullscreen}
+              searchActive={activeToolbar.searchActive}
+              showStatus={false}
+            />}
             {onConnectHost && (
               <div className="terminal-host-picker-anchor">
                 <button id="terminal-new-terminal" className="terminal-topbar-button terminal-new-button" type="button" aria-label="新建终端" aria-expanded={hostPickerOpen} onClick={openHostPicker}>＋<span>新建</span></button>
@@ -240,9 +256,6 @@ export const TerminalWorkspace = ({
             <button className="terminal-topbar-button" type="button" aria-label="左右分屏" aria-pressed={splitLayout?.orientation === 'horizontal'} onClick={() => toggleSplit('horizontal')} title="左右分屏">◫</button>
             <button className="terminal-topbar-button" type="button" aria-label="上下分屏" aria-pressed={splitLayout?.orientation === 'vertical'} onClick={() => toggleSplit('vertical')} title="上下分屏">▤</button>
             {splitLayout && <button className="terminal-topbar-button terminal-exit-split-button" type="button" aria-label="退出分屏" onClick={() => { setSplitLayout(null); setFocusedPane('primary'); }}>×<span>退出分屏</span></button>}
-            {(onLock || onSettings) && <span className="terminal-topbar-divider" aria-hidden="true" />}
-            {onLock && <button className="terminal-topbar-button terminal-utility-button" type="button" aria-label="锁定 Vault" onClick={onLock} title="锁定 Vault">↥<span>锁定</span></button>}
-            {onSettings && <button className="terminal-topbar-button terminal-utility-button" type="button" aria-label="偏好设置" onClick={onSettings} title="偏好设置">⚙<span>偏好</span></button>}
           </div>
         </div>
         <div
@@ -282,7 +295,7 @@ export const TerminalWorkspace = ({
                     </label>
                   </div>
                 )}
-                <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={visible} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} />
+                <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={visible} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} />
               </div>
             );
           })}
