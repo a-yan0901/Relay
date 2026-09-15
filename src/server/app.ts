@@ -20,6 +20,7 @@ import { registerGroupRoutes } from './api/group-routes.js';
 import { registerHostRoutes } from './api/host-routes.js';
 import { registerWorkspaceRoutes } from './api/workspace-routes.js';
 import { registerVaultRoutes } from './api/vault-routes.js';
+import { registerSshImportRoutes } from './api/ssh-import-routes.js';
 import { registerSftpRoutes } from './api/sftp-routes.js';
 import { registerCommandRoutes } from './api/command-routes.js';
 import { registerAuditRoutes } from './api/audit-routes.js';
@@ -28,6 +29,7 @@ import type { SqliteDatabase } from './db/database.js';
 import { WorkspaceRepository } from './workspace/workspace-repository.js';
 import { WorkspaceService } from './workspace/workspace-service.js';
 import { VaultBundleService } from './workspace/vault-bundle-service.js';
+import { SshImportService } from './workspace/ssh-import-service.js';
 import { VaultService } from './vault/vault-service.js';
 import { Ssh2Adapter, Ssh2ResourceAdapter } from './ssh/ssh2-adapter.js';
 import { ConnectionPathResolver } from './ssh/connection-path.js';
@@ -56,6 +58,7 @@ export interface AppDependencies {
   sshSessionManager?: SshSessionManagerPort;
   workspaceService?: WorkspaceService;
   vaultBundleService?: VaultBundleService;
+  sshImportService?: SshImportService;
   connectionPathResolver?: ConnectionPathResolver;
   sftpService?: SftpService;
   transferManager?: TransferManager;
@@ -93,6 +96,9 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     hostRepository,
     groupRepository,
     vaultService
+  });
+  const sshImportService = dependencies.sshImportService ?? new SshImportService({
+    ownerId: 'default', database: dependencies.database, hostRepository, groupRepository, vaultService
   });
   const sshSessionManager = dependencies.sshSessionManager ?? new SshSessionManager({
     adapter: new Ssh2Adapter(),
@@ -256,6 +262,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     sessionStore,
     auditRepository
   });
+  await registerSshImportRoutes(app, { sessionStore, auditRepository, sshImportService });
   await registerSftpRoutes(app, { ownerId: 'default', sessionStore, sftpService, transferManager, operationBus, auditRepository });
   await registerCommandRoutes(app, { ownerId: 'default', sessionStore, snippetService, commandRunner, auditRepository });
   await registerAuditRoutes(app, { sessionStore, auditService });

@@ -169,7 +169,8 @@ export const hostCredentialSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('private_key'),
     privateKey: z.string().min(1).max(32768),
-    passphrase: z.string().max(4096).optional()
+    passphrase: z.string().max(4096).optional(),
+    identityFile: z.string().min(1).max(4096).optional()
   }).strict()
 ]);
 

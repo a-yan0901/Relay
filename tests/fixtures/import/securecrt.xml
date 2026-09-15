@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VanDykeSoftware>
+  <Session>
+    <SessionName>Production/app</SessionName>
+    <Protocol>SSH2</Protocol>
+    <Hostname>app.example.com</Hostname>
+    <Port>2222</Port>
+    <Username>deploy</Username>
+    <IdentityFile>C:\Users\deploy\.ssh\id_ed25519</IdentityFile>
+    <Password>ENCRYPTED_BY_SECURECRT</Password>
+    <Firewall>bastion.example.com</Firewall>
+  </Session>
+</VanDykeSoftware>

@@ -1,6 +1,7 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
 import type { AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, SftpEntry, Snippet, SnippetMetadata, TransferJob, WorkspaceState } from '@shared/core/models';
 import type { HostCreateInput, HostMetadata, HostPatchInput } from '@shared/validation';
+import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
 
 export interface SetupStatus {
   initialized: boolean;
@@ -44,6 +45,16 @@ export interface ImportResultResponse {
   importedGroups: number;
   skippedHosts: number;
   skippedGroups: number;
+}
+
+export type ExternalImportPreviewResponse = ImportPreview;
+
+export interface ExternalImportResultResponse {
+  importedHosts: number;
+  skippedHosts: number;
+  importedGroups: number;
+  skippedGroups: number;
+  warnings: string[];
 }
 
 export type SnippetResponse = Snippet;
@@ -196,6 +207,30 @@ export const applyVaultImport = (
   method: 'POST',
   ...json({ previewId, resolution })
 });
+
+export const listImportFormats = (): Promise<Array<{ id: ImportFormat; label: string; extensions: string[]; description: string }>> => request('/api/import/formats');
+
+export const previewExternalImport = (files: readonly File[], formatHint?: ImportFormat): Promise<ExternalImportPreviewResponse> => {
+  const form = new FormData();
+  for (const file of files) form.append('file', file, file.name);
+  if (formatHint) form.append('format', formatHint);
+  return request<ExternalImportPreviewResponse>('/api/import/preview', { method: 'POST', body: form });
+};
+
+export const applyExternalImport = (previewId: string, input: ImportApplyRequest): Promise<ExternalImportResultResponse> => request<ExternalImportResultResponse>('/api/import/apply', {
+  method: 'POST',
+  ...json({ previewId, ...input })
+});
+
+export const exportOpenSshConfig = (): Promise<Blob> => request<Blob>('/api/export/openssh', { responseType: 'blob' });
+
+export const exportSshCsv = (options: ExportOptions = {}): Promise<Blob> => {
+  const params = new URLSearchParams();
+  if (options.includePasswords) params.set('includePasswords', 'true');
+  if (options.confirmPasswordExport) params.set('confirmPasswordExport', 'true');
+  const suffix = params.toString();
+  return request<Blob>(`/api/export/csv${suffix ? `?${suffix}` : ''}`, { responseType: 'blob' });
+};
 
 export const listSnippets = (): Promise<SnippetMetadata[]> => request<SnippetMetadata[]>('/api/snippets');
 

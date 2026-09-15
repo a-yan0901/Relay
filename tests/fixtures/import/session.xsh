@@ -1,0 +1,9 @@
+Protocol=SSH
+Host=app.example.com
+Port=2202
+UserName=deploy
+UserKey=C:\Users\deploy\.ssh\id_ed25519
+Password=ENCODED_BY_XSHELL
+ProxyServer=bastion.example.com
+ProxyPort=22
+ProxyUsername=ops

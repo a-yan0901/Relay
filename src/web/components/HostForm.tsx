@@ -107,6 +107,13 @@ export const HostForm = ({
     setForm((previous) => ({ ...previous, [key]: value }));
   };
 
+  const availableJumpHosts = hosts.filter((host) => host.id !== initialHost?.id);
+  const availableJumpHostsById = new Map(availableJumpHosts.map((host) => [host.id, host]));
+  const selectedJumpHostIds = form.jumpHostIds.filter((id) => id !== initialHost?.id);
+  const removeJumpHost = (jumpHostId: string): void => {
+    update('jumpHostIds', form.jumpHostIds.filter((id) => id !== jumpHostId));
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setError(null);
@@ -205,9 +212,22 @@ export const HostForm = ({
         </div>
         <div className="field field-wide">
           <label htmlFor="host-jump-hosts">跳板机（可选，按连接顺序）</label>
-          <select id="host-jump-hosts" multiple size={Math.min(4, Math.max(2, hosts.filter((host) => host.id !== initialHost?.id).length || 2))} value={form.jumpHostIds.filter((id) => id !== initialHost?.id)} onChange={(event) => update('jumpHostIds', Array.from(event.target.selectedOptions, (option) => option.value))}>
-            {hosts.filter((host) => host.id !== initialHost?.id).map((host) => <option value={host.id} key={host.id}>{host.name} · {host.address}</option>)}
+          <select id="host-jump-hosts" multiple size={Math.min(4, Math.max(2, availableJumpHosts.length || 2))} value={selectedJumpHostIds.filter((id) => availableJumpHostsById.has(id))} onChange={(event) => update('jumpHostIds', Array.from(event.target.selectedOptions, (option) => option.value))}>
+            {availableJumpHosts.map((host) => <option value={host.id} key={host.id}>{host.name} · {host.address}</option>)}
           </select>
+          <div className="jump-host-selection" aria-label="已选跳板机">
+            {selectedJumpHostIds.length === 0 ? <small className="field-help jump-host-empty">未选择跳板机</small> : selectedJumpHostIds.map((jumpHostId, index) => {
+              const jumpHost = availableJumpHostsById.get(jumpHostId);
+              const jumpHostLabel = jumpHost ? `${jumpHost.name} · ${jumpHost.address}` : `已失效跳板机 · ${jumpHostId}`;
+              return (
+                <div className="jump-host-chip" key={jumpHostId}>
+                  <span>{index + 1}. {jumpHostLabel}</span>
+                  <button className="icon-button" type="button" aria-label={`移除跳板机 ${jumpHost?.name ?? jumpHostId}`} title="移除跳板机" onClick={() => removeJumpHost(jumpHostId)}>×</button>
+                </div>
+              );
+            })}
+            {selectedJumpHostIds.length > 0 && <button className="button button-ghost button-small jump-host-clear" type="button" onClick={() => update('jumpHostIds', [])}>清除全部</button>}
+          </div>
           <small className="field-help">最多 4 跳；跳板机凭据只在服务端解密。</small>
         </div>
         <details className="field field-wide host-advanced-settings">

@@ -709,8 +709,19 @@ export const App = () => {
         onClose={() => setWorkspaceSettingsOpen(false)}
         onExport={webWorkspaceAdapter.exportEncrypted}
         onPreviewImport={webWorkspaceAdapter.previewImport}
+        onPreviewExternalImport={webWorkspaceAdapter.previewExternalImport}
+        onExportOpenSsh={webWorkspaceAdapter.exportOpenSshConfig}
+        onExportCsv={webWorkspaceAdapter.exportCsv}
         onApplyImport={async (previewId, resolution) => {
           const result = await webWorkspaceAdapter.applyImport(previewId, resolution);
+          const [hosts, groups, workspace] = await Promise.all([listHosts(), listGroups(), webWorkspaceAdapter.load()]);
+          dispatch({ type: 'hostsLoaded', hosts });
+          dispatch({ type: 'groupsLoaded', groups });
+          dispatch({ type: 'workspaceLoaded', workspace, terminalIds: createFreshTerminalIds(workspace, new Set(hosts.map((host) => host.id)), () => createTerminalId()) });
+          return result;
+        }}
+        onApplyExternalImport={async (previewId, input) => {
+          const result = await webWorkspaceAdapter.applyExternalImport(previewId, input);
           const [hosts, groups, workspace] = await Promise.all([listHosts(), listGroups(), webWorkspaceAdapter.load()]);
           dispatch({ type: 'hostsLoaded', hosts });
           dispatch({ type: 'groupsLoaded', groups });

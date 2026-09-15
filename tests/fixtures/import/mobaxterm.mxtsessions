@@ -1,0 +1,15 @@
+[Bookmarks]
+SubRep=
+ImgNum=42
+
+[Bookmarks_1]
+SubRep=Production\\Web
+ImgNum=41
+app=#109#0%app.example.com%2222%deploy%%0%0%%%%%0%0%0%%%-1%0%0%0%%1080%%0%0%1%#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%0%-1%<none>%%0%0%-1%-1#0# #-1
+bastion=#109#0%bastion.example.com%22%ops%%0%0%%%%%0%0%0%%%-1%0%0%0%%1080%%0%0%1%#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%0%-1%<none>%%0%0%-1%-1#0# #-1
+
+[Bookmarks_2]
+SubRep=Production\\Internal
+ImgNum=41
+internal=#109#0%10.0.0.10%22%deploy%%0%0%%bastion.example.com%22%ops%0%0%0%%%-1%0%0%0%%1080%%0%0%1%#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%0%-1%<none>%%0%0%-1%-1#0# #-1
+rdp=#91#4%desktop.example.com%3389%user%%0%0%%%%%0%0%0%%%-1%0%0%0%%1080%%0%0%1%#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%0%-1%<none>%%0%0%-1%-1#0# #-1

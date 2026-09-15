@@ -1,0 +1,3 @@
+Folder,Label,Hostname,Port,Username,Tags,Password,IdentityFile,JumpHost
+Production,"app, primary",app.example.com,22,deploy,"critical;web",,~/.ssh/app_ed25519,bastion
+Production,legacy,legacy.example.com,2201,ops,"legacy",secret-password,,

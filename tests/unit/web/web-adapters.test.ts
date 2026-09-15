@@ -79,4 +79,33 @@ describe('web adapters', () => {
     await expect(secretStore.set('host-1', 'secret')).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
     expect(createWebAdapters({ api: { listHosts: async () => [], getHost: async () => null } })).toHaveProperty('sessions');
   });
+
+  it('keeps cross-product import/export behind the workspace adapter', async () => {
+    const externalPreview = {
+      previewId: 'preview-1',
+      source: { filename: 'config', format: 'openssh-config' as const },
+      sources: [{ filename: 'config', format: 'openssh-config' as const }],
+      connectionCount: 0,
+      groupCount: 0,
+      connections: [],
+      conflicts: [],
+      warnings: [],
+      expiresAt: ''
+    };
+    const api = {
+      previewExternalImport: vi.fn(async () => externalPreview),
+      applyExternalImport: vi.fn(async () => ({ importedHosts: 1, skippedHosts: 0, importedGroups: 0, skippedGroups: 0, warnings: [] })),
+      exportOpenSshConfig: vi.fn(async () => new Blob(['Host app'])),
+      exportSshCsv: vi.fn(async () => new Blob(['name,address']))
+    };
+    const workspace = createWebAdapters({ api }).workspace;
+    const file = new File(['Host app'], 'config');
+    await workspace.previewExternalImport([file], 'openssh-config');
+    await workspace.applyExternalImport('preview-1', { selectedSourceIds: [], conflictPolicy: 'skip' });
+    await workspace.exportOpenSshConfig();
+    await workspace.exportCsv();
+    expect(api.previewExternalImport).toHaveBeenCalledWith([file], 'openssh-config');
+    expect(api.applyExternalImport).toHaveBeenCalledWith('preview-1', { selectedSourceIds: [], conflictPolicy: 'skip' });
+    expect(api.exportSshCsv).toHaveBeenCalledWith(undefined);
+  });
 });

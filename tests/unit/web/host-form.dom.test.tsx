@@ -97,4 +97,55 @@ describe('HostForm', () => {
     }));
     expect(onEditSubmit.mock.calls[0][0]).not.toHaveProperty('auth');
   });
+
+  it('lets users remove a selected jump host with an explicit action', async () => {
+    const user = userEvent.setup();
+    const jumpHosts: HostMetadataState[] = [
+      {
+        id: 'jump-1',
+        name: 'Bastion A',
+        address: '10.0.0.10',
+        port: 22,
+        username: 'deploy',
+        authType: 'password',
+        groupId: null,
+        tags: [],
+        isFavorite: false,
+        hostKeyAlgorithm: null,
+        hostKeyFingerprint: null,
+        lastConnectedAt: null,
+        createdAt: '2026-09-14T00:00:00.000Z',
+        updatedAt: '2026-09-14T00:00:00.000Z'
+      },
+      {
+        id: 'jump-2',
+        name: 'Bastion B',
+        address: '10.0.0.11',
+        port: 22,
+        username: 'deploy',
+        authType: 'password',
+        groupId: null,
+        tags: [],
+        isFavorite: false,
+        hostKeyAlgorithm: null,
+        hostKeyFingerprint: null,
+        lastConnectedAt: null,
+        createdAt: '2026-09-14T00:00:00.000Z',
+        updatedAt: '2026-09-14T00:00:00.000Z'
+      }
+    ];
+
+    render(<HostForm hosts={jumpHosts} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText('跳板机（可选，按连接顺序）'), ['jump-1', 'jump-2']);
+    await user.click(screen.getByRole('button', { name: '移除跳板机 Bastion A' }));
+
+    expect(screen.getByRole('button', { name: '移除跳板机 Bastion B' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '移除跳板机 Bastion A' })).not.toBeInTheDocument();
+    expect(Array.from((screen.getByLabelText('跳板机（可选，按连接顺序）') as HTMLSelectElement).selectedOptions).map((option) => option.value)).toEqual(['jump-2']);
+
+    await user.click(screen.getByRole('button', { name: '清除全部' }));
+    expect(screen.queryByRole('button', { name: '移除跳板机 Bastion B' })).not.toBeInTheDocument();
+    expect(Array.from((screen.getByLabelText('跳板机（可选，按连接顺序）') as HTMLSelectElement).selectedOptions)).toHaveLength(0);
+  });
 });

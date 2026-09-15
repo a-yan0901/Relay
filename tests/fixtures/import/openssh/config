@@ -1,0 +1,16 @@
+# Defaults are inherited by concrete hosts but never become a host themselves.
+Host *
+  User ops
+  ServerAliveInterval 30
+
+Host bastion
+  HostName bastion.example.com
+  Port 2200
+  IdentityFile ~/.ssh/id_ed25519
+
+Host app api
+  HostName %h.internal.example.com
+  Port 22
+  User deploy
+  ProxyJump bastion,admin@edge.example.com:2222
+  ProxyCommand ssh -W %h:%p bastion

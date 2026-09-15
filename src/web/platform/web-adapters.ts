@@ -10,6 +10,7 @@ import type {
   WorkspaceState
 } from '../../shared/core/models';
 import type { HostMetadata } from '../../shared/validation';
+import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '../../shared/import/types';
 import { defaultConnectionProfileSettings } from '../../shared/validation';
 import type {
   CommandTransport,
@@ -25,7 +26,7 @@ import { AppError } from '../../shared/errors';
 import type { TerminalSocketLike } from '../hooks/use-terminal-session';
 import { TerminalSessionController } from '../hooks/use-terminal-session';
 import * as api from '../api';
-import type { CapabilityResponse, ImportPreviewResponse, ImportResultResponse } from '../api';
+import type { CapabilityResponse, ExternalImportResultResponse, ImportPreviewResponse, ImportResultResponse } from '../api';
 
 const emptyWorkspace = (): WorkspaceState => ({
   version: 0,
@@ -41,6 +42,10 @@ export interface WorkspaceWebAdapter {
   exportEncrypted(password: string): Promise<string>;
   previewImport(password: string, bundle: string): Promise<ImportPreviewResponse>;
   applyImport(previewId: string, resolution: { hostConflicts: 'skip' | 'replace'; groupConflicts: 'reuse' | 'replace' }): Promise<ImportResultResponse>;
+  previewExternalImport(files: readonly File[], formatHint?: ImportFormat): Promise<ImportPreview>;
+  applyExternalImport(previewId: string, input: ImportApplyRequest): Promise<ExternalImportResultResponse>;
+  exportOpenSshConfig(): Promise<Blob>;
+  exportCsv(options?: ExportOptions): Promise<Blob>;
 }
 
 export interface WebApiClient {
@@ -49,6 +54,10 @@ export interface WebApiClient {
   exportVaultBundle?: typeof api.exportVaultBundle;
   previewVaultImport?: typeof api.previewVaultImport;
   applyVaultImport?: typeof api.applyVaultImport;
+  previewExternalImport?: typeof api.previewExternalImport;
+  applyExternalImport?: typeof api.applyExternalImport;
+  exportOpenSshConfig?: typeof api.exportOpenSshConfig;
+  exportSshCsv?: typeof api.exportSshCsv;
   listHosts?: typeof api.listHosts;
   getHost?: typeof api.getHost;
   listSftpEntries?: typeof api.listSftpEntries;
@@ -74,7 +83,11 @@ export const createWorkspaceWebAdapter = (client: WebApiClient = api): Workspace
   save: (expectedVersion, state) => client.saveWorkspace?.(expectedVersion, state) ?? Promise.resolve(state),
   exportEncrypted: async (password) => (await requireApi(client.exportVaultBundle)(password)).bundle,
   previewImport: (password, bundle) => requireApi(client.previewVaultImport)(password, bundle),
-  applyImport: (previewId, resolution) => requireApi(client.applyVaultImport)(previewId, resolution)
+  applyImport: (previewId, resolution) => requireApi(client.applyVaultImport)(previewId, resolution),
+  previewExternalImport: (files, formatHint) => requireApi(client.previewExternalImport)(files, formatHint),
+  applyExternalImport: (previewId, input) => requireApi(client.applyExternalImport)(previewId, input),
+  exportOpenSshConfig: () => requireApi(client.exportOpenSshConfig)(),
+  exportCsv: (options) => requireApi(client.exportSshCsv)(options)
 });
 
 export const webWorkspaceAdapter = createWorkspaceWebAdapter();
