@@ -8,7 +8,7 @@
 
 > 找到主机 → 可靠连接 → 在同一上下文传文件/执行命令 → 查看结果 → 断线后恢复。
 
-Web 是当前唯一的一等客户端。服务端继续维护单实例、单 Vault、单用户边界；跨端能力通过 shared core、wire protocol、capability 和 adapter contract 预留，不在本版本引入桌面或移动 UI 框架。
+Web 是当前唯一的一等客户端。服务端继续维护单实例、单 Vault、单用户边界；跨端能力通过 shared core、`CoreRuntime`、wire protocol、capability 和 adapter contract 预留，不在本版本引入桌面或移动 UI 框架。
 
 ## 2. 已交付能力与优先级
 
@@ -36,15 +36,16 @@ Web 是当前唯一的一等客户端。服务端继续维护单实例、单 Vau
 
 ## 3. 跨端与跨平台基础
 
-`src/shared/core` 提供平台无关的模型、状态机、错误码、能力集合和 ports。它不依赖 Node、DOM、React、浏览器 WebSocket 或 ssh2。
+`src/shared/core` 提供平台无关的模型、状态机、错误码、能力集合、`CoreRuntime` 和 ports。完整 runtime 需要覆盖 Vault session、Host/Identity/Group/Workspace/Snippet/Activity store、ConnectionProbe、Session/File/Command transport、SecretStore 和 ImportExportPort；它不依赖 Node、DOM、React、浏览器 WebSocket、浏览器文件对象或 ssh2。
 
-Web adapter 提供 HTTP/WSS、Cookie、浏览器 WebSocket、服务端文件传输和服务端 Vault 边界；当前 Web-first 页面仍有少量应用生命周期、主机 CRUD 和轮询的薄 API wiring，但不进入 shared core。未来桌面版可在 Windows/Linux 通过桌面 shell 接入 OS keychain；Android 通过 Keystore 接入；两者只替换 `SessionTransport`、`FileTransport`、`CommandTransport`、`HostStore` 和 `SecretStore`，并保持以下不变量：
+Web adapter 提供 HTTP/WSS、Cookie、浏览器 WebSocket、服务端文件传输和服务端 Vault 边界。当前 Web-first 页面仍有少量应用生命周期、主机 CRUD 和轮询的薄 API wiring，这是待收口的架构 gap，不得作为未来客户端的业务范式。未来桌面版可在 Windows/Linux 通过桌面 shell 接入 OS keychain；Android 通过 Keystore 接入；两者可以替换为本地 SSH，也可以继续使用服务端 transport，但都必须实现相同的 shared ports：
 
 - Host Key 确认、跳板诊断和错误语义不变；
 - SFTP 路径规范化和批量目标确认不变；
 - 并发、超时、输出上限、取消和 TTL 语义不变；
+- 文件上传/下载和导入/导出使用 `Uint8Array`/`AsyncIterable<Uint8Array>`，不把浏览器 `File`/`Blob` 传播到 shared core；
 - 活动日志保持结构化脱敏；
-- 业务代码按 capability 判断可用性，不按平台名称复制分支。
+- 业务代码按 capability 判断可用性，不按平台名称复制分支；不支持时返回 `CAPABILITY_UNAVAILABLE`。
 
 ## 4. 数据与安全边界
 
@@ -56,7 +57,7 @@ Web adapter 提供 HTTP/WSS、Cookie、浏览器 WebSocket、服务端文件传�
 
 ## 5. 验证范围
 
-交付验证覆盖：shared core 单元测试、服务端 repository/service/API 集成测试、真实 OpenSSH shell/SFTP 集成、浏览器 DOM 测试、Playwright 工作流、锁定与重启边界、Node/浏览器 TypeScript 编译、Lint 和 Web/Server 构建。
+交付验证覆盖：shared core 单元测试、fake/Web adapter contract tests、shared 静态依赖检查、服务端 repository/service/API 集成测试、真实 OpenSSH shell/SFTP 集成、浏览器 DOM 测试、Playwright 工作流、锁定与重启边界、Node/浏览器 TypeScript 编译、Lint 和 Web/Server 构建。
 
 ## 6. 明确后置项
 

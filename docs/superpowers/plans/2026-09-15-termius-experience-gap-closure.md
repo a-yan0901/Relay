@@ -4,7 +4,7 @@
 
 **Goal:** 在导入/导出改造稳定后，将 Relay 的 Web SSH MVP 收敛为一个具备 Termius 式日常工作流的 local-first、自托管 SSH 工作台。
 
-**Architecture:** 保持现有 TypeScript + React/Vite + Fastify + SQLite + Vault + ssh2 架构。先补齐共享模型、Identity/Group 解析、Workspace 和任务选择契约，再通过 Web adapter 接入 UI；服务端继续作为 SSH/SFTP/批量任务的安全边界，不把凭据、live session 或平台 API 放入 shared core。
+**Architecture:** 保持现有 TypeScript + React/Vite + Fastify + SQLite + Vault + ssh2 架构。先固定 platform-neutral shared core、CoreRuntime、store/transport ports、wire/capability contract，再补齐 Identity/Group 解析、Workspace 和任务选择契约，通过 Web adapter 接入 UI；服务端继续作为 SSH/SFTP/批量任务的安全边界，不把凭据、live session 或平台 API 放入 shared core。
 
 **Tech Stack:** Node.js 22+, TypeScript, React 19, Vite, Fastify, WebSocket, SQLite/better-sqlite3, Argon2id, AES-256-GCM, ssh2, xterm.js, Vitest, React Testing Library, Playwright, Docker Compose, OpenSSH fixture.
 
@@ -15,6 +15,10 @@
 - 当前分支的导入/导出改造是前置基线；先修复其 UI/测试契约，再开始新增体验能力；不重新实现现有解析器。
 - 保持 Web-first、local-first、单实例、单用户、单 Vault；本计划不创建云账号、云同步、团队 RBAC、SSO、原生客户端或新协议。
 - shared core 只能依赖平台无关的 TypeScript 类型和纯函数；不得导入 Node、DOM、React、浏览器存储、WebSocket 或 ssh2。
+- “统一核心”是实施硬门槛，不是文档备注：每个新增能力必须先落到 shared model/validation/error/state/capability/port，再由 Web adapter 和 Web UI 接入；`App.tsx` 不得为新行为直接调用 `src/web/api.ts`。
+- CoreRuntime 必须组合 VaultSession、ConnectionProbe、Host、Identity、Group、Workspace、Snippet、Activity store 以及 Session、File、Command transport、SecretStore 和 ImportExportPort；未来桌面/Android 通过替换这些 adapter 扩展，不复制业务规则。
+- shared import/export 只使用 `ImportSourceFile`、`Uint8Array` 等平台无关类型；浏览器 `File`/`Blob`/`FormData`、原生文件选择器和系统路径只能在各自 adapter/UI 边界出现。
+- Wire message、错误码、状态机和 capability 名称/版本是跨端契约；平台差异只能出现在 adapter。未支持能力统一返回 `CAPABILITY_UNAVAILABLE`，不得用平台名称写业务分支。
 - 浏览器 localStorage/sessionStorage 不得保存主密码、Host 凭据、Identity payload、导出密码、Vault bundle、命令输出或 SFTP 文件内容。
 - Identity 的凭据、Snippet 内容和选择保存的批量输出只能在服务端 Vault 解锁期间按需解密；Web 只接收 metadata 或当前操作所需的短生命周期内容。
 - 现有 Host inline credential 必须继续可用；选择 Identity 后只能存在一个有效 credential source，不能同时使用两份凭据。
@@ -35,29 +39,32 @@
 按以下顺序执行：
 
 1. Task 0：导入/导出基线收口。
-2. Task 1：统一 Dialog、状态反馈和可访问性基础。
-3. Task 2：Identity/Keychain 和 Host credential source。
-4. Task 3：嵌套 Group、配置继承和主机发现。
-5. Task 4：主机/分组批量目标选择。
-6. Task 5：SFTP 文件工作流 UI。
-7. Task 6：Snippet 管理和终端内 palette。
-8. Task 7：Workspace 模板和最多四 pane 的布局。
-9. Task 8：会话生命周期、重启边界和任务中断恢复。
-10. Task 9：端到端回归、文档和发布门槛。
+2. Task 1A：统一核心与跨端/跨平台契约硬门槛。
+3. Task 1：统一 Dialog、状态反馈和可访问性基础。
+4. Task 2：Identity/Keychain 和 Host credential source。
+5. Task 3：嵌套 Group、配置继承和主机发现。
+6. Task 4：主机/分组批量目标选择。
+7. Task 5：SFTP 文件工作流 UI。
+8. Task 6：Snippet 管理和终端内 palette。
+9. Task 7：Workspace 模板和最多四 pane 的布局。
+10. Task 8：会话生命周期、重启边界和任务中断恢复。
+11. Task 9：端到端回归、文档和发布门槛。
 
-Task 1、4、5、8 构成 Slice 1 的日常任务闭环；Task 2、3、6、7 构成 Slice 2 的 Termius 式生产力。Task 2 和 Task 3 共享数据库迁移边界，应连续执行；其余任务可在独立分支中分别完成。
+Task 1A 是所有新增功能的前置契约，不单独改变用户流程。Task 1、4、5、8 构成 Slice 1 的日常任务闭环；Task 2、3、6、7 构成 Slice 2 的 Termius 式生产力。Task 2 和 Task 3 共享数据库迁移边界，应连续执行；其余任务可在独立分支中分别完成。
 
 ## 2. 文件地图
 
 ### Shared core
 
-- Modify: src/shared/core/models.ts — Identity、Group、Workspace pane、Transfer interrupted 和目标选择模型。
+- Modify: src/shared/core/models.ts — Vault status、connection probe、Identity、Group、Workspace template、Workspace pane、binary source、Transfer interrupted 和目标选择模型。
+- Create: src/shared/core/runtime.ts — `CoreRuntime`、store/transport 组合和平台无关的应用入口类型。
+- Modify: src/shared/core/ports.ts — `VaultSessionPort`、`ConnectionProbe`、`SecretRef`、Identity/Group/Workspace/Snippet/Activity store、ImportExportPort 和传输中立的 FileTransport。
 - Create: src/shared/core/connection-resolution.ts — Group 继承和 Host 有效连接配置的纯函数解析。
 - Modify: src/shared/core/state-machines.ts — Session/Transfer 的中断和可恢复状态。
 - Modify: src/shared/core/capabilities.ts — Identity、Workspace template、multi-pane、target picker、SFTP mutation 和 lifecycle capability。
-- Modify: src/shared/validation.ts — Identity、Group tree、Host credential source、Workspace layout 和 target request schema。
+- Modify: src/shared/validation.ts — Identity、Group tree、Host credential source、Workspace layout、target request 和 runtime DTO schema。
 - Modify: src/shared/errors.ts — Identity 引用、Group 环、Session 失效、服务重启和 Transfer interrupted 错误码。
-- Modify: src/shared/protocol.ts — terminal lifecycle 和 operation recovery 事件。
+- Modify: src/shared/protocol.ts — versioned terminal lifecycle 和 operation recovery 事件。
 
 ### Server
 
@@ -85,8 +92,8 @@ Task 1、4、5、8 构成 Slice 1 的日常任务闭环；Task 2、3、6、7 构
 - Create: src/web/components/SnippetManager.tsx、src/web/components/SnippetEditor.tsx、src/web/components/SnippetPalette.tsx — Snippet 管理和终端入口。
 - Create: src/web/components/WorkspaceSwitcher.tsx、src/web/components/WorkspaceTemplateDialog.tsx — 命名 Workspace 模板。
 - Create: src/web/state/target-selection.ts — 目标快照生成和去重纯函数。
-- Modify: src/web/api.ts、src/web/platform/web-adapters.ts — Identity、template、SFTP mutation、Snippet 和任务状态接口。
-- Modify: src/web/App.tsx、src/web/state/app-state.ts、src/web/state/workspace-state.ts — 页面入口、Workspace 生命周期和任务状态。
+- Modify: src/web/api.ts、src/web/platform/web-adapters.ts — 仅在 adapter 内完成 HTTP/WSS、浏览器文件对象和 shared ports 的映射；Identity、template、SFTP mutation、Snippet 和任务状态接口。
+- Modify: src/web/App.tsx、src/web/state/app-state.ts、src/web/state/workspace-state.ts — 页面入口改为消费 `CoreRuntime`，Workspace 生命周期和任务状态仍由 Web UI 管理。
 - Modify: src/web/components/HostWorkspace.tsx、GroupSidebar.tsx、HostForm.tsx、HostCard.tsx — 主机发现、Group tree、Identity 选择和批量入口。
 - Modify: src/web/components/CommandRunDialog.tsx、SnippetPicker.tsx、TerminalWorkspace.tsx、TerminalPanel.tsx — 目标预览、Snippet palette、pane 和 session 状态。
 - Modify: src/web/components/SftpPanel.tsx、TransferQueue.tsx、WorkspaceSettings.tsx — 文件工作流、重启中断和导入/导出基线。
@@ -96,6 +103,7 @@ Task 1、4、5、8 构成 Slice 1 的日常任务闭环；Task 2、3、6、7 构
 
 - Create: tests/unit/web/dialog.dom.test.tsx、identity-manager.dom.test.tsx、host-target-picker.dom.test.tsx、snippet-manager.dom.test.tsx、workspace-switcher.dom.test.tsx、group-sidebar.dom.test.tsx、transfer-queue.dom.test.tsx。
 - Create: tests/unit/shared/connection-resolution.test.ts、target-selection.test.ts、identity-types.test.ts。
+- Modify: tests/unit/shared/core-adapter-contract.test.ts、tests/unit/web/web-adapters.test.ts — 复用同一套 fake/Web runtime contract。
 - Create: tests/unit/server/identity-service.test.ts、snippet-service.test.ts、transfer-restart.test.ts。
 - Modify: tests/unit/web/workspace-settings.dom.test.tsx、app.dom.test.tsx、host-workspace.dom.test.tsx、host-form.dom.test.tsx、terminal-workspace.dom.test.tsx、sftp-panel.dom.test.tsx、command-run-dialog.dom.test.tsx。
 - Modify: tests/unit/server/repositories.test.ts、command-run-store.test.ts、transfer-manager.test.ts、session-manager.test.ts、workspace-service.test.ts。
@@ -168,6 +176,256 @@ git commit -m "fix: close import export UI contract"
 ~~~
 
 Stage 时只选择本任务新增的 hunk；不得把用户尚未完成的 parser 或其它 UI 改动一并提交。
+
+---
+
+## Task 1A: 统一核心与跨端/跨平台契约硬门槛
+
+**目标：** 把“未来可扩展到桌面/Android”变成当前可验证的代码边界。shared core 负责平台无关的模型、校验、状态、错误、capability、用例组合和 ports；Web 只实现第一个 adapter，不创建原生 UI，也不引入云同步。
+
+**Files:**
+- Create: src/shared/core/runtime.ts — `CoreRuntime` 及平台无关的 store/transport 组合类型。
+- Modify: src/shared/core/models.ts、src/shared/core/ports.ts、src/shared/core/capabilities.ts、src/shared/protocol.ts、src/shared/errors.ts、src/shared/validation.ts。
+- Modify: src/shared/import/types.ts — Vault bundle preview/result 和平台无关的 import/export DTO。
+- Modify: src/web/platform/web-adapters.ts、src/web/api.ts、src/web/App.tsx。
+- Modify: tests/unit/shared/core-adapter-contract.test.ts、tests/unit/web/web-adapters.test.ts。
+- Create: tests/unit/shared/core-boundary.test.ts — shared 目录静态依赖边界检查。
+- Modify: docs/architecture/cross-platform.md。
+
+**Interfaces:**
+~~~ts
+export interface SecretRef {
+  kind: 'host' | 'identity';
+  id: string;
+}
+
+export interface SecretStore<Secret = unknown> {
+  get(ref: SecretRef): Promise<Secret | null>;
+  set(ref: SecretRef, secret: Secret): Promise<void>;
+  remove(ref: SecretRef): Promise<void>;
+}
+
+export interface VaultSessionPort {
+  status(): Promise<VaultStatus>;
+  setup(masterPassword: string): Promise<VaultStatus>;
+  unlock(masterPassword: string): Promise<VaultStatus>;
+  lock(): Promise<void>;
+}
+
+export interface ConnectionProbe {
+  test(hostId: string): Promise<ConnectionTestResult>;
+}
+
+export interface WorkspaceStore {
+  load(): Promise<WorkspaceState>;
+  save(expectedVersion: number, state: WorkspaceState): Promise<WorkspaceState>;
+  listTemplates(): Promise<readonly WorkspaceTemplate[]>;
+  createTemplate(input: WorkspaceTemplateInput): Promise<WorkspaceTemplate>;
+  deleteTemplate(templateId: string): Promise<void>;
+}
+
+export interface CoreRuntime {
+  platform: ClientPlatform;
+  capabilities: CapabilitySet;
+  vault: VaultSessionPort;
+  hosts: HostStore;
+  connection: ConnectionProbe;
+  identities: IdentityStore;
+  groups: GroupStore;
+  workspace: WorkspaceStore;
+  secrets: SecretStore;
+  sessions: SessionTransport;
+  files: FileTransport;
+  commands: CommandTransport;
+  snippets: SnippetStore;
+  activity: ActivityStore;
+  imports: ImportExportPort;
+}
+~~~
+
+`IdentityStore`、`GroupStore`、`SnippetStore` 和 `ActivityStore` 使用 shared metadata/DTO；`ImportExportPort` 使用 `ImportSourceFile` 和 `Uint8Array`，不得把浏览器 `File`/`Blob`、`FormData`、Node `Buffer` 或原生路径对象放入 shared contract。Web adapter 可以在边界完成这些对象的转换；未来桌面/Android adapter 可以选择本地 SSH + OS keychain/Keystore，或继续使用服务端 transport。
+
+实现时固定以下 store 端口签名；HTTP response、SQLite row 和 keychain handle 只在 adapter 内部存在：
+
+~~~ts
+export type VaultPhase = 'uninitialized' | 'locked' | 'unlocked';
+
+export interface VaultStatus {
+  phase: VaultPhase;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  hostKey?: {
+    algorithm: string;
+    fingerprint: string;
+    address: string;
+    port: number;
+  };
+}
+
+export interface HostStore {
+  list(filter?: HostListFilter): Promise<readonly HostMetadata[]>;
+  get(id: string): Promise<HostMetadata | null>;
+  getProfile(id: string): Promise<ConnectionProfile | null>;
+  create(input: HostCreateInput): Promise<HostMetadata>;
+  update(id: string, input: HostPatchInput): Promise<HostMetadata>;
+  delete(id: string): Promise<void>;
+}
+
+export interface IdentityStore {
+  list(): Promise<readonly IdentityMetadata[]>;
+  get(id: string): Promise<IdentityMetadata | null>;
+  create(input: IdentityCreateInput): Promise<IdentityMetadata>;
+  update(id: string, input: IdentityUpdateInput): Promise<IdentityMetadata>;
+  delete(id: string): Promise<void>;
+}
+
+export interface GroupStore {
+  list(): Promise<readonly GroupNode[]>;
+  get(id: string): Promise<GroupNode | null>;
+  create(input: GroupMutationInput): Promise<GroupNode>;
+  update(id: string, input: GroupMutationInput): Promise<GroupNode>;
+  delete(id: string): Promise<void>;
+}
+
+export interface SnippetStore {
+  list(): Promise<readonly SnippetMetadata[]>;
+  get(id: string): Promise<Snippet | null>;
+  create(input: SnippetInput): Promise<Snippet>;
+  update(id: string, input: SnippetPatchInput): Promise<Snippet>;
+  delete(id: string): Promise<void>;
+}
+
+export interface ActivityStore {
+  list(filter?: ActivityFilter): Promise<readonly AuditEvent[]>;
+}
+
+export interface VaultBundlePreview {
+  previewId: string;
+  hostCount: number;
+  groupCount: number;
+  conflicts: readonly VaultBundleConflict[];
+  expiresAt: string;
+}
+
+export interface VaultBundleConflict {
+  type: 'host' | 'group';
+  id: string;
+  name: string;
+}
+
+export interface VaultBundleResolution {
+  hostConflicts: 'skip' | 'replace';
+  groupConflicts: 'reuse' | 'replace';
+}
+
+export interface VaultBundleApplyResult {
+  importedHosts: number;
+  importedGroups: number;
+  skippedHosts: number;
+  skippedGroups: number;
+}
+
+export interface ImportExportPort {
+  previewExternalImport(files: readonly ImportSourceFile[], formatHint?: ImportFormat): Promise<ImportPreview>;
+  applyExternalImport(previewId: string, input: ImportApplyRequest): Promise<ImportApplyResult>;
+  exportOpenSshConfig(): Promise<Uint8Array>;
+  exportCsv(options?: ExportOptions): Promise<Uint8Array>;
+  exportVaultBundle(exportPassword: string): Promise<string>;
+  previewVaultImport(exportPassword: string, bundle: string): Promise<VaultBundlePreview>;
+  applyVaultImport(previewId: string, resolution: VaultBundleResolution): Promise<VaultBundleApplyResult>;
+}
+~~~
+
+文件端口同样不能绑定浏览器对象。目录 mutation、上传、下载、取消和重试全部使用 shared `ByteStream`/`BinarySource`：
+
+~~~ts
+export type ByteStream = AsyncIterable<Uint8Array>;
+
+export interface BinarySource {
+  name: string;
+  size: number | null;
+  stream(): ByteStream;
+}
+
+export interface FileTransport {
+  list(hostId: string, path: string): Promise<readonly SftpEntry[]>;
+  createDirectory(hostId: string, path: string): Promise<void>;
+  rename(hostId: string, from: string, to: string): Promise<void>;
+  remove(hostId: string, path: string): Promise<void>;
+  createTransfer(request: TransferRequest): Promise<TransferJob>;
+  upload(transferId: string, source: BinarySource): Promise<TransferJob>;
+  download(transferId: string): Promise<ByteStream>;
+  cancelTransfer(transferId: string): Promise<void>;
+  retryTransfer(transferId: string): Promise<TransferJob>;
+}
+~~~
+
+- [ ] **Step 1: 先写跨端 contract 的失败测试**
+
+扩展 `tests/unit/shared/core-adapter-contract.test.ts`，让 in-memory fake 同时满足 Host、Identity、Group、Workspace、Snippet、Activity store 和 Session/File/Command transport；增加断言：
+
+~~~ts
+await assertCoreRuntimeContract(fakeRuntime);
+expect(fakeRuntime.secrets).toBeDefined();
+expect(fakeRuntime.capabilities.supports('workspace.persistence')).toBe(true);
+~~~
+
+扩展 `tests/unit/web/web-adapters.test.ts`，验证 `createWebAdapters()` 返回完整 runtime，且浏览器 WebSocket、HTTP 响应和文件对象只在 adapter 内被转换。增加静态依赖断言/脚本，扫描 `src/shared` 不得出现 Node、DOM、React、WebSocket、`ssh2` 或浏览器存储依赖。
+
+- [ ] **Step 2: 运行新增测试确认失败点**
+
+Run:
+~~~bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+npm test -- tests/unit/shared/core-adapter-contract.test.ts tests/unit/web/web-adapters.test.ts --reporter=dot
+~~~
+
+Expected: 失败原因限定为 `CoreRuntime`、新增 store ports、Web runtime 组合或静态依赖检查尚不存在；现有 parser、SSH 和导入/导出测试不应被这一步改动。
+
+- [ ] **Step 3: 在 shared core 定义 runtime、ports 和平台无关 DTO**
+
+在 `src/shared/core/ports.ts` 增加 `VaultSessionPort`、`ConnectionProbe`、`SecretRef`、`IdentityStore`、`GroupStore`、`WorkspaceStore`、`SnippetStore`、`ActivityStore`、`ImportExportPort` 和传输中立的 `FileTransport` mutation/stream 方法；在 `models.ts` 放置 `VaultStatus`、`ConnectionTestResult`、`IdentityMetadata`、`GroupNode`、`WorkspaceTemplate`、`WorkspaceTemplateInput`、`BinarySource` 等跨端模型，在 `src/shared/import/types.ts` 放置 Vault bundle preview/result DTO，在 `runtime.ts` 导出 `CoreRuntime`。Store/transport 方法只返回 shared 类型，不泄露 SQLite row、Fastify reply、HTTP response 或本地 keychain handle。
+
+同时把 `SecretStore` 从按 `hostId` 寻址改为按 `SecretRef` 寻址。Web 实现可以对 `get/set/remove` 返回空值或 `CAPABILITY_UNAVAILABLE`，因为 Web 的秘密由服务端 Vault 在连接/操作时解析；桌面/Android 实现才允许把同一 ref 映射到 OS keychain/Keystore。
+
+- [ ] **Step 4: 将 Web API 收口为第一个 adapter**
+
+让 `createWebAdapters()` 返回 `CoreRuntime` 所需的所有 store/transport。把 `src/web/api.ts` 的 HTTP、WSS、`File`/`Blob` 和 `FormData` 转换留在 `src/web/platform/web-adapters.ts` 或 Web UI 边界；`App.tsx` 新增行为只能从 runtime 调用。`WebFileTransport` 用 `BinarySource` 映射上传、用 `ByteStream` 映射下载，并把 mkdir/rename/remove/retry 纳入同一 port。保留现有 API 函数作为过渡 wiring，但本任务不得再增加 React 到 `api.ts` 的直接依赖。
+
+导入/导出 adapter 需把浏览器文件转换为 shared `ImportSourceFile`，把导出结果转换为 `Uint8Array` 后再由 Web UI 触发下载；不改变现有 preview/apply、bundle 密码或 secret-redaction 语义。
+
+- [ ] **Step 5: 固定版本化 wire、capability 和终态语义**
+
+在 `src/shared/protocol.ts` 增加 shared `protocolVersion`/envelope 约束，兼容迁移期间的旧 Web wire 只允许存在于 adapter；在 `src/shared/core/capabilities.ts` 固定 capability 名称、版本和 `CAPABILITY_UNAVAILABLE` 行为。`connecting`、`awaiting-host-key`、`awaiting-credential`、`connected`、`reconnecting`、`interrupted` 和 `needs-reopen` 的含义由 shared 定义，平台不得按客户端名称复制状态分支。
+
+不要在本任务增加 `SyncStore`/`SyncTransport`、云账号或桌面/Android UI；同步和 native UI 进入独立 spec。
+
+- [ ] **Step 6: 运行双 target、contract 和静态边界验证**
+
+Run:
+~~~bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+npm test -- tests/unit/shared/core-adapter-contract.test.ts tests/unit/shared/core-boundary.test.ts tests/unit/web/web-adapters.test.ts tests/unit/shared/protocol.test.ts --reporter=dot
+npm run typecheck
+npm run lint
+rg -n -e "node:" -e "from ['\"]react" -e "from ['\"]react-dom" -e "WebSocket" -e "ssh2" -e "localStorage" -e "sessionStorage" src/shared || true
+~~~
+
+Expected: contract tests、Web/server 两个 TypeScript target 和 lint 通过；最后的 `rg` 无输出（命令以 `|| true` 运行时需人工确认无命中）。
+
+- [ ] **Step 7: 只提交统一核心边界**
+
+~~~bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+git diff --check
+git diff --name-only
+git add -p src/shared/core/runtime.ts src/shared/core/models.ts src/shared/core/ports.ts src/shared/core/capabilities.ts src/shared/protocol.ts src/shared/errors.ts src/shared/validation.ts src/shared/import/types.ts src/web/platform/web-adapters.ts src/web/api.ts src/web/App.tsx tests/unit/shared/core-adapter-contract.test.ts tests/unit/shared/core-boundary.test.ts tests/unit/web/web-adapters.test.ts docs/architecture/cross-platform.md
+git commit -m "refactor: enforce cross-platform core boundary"
+~~~
+
+只 stage 本任务的 hunk；当前用户未提交的功能改动必须留在原有 diff 中，不能因为 `App.tsx`、`api.ts` 或共享文件重叠而整文件提交。
 
 ---
 
@@ -258,6 +516,8 @@ git commit -m "feat: unify web dialog behavior"
 
 **目标：** 让一个用户名、密码、SSH Key 或证书身份可以被多个 Host 复用，同时保持现有 inline Host 凭据兼容。
 
+**依赖：** 消费 Task 1A 定义的 `IdentityStore`、`SecretRef` 和 `CoreRuntime`；Identity API 的 HTTP DTO 只能在 Web adapter 内映射，不能成为 shared domain 类型。
+
 **Files:**
 - Modify: src/shared/core/models.ts、src/shared/validation.ts、src/shared/core/capabilities.ts、src/shared/errors.ts
 - Create: src/server/identity/identity-service.ts、src/server/api/identity-routes.ts、src/web/components/IdentityManager.tsx、src/web/components/IdentityEditor.tsx、tests/unit/server/identity-service.test.ts、tests/unit/web/identity-manager.dom.test.tsx、tests/integration/server/identity-routes.test.ts、tests/unit/shared/identity-types.test.ts
@@ -266,7 +526,7 @@ git commit -m "feat: unify web dialog behavior"
 
 **Interfaces:**
 ~~~ts
-export type IdentityType = 'password' | 'private_key';
+export type IdentityType = AuthType;
 
 export interface IdentityCreateInput {
   name: string;
@@ -293,7 +553,7 @@ export interface IdentityMetadata {
 
 export type HostCredentialSource =
   | { type: 'inline'; authType: IdentityType }
-  | { type: 'identity'; identityId: string; identityName: string };
+  | { type: 'identity'; identityId: string };
 ~~~
 
 Server service methods：
@@ -357,7 +617,7 @@ const identityAad = (id: string): string => 'identity:' + id + ':credentials:v1'
 
 - [ ] **Step 5: 实现 Web Identity manager 和 HostForm 选择**
 
-IdentityManager 支持列表、创建、重命名、更新凭据和删除；HostForm 增加“使用已有身份”选择，选择 Identity 时不显示 inline password/private key 输入。HostCard 显示 Identity 名称和引用数量，不显示秘密。
+IdentityManager 通过 `webAdapters.identities` 支持列表、创建、重命名、更新凭据和删除；HostForm 增加“使用已有身份”选择，选择 Identity 时不显示 inline password/private key 输入。HostCard 通过 metadata 显示 Identity 名称和引用数量，不显示秘密；组件不直接调用 `src/web/api.ts`。
 
 - [ ] **Step 6: 运行服务端和 Web 回归**
 
@@ -382,6 +642,8 @@ git commit -m "feat: add reusable ssh identities"
 ## Task 3: 嵌套 Group、配置继承和主机发现
 
 **目标：** 让主机组织从平面分组升级为可解释的树形资产，并提供 Recent、Tag 和配置来源。
+
+**依赖：** 消费 Task 1A 的 `GroupStore`、`HostStore` 和连接解析 port。`GroupSummaryResponse` 是 HTTP response DTO，只能由 Web adapter 转换为 shared `GroupNode`/effective configuration，React 不直接依赖 route response。
 
 **Files:**
 - Create: src/shared/core/connection-resolution.ts、tests/unit/shared/connection-resolution.test.ts、tests/integration/server/group-inheritance-routes.test.ts
@@ -525,6 +787,8 @@ CommandRunDialog 接受所有可选 Host 和 Group，而不是只接收当前 te
 />
 ~~~
 
+GroupSidebar、HostWorkspace 和 HostForm 通过 `runtime.groups`/`runtime.hosts` 获取数据；`identityName` 只作为展示 metadata，Host 的 canonical credential source 仍只保存 `identityId`。
+
 - [ ] **Step 1: 写目标展开和去重测试**
 
 在 tests/unit/shared/target-selection.test.ts 中覆盖组选择、收藏选择、Recent/Tag 查询、重复 Host 去重、空目标、已删除 Host 和稳定排序。
@@ -574,8 +838,11 @@ git commit -m "feat: add host target picker"
 
 **目标：** 将已有的 SFTP server capability 暴露为可完成日常文件任务的 UI。
 
+**依赖：** 消费 Task 1A 的 `FileTransport`、`BinarySource` 和 `ByteStream`。SFTP UI 只负责编排选择、确认和展示；目录 mutation、上传、下载、取消和重试不能另建 Web-only 业务接口。
+
 **Files:**
 - Create: src/web/components/SftpBreadcrumbs.tsx、src/web/components/SftpEntryActions.tsx
+- Modify: src/shared/core/models.ts、src/shared/core/ports.ts
 - Modify: src/web/api.ts、src/web/platform/web-adapters.ts、src/web/components/SftpPanel.tsx、src/web/components/TransferQueue.tsx、src/web/styles.css
 - Test: tests/unit/web/sftp-panel.dom.test.tsx、tests/unit/web/transfer-queue.dom.test.tsx（新增）、tests/e2e/ssh-productivity.spec.ts
 - Verify: src/server/api/sftp-routes.ts、src/server/sftp/sftp-service.ts、tests/integration/server/sftp-routes.test.ts
@@ -617,9 +884,9 @@ npm test -- tests/unit/web/sftp-panel.dom.test.tsx --reporter=dot
 
 Expected: 失败点只应是当前 UI 缺少 breadcrumbs、mkdir、rename、多选和 mutation callbacks。
 
-- [ ] **Step 3: 接通已有 mutation API**
+- [ ] **Step 3: 接通已有 mutation API 和 shared FileTransport**
 
-在 web adapter 暴露 createDirectory、rename 和 remove；继续调用现有 /api/sftp/:hostId/entries discriminated union，不新增绕过 normalizeSftpPath 的客户端路径拼接。
+在 shared `FileTransport` 实现 createDirectory、rename、remove、upload、download、cancel 和 retry；Web adapter 把 `File` 转成 `BinarySource`，把响应流转成 `ByteStream`，继续调用现有 /api/sftp/:hostId/entries discriminated union，不新增绕过 normalizeSftpPath 的客户端路径拼接。
 
 - [ ] **Step 4: 实现路径、选择和上下文操作**
 
@@ -645,7 +912,7 @@ E2E 覆盖新建目录、重命名、上传、下载、取消上传后的临时�
 ~~~bash
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 git diff --check
-git add -p src/web/components/SftpBreadcrumbs.tsx src/web/components/SftpEntryActions.tsx src/web/api.ts src/web/platform/web-adapters.ts src/web/components/SftpPanel.tsx src/web/components/TransferQueue.tsx src/web/styles.css tests/unit/web/sftp-panel.dom.test.tsx tests/unit/web/transfer-queue.dom.test.tsx tests/e2e/ssh-productivity.spec.ts
+git add -p src/shared/core/models.ts src/shared/core/ports.ts src/web/components/SftpBreadcrumbs.tsx src/web/components/SftpEntryActions.tsx src/web/api.ts src/web/platform/web-adapters.ts src/web/components/SftpPanel.tsx src/web/components/TransferQueue.tsx src/web/styles.css tests/unit/web/sftp-panel.dom.test.tsx tests/unit/web/transfer-queue.dom.test.tsx tests/e2e/ssh-productivity.spec.ts
 git commit -m "feat: complete sftp workspace actions"
 ~~~
 
@@ -655,9 +922,11 @@ git commit -m "feat: complete sftp workspace actions"
 
 **目标：** 将已有的加密 Snippet CRUD 变成可发现、可搜索、可复用的日常命令入口。
 
+**依赖：** 消费 Task 1A 的 `SnippetStore` 和 capability；Web manager/palette 只通过 runtime 读取/变更 Snippet，不直接绑定 `/api/snippets` response。
+
 **Files:**
 - Create: src/web/components/SnippetManager.tsx、src/web/components/SnippetEditor.tsx、src/web/components/SnippetPalette.tsx、tests/unit/web/snippet-manager.dom.test.tsx
-- Modify: src/web/api.ts、src/web/platform/web-adapters.ts、src/web/App.tsx、src/web/components/CommandRunDialog.tsx、src/web/components/SnippetPicker.tsx、src/web/components/TerminalWorkspace.tsx、src/web/styles.css
+- Modify: src/shared/core/ports.ts、src/web/api.ts、src/web/platform/web-adapters.ts、src/web/App.tsx、src/web/components/CommandRunDialog.tsx、src/web/components/SnippetPicker.tsx、src/web/components/TerminalWorkspace.tsx、src/web/styles.css
 - Test: tests/unit/web/command-run-dialog.dom.test.tsx、tests/unit/server/command-routes.test.ts、tests/unit/server/snippet-service.test.ts（新增）
 
 **Interfaces:**
@@ -693,7 +962,7 @@ Expected: 新 manager/palette 测试在组件不存在时失败；现有 picker 
 
 - [ ] **Step 3: 实现 SnippetManager 和 Editor**
 
-Editor 支持 name、description、tags、command 和显式变量列表。保存前调用现有 snippetSchema；重复名称、空命令和无效变量名显示字段级错误。删除使用 Task 1 的 Dialog。
+Editor 通过 `runtime.snippets` 支持 name、description、tags、command 和显式变量列表。保存前调用现有 snippetSchema；重复名称、空命令和无效变量名显示字段级错误。删除使用 Task 1 的 Dialog。
 
 - [ ] **Step 4: 实现 palette 并接入终端快捷键**
 
@@ -727,6 +996,8 @@ git commit -m "feat: add snippet management and palette"
 
 **目标：** 使用已有 Workspace template API，补齐用户可见的命名任务上下文，并将当前两 pane 布局扩展到最多四个可见 pane。
 
+**依赖：** 消费 Task 1A 的 `WorkspaceStore` 和 `CoreRuntime`。WorkspaceSwitcher 只调用 shared store；Web adapter 负责把现有 HTTP template response 映射为 shared `WorkspaceTemplate`。
+
 **Files:**
 - Create: src/web/components/WorkspaceSwitcher.tsx、src/web/components/WorkspaceTemplateDialog.tsx、tests/unit/web/workspace-switcher.dom.test.tsx
 - Modify: src/shared/core/models.ts、src/shared/validation.ts、src/shared/core/capabilities.ts、src/web/api.ts、src/web/platform/web-adapters.ts、src/web/App.tsx、src/web/state/app-state.ts、src/web/state/workspace-state.ts、src/web/components/TerminalWorkspace.tsx、src/web/styles.css
@@ -749,12 +1020,12 @@ export interface WorkspaceLayout {
 }
 ~~~
 
-Web adapter 新增：
+`WorkspaceTemplateSummary` 只作为 Web 列表的 view model；实际 Web adapter 必须实现 Task 1A 的 shared `WorkspaceStore`：
 
 ~~~ts
-listWorkspaceTemplates(): Promise<readonly WorkspaceTemplateSummary[]>;
-createWorkspaceTemplate(name: string, state: WorkspaceState): Promise<WorkspaceTemplateSummary>;
-deleteWorkspaceTemplate(id: string): Promise<void>;
+listTemplates(): Promise<readonly WorkspaceTemplate[]>;
+createTemplate(input: WorkspaceTemplateInput): Promise<WorkspaceTemplate>;
+deleteTemplate(id: string): Promise<void>;
 ~~~
 
 - [ ] **Step 1: 写旧快照迁移和模板行为测试**
@@ -779,9 +1050,9 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 npm test -- tests/unit/web/workspace-switcher.dom.test.tsx tests/unit/web/terminal-workspace.dom.test.tsx tests/unit/server/workspace-service.test.ts --reporter=dot
 ~~~
 
-- [ ] **Step 3: 接入已有 template API**
+- [ ] **Step 3: 接入已有 template API 和 WorkspaceStore**
 
-在 src/web/api.ts 和 web adapter 中增加 list/create/delete template 方法。App 启动时只加载 metadata 和非敏感 state；创建模板前移除任何 terminalId、sessionId、credential、output 等字段，服务端再次调用 workspaceStateSchema。
+在 src/web/api.ts 和 Web `WorkspaceStore` adapter 中增加 list/create/delete template 方法。App 启动时只加载 metadata 和非敏感 state；创建模板前移除任何 terminalId、sessionId、credential、output 等字段，服务端再次调用 workspaceStateSchema。不要同时保留一套只供 Web 使用的 Workspace template 业务接口。
 
 - [ ] **Step 4: 实现 WorkspaceSwitcher 和打开确认**
 
@@ -816,6 +1087,8 @@ git commit -m "feat: add named workspaces and four pane layout"
 ## Task 8: 会话生命周期、重启边界和任务中断恢复
 
 **目标：** 让断线、路由切换、服务重启和任务失联都有真实、可解释、可恢复的终态。
+
+**依赖：** 消费 Task 1A 定义的 versioned protocol、shared lifecycle state 和 transport contract；未来桌面/Android 的后台挂起、网络切换和进程回收必须映射到同一终态，不能另造“看起来已连接”的平台状态。
 
 **Files:**
 - Modify: src/shared/core/models.ts、src/shared/core/state-machines.ts、src/shared/protocol.ts、src/shared/errors.ts
@@ -961,7 +1234,7 @@ README 写明：
 - WebSocket 短断可在 detach grace 内复接；服务重启后 Shell 不保证恢复。
 - SFTP 上传、取消、重试和目录操作的限制。
 
-架构文档同步 shared core、server adapter、Identity secret store、capability 和 operation restart boundary。
+架构文档同步 shared core、CoreRuntime、server/Web adapter、Identity secret store、platform-neutral file/import/export、capability 和 operation restart boundary；明确桌面/Android 只替换 adapter，不复制业务规则，也不把云同步作为核心依赖。
 
 - [ ] **Step 4: 执行最终验证命令**
 
@@ -974,9 +1247,10 @@ npm run build
 npm run test:e2e
 git diff --check
 git status --short
+rg -n -e "node:" -e "from ['\"]react" -e "from ['\"]react-dom" -e "WebSocket" -e "ssh2" -e "localStorage" -e "sessionStorage" src/shared || true
 ~~~
 
-Expected: 单元/集成测试、TypeScript、lint、Web/Server build 和 Playwright 全部通过；没有未解释的失败或永久 loading。
+Expected: 单元/集成测试、TypeScript、lint、Web/Server build 和 Playwright 全部通过；没有未解释的失败或永久 loading，且 shared core 静态依赖检查无命中。
 
 - [ ] **Step 5: 做发布前人工走查**
 
@@ -1009,6 +1283,7 @@ git commit -m "docs: close Termius experience gap release plan"
 | 易用性 | Recent/Tag/Group 导航、目标选择预览、Workspace template、统一错误和重试入口 | DOM tests、关键旅程 E2E、人工走查 |
 | UI 体验 | Dialog 焦点、移动端关键入口、路径和目标上下文、pane 最小高度 | dialog DOM tests、320px E2E、CSS review |
 | 可靠性 | Host Key 安全、短断线 reattach、needs-reopen、SERVER_RESTARTED/interrupted 终态、无永久 loading | session/transfer/restart tests、OpenSSH integration、E2E |
+| 跨端扩展 | shared CoreRuntime、VaultSession/ConnectionProbe、Web adapter contract、platform-neutral file/import/export、无平台依赖 | core boundary test、fake/Web adapter contract、双 TypeScript target |
 
 ## 4. 明确保留的后续决策
 
@@ -1020,4 +1295,4 @@ git commit -m "docs: close Termius experience gap release plan"
 - 云端同步、团队 Vault、RBAC、SSO、实时协作。
 - Windows/Linux/Android 原生 UI。
 
-它们必须在另一个独立 spec 中分别定义安全模型、数据归属、权限、平台 transport 和验收标准。
+它们必须在另一个独立 spec 中分别定义安全模型、数据归属、权限、平台 transport 和验收标准。原生客户端的实现前提是 Task 1A 的 shared contract 已通过；不能先做一套平台专属业务，再反向拼装 shared core。

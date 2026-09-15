@@ -8,7 +8,7 @@
 
 ## 1. 方案摘要
 
-Relay 继续保持 Web-first、local-first、单实例、单用户和单 Vault 定位，不把目标定义成复制 Termius 的所有商业版能力。下一阶段的目标是让 Relay 在浏览器和自托管场景中具备 Termius 式的日常工作流：
+Relay 继续保持 Web-first、local-first、单实例、单用户和单 Vault 定位，不把目标定义成复制 Termius 的所有商业版能力。下一阶段的目标是让 Relay 在浏览器和自托管场景中具备 Termius 式的日常工作流，同时把 shared core、ports、wire protocol 和 capability 做成跨 Web、桌面、Android 可复用的边界：
 
 > 找到主机 → 复用连接身份 → 打开任务 Workspace → 在终端中执行可复用命令 → 同时处理文件 → 断线后得到可信状态和恢复入口。
 
@@ -21,6 +21,7 @@ Relay 继续保持 Web-first、local-first、单实例、单用户和单 Vault �
 - SFTP 服务端已有目录操作，Web UI 仍偏向列表查看。
 - 浏览器路由切换、服务重启和实时任务失联时，用户缺少准确的状态解释。
 - 弹窗、移动端、图标语义和键盘焦点还没有形成统一 UI 规范。
+- shared core 目前已有模型、状态机和部分 transport port，但应用编排、Identity/Group/Workspace 等 store port 以及 Web adapter 边界还不完整；如果直接继续堆 Web 功能，未来桌面/Android 会重复实现业务规则。
 
 ## 2. Benchmark 与证据
 
@@ -36,6 +37,7 @@ Relay 当前的事实基线：
 - Workspace 模板 API 和 SQLite 表已经存在，但还没有 Web 端任务流。
 - 现有 Workspace 只保存非敏感 Tab、布局和筛选；live session 仍由进程内 session manager 管理。
 - 当前导入/导出改造已将 Vault 数据包和跨产品迁移拆为独立入口，剩余工作以文案、测试契约和发布回归为主。
+- 当前 `src/web/platform/web-adapters.ts` 已经隔离了部分 HTTP/WSS 和 transport，但 `App.tsx` 仍有直接 API wiring，导入/导出边界仍暴露浏览器 `File`/`Blob`；这属于本轮必须收口的跨端架构 gap。
 
 本设计只把官方 Termius 页面当作体验和能力 benchmark，不把营销页面当作独立的可用性实验结论。
 
@@ -51,7 +53,7 @@ Relay 当前的事实基线：
 
 ### 方案 B：工作流优先，能力分层交付
 
-先补齐 Identity、主机发现、批量目标、SFTP、Snippet、命名 Workspace 和会话生命周期，再为端口转发、团队、同步和原生客户端保留 capability/adapter 边界。
+先补齐统一 core contract、Identity、主机发现、批量目标、SFTP、Snippet、命名 Workspace 和会话生命周期，再为端口转发、团队、同步和原生客户端保留 capability/adapter 边界。
 
 优点是每个 slice 都可以独立验收，直接降低日常操作成本，并保留 Relay 的自托管差异化。缺点是短期功能矩阵不会完全覆盖 Termius。
 
@@ -76,6 +78,7 @@ Relay 当前的事实基线：
 - 导入/导出 UI、DOM 测试和组件接口一致。
 - Vault 包与跨产品迁移在 UI 上明确区分。
 - 外部配置缺失凭据时统一显示“需要补录凭据”，不展示源密码。
+- 固定 shared `CoreRuntime`、store/transport ports、版本化 capability 和 platform-neutral import/export contract；Web 只是第一个 adapter。
 - lint、typecheck、聚焦单测和导入/导出集成测试通过。
 
 #### Slice 1：日常任务闭环
@@ -102,7 +105,7 @@ Relay 当前的事实基线：
 - 端口转发、SOCKS/HTTP Proxy、Agent Forwarding。
 - Mosh、Telnet、Serial、RDP、VNC、X11。
 - 云端账号、第三方同步、团队 Vault、RBAC、SSO 和实时协作。
-- Windows/Linux/Android 原生 UI。
+- Windows/Linux/Android 原生 UI；本轮只建立可被原生客户端实现的 core/adapter contract。
 - AI 命令生成和真正依赖远端 Shell 集成的补全。
 - 默认录制完整交互式终端输入输出。
 - 让 Web 应用进程重启后伪造恢复原来的交互式 Shell。
@@ -287,9 +290,223 @@ SFTP 面板采用“路径上下文 + 文件列表 + 操作反馈”结构：
 - 终端快捷入口不能直接绕过批量确认。
 - AI 命令生成、Shell History 和实时远端路径补全列入后续 capability，不在本轮伪装实现。
 
-## 7. 服务端和数据架构
+## 7. 统一核心与跨端/跨平台扩展
 
-### 7.1 Identity 持久化
+### 7.1 Review 结论：当前 shared core 还不是完整应用边界
+
+当前 `src/shared` 已经承载 Host、Workspace、SFTP、批量任务、状态机、错误码和部分 transport ports，这是正确方向；但还存在三个会阻碍跨端扩展的缺口：
+
+- `src/shared/core/ports.ts` 目前主要覆盖 Host 读取、Session、File 和 Command，Identity、Group、Workspace template、Snippet、Activity 仍可能由各端自行拼接。
+- `src/web/App.tsx` 仍直接调用 `src/web/api.ts` 的部分 Host CRUD、轮询和生命周期方法。未来桌面/Android 如果复制这些调用，业务流程会和 HTTP API 绑定。
+- Web adapter 的导入/导出接口使用浏览器 `File`/`Blob`。这些对象可以存在 Web UI 边界，但不能成为 shared core 或跨端用例的类型。
+
+本方案因此把“统一核心”设为硬门槛：每个新增能力先定义 shared model、validation、error/state、capability 和 port，再由 Web adapter 接入；桌面/Android 本轮不做原生 UI，但未来可以替换 adapter 而不复制领域规则、确认步骤和状态语义。
+
+### 7.2 依赖方向和 CoreRuntime
+
+依赖方向固定为 `platform UI → shared application/core ← platform adapter`，服务端作为当前 Web 的 SSH/SFTP/command adapter 和安全边界。`src/shared` 只能包含平台无关的领域模型、schema、纯函数、用例组合和 ports，不得导入 Node、DOM、React、浏览器存储、WebSocket、HTTP、`ssh2`、桌面 keychain 或 Android API。
+
+核心 runtime 统一组合以下能力。接口中的 DTO 必须来自 `src/shared/core/models.ts` 或 `src/shared/validation.ts`；Identity 和 Host 的秘密载荷不进入 metadata。
+
+~~~ts
+export interface SecretRef {
+  kind: 'host' | 'identity';
+  id: string;
+}
+
+export interface SecretStore<Secret = unknown> {
+  get(ref: SecretRef): Promise<Secret | null>;
+  set(ref: SecretRef, secret: Secret): Promise<void>;
+  remove(ref: SecretRef): Promise<void>;
+}
+
+export interface VaultSessionPort {
+  status(): Promise<VaultStatus>;
+  setup(masterPassword: string): Promise<VaultStatus>;
+  unlock(masterPassword: string): Promise<VaultStatus>;
+  lock(): Promise<void>;
+}
+
+export interface ConnectionProbe {
+  test(hostId: string): Promise<ConnectionTestResult>;
+}
+
+export interface WorkspaceStore {
+  load(): Promise<WorkspaceState>;
+  save(expectedVersion: number, state: WorkspaceState): Promise<WorkspaceState>;
+  listTemplates(): Promise<readonly WorkspaceTemplate[]>;
+  createTemplate(input: WorkspaceTemplateInput): Promise<WorkspaceTemplate>;
+  deleteTemplate(templateId: string): Promise<void>;
+}
+
+export interface CoreRuntime {
+  platform: ClientPlatform;
+  capabilities: CapabilitySet;
+  vault: VaultSessionPort;
+  hosts: HostStore;
+  connection: ConnectionProbe;
+  identities: IdentityStore;
+  groups: GroupStore;
+  workspace: WorkspaceStore;
+  secrets: SecretStore;
+  sessions: SessionTransport;
+  files: FileTransport;
+  commands: CommandTransport;
+  snippets: SnippetStore;
+  activity: ActivityStore;
+  imports: ImportExportPort;
+}
+~~~
+
+这些 store port 的语义必须明确而且不携带部署细节：
+
+~~~ts
+export type VaultPhase = 'uninitialized' | 'locked' | 'unlocked';
+
+export interface VaultStatus {
+  phase: VaultPhase;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  hostKey?: {
+    algorithm: string;
+    fingerprint: string;
+    address: string;
+    port: number;
+  };
+}
+
+export interface HostStore {
+  list(filter?: HostListFilter): Promise<readonly HostMetadata[]>;
+  get(id: string): Promise<HostMetadata | null>;
+  getProfile(id: string): Promise<ConnectionProfile | null>;
+  create(input: HostCreateInput): Promise<HostMetadata>;
+  update(id: string, input: HostPatchInput): Promise<HostMetadata>;
+  delete(id: string): Promise<void>;
+}
+
+export interface IdentityStore {
+  list(): Promise<readonly IdentityMetadata[]>;
+  get(id: string): Promise<IdentityMetadata | null>;
+  create(input: IdentityCreateInput): Promise<IdentityMetadata>;
+  update(id: string, input: IdentityUpdateInput): Promise<IdentityMetadata>;
+  delete(id: string): Promise<void>;
+}
+
+export interface GroupStore {
+  list(): Promise<readonly GroupNode[]>;
+  get(id: string): Promise<GroupNode | null>;
+  create(input: GroupMutationInput): Promise<GroupNode>;
+  update(id: string, input: GroupMutationInput): Promise<GroupNode>;
+  delete(id: string): Promise<void>;
+}
+
+export interface SnippetStore {
+  list(): Promise<readonly SnippetMetadata[]>;
+  get(id: string): Promise<Snippet | null>;
+  create(input: SnippetInput): Promise<Snippet>;
+  update(id: string, input: SnippetPatchInput): Promise<Snippet>;
+  delete(id: string): Promise<void>;
+}
+
+export interface ActivityStore {
+  list(filter?: ActivityFilter): Promise<readonly AuditEvent[]>;
+}
+
+export interface VaultBundlePreview {
+  previewId: string;
+  hostCount: number;
+  groupCount: number;
+  conflicts: readonly VaultBundleConflict[];
+  expiresAt: string;
+}
+
+export interface VaultBundleConflict {
+  type: 'host' | 'group';
+  id: string;
+  name: string;
+}
+
+export interface VaultBundleResolution {
+  hostConflicts: 'skip' | 'replace';
+  groupConflicts: 'reuse' | 'replace';
+}
+
+export interface VaultBundleApplyResult {
+  importedHosts: number;
+  importedGroups: number;
+  skippedHosts: number;
+  skippedGroups: number;
+}
+
+export interface ImportExportPort {
+  previewExternalImport(files: readonly ImportSourceFile[], formatHint?: ImportFormat): Promise<ImportPreview>;
+  applyExternalImport(previewId: string, input: ImportApplyRequest): Promise<ImportApplyResult>;
+  exportOpenSshConfig(): Promise<Uint8Array>;
+  exportCsv(options?: ExportOptions): Promise<Uint8Array>;
+  exportVaultBundle(exportPassword: string): Promise<string>;
+  previewVaultImport(exportPassword: string, bundle: string): Promise<VaultBundlePreview>;
+  applyVaultImport(previewId: string, resolution: VaultBundleResolution): Promise<VaultBundleApplyResult>;
+}
+~~~
+
+这些 store 只暴露跨端可用的 metadata、查询、变更和结果模型；`SecretStore` 的实现可以是服务端 Vault、桌面 OS keychain 或 Android Keystore。Web 端可以让 `SecretStore` 保持不可读/不可持久化，连接时由服务端 Vault 解析凭据，不因统一 core 而把秘密下发到浏览器。
+
+导入/导出使用已有 shared `ImportSourceFile`（`string | Uint8Array`）和 `Uint8Array` 结果。Web 在 adapter 边界把 `File`/`Blob` 转换为 shared 类型，桌面和 Android 则把文件选择器或系统路径转换为同一类型；shared core 不引用 `File`、`Blob`、`FormData`、`Buffer`、`ReadableStream` 或平台路径对象。
+
+文件端口也必须保持传输中立：目录 mutation、上传、下载、取消和重试都使用 shared `ByteStream`/`BinarySource`，不能让 `FileTransport` 接收浏览器 `File` 或返回 `Blob`。
+
+~~~ts
+export type ByteStream = AsyncIterable<Uint8Array>;
+
+export interface BinarySource {
+  name: string;
+  size: number | null;
+  stream(): ByteStream;
+}
+
+export interface FileTransport {
+  list(hostId: string, path: string): Promise<readonly SftpEntry[]>;
+  createDirectory(hostId: string, path: string): Promise<void>;
+  rename(hostId: string, from: string, to: string): Promise<void>;
+  remove(hostId: string, path: string): Promise<void>;
+  createTransfer(request: TransferRequest): Promise<TransferJob>;
+  upload(transferId: string, source: BinarySource): Promise<TransferJob>;
+  download(transferId: string): Promise<ByteStream>;
+  cancelTransfer(transferId: string): Promise<void>;
+  retryTransfer(transferId: string): Promise<TransferJob>;
+}
+~~~
+
+### 7.3 跨平台职责矩阵
+
+| 能力层 | 统一内容 | 平台差异 |
+| --- | --- | --- |
+| Domain/application | Host、Identity、Group、Workspace、Snippet、Transfer、CommandRun、Activity；validation、错误码、状态机、连接路径和目标解析 | 不依赖平台 API |
+| Client ports | VaultSession/ConnectionProbe；Workspace/Identity/Group/Snippet/Activity store；Session/File/Command transport；SecretStore；ImportExportPort | Web、桌面、Android 各自实现 |
+| Web | React UI、HTTP/WSS、浏览器 WebSocket、server-mediated SSH、浏览器文件读写 | 不在浏览器保存凭据、Vault secret 或完整输出 |
+| Desktop | Windows/Linux UI shell、OS keychain、安全文件选择器；可选本地 SSH 或 server-mediated transport | 不提前选 Tauri/Electron，不改变 core 语义 |
+| Android | Android UI、Keystore、系统文件选择器、移动网络和生命周期 adapter | 处理后台挂起/网络切换，不改变重连和终态定义 |
+| Server | Fastify、SQLite、Vault、`ssh2`、owner 校验、任务和审计 | 当前 Web 的 SSH/SFTP/command 安全边界 |
+
+### 7.4 协议、Capability 和同步边界
+
+- Terminal/operation wire message 使用 shared 的版本和状态语义；新增或变更消息必须带可协商的 `protocolVersion`，不把 WebSocket 对象或 `ssh2` 错误暴露给客户端。
+- Capability 名称和版本由 shared 定义，服务端与客户端分别声明支持集合。客户端只按 capability 判断入口；不按 `web`、`desktop`、`android` 写业务分支。未支持操作统一返回 `CAPABILITY_UNAVAILABLE`。
+- `connecting`、`awaiting-host-key`、`awaiting-credential`、`connected`、`reconnecting`、`interrupted`、`needs-reopen` 等状态在端之间保持相同含义；平台可以改变恢复实现，但不能把“服务已重启”显示成旧 Shell 仍在执行。
+- Cloud sync 不是 `CoreRuntime` 的必选能力。未来如果增加 `SyncStore`/`SyncTransport`，必须另写数据归属、冲突合并、加密、离线和删除语义 spec，不把云账号偷偷引入当前 local-first 核心。
+
+### 7.5 跨端验收门槛
+
+- `src/shared` 的静态依赖检查不得发现 Node、DOM、React、WebSocket、`ssh2` 或浏览器存储依赖。
+- `tests/unit/shared/core-adapter-contract.test.ts` 对 in-memory fake 和 Web adapter 复用同一套 Session、File、Command、Store、错误码和终态断言。
+- `tests/unit/web/web-adapters.test.ts` 只验证 HTTP/WSS/浏览器对象到 shared port 的映射；`App.tsx` 新增功能不得直接调用 `api.ts`。
+- 每个新增功能的实施任务必须按“shared contract → fake contract test → Web adapter → Web UI”顺序推进，并在未来客户端接入时复用同一 contract tests。
+
+## 8. 服务端和数据架构
+
+### 8.1 Identity 持久化
 
 数据库迁移新增 identities 表，并为 hosts 增加 credential source 字段：
 
@@ -316,7 +533,7 @@ SQLite 现有 hosts 表的非空约束需要通过事务性 table rebuild 处理
 
 Identity 加密 AAD 使用 identity:<id>:credentials:v1。Host route、SFTP resource provider 和 command runner 都通过统一的 resolved credential 读取路径获得解密载荷，不直接读取数据库字段。
 
-### 7.2 API 边界
+### 8.2 API 边界
 
 新增：
 
@@ -334,7 +551,7 @@ Identity 加密 AAD 使用 identity:<id>:credentials:v1。Host route、SFTP reso
 - POST /api/sftp/:hostId/entries：继续使用 mkdir、rename、delete discriminated union。
 - GET/PUT /api/workspace：继续使用乐观版本号。
 
-### 7.3 Capability
+### 8.3 Capability
 
 在现有 capability 集合上增加稳定名称：
 
@@ -348,7 +565,7 @@ Identity 加密 AAD 使用 identity:<id>:credentials:v1。Host route、SFTP reso
 
 客户端只通过 capability 判断入口是否可用；未支持时显示不可用原因，不根据平台名称复制业务分支。
 
-### 7.4 会话和实时任务恢复
+### 8.4 会话和实时任务恢复
 
 Interactive Shell 不做跨进程持久化，恢复语义明确为：
 
@@ -364,7 +581,7 @@ Interactive Shell 不做跨进程持久化，恢复语义明确为：
 - transfer retry 只能从 failed 或 interrupted 进入 queued。
 - Activity 记录重启中断摘要，不写入命令、输出、文件内容和凭据。
 
-## 8. 安全、错误和数据生命周期
+## 9. 安全、错误和数据生命周期
 
 - 浏览器 localStorage/sessionStorage 不保存主密码、Host credential、Identity payload、导出密码、Vault bundle、命令输出或 SFTP 文件内容。
 - Identity、Snippet 和选择保存的批量输出只在服务端 Vault 解锁期间按需解密。
@@ -375,9 +592,9 @@ Interactive Shell 不做跨进程持久化，恢复语义明确为：
 - 统一错误码至少覆盖：Identity 被引用、Group 环、Workspace 模板冲突、Session 不存在、服务重启中断、Target 为空、SFTP 目录不可写和路径越界。
 - 所有异步操作都有终态；客户端收到 404 或 SERVER_RESTARTED 时停止轮询并显示重试/重新连接入口。
 
-## 9. UI 规范和可访问性
+## 10. UI 规范和可访问性
 
-### 9.1 Dialog
+### 10.1 Dialog
 
 新增统一 Dialog 组件，所有 role=dialog 的面板都必须：
 
@@ -388,7 +605,7 @@ Interactive Shell 不做跨进程持久化，恢复语义明确为：
 - 关闭后把焦点还给触发按钮。
 - 遮罩点击只关闭非破坏性面板；删除、替换和批量执行不允许误触关闭即提交。
 
-### 9.2 文案
+### 10.2 文案
 
 状态文案采用动作和结果导向：
 
@@ -398,7 +615,7 @@ Interactive Shell 不做跨进程持久化，恢复语义明确为：
 - “服务重启中断，可重试”表示传输或批量任务不会自动继续。
 - 危险按钮包含对象和动作，例如“删除远程文件”“替换现有服务器”。
 
-### 9.3 响应式
+### 10.3 响应式
 
 - 320px 宽度下不隐藏关键动作文字；次要动作可折叠到菜单。
 - 终端 pane 最小高度 220px；短视口下优先保留活动 pane。
@@ -406,7 +623,7 @@ Interactive Shell 不做跨进程持久化，恢复语义明确为：
 - 文件列表和目标列表支持横向滚动或卡片化，不让长主机名撑破布局。
 - 高对比度主题、:focus-visible、aria-live 和 reduced motion 保持现有约束。
 
-## 10. 验收与发布门槛
+## 11. 验收与发布门槛
 
 每个 slice 必须先有失败测试再实现，至少覆盖：
 
