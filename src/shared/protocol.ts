@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { APP_ERROR_CODES, AppError, type AppErrorCode } from './errors.js';
+import type { CommandRun, ConnectionDiagnostic, TransferJob } from './core/models.js';
 
 const dimensionSchema = z.number().int().min(1).max(500);
 const identifierSchema = z.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9._:-]*$/iu);
@@ -73,6 +74,13 @@ export interface TerminalHostKeyEvent {
   fingerprint: string;
   address: string;
   port: number;
+  hostId?: string;
+  hopIndex?: number;
+}
+
+export interface TerminalDiagnosticEvent {
+  type: 'diagnostic';
+  diagnostic: ConnectionDiagnostic;
 }
 
 export interface TerminalErrorEvent {
@@ -94,9 +102,37 @@ export interface TerminalPongEvent {
 export type TerminalServerEvent =
   | TerminalStatusEvent
   | TerminalHostKeyEvent
+  | TerminalDiagnosticEvent
   | TerminalErrorEvent
   | TerminalExitEvent
   | TerminalPongEvent;
+
+export type OperationKind = 'connection' | 'transfer' | 'command-run' | 'workspace';
+export type OperationStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface OperationEvent {
+  type: 'operation';
+  operationId: string;
+  operation: OperationKind;
+  status: OperationStatus;
+  hostId?: string;
+  progress?: { completedBytes: number; totalBytes: number | null };
+  code?: AppErrorCode;
+  message?: string;
+  at: string;
+}
+
+export interface TransferOperationEvent {
+  type: 'transfer';
+  job: TransferJob;
+}
+
+export interface CommandRunOperationEvent {
+  type: 'command-run';
+  run: CommandRun;
+}
+
+export type OperationServerEvent = OperationEvent | TransferOperationEvent | CommandRunOperationEvent;
 
 export interface PendingHostKeyDecision {
   pendingFingerprint?: string;

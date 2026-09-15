@@ -14,6 +14,7 @@ export interface HostKeyPolicyOptions {
   port: number;
   knownHostKey: KnownHostKey | null;
   saveHostKey: (hostId: string, algorithm: string, fingerprint: string) => void;
+  hopIndex?: number;
 }
 
 type VerifyCallback = (accepted: boolean) => void;
@@ -84,7 +85,9 @@ export class HostKeyPolicy {
         algorithm,
         fingerprint,
         address: this.options.address,
-        port: this.options.port
+        port: this.options.port,
+        hostId: this.options.hostId,
+        ...(this.options.hopIndex === undefined ? {} : { hopIndex: this.options.hopIndex })
       },
       verify
     };

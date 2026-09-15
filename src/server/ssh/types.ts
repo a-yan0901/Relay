@@ -1,4 +1,4 @@
-import type { HostCredentialInput } from '../../shared/validation.js';
+import type { ConnectionProfileSettings, HostCredentialInput } from '../../shared/validation.js';
 
 export interface SshConnectConfig {
   hostId: string;
@@ -8,9 +8,13 @@ export interface SshConnectConfig {
   auth: HostCredentialInput;
   hostKeyAlgorithm: string | null;
   hostKeyFingerprint: string | null;
+  keepaliveInterval?: number;
+  keepaliveCountMax?: number;
+  reconnect?: ConnectionProfileSettings['reconnect'];
   cols?: number;
   rows?: number;
   term?: string;
+  jumpHosts?: readonly SshConnectConfig[];
 }
 
 export interface SshHostKeyChallenge {
@@ -18,6 +22,8 @@ export interface SshHostKeyChallenge {
   fingerprint: string;
   address: string;
   port: number;
+  hostId?: string;
+  hopIndex?: number;
 }
 
 export interface SshChannel {
@@ -34,14 +40,49 @@ export interface SshChannel {
 export interface SshConnectCallbacks {
   onHostKey(challenge: SshHostKeyChallenge): Promise<boolean>;
   onStatus?(state: 'connecting' | 'awaiting-host-key' | 'connected' | 'closed' | 'failed'): void;
+  onDiagnostic?(event: import('../../shared/core/models.js').ConnectionDiagnostic): void;
+}
+
+export interface SshShellOptions {
+  cols?: number;
+  rows?: number;
+  term?: string;
+}
+
+export interface SshExecOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  onStdout?: (data: Buffer) => void;
+  onStderr?: (data: Buffer) => void;
+}
+
+export interface SshExecResult {
+  exitCode: number | null;
+  signal?: string;
+}
+
+export interface SshSftpResource {
+  raw?: unknown;
+  close(): void;
+}
+
+export interface SshConnectionResource {
+  openShell(options?: SshShellOptions): Promise<SshChannel>;
+  exec(command: string, options?: SshExecOptions): Promise<SshExecResult>;
+  openSftp(): Promise<SshSftpResource>;
+  close(): void;
 }
 
 export interface SshAdapterPort {
-  connect(config: SshConnectConfig, callbacks: SshConnectCallbacks): Promise<SshChannel>;
+  connect(config: SshConnectConfig, callbacks: SshConnectCallbacks): Promise<SshChannel | SshConnectionResource>;
   testConnection(config: SshConnectConfig, callbacks: SshConnectCallbacks): Promise<{
     ok: boolean;
     hostKey?: SshHostKeyChallenge;
   }>;
+}
+
+export interface SshResourceAdapter {
+  connect(config: SshConnectConfig, callbacks: SshConnectCallbacks): Promise<SshConnectionResource>;
 }
 
 export interface SshSessionManagerPort {

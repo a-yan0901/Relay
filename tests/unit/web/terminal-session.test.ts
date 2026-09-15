@@ -187,6 +187,33 @@ describe('TerminalSessionController', () => {
     }
   });
 
+  it('keeps sanitized connection diagnostics for the status UI', () => {
+    FakeSocket.instances = [];
+    const controller = new TerminalSessionController({
+      hostId: 'host-1',
+      terminalId: 'terminal-1',
+      webSocketFactory: (url) => new FakeSocket(url)
+    });
+    controller.connect();
+    const socket = lastSocket();
+    socket.open();
+    socket.message(JSON.stringify({
+      type: 'diagnostic',
+      diagnostic: {
+        id: 'diagnostic-1',
+        hostId: 'host-1',
+        stage: 'authentication',
+        status: 'failed',
+        hopIndex: 0,
+        retryable: false,
+        code: 'SSH_AUTH_FAILED',
+        at: '2026-09-15T00:00:00.000Z'
+      }
+    }));
+
+    expect(controller.snapshot.diagnostics).toEqual([expect.objectContaining({ stage: 'authentication', status: 'failed' })]);
+  });
+
   it('closes explicitly and removes reconnect timers', () => {
     vi.useFakeTimers();
     try {

@@ -33,6 +33,14 @@ describe('health and version endpoints', () => {
     expect(version.statusCode).toBe(200);
     expect(version.json()).toEqual(expect.objectContaining({ name: 'web-ssh-workspace', version: expect.any(String) }));
     expect(version.body).not.toContain('TRUSTED_ORIGINS');
+
+    const capabilities = await handle.app.inject('/api/capabilities');
+    expect(capabilities.statusCode).toBe(200);
+    expect(capabilities.json()).toEqual(expect.objectContaining({
+      client: 'web',
+      version: 1,
+      capabilities: expect.arrayContaining(['ssh.shell', 'sftp.transfer', 'automation.batch-exec'])
+    }));
   });
 
   it('serves the SPA entry point and falls back for browser routes', async () => {

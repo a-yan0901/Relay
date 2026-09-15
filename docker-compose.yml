@@ -9,7 +9,7 @@ services:
       PORT: 3000
       DATA_DIR: /data
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:?Set TRUSTED_ORIGINS to the browser origin before starting}
-      SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-900000}
+      SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-86400000}
       MAX_SESSIONS: ${MAX_SESSIONS:-8}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:

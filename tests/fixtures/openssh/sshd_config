@@ -12,6 +12,7 @@ X11Forwarding no
 AllowTcpForwarding no
 PermitTunnel no
 PermitUserEnvironment no
+Subsystem sftp /usr/lib/openssh/sftp-server
 PrintMotd no
 UseDNS no
 LogLevel ERROR

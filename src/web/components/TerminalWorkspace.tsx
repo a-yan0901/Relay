@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
+import type { SftpEntry, TransferJob, WorkspaceLayout } from '../../shared/core/models';
 import type { TerminalSessionSnapshot } from '../hooks/use-terminal-session';
 import { DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
 import { terminalStatusDotClass, terminalStatusLabels, TerminalToolbar } from './TerminalToolbar';
 import { TerminalPanel, type TerminalPanelToolbarState } from './TerminalPanel';
+import { SftpPanel } from './SftpPanel';
+import { TransferQueue } from './TransferQueue';
 
 type SplitOrientation = 'horizontal' | 'vertical';
 type PaneKey = 'primary' | 'secondary';
@@ -22,19 +25,38 @@ export interface TerminalWorkspaceProps {
   onActivate: (terminalId: string) => void;
   onClose: (terminalId: string) => void;
   onConnectHost?: (host: HostMetadataState) => void;
+  onOpenBatchCommand?: () => void;
+  onListSftp?: (hostId: string, path: string) => Promise<readonly SftpEntry[]>;
+  onDeleteSftp?: (hostId: string, path: string) => Promise<void>;
+  onUploadSftp?: (hostId: string, file: File, path: string) => Promise<void>;
+  onDownloadSftp?: (hostId: string, path: string, name: string) => Promise<void>;
+  transferJobs?: readonly TransferJob[];
+  onCancelTransfer?: (id: string) => void;
+  onRetryTransfer?: (id: string) => void;
   onStatusChange?: (terminalId: string, snapshot: TerminalSessionSnapshot) => void;
   preferences?: UiPreferences;
   onBackToHosts?: () => void;
   workspaceHeader?: ReactNode;
+  workspaceLayout?: WorkspaceLayout;
+  onLayoutChange?: (layout: WorkspaceLayout) => void;
 }
 
-const clampSplitRatio = (ratio: number): number => Math.min(0.8, Math.max(0.2, ratio));
+const clampSplitRatio = (ratio: number): number => Math.round(Math.min(0.8, Math.max(0.2, ratio)) * 100) / 100;
 
 const replacePane = (layout: SplitLayout, pane: PaneKey, terminalId: string | null): SplitLayout => (
   pane === 'primary' ? { ...layout, primaryId: terminalId } : { ...layout, secondaryId: terminalId }
 );
 
 const paneLabel = (pane: PaneKey): string => pane === 'primary' ? '左侧 Console' : '右侧 Console';
+
+const splitLayoutFromWorkspace = (layout: WorkspaceLayout | undefined, terminalIds: readonly string[]): SplitLayout | null => {
+  if (!layout || layout.mode === 'single') return null;
+  return {
+    orientation: layout.mode,
+    primaryId: terminalIds[0] ?? null,
+    secondaryId: terminalIds[1] ?? null
+  };
+};
 
 export const TerminalWorkspace = ({
   hosts = [],
@@ -43,21 +65,38 @@ export const TerminalWorkspace = ({
   onActivate,
   onClose,
   onConnectHost,
+  onOpenBatchCommand,
+  onListSftp,
+  onDeleteSftp,
+  onUploadSftp,
+  onDownloadSftp,
+  transferJobs = [],
+  onCancelTransfer,
+  onRetryTransfer,
   onStatusChange,
   preferences = DEFAULT_PREFERENCES,
   onBackToHosts,
-  workspaceHeader
+  workspaceHeader,
+  workspaceLayout,
+  onLayoutChange
 }: TerminalWorkspaceProps) => {
   const [hostQuery, setHostQuery] = useState('');
   const [hostPickerOpen, setHostPickerOpen] = useState(false);
-  const [splitLayout, setSplitLayout] = useState<SplitLayout | null>(null);
+  const [splitLayout, setSplitLayout] = useState<SplitLayout | null>(() => splitLayoutFromWorkspace(workspaceLayout, terminals.map((terminal) => terminal.terminalId)));
   const [focusedPane, setFocusedPane] = useState<PaneKey>('primary');
-  const [splitRatio, setSplitRatio] = useState(0.5);
+  const [splitRatio, setSplitRatio] = useState(() => clampSplitRatio(workspaceLayout?.ratio ?? 0.5));
   const [isDraggingDivider, setIsDraggingDivider] = useState(false);
   const [toolbarByTerminalId, setToolbarByTerminalId] = useState<Record<string, TerminalPanelToolbarState | null>>({});
+  const [filePanelOpen, setFilePanelOpen] = useState(false);
   const layoutRef = useRef<HTMLDivElement>(null);
   const pendingPaneRef = useRef<PaneKey | null>(null);
   const previousTerminalIdsRef = useRef(new Set(terminals.map((terminal) => terminal.terminalId)));
+
+  useEffect(() => {
+    if (!workspaceLayout) return;
+    setSplitRatio(clampSplitRatio(workspaceLayout.ratio));
+    setSplitLayout(splitLayoutFromWorkspace(workspaceLayout, terminals.map((terminal) => terminal.terminalId)));
+  }, [terminals, workspaceLayout?.mode, workspaceLayout?.ratio]);
 
   const handleToolbarChange = useCallback((terminalId: string, toolbar: TerminalPanelToolbarState | null): void => {
     setToolbarByTerminalId((current) => current[terminalId] === toolbar ? current : { ...current, [terminalId]: toolbar });
@@ -107,6 +146,7 @@ export const TerminalWorkspace = ({
       : secondaryCandidate
     : null;
   const activeToolbar = activeTerminalId ? toolbarByTerminalId[activeTerminalId] : null;
+  const activeHostId = activeTerminalId ? terminalById.get(activeTerminalId)?.hostId ?? null : null;
 
   const labelForTerminal = (terminalId: string | null): string => {
     if (!terminalId) return '选择 Console';
@@ -157,6 +197,7 @@ export const TerminalWorkspace = ({
     if (splitLayout?.orientation === orientation) {
       setSplitLayout(null);
       setFocusedPane('primary');
+      onLayoutChange?.({ mode: 'single', ratio: splitRatio });
       return;
     }
     const primaryId = primaryTerminalId;
@@ -164,6 +205,7 @@ export const TerminalWorkspace = ({
       ? splitLayout.secondaryId
       : secondaryCandidate;
     setSplitLayout({ orientation, primaryId, secondaryId });
+    onLayoutChange?.({ mode: orientation, ratio: splitRatio });
     const nextFocusedPane: PaneKey = secondaryId ? 'primary' : 'secondary';
     setFocusedPane(nextFocusedPane);
     if (!secondaryId && onConnectHost) setHostPickerOpen(true);
@@ -180,7 +222,9 @@ export const TerminalWorkspace = ({
     const ratio = splitLayout?.orientation === 'horizontal'
       ? (event.clientX - bounds.left) / bounds.width
       : (event.clientY - bounds.top) / bounds.height;
-    setSplitRatio(clampSplitRatio(ratio));
+    const nextRatio = clampSplitRatio(ratio);
+    setSplitRatio(nextRatio);
+    onLayoutChange?.({ mode: splitLayout?.orientation ?? 'single', ratio: nextRatio });
   };
 
   const stopDraggingDivider = (): void => setIsDraggingDivider(false);
@@ -192,12 +236,16 @@ export const TerminalWorkspace = ({
     if (event.key === 'Home') {
       event.preventDefault();
       setSplitRatio(0.2);
+      onLayoutChange?.({ mode: splitLayout.orientation, ratio: 0.2 });
     } else if (event.key === 'End') {
       event.preventDefault();
       setSplitRatio(0.8);
+      onLayoutChange?.({ mode: splitLayout.orientation, ratio: 0.8 });
     } else if (event.key === positiveKey || event.key === negativeKey) {
       event.preventDefault();
-      setSplitRatio((ratio) => clampSplitRatio(ratio + (event.key === positiveKey ? 0.05 : -0.05)));
+      const nextRatio = clampSplitRatio(splitRatio + (event.key === positiveKey ? 0.05 : -0.05));
+      setSplitRatio(nextRatio);
+      onLayoutChange?.({ mode: splitLayout.orientation, ratio: nextRatio });
     }
   };
   const layoutStyle: CSSProperties | undefined = splitLayout ? { '--split-ratio': `${splitRatio * 100}%` } as CSSProperties : undefined;
@@ -253,9 +301,11 @@ export const TerminalWorkspace = ({
                 )}
               </div>
             )}
+            {onOpenBatchCommand && <button className="terminal-topbar-button" type="button" aria-label="批量执行" onClick={onOpenBatchCommand}>⌘<span>批量</span></button>}
+            {onListSftp && <button className="terminal-topbar-button" type="button" aria-label="远程文件" aria-pressed={filePanelOpen} onClick={() => setFilePanelOpen((open) => !open)}>▤<span>文件</span></button>}
             <button className="terminal-topbar-button" type="button" aria-label="左右分屏" aria-pressed={splitLayout?.orientation === 'horizontal'} onClick={() => toggleSplit('horizontal')} title="左右分屏">◫</button>
             <button className="terminal-topbar-button" type="button" aria-label="上下分屏" aria-pressed={splitLayout?.orientation === 'vertical'} onClick={() => toggleSplit('vertical')} title="上下分屏">▤</button>
-            {splitLayout && <button className="terminal-topbar-button terminal-exit-split-button" type="button" aria-label="退出分屏" onClick={() => { setSplitLayout(null); setFocusedPane('primary'); }}>×<span>退出分屏</span></button>}
+            {splitLayout && <button className="terminal-topbar-button terminal-exit-split-button" type="button" aria-label="退出分屏" onClick={() => { setSplitLayout(null); setFocusedPane('primary'); onLayoutChange?.({ mode: 'single', ratio: splitRatio }); }}>×<span>退出分屏</span></button>}
           </div>
         </div>
         <div
@@ -334,6 +384,7 @@ export const TerminalWorkspace = ({
           )}
         </div>
       </section>
+      {filePanelOpen && onListSftp && activeHostId && <aside className="terminal-file-panel" aria-label="远程文件面板"><SftpPanel hostId={activeHostId} onList={onListSftp} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} /><TransferQueue jobs={transferJobs} onCancel={onCancelTransfer} onRetry={onRetryTransfer} /></aside>}
     </div>
   );
 };

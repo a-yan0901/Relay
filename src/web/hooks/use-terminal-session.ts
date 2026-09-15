@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { ConnectionDiagnostic } from '@shared/core/models';
 import type {
   TerminalErrorEvent,
   TerminalHostKeyEvent,
@@ -24,9 +25,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null
 );
 
+const DIAGNOSTIC_STAGES = ['resolve', 'tcp', 'jump', 'host-key', 'authentication', 'channel'] as const;
+const DIAGNOSTIC_STATUSES = ['started', 'succeeded', 'failed'] as const;
+
+const isDiagnostic = (value: unknown): value is ConnectionDiagnostic => {
+  if (!isRecord(value)) return false;
+  return typeof value.id === 'string' && typeof value.hostId === 'string' &&
+    typeof value.stage === 'string' && DIAGNOSTIC_STAGES.includes(value.stage as typeof DIAGNOSTIC_STAGES[number]) &&
+    typeof value.status === 'string' && DIAGNOSTIC_STATUSES.includes(value.status as typeof DIAGNOSTIC_STATUSES[number]) &&
+    typeof value.hopIndex === 'number' && Number.isInteger(value.hopIndex) && value.hopIndex >= 0 && value.hopIndex <= 4 &&
+    typeof value.retryable === 'boolean' && typeof value.at === 'string' &&
+    (value.code === undefined || typeof value.code === 'string');
+};
+
 const isServerEvent = (value: unknown): value is TerminalServerEvent => {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
   if (value.type === 'status') return isTerminalStatus(value.state);
+  if (value.type === 'diagnostic') return isDiagnostic(value.diagnostic);
   if (value.type === 'pong') return true;
   if (value.type === 'exit') return typeof value.code === 'number' || value.code === null;
   if (value.type === 'error') return typeof value.code === 'string' && typeof value.message === 'string';
@@ -68,6 +83,7 @@ export interface TerminalSessionSnapshot {
   error: TerminalErrorEvent | null;
   exit: Extract<TerminalServerEvent, { type: 'exit' }> | null;
   reconnectDelayMs: number;
+  diagnostics: ConnectionDiagnostic[];
 }
 
 export interface TerminalSessionControllerOptions {
@@ -78,6 +94,8 @@ export interface TerminalSessionControllerOptions {
   onExit?: (event: Extract<TerminalServerEvent, { type: 'exit' }>) => void;
   onSnapshot?: (snapshot: TerminalSessionSnapshot) => void;
   webSocketFactory?: (url: string) => TerminalSocketLike;
+  reconnectEnabled?: boolean;
+  reconnectMaxAttempts?: number;
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
 }
@@ -93,6 +111,8 @@ const validDimension = (value: number): boolean => Number.isInteger(value) && va
 export class TerminalSessionController {
   private readonly options: Required<Pick<TerminalSessionControllerOptions, 'hostId' | 'terminalId'>> & TerminalSessionControllerOptions;
   private readonly socketFactory: (url: string) => TerminalSocketLike;
+  private readonly reconnectEnabled: boolean;
+  private readonly reconnectMaxAttempts: number;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
   private readonly subscribers = new Set<(snapshot: TerminalSessionSnapshot) => void>();
@@ -106,7 +126,8 @@ export class TerminalSessionController {
     hostKey: null,
     error: null,
     exit: null,
-    reconnectDelayMs: 0
+    reconnectDelayMs: 0,
+    diagnostics: []
   };
 
   constructor(options: TerminalSessionControllerOptions) {
@@ -115,7 +136,12 @@ export class TerminalSessionController {
     }
     const reconnectBaseMs = options.reconnectBaseMs ?? 250;
     const reconnectMaxMs = options.reconnectMaxMs ?? 5_000;
-    if (!Number.isFinite(reconnectBaseMs) || reconnectBaseMs < 1 || reconnectBaseMs > reconnectMaxMs) {
+    const reconnectEnabled = options.reconnectEnabled ?? true;
+    const reconnectMaxAttempts = options.reconnectMaxAttempts ?? 5;
+    if (typeof reconnectEnabled !== 'boolean' || !Number.isInteger(reconnectMaxAttempts) || reconnectMaxAttempts < 0 || reconnectMaxAttempts > 20) {
+      throw new Error('invalid reconnect policy');
+    }
+    if (!Number.isFinite(reconnectBaseMs) || reconnectBaseMs < 0 || reconnectBaseMs > reconnectMaxMs) {
       throw new Error('invalid reconnect backoff');
     }
     if (!Number.isFinite(reconnectMaxMs) || reconnectMaxMs > 60_000) {
@@ -124,6 +150,8 @@ export class TerminalSessionController {
 
     this.options = options as Required<Pick<TerminalSessionControllerOptions, 'hostId' | 'terminalId'>> & TerminalSessionControllerOptions;
     this.socketFactory = options.webSocketFactory ?? defaultWebSocketFactory;
+    this.reconnectEnabled = reconnectEnabled;
+    this.reconnectMaxAttempts = reconnectMaxAttempts;
     this.reconnectBaseMs = reconnectBaseMs;
     this.reconnectMaxMs = reconnectMaxMs;
   }
@@ -271,6 +299,9 @@ export class TerminalSessionController {
         this.retryBlocked = true;
         this.updateSnapshot({ state: 'failed', error: event });
         return;
+      case 'diagnostic':
+        this.updateSnapshot({ diagnostics: [...this.snapshotValue.diagnostics, event.diagnostic].slice(-100) });
+        return;
       case 'exit':
         this.updateSnapshot({ exit: event });
         this.options.onExit?.(event);
@@ -291,6 +322,15 @@ export class TerminalSessionController {
       return;
     }
     if (this.retryBlocked) return;
+    if (!this.reconnectEnabled || this.reconnectAttempt >= this.reconnectMaxAttempts) {
+      this.retryBlocked = true;
+      this.updateSnapshot({
+        state: 'failed',
+        reconnectDelayMs: 0,
+        error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '自动重连次数已用尽，请手动重试' }
+      });
+      return;
+    }
     const delay = Math.min(this.reconnectBaseMs * (2 ** this.reconnectAttempt), this.reconnectMaxMs);
     this.reconnectAttempt += 1;
     this.updateSnapshot({ state: 'reconnecting', reconnectDelayMs: delay });

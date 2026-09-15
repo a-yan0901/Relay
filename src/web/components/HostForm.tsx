@@ -4,6 +4,7 @@ import { AppError } from '@shared/errors';
 import {
   parseHostCreateInput,
   parseHostPatchInput,
+  defaultConnectionProfileSettings,
   type HostCreateInput,
   type HostPatchInput
 } from '@shared/validation';
@@ -17,6 +18,7 @@ export interface HostFormProps {
   mode?: 'create' | 'edit';
   initialHost?: HostMetadataState;
   groups?: GroupSummary[];
+  hosts?: HostMetadataState[];
 }
 
 interface HostFormState {
@@ -31,7 +33,16 @@ interface HostFormState {
   groupId: string;
   tags: string;
   isFavorite: boolean;
+  jumpHostIds: string[];
+  keepaliveIntervalMs: string;
+  keepaliveCountMax: string;
+  reconnectEnabled: boolean;
+  reconnectMaxAttempts: string;
+  reconnectBaseDelayMs: string;
+  reconnectMaxDelayMs: string;
 }
+
+const defaultProfile = defaultConnectionProfileSettings();
 
 const initialForm: HostFormState = {
   name: '',
@@ -44,22 +55,39 @@ const initialForm: HostFormState = {
   passphrase: '',
   groupId: '',
   tags: '',
-  isFavorite: false
+  isFavorite: false,
+  jumpHostIds: [],
+  keepaliveIntervalMs: String(defaultProfile.keepaliveIntervalMs),
+  keepaliveCountMax: String(defaultProfile.keepaliveCountMax),
+  reconnectEnabled: defaultProfile.reconnect.enabled,
+  reconnectMaxAttempts: String(defaultProfile.reconnect.maxAttempts),
+  reconnectBaseDelayMs: String(defaultProfile.reconnect.baseDelayMs),
+  reconnectMaxDelayMs: String(defaultProfile.reconnect.maxDelayMs)
 };
 
-const formFromHost = (host: HostMetadataState): HostFormState => ({
-  name: host.name,
-  address: host.address,
-  port: String(host.port),
-  username: host.username,
-  authType: host.authType,
-  password: '',
-  privateKey: '',
-  passphrase: '',
-  groupId: host.groupId ?? '',
-  tags: host.tags.join(', '),
-  isFavorite: host.isFavorite
-});
+const formFromHost = (host: HostMetadataState): HostFormState => {
+  const profile = host.connectionProfile ?? defaultProfile;
+  return {
+    name: host.name,
+    address: host.address,
+    port: String(host.port),
+    username: host.username,
+    authType: host.authType,
+    password: '',
+    privateKey: '',
+    passphrase: '',
+    groupId: host.groupId ?? '',
+    tags: host.tags.join(', '),
+    isFavorite: host.isFavorite,
+    jumpHostIds: [...(host.jumpHostIds ?? [])],
+    keepaliveIntervalMs: String(profile.keepaliveIntervalMs),
+    keepaliveCountMax: String(profile.keepaliveCountMax),
+    reconnectEnabled: profile.reconnect.enabled,
+    reconnectMaxAttempts: String(profile.reconnect.maxAttempts),
+    reconnectBaseDelayMs: String(profile.reconnect.baseDelayMs),
+    reconnectMaxDelayMs: String(profile.reconnect.maxDelayMs)
+  };
+};
 
 export const HostForm = ({
   onSubmit,
@@ -67,7 +95,8 @@ export const HostForm = ({
   onCancel,
   mode = 'create',
   initialHost,
-  groups = []
+  groups = [],
+  hosts = []
 }: HostFormProps) => {
   const isEdit = mode === 'edit';
   const [form, setForm] = useState(() => initialHost ? formFromHost(initialHost) : initialForm);
@@ -87,6 +116,17 @@ export const HostForm = ({
       port: Number(form.port),
       username: form.username,
       groupId: form.groupId || null,
+      jumpHostIds: form.jumpHostIds,
+      connectionProfile: {
+        keepaliveIntervalMs: Number(form.keepaliveIntervalMs),
+        keepaliveCountMax: Number(form.keepaliveCountMax),
+        reconnect: {
+          enabled: form.reconnectEnabled,
+          maxAttempts: Number(form.reconnectMaxAttempts),
+          baseDelayMs: Number(form.reconnectBaseDelayMs),
+          maxDelayMs: Number(form.reconnectMaxDelayMs)
+        }
+      },
       tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
       isFavorite: form.isFavorite
     };
@@ -163,6 +203,42 @@ export const HostForm = ({
             {groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}
           </select>
         </div>
+        <div className="field field-wide">
+          <label htmlFor="host-jump-hosts">跳板机（可选，按连接顺序）</label>
+          <select id="host-jump-hosts" multiple size={Math.min(4, Math.max(2, hosts.filter((host) => host.id !== initialHost?.id).length || 2))} value={form.jumpHostIds.filter((id) => id !== initialHost?.id)} onChange={(event) => update('jumpHostIds', Array.from(event.target.selectedOptions, (option) => option.value))}>
+            {hosts.filter((host) => host.id !== initialHost?.id).map((host) => <option value={host.id} key={host.id}>{host.name} · {host.address}</option>)}
+          </select>
+          <small className="field-help">最多 4 跳；跳板机凭据只在服务端解密。</small>
+        </div>
+        <details className="field field-wide host-advanced-settings">
+          <summary>连接高级设置</summary>
+          <div className="form-grid form-grid-nested">
+            <div className="field">
+              <label htmlFor="host-keepalive-interval">Keepalive 间隔（毫秒）</label>
+              <input id="host-keepalive-interval" type="number" min="0" max="600000" value={form.keepaliveIntervalMs} onChange={(event) => update('keepaliveIntervalMs', event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="host-keepalive-count">Keepalive 次数</label>
+              <input id="host-keepalive-count" type="number" min="0" max="100" value={form.keepaliveCountMax} onChange={(event) => update('keepaliveCountMax', event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="host-reconnect-attempts">自动重连次数</label>
+              <input id="host-reconnect-attempts" type="number" min="0" max="20" value={form.reconnectMaxAttempts} onChange={(event) => update('reconnectMaxAttempts', event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="host-reconnect-base-delay">首次重连等待（毫秒）</label>
+              <input id="host-reconnect-base-delay" type="number" min="0" max="60000" value={form.reconnectBaseDelayMs} onChange={(event) => update('reconnectBaseDelayMs', event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="host-reconnect-max-delay">最大重连等待（毫秒）</label>
+              <input id="host-reconnect-max-delay" type="number" min="0" max="600000" value={form.reconnectMaxDelayMs} onChange={(event) => update('reconnectMaxDelayMs', event.target.value)} />
+            </div>
+            <label className="checkbox-field" htmlFor="host-reconnect-enabled">
+              <input id="host-reconnect-enabled" type="checkbox" checked={form.reconnectEnabled} onChange={(event) => update('reconnectEnabled', event.target.checked)} />
+              <span>断线后自动重连</span>
+            </label>
+          </div>
+        </details>
         {form.authType === 'password' ? (
           <div className="field field-wide">
             <label htmlFor="host-password">密码{isEdit ? '（留空保留现有）' : ''}</label>

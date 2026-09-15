@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { HostMetadataState, TerminalTabState } from '../../../src/web/state/app-state';
+import type { WorkspaceLayout } from '../../../src/shared/core/models';
 import { HostKeyDialog } from '../../../src/web/components/HostKeyDialog';
 import { TerminalToolbar } from '../../../src/web/components/TerminalToolbar';
 import { TerminalWorkspace } from '../../../src/web/components/TerminalWorkspace';
@@ -207,6 +208,32 @@ describe('TerminalWorkspace', () => {
     await user.click(screen.getByRole('button', { name: '上下分屏' }));
     expect(screen.getByRole('separator', { name: '调整上下分屏大小' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '上下分屏' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('hydrates and reports the durable split layout without persisting terminal ids', async () => {
+    const user = userEvent.setup();
+    const onLayoutChange = vi.fn();
+    const layout: WorkspaceLayout = { mode: 'horizontal', ratio: 0.7 };
+    render(
+      <TerminalWorkspace
+        hosts={[host('host-1', 'Production'), host('host-2', 'Staging')]}
+        terminals={[
+          { terminalId: 'live-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null },
+          { terminalId: 'live-2', hostId: 'host-2', state: 'connected', reconnectDelayMs: 0, errorMessage: null }
+        ]}
+        activeTerminalId="live-1"
+        onActivate={vi.fn()}
+        onClose={vi.fn()}
+        workspaceLayout={layout}
+        onLayoutChange={onLayoutChange}
+      />
+    );
+
+    const divider = screen.getByRole('separator', { name: '调整左右分屏大小' });
+    expect(divider).toHaveAttribute('aria-valuenow', '70');
+    divider.focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(onLayoutChange).toHaveBeenLastCalledWith({ mode: 'horizontal', ratio: 0.65 });
   });
 
   it('requires an explicit decision for a new host key', async () => {

@@ -6,6 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
 
 import type { TerminalStatus } from '@shared/protocol';
+import type { ConnectionDiagnostic } from '../../shared/core/models';
 
 import type { HostMetadataState } from '../state/app-state';
 import { TerminalOutputSanitizer } from '../terminal-output';
@@ -17,6 +18,15 @@ const isTouchDevice = (): boolean => {
   const coarsePointer = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches ?? false);
   const touchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
   return coarsePointer || touchPoints;
+};
+
+const diagnosticStageLabels: Record<ConnectionDiagnostic['stage'], string> = {
+  resolve: '解析路径',
+  tcp: '建立网络连接',
+  jump: '连接跳板',
+  'host-key': '校验主机指纹',
+  authentication: '认证',
+  channel: '打开会话通道'
 };
 
 export interface TerminalPanelToolbarState {
@@ -51,6 +61,10 @@ export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onTool
   const session = useTerminalSession({
     hostId: host.id,
     terminalId,
+    reconnectEnabled: host.connectionProfile?.reconnect.enabled,
+    reconnectMaxAttempts: host.connectionProfile?.reconnect.maxAttempts,
+    reconnectBaseMs: host.connectionProfile?.reconnect.baseDelayMs,
+    reconnectMaxMs: host.connectionProfile?.reconnect.maxDelayMs,
     getSize: () => ({
       cols: terminalRef.current?.cols ?? 80,
       rows: terminalRef.current?.rows ?? 24
@@ -177,6 +191,11 @@ export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onTool
     }
   }, []);
 
+  const latestDiagnostic = session.state.diagnostics?.at(-1);
+  const diagnosticMessage = latestDiagnostic
+    ? `${diagnosticStageLabels[latestDiagnostic.stage]}${latestDiagnostic.status === 'failed' ? '失败' : latestDiagnostic.status === 'succeeded' ? '完成' : '中'}`
+    : null;
+
   useEffect(() => {
     if (!active) {
       onToolbarChange?.(terminalId, null);
@@ -198,6 +217,7 @@ export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onTool
     <section className={`terminal-panel ${active ? 'is-active' : ''}`} aria-hidden={!active}>
       {searchOpen && <div className="terminal-search"><label htmlFor={`terminal-search-${terminalId}`}>终端搜索</label><input id={`terminal-search-${terminalId}`} autoFocus value={searchValue} onChange={(event) => updateSearch(event.target.value)} placeholder="搜索终端输出" /></div>}
       <div className="terminal-canvas" ref={mountRef} />
+      {latestDiagnostic && diagnosticMessage && <div className="terminal-diagnostic" role="status" aria-label="连接诊断"><span>{diagnosticMessage}</span>{latestDiagnostic.status === 'failed' && latestDiagnostic.retryable && <button className="button button-ghost button-small" type="button" aria-label="重试连接" onClick={session.reconnect}>重试</button>}</div>}
       {session.state.error && <div className="terminal-error" role="alert"><strong>{session.state.error.message}</strong><button className="button button-ghost button-small" type="button" onClick={session.reconnect}>重新连接</button></div>}
       {session.state.hostKey && <HostKeyDialog challenge={session.state.hostKey} onDecision={session.decideHostKey} />}
     </section>

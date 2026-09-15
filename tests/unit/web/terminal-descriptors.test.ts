@@ -15,12 +15,24 @@ describe('terminal workspace descriptors', () => {
   });
 
   it('persists only safe terminal and host identifiers', () => {
-    const descriptors: TerminalDescriptor[] = [{ terminalId: 'terminal-1', hostId: 'host-1' }];
+    const descriptors: TerminalDescriptor[] = [{ terminalId: 'terminal-1', hostId: 'host-1', workspaceTabId: 'tab-intent-1' }];
     saveTerminalDescriptors(descriptors);
 
     expect(JSON.parse(window.sessionStorage.getItem('relay.terminal.descriptors.v1') ?? '[]')).toEqual(descriptors);
     expect(loadTerminalDescriptors()).toEqual(descriptors);
     expect(window.sessionStorage.getItem('relay.terminal.descriptors.v1')).not.toContain('password');
+  });
+
+  it('drops malformed workspace tab bindings while keeping the live descriptor', () => {
+    window.sessionStorage.setItem('relay.terminal.descriptors.v1', JSON.stringify([
+      { terminalId: 'terminal-1', hostId: 'host-1', workspaceTabId: 'tab-intent-1' },
+      { terminalId: 'terminal-2', hostId: 'host-2', workspaceTabId: 'not valid' }
+    ]));
+
+    expect(loadTerminalDescriptors()).toEqual([
+      { terminalId: 'terminal-1', hostId: 'host-1', workspaceTabId: 'tab-intent-1' },
+      { terminalId: 'terminal-2', hostId: 'host-2' }
+    ]);
   });
 
   it('drops malformed and duplicate descriptors and clears them explicitly', () => {

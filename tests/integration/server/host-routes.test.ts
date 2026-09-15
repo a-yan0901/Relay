@@ -81,13 +81,19 @@ describe('host routes', () => {
         groupId: group.id,
         tags: ['prod', 'api'],
         isFavorite: true,
+        connectionProfile: {
+          keepaliveIntervalMs: 12_000,
+          keepaliveCountMax: 7,
+          reconnect: { enabled: true, maxAttempts: 2, baseDelayMs: 300, maxDelayMs: 2_000 }
+        },
         auth: { type: 'password', password }
       }
     });
     expect(created.statusCode).toBe(201);
-    const host = json<{ id: string; port: number; authType: string }>(created);
+    const host = json<{ id: string; port: number; authType: string; connectionProfile: { keepaliveIntervalMs: number; reconnect: { maxAttempts: number } } }>(created);
     expect(host.port).toBe(22);
     expect(host.authType).toBe('password');
+    expect(host.connectionProfile).toEqual(expect.objectContaining({ keepaliveIntervalMs: 12_000, reconnect: expect.objectContaining({ maxAttempts: 2 }) }));
     expect(created.body).not.toContain(password);
     expect(created.body).not.toContain('credentialCiphertext');
 
@@ -121,6 +127,7 @@ describe('host routes', () => {
       payload: {
         name: 'Production Shell',
         auth: { type: 'private_key', privateKey, passphrase: 'key-passphrase-fixture' },
+        connectionProfile: { reconnect: { maxAttempts: 4 } },
         isFavorite: false
       }
     });
@@ -130,6 +137,8 @@ describe('host routes', () => {
       authType: 'private_key',
       isFavorite: false
     }));
+    expect(json<{ connectionProfile: { keepaliveIntervalMs: number; reconnect: { maxAttempts: number; baseDelayMs: number } } }>(patched).connectionProfile)
+      .toEqual(expect.objectContaining({ keepaliveIntervalMs: 12_000, reconnect: expect.objectContaining({ maxAttempts: 4, baseDelayMs: 300 }) }));
     expect(patched.body).not.toContain(privateKey);
 
     const detail = await app.inject({ method: 'GET', url: `/api/hosts/${host.id}`, headers: { cookie } });
@@ -165,5 +174,43 @@ describe('host routes', () => {
     });
     expect(invalid.statusCode).toBe(400);
     expect(json<{ error: { code: string } }>(invalid).error.code).toBe('HOST_VALIDATION_FAILED');
+  });
+
+  it('validates jump hosts against the owner graph before saving a host', async () => {
+    const app = await makeApp();
+    const cookie = await setup(app);
+    const create = async (payload: Record<string, unknown>) => app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: {
+        name: 'Jump test host',
+        address: '127.0.0.1',
+        username: 'deploy',
+        auth: { type: 'password', password: 'fixture-password' },
+        ...payload
+      }
+    });
+
+    const jumpResponse = await create({ name: 'Jump host' });
+    expect(jumpResponse.statusCode).toBe(201);
+    const jumpId = json<{ id: string }>(jumpResponse).id;
+
+    const targetResponse = await create({ name: 'Target host', jumpHostIds: [jumpId] });
+    expect(targetResponse.statusCode).toBe(201);
+    const targetId = json<{ id: string }>(targetResponse).id;
+
+    const missing = await create({ name: 'Missing jump', jumpHostIds: ['missing-jump-host'] });
+    expect(missing.statusCode).toBe(404);
+    expect(json<{ error: { code: string } }>(missing).error.code).toBe('HOST_NOT_FOUND');
+
+    const cycle = await app.inject({
+      method: 'PATCH',
+      url: `/api/hosts/${jumpId}`,
+      headers: { cookie },
+      payload: { jumpHostIds: [targetId] }
+    });
+    expect(cycle.statusCode).toBe(400);
+    expect(json<{ error: { code: string } }>(cycle).error.code).toBe('HOST_VALIDATION_FAILED');
   });
 });

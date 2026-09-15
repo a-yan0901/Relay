@@ -9,7 +9,8 @@ import { TerminalPanel } from '../../../src/web/components/TerminalPanel';
 const testState = vi.hoisted(() => ({
   terminalInstances: [] as Array<{ constructorOptions: Record<string, unknown> }>,
   terminalOutputs: [] as Array<string | Uint8Array>,
-  onOutput: null as ((data: Uint8Array) => void) | null
+  onOutput: null as ((data: Uint8Array) => void) | null,
+  diagnostics: [] as Array<{ stage: string; status: string; retryable: boolean }>
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -77,7 +78,7 @@ vi.mock('../../../src/web/hooks/use-terminal-session', () => ({
   useTerminalSession: (options: { onOutput?: (data: Uint8Array) => void }) => {
     testState.onOutput = options.onOutput ?? null;
     return {
-      state: { state: 'connected', reconnectDelayMs: 0, error: null, hostKey: null },
+      state: { state: 'connected', reconnectDelayMs: 0, error: null, hostKey: null, diagnostics: testState.diagnostics },
       resize: () => {},
       sendInput: () => {},
       decideHostKey: () => {},
@@ -108,6 +109,7 @@ describe('TerminalPanel mobile selection', () => {
     testState.terminalInstances.length = 0;
     testState.terminalOutputs.length = 0;
     testState.onOutput = null;
+    testState.diagnostics.length = 0;
     vi.stubGlobal('requestAnimationFrame', (callback: (timestamp: number) => void) => {
       callback(0);
       return 1;
@@ -160,5 +162,13 @@ describe('TerminalPanel mobile selection', () => {
 
     const output = testState.terminalOutputs.flatMap((data) => typeof data === 'string' ? [...data].map((character) => character.codePointAt(0) ?? 0) : [...data]);
     expect(output).toEqual([0xc2, 0xa0, 0xe7, 0xbb, 0x88]);
+  });
+
+  it('shows a compact diagnostic stage and retry action for a failed connection stage', () => {
+    testState.diagnostics.push({ stage: 'authentication', status: 'failed', retryable: true });
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} />);
+
+    expect(screen.getByRole('status', { name: '连接诊断' })).toHaveTextContent('认证失败');
+    expect(screen.getByRole('button', { name: '重试连接' })).toBeInTheDocument();
   });
 });

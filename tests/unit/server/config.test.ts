@@ -8,7 +8,7 @@ describe('loadConfig', () => {
       nodeEnv: 'development',
       port: 3000,
       dataDir: '/data',
-      sessionIdleTimeoutMs: 900_000,
+      sessionIdleTimeoutMs: 86_400_000,
       maxSessions: 8,
       logLevel: 'info'
     });

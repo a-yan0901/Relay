@@ -13,7 +13,7 @@ export interface AppRuntimeConfig {
 const DEFAULT_PORT = 3000;
 const DEFAULT_DATA_DIR = '/data';
 const DEFAULT_FRONTEND_PORT = 5173;
-const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_SESSIONS = 8;
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 type Environment = Record<string, string | undefined>;

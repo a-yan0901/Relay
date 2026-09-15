@@ -394,6 +394,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 .field textarea { min-height: 116px; padding: 10px 11px; resize: vertical; }
+.field select[multiple] { min-height: 76px; padding: 5px; }
+.field-help { color: var(--faint); display: block; font-size: 10px; margin-top: 5px; }
 
 .auth-form input::placeholder, .field input::placeholder, .field textarea::placeholder { color: #55708f; }
 
@@ -514,9 +516,58 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .terminal-error { align-items: center; background: rgba(255, 125, 125, 0.09); border-top: 1px solid rgba(255, 125, 125, 0.18); color: #ffb1b1; display: flex; font-size: 11px; gap: 12px; justify-content: space-between; padding: 9px 12px; }
 
 /* Terminal mode keeps the console as the primary workspace. */
-.terminal-workspace-shell { display: block; height: 100%; min-height: 0; width: 100%; }
+.terminal-workspace-shell { display: flex; gap: 8px; height: 100%; min-height: 0; width: 100%; }
 
-.terminal-main { border-radius: 8px; height: 100%; }
+.terminal-main { border-radius: 8px; flex: 1 1 auto; height: 100%; min-width: 0; }
+
+.terminal-file-panel { background: var(--panel-soft); border: 1px solid var(--border); border-radius: 8px; display: flex; flex: 0 0 min(350px, 32vw); flex-direction: column; gap: 8px; min-height: 0; overflow: auto; padding: 12px; }
+.sftp-panel, .transfer-queue { min-width: 0; }
+.sftp-panel-heading, .transfer-queue .form-heading { align-items: center; display: flex; justify-content: space-between; gap: 8px; }
+.sftp-panel-actions { align-items: center; display: flex; gap: 5px; min-width: 0; }
+.sftp-upload-button { cursor: pointer; position: relative; }
+.sftp-upload-button input { height: 1px; opacity: 0; overflow: hidden; position: absolute; width: 1px; }
+.sftp-panel-heading h2, .transfer-queue h2 { font-size: 15px; margin: 0; }
+.sftp-path, .sftp-path-input input { color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sftp-path-input { min-width: 0; }
+.sftp-path-input input { background: transparent; border: 1px solid transparent; border-radius: 4px; min-height: 25px; padding: 3px 5px; width: 100%; }
+.sftp-path-input input:focus { border-color: var(--border-strong); color: var(--text); outline: none; }
+.sftp-entry-list, .transfer-queue ul, .command-run-results ul { list-style: none; margin: 8px 0 0; padding: 0; }
+.sftp-entry { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 7px; min-height: 34px; }
+.sftp-entry-name { background: transparent; border: 0; color: var(--text); flex: 1; font-size: 11px; min-width: 0; overflow: hidden; padding: 7px 0; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.sftp-entry-name:disabled { color: var(--muted); cursor: default; }
+.sftp-entry-meta { color: var(--faint); font-size: 9px; }
+.sftp-empty-state { color: var(--faint); font-size: 11px; text-align: center; }
+.transfer-item { align-items: center; border-bottom: 1px solid var(--border); display: flex; font-size: 10px; gap: 8px; justify-content: space-between; padding: 8px 0; }
+.transfer-item > div { min-width: 0; }
+.transfer-item strong, .transfer-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transfer-item small { color: var(--faint); margin-top: 3px; }
+.command-run-dialog, .command-run-result-modal { background: var(--panel); border: 1px solid var(--border-strong); border-radius: 13px; box-shadow: var(--shadow); max-height: calc(100vh - 44px); max-width: 680px; overflow-y: auto; padding: 24px; width: 100%; }
+.command-field, .command-variable-fields, .command-run-controls { display: grid; gap: 7px; margin-top: 15px; }
+.command-field > span, .command-variable-fields > p { color: var(--muted); font-size: 11px; margin: 0; }
+.command-field textarea, .command-variable-fields input, .command-run-controls select, .command-snippet-picker select { background: rgba(5, 15, 28, 0.55); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 12px; padding: 9px; width: 100%; }
+.command-variable-fields > label, .command-run-controls > label, .command-snippet-picker { color: var(--muted); display: grid; font-size: 10px; gap: 5px; }
+.command-snippet-picker { margin-top: 12px; }
+.command-run-preview { background: var(--panel-soft); border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 12px; margin-top: 15px; padding: 13px; }
+.command-run-preview strong { color: var(--muted); display: block; font-size: 10px; margin-bottom: 6px; }
+.command-run-preview ul { color: var(--text); font-size: 11px; list-style: none; margin: 0; padding: 0; }
+.command-run-preview li { padding: 2px 0; }
+.command-run-preview code, .command-run-command { color: var(--blue); display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+.command-run-settings { align-items: center; color: var(--faint); display: flex; flex-wrap: wrap; font-size: 10px; gap: 15px; }
+.command-run-settings label { align-items: center; display: inline-flex; gap: 5px; }
+.form-warning { color: var(--yellow); font-size: 10px; line-height: 1.6; margin: 0; }
+.command-run-controls { display: flex; gap: 12px; }
+.command-run-controls > label { flex: 1; }
+.command-run-results { min-width: 0; }
+.command-run-results h2 { font-size: 17px; margin: 0; }
+.command-target { border-top: 1px solid var(--border); padding: 12px 0; }
+.command-target strong, .command-target small { display: block; }
+.command-target small { color: var(--faint); font-size: 10px; margin-top: 3px; }
+.command-target pre { background: rgba(5, 15, 28, 0.48); border-radius: 6px; color: var(--text); font-size: 10px; margin: 8px 0 0; max-height: 180px; overflow: auto; padding: 9px; white-space: pre-wrap; }
+.activity-item { align-items: center; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: space-between; padding: 11px 0; }
+.activity-item strong, .activity-item small { display: block; }
+.activity-item strong { font-size: 11px; }
+.activity-item small { color: var(--faint); font-size: 9px; margin-top: 4px; }
+.activity-modal { max-width: 720px; }
 
 .terminal-topbar { align-items: stretch; background: rgba(10, 24, 41, 0.96); border-bottom: 1px solid var(--border); display: flex; min-height: 38px; position: relative; z-index: 5; }
 
@@ -756,7 +807,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .app-watermark { display: none; }
   .app-body-terminal { height: 100dvh; padding: 4px 6px 6px; }
   .terminal-workspace-shell { height: 100%; min-height: 0; }
+  .terminal-workspace-shell { flex-direction: column; }
   .terminal-main { min-height: 0; }
+  .terminal-file-panel { flex: 0 0 260px; width: 100%; }
   .terminal-back-button { min-width: 55px; padding: 0 7px; }
   .terminal-topbar, .terminal-topbar .terminal-tabs { min-height: 36px; }
   .terminal-tab { min-width: 138px; }

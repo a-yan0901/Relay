@@ -27,6 +27,7 @@ describe('HostKeyPolicy', () => {
       algorithm: 'ssh-ed25519',
       fingerprint: 'SHA256:fixture-key',
       address: '10.0.0.8',
+      hostId: 'host-1',
       port: 22
     });
     expect(saved).toEqual([]);

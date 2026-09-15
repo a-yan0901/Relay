@@ -146,6 +146,22 @@ describe('SQLite repositories', () => {
     expect(database.prepare('SELECT * FROM hosts WHERE id = ?').get('host-1')).toBeUndefined();
   });
 
+  it('persists non-secret connection profile settings with defaults for legacy rows', () => {
+    const database = createTestDatabase();
+    const hosts = new HostRepository(database, 'owner-a');
+    const profile = {
+      keepaliveIntervalMs: 12_000,
+      keepaliveCountMax: 7,
+      reconnect: { enabled: true, maxAttempts: 2, baseDelayMs: 300, maxDelayMs: 2_000 }
+    };
+    const created = hosts.createHost(hostInput({ connectionProfile: profile }));
+
+    expect(created.connectionProfile).toEqual(profile);
+    expect(hosts.listMetadata()[0]?.connectionProfile).toEqual(profile);
+    const updated = hosts.updateHost('host-1', { connectionProfile: { ...profile, reconnect: { ...profile.reconnect, maxAttempts: 4 } } });
+    expect(updated.connectionProfile?.reconnect.maxAttempts).toBe(4);
+  });
+
   it('isolates host and group queries by owner', () => {
     const database = createTestDatabase();
     const ownerAHosts = new HostRepository(database, 'owner-a');

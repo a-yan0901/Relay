@@ -1,9 +1,16 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
+import type { AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, SftpEntry, Snippet, SnippetMetadata, TransferJob, WorkspaceState } from '@shared/core/models';
 import type { HostCreateInput, HostMetadata, HostPatchInput } from '@shared/validation';
 
 export interface SetupStatus {
   initialized: boolean;
   locked: boolean;
+}
+
+export interface CapabilityResponse {
+  client: ClientPlatform;
+  version: 1;
+  capabilities: Capability[];
 }
 
 export interface GroupSummaryResponse {
@@ -20,6 +27,31 @@ export interface ConnectionTestResult {
     address: string;
     port: number;
   };
+}
+
+export interface WorkspaceResponse extends WorkspaceState {}
+
+export interface ImportPreviewResponse {
+  previewId: string;
+  hostCount: number;
+  groupCount: number;
+  conflicts: Array<{ type: 'host' | 'group'; id: string; name: string }>;
+  expiresAt: string;
+}
+
+export interface ImportResultResponse {
+  importedHosts: number;
+  importedGroups: number;
+  skippedHosts: number;
+  skippedGroups: number;
+}
+
+export type SnippetResponse = Snippet;
+export type CommandRunResponse = CommandRun;
+
+export interface AuditEventsResponse {
+  items: AuditEvent[];
+  nextCursor?: string;
 }
 
 interface ApiErrorBody {
@@ -42,16 +74,17 @@ const parseErrorBody = async (response: Response): Promise<ApiErrorBody> => {
 type RequestOptions = {
   method?: string;
   headers?: Headers;
-  body?: string;
+  body?: string | Blob | FormData;
   acceptedStatuses?: readonly number[];
+  responseType?: 'json' | 'blob';
 };
 
 const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> => {
   const headers = new Headers(init.headers);
-  if (init.body !== undefined && !headers.has('content-type')) {
+  if (typeof init.body === 'string' && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
-  const { acceptedStatuses = [], ...fetchOptions } = init;
+  const { acceptedStatuses = [], responseType = 'json', ...fetchOptions } = init;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -75,6 +108,9 @@ const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> =>
     if (response.status === 204) {
       return undefined as T;
     }
+    if (responseType === 'blob') {
+      return await response.blob() as T;
+    }
     return await response.json() as T;
   } catch (error) {
     if (controller.signal.aborted) {
@@ -89,6 +125,8 @@ const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> =>
 const json = (value: unknown): RequestOptions => ({ body: JSON.stringify(value) });
 
 export const getSetupStatus = (): Promise<SetupStatus> => request<SetupStatus>('/api/setup/status');
+
+export const getCapabilities = (): Promise<CapabilityResponse> => request<CapabilityResponse>('/api/capabilities');
 
 export const setupVault = (masterPassword: string): Promise<SetupStatus> => request<SetupStatus>('/api/setup', {
   method: 'POST',
@@ -111,6 +149,8 @@ export const listHosts = (filter: { query?: string; groupId?: string | null; fav
   return request<HostMetadata[]>(`/api/hosts${suffix ? `?${suffix}` : ''}`);
 };
 
+export const getHost = (id: string): Promise<HostMetadata> => request<HostMetadata>(`/api/hosts/${encodeURIComponent(id)}`);
+
 export const createHost = (input: HostCreateInput): Promise<HostMetadata> => request<HostMetadata>('/api/hosts', {
   method: 'POST',
   ...json(input)
@@ -131,3 +171,95 @@ export const testConnection = (id: string): Promise<ConnectionTestResult> => req
   method: 'POST',
   acceptedStatuses: [409]
 });
+
+export const getWorkspace = (): Promise<WorkspaceResponse> => request<WorkspaceResponse>('/api/workspace');
+
+export const saveWorkspace = (expectedVersion: number, state: WorkspaceState): Promise<WorkspaceResponse> => request<WorkspaceResponse>('/api/workspace', {
+  method: 'PUT',
+  ...json({ expectedVersion, state })
+});
+
+export const exportVaultBundle = (exportPassword: string): Promise<{ bundle: string }> => request<{ bundle: string }>('/api/vault/export', {
+  method: 'POST',
+  ...json({ exportPassword })
+});
+
+export const previewVaultImport = (exportPassword: string, bundle: string): Promise<ImportPreviewResponse> => request<ImportPreviewResponse>('/api/vault/import/preview', {
+  method: 'POST',
+  ...json({ exportPassword, bundle })
+});
+
+export const applyVaultImport = (
+  previewId: string,
+  resolution: { hostConflicts: 'skip' | 'replace'; groupConflicts: 'reuse' | 'replace' }
+): Promise<ImportResultResponse> => request<ImportResultResponse>('/api/vault/import/apply', {
+  method: 'POST',
+  ...json({ previewId, resolution })
+});
+
+export const listSnippets = (): Promise<SnippetMetadata[]> => request<SnippetMetadata[]>('/api/snippets');
+
+export const getSnippet = (id: string): Promise<SnippetResponse> => request<SnippetResponse>(`/api/snippets/${encodeURIComponent(id)}`);
+
+export const createSnippet = (input: Omit<Snippet, 'id' | 'createdAt' | 'updatedAt'>): Promise<SnippetResponse> => request<SnippetResponse>('/api/snippets', {
+  method: 'POST',
+  ...json(input)
+});
+
+export const updateSnippet = (id: string, input: Partial<Omit<Snippet, 'id' | 'createdAt' | 'updatedAt'>>): Promise<SnippetResponse> => request<SnippetResponse>(`/api/snippets/${encodeURIComponent(id)}`, {
+  method: 'PATCH',
+  ...json(input)
+});
+
+export const deleteSnippet = (id: string): Promise<void> => request<void>(`/api/snippets/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+export const startCommandRun = (input: CommandRunRequest): Promise<CommandRunResponse> => request<CommandRunResponse>('/api/command-runs', {
+  method: 'POST',
+  ...json(input)
+});
+
+export const getCommandRun = (id: string): Promise<CommandRunResponse> => request<CommandRunResponse>(`/api/command-runs/${encodeURIComponent(id)}`);
+
+export const cancelCommandRun = (id: string): Promise<void> => request<void>(`/api/command-runs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+export const listSftpEntries = (hostId: string, path = '/'): Promise<SftpEntry[]> => request<SftpEntry[]>(`/api/sftp/${encodeURIComponent(hostId)}/list?path=${encodeURIComponent(path)}`);
+
+export const mutateSftpEntry = (hostId: string, input: { action: 'mkdir'; path: string } | { action: 'rename'; from: string; to: string } | { action: 'delete'; path: string; confirmed: boolean }): Promise<void> => request<void>(`/api/sftp/${encodeURIComponent(hostId)}/entries`, {
+  method: 'POST',
+  ...json(input)
+});
+
+export const createTransfer = (input: { kind: 'upload' | 'download'; hostId: string; sourcePath: string; targetPath: string; totalBytes?: number | null }): Promise<TransferJob> => request<TransferJob>('/api/sftp/' + encodeURIComponent(input.hostId) + '/transfers', {
+  method: 'POST',
+  ...json(input)
+});
+
+export const getTransfer = (id: string): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}`);
+
+export const uploadTransferContent = (id: string, file: Blob): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}/content`, {
+  method: 'PUT',
+  body: (() => {
+    const form = new FormData();
+    const filename = 'name' in file && typeof file.name === 'string' ? file.name : 'upload';
+    form.append('file', file, filename);
+    return form;
+  })()
+});
+
+export const downloadTransferContent = (id: string): Promise<Blob> => request<Blob>(`/api/transfers/${encodeURIComponent(id)}/content`, {
+  responseType: 'blob'
+});
+
+export const cancelTransfer = (id: string): Promise<void> => request<void>(`/api/transfers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+export const retryTransfer = (id: string): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}/retry`, { method: 'POST' });
+
+export const listAuditEvents = (filter: { cursor?: string; limit?: number; eventType?: string; hostId?: string } = {}): Promise<AuditEventsResponse> => {
+  const params = new URLSearchParams();
+  if (filter.cursor) params.set('cursor', filter.cursor);
+  if (filter.limit !== undefined) params.set('limit', String(filter.limit));
+  if (filter.eventType) params.set('eventType', filter.eventType);
+  if (filter.hostId) params.set('hostId', filter.hostId);
+  const suffix = params.toString();
+  return request<AuditEventsResponse>(`/api/audit${suffix ? `?${suffix}` : ''}`);
+};

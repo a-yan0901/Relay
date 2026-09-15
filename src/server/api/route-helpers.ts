@@ -33,6 +33,13 @@ export const toHostMetadataDto = (row: HostRow | HostMetadata): HostMetadata => 
   isFavorite: row.isFavorite,
   hostKeyAlgorithm: row.hostKeyAlgorithm,
   hostKeyFingerprint: row.hostKeyFingerprint,
+  ...(row.jumpHostIds === undefined ? {} : { jumpHostIds: [...row.jumpHostIds] }),
+  ...(row.connectionProfile === undefined ? {} : {
+    connectionProfile: {
+      ...row.connectionProfile,
+      reconnect: { ...row.connectionProfile.reconnect }
+    }
+  }),
   lastConnectedAt: row.lastConnectedAt,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt

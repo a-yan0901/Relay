@@ -13,6 +13,7 @@ import { SessionStore } from '../auth/session-store.js';
 import { AuditRepository, HostRepository } from '../db/repositories.js';
 import { VaultService, type EncryptedJson } from '../vault/vault-service.js';
 import { HostKeyPolicy } from '../ssh/host-key-policy.js';
+import { ConnectionPathResolver } from '../ssh/connection-path.js';
 import type {
   SshChannel,
   SshConnectCallbacks,
@@ -124,6 +125,7 @@ export interface TerminalGatewayDependencies {
   auditRepository: AuditRepository;
   vaultService: VaultService;
   sessionManager: SshSessionManagerPort;
+  connectionPathResolver?: ConnectionPathResolver;
 }
 
 const websocketHandshake = async (
@@ -198,10 +200,12 @@ export const registerTerminalGateway = async (
     let managerSessionId: string | undefined;
     let channel: SshChannel | undefined;
     let hostKeyPolicy: HostKeyPolicy | undefined;
+    const hostKeyPolicies = new Map<string, HostKeyPolicy>();
     let pendingResize: { cols: number; rows: number } | undefined;
     let active = true;
     let cleanupStarted = false;
     let lastStatus: Extract<TerminalServerEvent, { type: 'status' }>['state'] | undefined;
+    let hostMarkedConnected = false;
 
     const send = (event: TerminalServerEvent): void => {
       if (active && socket.readyState === 1) {
@@ -221,6 +225,12 @@ export const registerTerminalGateway = async (
       }
       lastStatus = state;
       send({ type: 'status', state });
+    };
+
+    const markHostConnected = (hostId: string): void => {
+      if (hostMarkedConnected) return;
+      hostMarkedConnected = true;
+      dependencies.hostRepository.markConnected(hostId);
     };
 
     const cleanup = (reason: TerminalGatewayCloseReason): void => {
@@ -277,55 +287,79 @@ export const registerTerminalGateway = async (
       const reattached = dependencies.sessionManager.reattach(managerSessionId, row.id);
       if (reattached) {
         attachChannel(reattached);
+        markHostConnected(row.id);
         sendStatus('connected');
         const bufferedOutput = dependencies.sessionManager.getBufferedOutput(managerSessionId, row.id);
         if (bufferedOutput && bufferedOutput.length > 0) {
           sendOutput(bufferedOutput);
         }
-        dependencies.hostRepository.markConnected(row.id);
         return;
       }
 
-      const knownHostKey = row.hostKeyAlgorithm && row.hostKeyFingerprint
-        ? { algorithm: row.hostKeyAlgorithm, fingerprint: row.hostKeyFingerprint }
-        : null;
-      hostKeyPolicy = new HostKeyPolicy({
-        hostId: row.id,
-        address: row.address,
-        port: row.port,
-        knownHostKey,
-        saveHostKey: (hostId, algorithm, fingerprint) => {
-          dependencies.hostRepository.setHostKey(hostId, algorithm, fingerprint);
-        }
-      });
+      const path = dependencies.connectionPathResolver?.resolve(row.id, dependencies.ownerId) ?? { targetHostId: row.id, hopCount: 0, hops: [row] };
+      const pathRows = path.hops.map((hop) => dependencies.hostRepository.getForConnection(hop.id)).filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
+      if (pathRows.length !== path.hops.length) throw new AppError('HOST_NOT_FOUND');
+      const session = dependencies.sessionStore.get(authenticatedSessionId);
+      if (!session) throw new AppError('SESSION_INVALID');
 
-      const credential = await dependencies.vaultService.decryptJson<HostCredentialInput>(
-        (dependencies.sessionStore.get(authenticatedSessionId) ?? (() => { throw new AppError('SESSION_INVALID'); })()).vaultKey,
-        `host:${row.id}:credentials:v1`,
-        parseCredentialBlob(row.credentialCiphertext)
-      );
+      const pathConfigs: SshConnectConfig[] = [];
+      for (const [hopIndex, pathRow] of pathRows.entries()) {
+        const knownHostKey = pathRow.hostKeyAlgorithm && pathRow.hostKeyFingerprint
+          ? { algorithm: pathRow.hostKeyAlgorithm, fingerprint: pathRow.hostKeyFingerprint }
+          : null;
+        const policy = new HostKeyPolicy({
+          hostId: pathRow.id,
+          address: pathRow.address,
+          port: pathRow.port,
+          knownHostKey,
+          hopIndex,
+          saveHostKey: (hostId, algorithm, fingerprint) => dependencies.hostRepository.setHostKey(hostId, algorithm, fingerprint)
+        });
+        hostKeyPolicies.set(pathRow.id, policy);
+        const credential = await dependencies.vaultService.decryptJson<HostCredentialInput>(
+          session.vaultKey,
+          `host:${pathRow.id}:credentials:v1`,
+          parseCredentialBlob(pathRow.credentialCiphertext)
+        );
+        pathConfigs.push({
+          hostId: pathRow.id,
+          address: pathRow.address,
+          port: pathRow.port,
+          username: pathRow.username,
+          auth: credential,
+          hostKeyAlgorithm: pathRow.hostKeyAlgorithm,
+          hostKeyFingerprint: pathRow.hostKeyFingerprint,
+          keepaliveInterval: pathRow.connectionProfile?.keepaliveIntervalMs,
+          keepaliveCountMax: pathRow.connectionProfile?.keepaliveCountMax,
+          reconnect: pathRow.connectionProfile?.reconnect
+        });
+      }
+      hostKeyPolicy = hostKeyPolicies.get(row.id);
+      const targetConfig = pathConfigs.at(-1);
+      if (!targetConfig) throw new AppError('CONNECTION_STAGE_FAILED');
       const config: SshConnectConfig = {
-        hostId: row.id,
-        address: row.address,
-        port: row.port,
-        username: row.username,
-        auth: credential,
-        hostKeyAlgorithm: row.hostKeyAlgorithm,
-        hostKeyFingerprint: row.hostKeyFingerprint,
+        ...targetConfig,
         cols: message.cols,
         rows: message.rows,
-        term: message.term ?? 'xterm-256color'
+        term: message.term ?? 'xterm-256color',
+        ...(pathConfigs.length > 1 ? { jumpHosts: pathConfigs.slice(0, -1) } : {})
       };
       const callbacks: SshConnectCallbacks = {
-        onStatus: (state) => sendStatus(state),
+        onStatus: (state) => {
+          if (state === 'connected') markHostConnected(row.id);
+          sendStatus(state);
+        },
+        onDiagnostic: (event) => send({ type: 'diagnostic', diagnostic: event }),
         onHostKey: async (challenge) => new Promise<boolean>((resolve) => {
-          hostKeyPolicy?.verifyFingerprint(challenge.fingerprint, challenge.algorithm, (accepted) => {
-            if (!accepted && hostKeyPolicy?.hasMismatch) {
+          const policy = hostKeyPolicies.get(challenge.hostId ?? row.id) ?? hostKeyPolicy;
+          hostKeyPolicy = policy;
+          policy?.verifyFingerprint(challenge.fingerprint, challenge.algorithm, (accepted) => {
+            if (!accepted && policy?.hasMismatch) {
               send({ type: 'error', code: 'HOST_KEY_MISMATCH', message: '远程主机指纹与已保存指纹不一致' });
             }
             resolve(accepted);
           });
-          const pending = hostKeyPolicy?.pendingChallenge;
+          const pending = policy?.pendingChallenge;
           if (pending) {
             sendStatus('awaiting-host-key');
             send({ type: 'host-key', ...pending });
@@ -337,10 +371,10 @@ export const registerTerminalGateway = async (
       try {
         attachChannel(await dependencies.sessionManager.open(managerSessionId, config, callbacks));
         sendStatus('connected');
-        dependencies.hostRepository.markConnected(row.id);
+        markHostConnected(row.id);
         dependencies.auditRepository.insert({ eventType: 'ssh_connected', hostId: row.id, requestId: message.requestId });
       } catch (error) {
-        if (hostKeyPolicy?.hasMismatch) {
+        if ([...hostKeyPolicies.values()].some((policy) => policy.hasMismatch)) {
           throw new AppError('HOST_KEY_MISMATCH');
         }
         throw error;

@@ -15,6 +15,9 @@ export interface E2eSshFixture {
   username: string;
   password: string;
   port: number;
+  remoteDirectory: string;
+  knownFileName: string;
+  knownFilePath: string;
   close: () => Promise<void>;
 }
 
@@ -67,6 +70,9 @@ export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
   await chmod(root, 0o755);
   const home = join(root, 'home');
   await mkdir(home, { mode: 0o700 });
+  const remoteDirectory = join('/tmp', `webssh-e2e-files-${randomUUID().replaceAll('-', '').slice(0, 12)}`);
+  const knownFileName = 'fixture-known.txt';
+  const knownFilePath = join(remoteDirectory, knownFileName);
   const port = await findFreePort();
   const hostKey = join(root, 'host_ed25519');
   const configPath = join(root, 'sshd_config');
@@ -88,11 +94,15 @@ export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
     'PermitTunnel no',
     'PrintMotd no',
     'UseDNS no',
+    'Subsystem sftp /usr/lib/openssh/sftp-server',
     'LogLevel QUIET'
   ].join('\n'));
   await execFile('/usr/sbin/useradd', ['--no-create-home', '--shell', '/bin/sh', '--home-dir', home, FIXTURE_USER]);
   await execFile('/usr/bin/chown', [`${FIXTURE_USER}:${FIXTURE_USER}`, home]);
   await setPassword();
+  await mkdir(remoteDirectory, { mode: 0o700 });
+  await writeFile(knownFilePath, 'fixture-known-file\n', { mode: 0o600 });
+  await execFile('/usr/bin/chown', [`${FIXTURE_USER}:${FIXTURE_USER}`, remoteDirectory, knownFilePath]);
   await execFile(SSHD_PATH, ['-t', '-f', configPath]);
   const child = spawn(SSHD_PATH, ['-D', '-e', '-f', configPath], { stdio: ['ignore', 'ignore', 'pipe'] });
   child.stderr?.resume();
@@ -102,6 +112,7 @@ export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
   } catch (error) {
     child.kill('SIGTERM');
     await execFile('/usr/sbin/userdel', ['--remove', FIXTURE_USER]).catch(() => undefined);
+    await rm(remoteDirectory, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
     throw error;
   }
@@ -117,8 +128,9 @@ export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
       setTimeout(resolve, 1_000).unref();
     });
     await execFile('/usr/sbin/userdel', ['--remove', FIXTURE_USER]).catch(() => undefined);
+    await rm(remoteDirectory, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
   };
 
-  return { username: FIXTURE_USER, password: FIXTURE_PASSWORD, port, close };
+  return { username: FIXTURE_USER, password: FIXTURE_PASSWORD, port, remoteDirectory, knownFileName, knownFilePath, close };
 };

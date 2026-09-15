@@ -5,7 +5,8 @@ import type {
   SshConnectConfig,
   SshSessionManagerPort,
   SshAdapterPort,
-  SshHostKeyChallenge
+  SshHostKeyChallenge,
+  SshConnectionResource
 } from './types.js';
 
 export interface SshSessionManagerOptions {
@@ -19,6 +20,7 @@ interface ManagedSession {
   id: string;
   hostId: string;
   channel: SshChannel;
+  resource?: SshConnectionResource;
   detached: boolean;
   timer?: ReturnType<typeof setTimeout>;
   closed: boolean;
@@ -65,12 +67,16 @@ export class SshSessionManager implements SshSessionManagerPort {
     }
 
     this.pendingConnections += 1;
+    let resource: SshConnectionResource | undefined;
     try {
-      const channel = await this.adapter.connect(config, callbacks);
+      const connection = await this.adapter.connect(config, callbacks);
+      resource = this.isResource(connection) ? connection : undefined;
+      const channel: SshChannel = resource ? await resource.openShell(config) : connection as SshChannel;
       const managed: ManagedSession = {
         id: sessionId,
         hostId: config.hostId,
         channel,
+        resource,
         detached: false,
         closed: false,
         outputBuffer: [],
@@ -81,9 +87,16 @@ export class SshSessionManager implements SshSessionManagerPort {
       channel.on('stderr', (data) => this.appendOutput(managed, data));
       channel.on('close', () => this.release(sessionId, managed));
       return channel;
+    } catch (error) {
+      resource?.close();
+      throw error;
     } finally {
       this.pendingConnections -= 1;
     }
+  }
+
+  private isResource(value: SshChannel | SshConnectionResource): value is SshConnectionResource {
+    return 'openShell' in value && typeof value.openShell === 'function';
   }
 
   testConnection(

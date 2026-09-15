@@ -4,9 +4,12 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 
 import { AppError } from '../../shared/errors.js';
+import { validateJumpChain } from '../../shared/core/models.js';
 import {
   parseHostCreateInput,
   parseHostPatchInput,
+  defaultConnectionProfileSettings,
+  mergeConnectionProfileSettings,
   type HostCredentialInput,
   type HostCreateInput
 } from '../../shared/validation.js';
@@ -75,6 +78,25 @@ const readHost = (dependencies: HostRouteDependencies, id: string) => {
   return row;
 };
 
+const validateJumpHostGraph = (
+  dependencies: HostRouteDependencies,
+  targetHostId: string,
+  jumpHostIds: readonly string[]
+): void => {
+  const profiles = new Map(
+    dependencies.hostRepository.listMetadata().map((host) => [host.id, { jumpHostIds: host.jumpHostIds ?? [] }])
+  );
+  profiles.set(targetHostId, { jumpHostIds: [...jumpHostIds] });
+  try {
+    validateJumpChain(targetHostId, profiles);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('not found')) {
+      throw new AppError('HOST_NOT_FOUND');
+    }
+    throw new AppError('HOST_VALIDATION_FAILED');
+  }
+};
+
 const decryptHostCredential = async (
   dependencies: HostRouteDependencies,
   sessionKey: Buffer,
@@ -96,7 +118,10 @@ const toSshConfig = async (
   username: row.username,
   auth: await decryptHostCredential(dependencies, sessionKey, row),
   hostKeyAlgorithm: row.hostKeyAlgorithm,
-  hostKeyFingerprint: row.hostKeyFingerprint
+  hostKeyFingerprint: row.hostKeyFingerprint,
+  keepaliveInterval: row.connectionProfile?.keepaliveIntervalMs,
+  keepaliveCountMax: row.connectionProfile?.keepaliveCountMax,
+  reconnect: row.connectionProfile?.reconnect
 });
 
 export const registerHostRoutes = async (
@@ -123,6 +148,7 @@ export const registerHostRoutes = async (
     const session = requireUnlockedSession(request, dependencies.sessionStore);
     const input: HostCreateInput = parseHostCreateInput(request.body);
     const id = randomUUID();
+    validateJumpHostGraph(dependencies, id, input.jumpHostIds);
     const encrypted = await dependencies.vaultService.encryptJson(
       session.record.vaultKey,
       credentialAad(id),
@@ -141,6 +167,8 @@ export const registerHostRoutes = async (
       hostKeyAlgorithm: null,
       hostKeyFingerprint: null,
       groupId: input.groupId ?? null,
+      jumpHostIds: input.jumpHostIds,
+      connectionProfile: mergeConnectionProfileSettings(input.connectionProfile),
       tags: input.tags,
       isFavorite: input.isFavorite,
       lastConnectedAt: null
@@ -152,14 +180,19 @@ export const registerHostRoutes = async (
   app.patch('/api/hosts/:id', async (request, reply) => {
     const session = requireUnlockedSession(request, dependencies.sessionStore);
     const id = hostId(request.params);
-    readHost(dependencies, id);
+    const current = readHost(dependencies, id);
     const input = parseHostPatchInput(request.body);
+    if (input.jumpHostIds !== undefined) validateJumpHostGraph(dependencies, id, input.jumpHostIds);
     const patch: HostPatch = {
       name: input.name,
       address: input.address,
       port: input.port,
       username: input.username,
       groupId: input.groupId,
+      jumpHostIds: input.jumpHostIds,
+      ...(input.connectionProfile === undefined ? {} : {
+        connectionProfile: mergeConnectionProfileSettings(input.connectionProfile, current.connectionProfile ?? defaultConnectionProfileSettings())
+      }),
       tags: input.tags,
       isFavorite: input.isFavorite
     };

@@ -15,21 +15,31 @@ import {
   unlockVault,
   updateHost
 } from './api';
+import * as webApi from './api';
 import { HostForm } from './components/HostForm';
 import { HostWorkspace } from './components/HostWorkspace';
 import { SetupGate } from './components/SetupGate';
 import { TerminalWorkspace } from './components/TerminalWorkspace';
 import { UnlockView } from './components/UnlockView';
+import { WorkspaceSettings } from './components/WorkspaceSettings';
+import { CommandRunDialog } from './components/CommandRunDialog';
+import { CommandRunResults } from './components/CommandRunResults';
+import { ActivityPanel } from './components/ActivityPanel';
+import type { AuditEvent, CommandRun, CommandRunRequest, Snippet, SnippetMetadata, TransferJob } from '../shared/core/models';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
 import {
   appReducer,
   clearTerminalDescriptors,
+  defaultWorkspaceState,
   initialAppState,
   loadTerminalDescriptors,
   saveTerminalDescriptors,
   type HostMetadataState
 } from './state/app-state';
+import { createFreshTerminalIds, workspaceStateFromAppState } from './state/workspace-state';
+import { webWorkspaceAdapter } from './platform/web-adapters';
+import type { WorkspaceState } from '../shared/core/models';
 import {
   applyPreferences,
   fontSizeOptions,
@@ -55,6 +65,11 @@ const createTerminalId = (): string => {
   return `terminal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 };
 
+const createWorkspaceTabId = (): string => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return `tab-${globalThis.crypto.randomUUID()}`;
+  return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+};
+
 const LoadingView = ({ errorMessage, onRetry }: { errorMessage: string | null; onRetry: () => void }) => (
   <main className="center-stage" aria-label="正在加载 Web SSH">
     <div className="loading-card">
@@ -76,7 +91,7 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, compact = false }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void; compact?: boolean }) => (
+const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, onActivity, compact = false }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void; onActivity?: () => void; compact?: boolean }) => (
   <header className={`app-header ${compact ? 'app-header-embedded' : ''}`}>
     <Brand />
     <div className="app-header-actions">
@@ -85,13 +100,14 @@ const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, c
         <span aria-hidden="true">↥</span> 锁定
       </button>
       {terminalCount > 0 && !compact && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
+      {onActivity && <button className="button button-ghost button-small" type="button" onClick={onActivity}>活动</button>}
       <button className="button button-ghost button-small" type="button" aria-label="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
   </header>
 );
 
-const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiPreferences; onChange: (preferences: UiPreferences) => void; onClose: () => void }) => {
+const PreferencesPanel = ({ preferences, onChange, onClose, onWorkspaceSettings }: { preferences: UiPreferences; onChange: (preferences: UiPreferences) => void; onClose: () => void; onWorkspaceSettings: () => void }) => {
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, true, onClose, '#theme-select');
 
@@ -112,6 +128,7 @@ const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiP
           {fontSizeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
         </select>
       </div>
+      <button className="button button-ghost" type="button" onClick={onWorkspaceSettings}>工作区与加密数据</button>
       <p className="preferences-note">偏好只保存在当前浏览器，不包含主密码、服务器密码或私钥。</p>
     </aside>
   </div>
@@ -127,30 +144,97 @@ export const App = () => {
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
   const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
+  const [commandDialogOpen, setCommandDialogOpen] = useState(false);
+  const [commandRun, setCommandRun] = useState<CommandRun | null>(null);
+  const [snippetCount, setSnippetCount] = useState(0);
+  const [snippets, setSnippets] = useState<SnippetMetadata[]>([]);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [activityEvents, setActivityEvents] = useState<AuditEvent[]>([]);
+  const [expiredRunIds, setExpiredRunIds] = useState<Set<string>>(new Set());
+  const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
+  const transferFilesRef = useRef(new Map<string, File>());
   const refreshedHostForTerminalRef = useRef(new Set<string>());
+  const lockedFromCurrentAppRef = useRef(false);
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
+  const latestStateRef = useRef(state);
+  latestStateRef.current = state;
+  const lastSavedWorkspaceRef = useRef<string | null>(null);
+  const workspaceVersionRef = useRef(0);
+  const workspaceSaveQueueRef = useRef(Promise.resolve());
+
+  const enqueueWorkspaceSave = useCallback((requestWorkspace: WorkspaceState): void => {
+    const requestComparable = JSON.stringify({ ...requestWorkspace, version: undefined });
+    if (lastSavedWorkspaceRef.current === requestComparable) return;
+    const saveTask = workspaceSaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (lastSavedWorkspaceRef.current === requestComparable) return;
+        const expectedVersion = workspaceVersionRef.current;
+        const saved = await webWorkspaceAdapter.save(expectedVersion, { ...requestWorkspace, version: expectedVersion });
+        workspaceVersionRef.current = saved.version;
+        const latestWorkspace = workspaceStateFromAppState(latestStateRef.current);
+        const latestComparable = JSON.stringify({ ...latestWorkspace, version: undefined });
+        if (latestStateRef.current.phase !== 'ready' || latestComparable !== requestComparable) return;
+        lastSavedWorkspaceRef.current = requestComparable;
+        dispatch({ type: 'workspaceSynced', workspace: saved });
+      })
+      .catch((error: unknown) => {
+        if (latestStateRef.current.phase === 'ready') dispatch({ type: 'error', message: messageFromError(error) });
+      });
+    workspaceSaveQueueRef.current = saveTask.then(() => undefined, () => undefined);
+  }, []);
 
   useEffect(() => {
     applyPreferences(preferences);
     savePreferences(preferences);
   }, [preferences]);
 
-  const loadWorkspace = useCallback(async (): Promise<void> => {
+  const loadWorkspace = useCallback(async (options: { openTerminalView?: boolean } = {}): Promise<void> => {
     try {
       const [hosts, groups] = await Promise.all([listHosts(), listGroups()]);
+      let workspace: WorkspaceState;
+      try {
+        workspace = await webWorkspaceAdapter.load();
+      } catch {
+        workspace = defaultWorkspaceState;
+      }
       dispatch({ type: 'hostsLoaded', hosts });
       dispatch({ type: 'groupsLoaded', groups });
       const availableHostIds = new Set(hosts.map((host) => host.id));
-      const restored = loadTerminalDescriptors().filter((descriptor) => availableHostIds.has(descriptor.hostId));
-      saveTerminalDescriptors(restored);
-      restored.forEach((descriptor) => dispatch({ type: 'terminalOpened', terminalId: descriptor.terminalId, hostId: descriptor.hostId }));
-      if (restored.length > 0) setTerminalView(true);
+      const descriptors = loadTerminalDescriptors().filter((descriptor) => availableHostIds.has(descriptor.hostId));
+      const descriptorByTabId = new Map(descriptors.map((descriptor) => [descriptor.workspaceTabId ?? `tab-${descriptor.terminalId}`, descriptor.terminalId]));
+      const terminalIds = createFreshTerminalIds(workspace, availableHostIds, () => createTerminalId());
+      for (const tab of workspace.tabs) {
+        const previousTerminalId = descriptorByTabId.get(tab.id);
+        if (previousTerminalId && availableHostIds.has(tab.hostId)) terminalIds[tab.id] = previousTerminalId;
+      }
+      saveTerminalDescriptors(workspace.tabs.flatMap((tab) => {
+        const terminalId = terminalIds[tab.id];
+        return terminalId ? [{ terminalId, hostId: tab.hostId, workspaceTabId: tab.id }] : [];
+      }));
+      dispatch({ type: 'workspaceLoaded', workspace, terminalIds });
+      if ((options.openTerminalView ?? true) && workspace.tabs.some((tab) => terminalIds[tab.id])) setTerminalView(true);
+      workspaceVersionRef.current = workspace.version;
+      lastSavedWorkspaceRef.current = JSON.stringify({ ...workspace, version: undefined });
       setWorkspaceHydrated(true);
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
     }
-  }, []);
+  }, [enqueueWorkspaceSave]);
+
+  useEffect(() => {
+    if (!workspaceHydrated || state.phase !== 'ready') return;
+    const workspace = workspaceStateFromAppState(state);
+    const comparable = JSON.stringify({ ...workspace, version: undefined });
+    if (lastSavedWorkspaceRef.current === comparable) return;
+    const timer = window.setTimeout(() => {
+      const requestWorkspace = workspaceStateFromAppState(latestStateRef.current);
+      enqueueWorkspaceSave(requestWorkspace);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [state, workspaceHydrated, enqueueWorkspaceSave]);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,7 +259,7 @@ export const App = () => {
 
   useEffect(() => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
-    saveTerminalDescriptors(state.terminals.map(({ terminalId, hostId }) => ({ terminalId, hostId })));
+    saveTerminalDescriptors(state.terminals.map(({ terminalId, hostId }) => ({ terminalId, hostId, workspaceTabId: state.workspaceTabIdByTerminalId[terminalId] })));
   }, [state.phase, state.terminals, workspaceHydrated]);
 
   const retryBoot = (): void => {
@@ -198,7 +282,9 @@ export const App = () => {
     try {
       await unlockVault(masterPassword);
       dispatch({ type: 'unlock' });
-      await loadWorkspace();
+      const openTerminalView = !lockedFromCurrentAppRef.current;
+      lockedFromCurrentAppRef.current = false;
+      await loadWorkspace({ openTerminalView });
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
       throw error;
@@ -243,9 +329,174 @@ export const App = () => {
   };
 
   const handleOpenTerminal = (host: HostMetadataState): void => {
-    dispatch({ type: 'terminalOpened', terminalId: createTerminalId(), hostId: host.id });
+    const action = { type: 'terminalOpened' as const, terminalId: createTerminalId(), workspaceTabId: createWorkspaceTabId(), hostId: host.id };
+    const projectedState = appReducer(latestStateRef.current, action);
+    dispatch(action);
+    enqueueWorkspaceSave(workspaceStateFromAppState(projectedState));
     setTerminalView(true);
   };
+
+  const handleOpenBatchCommand = (): void => {
+    if (state.terminals.length === 0) return;
+    setCommandDialogOpen(true);
+    const list = webApi.listSnippets;
+    if (!list) return;
+    void list().then((loaded) => { setSnippets(loaded); setSnippetCount(loaded.length); }).catch(() => { setSnippets([]); setSnippetCount(0); });
+  };
+
+  const updateTransferJob = (job: TransferJob): void => {
+    setTransferJobs((current) => current.some((candidate) => candidate.id === job.id)
+      ? current.map((candidate) => candidate.id === job.id ? job : candidate)
+      : [...current, job]);
+  };
+
+  const refreshTransferJob = async (id: string): Promise<TransferJob | null> => {
+    if (!webApi.getTransfer) return null;
+    try {
+      const job = await webApi.getTransfer(id);
+      updateTransferJob(job);
+      return job;
+    } catch {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    const activeJobs = transferJobs.filter((job) => job.status === 'queued' || job.status === 'running');
+    if (activeJobs.length === 0 || !webApi.getTransfer) return;
+    const timer = window.setTimeout(() => {
+      void Promise.all(activeJobs.map((job) => refreshTransferJob(job.id)));
+    }, 1_000);
+    return () => window.clearTimeout(timer);
+  }, [transferJobs]);
+
+  const handleUploadSftp = async (hostId: string, file: File, path: string): Promise<void> => {
+    if (!webApi.createTransfer || !webApi.uploadTransferContent) throw new AppError('CAPABILITY_UNAVAILABLE');
+    const targetPath = path === '/' ? `/${file.name}` : `${path}/${file.name}`;
+    const job = await webApi.createTransfer({ kind: 'upload', hostId, sourcePath: file.name, targetPath, totalBytes: file.size });
+    transferFilesRef.current.set(job.id, file);
+    updateTransferJob(job);
+    try {
+      updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
+      updateTransferJob(await webApi.uploadTransferContent(job.id, file));
+    } catch (error) {
+      await refreshTransferJob(job.id);
+      throw error;
+    }
+  };
+
+  const handleDownloadSftp = async (hostId: string, sourcePath: string, name: string): Promise<void> => {
+    if (!webApi.createTransfer || !webApi.downloadTransferContent) throw new AppError('CAPABILITY_UNAVAILABLE');
+    const job = await webApi.createTransfer({ kind: 'download', hostId, sourcePath, targetPath: name });
+    updateTransferJob(job);
+    try {
+      updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
+      const blob = await webApi.downloadTransferContent(job.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = name;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      await refreshTransferJob(job.id);
+    } catch (error) {
+      await refreshTransferJob(job.id);
+      throw error;
+    }
+  };
+
+  const handleCancelTransfer = (id: string): void => {
+    const job = transferJobs.find((candidate) => candidate.id === id);
+    if (job) updateTransferJob({ ...job, status: 'cancelled', updatedAt: new Date().toISOString() });
+    if (webApi.cancelTransfer) void webApi.cancelTransfer(id).then(() => refreshTransferJob(id));
+  };
+
+  const handleRetryTransfer = (id: string): void => {
+    if (!webApi.retryTransfer) return;
+    void webApi.retryTransfer(id).then((job) => {
+      updateTransferJob(job);
+      if (job.kind === 'upload') {
+        const file = transferFilesRef.current.get(id);
+        if (!file || !webApi.uploadTransferContent) return;
+        updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
+        void webApi.uploadTransferContent(id, file).then(updateTransferJob).catch(() => refreshTransferJob(id));
+        return;
+      }
+      if (!webApi.downloadTransferContent) return;
+      updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
+      void webApi.downloadTransferContent(id).then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = job.targetPath;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+        return refreshTransferJob(id);
+      }).catch(() => refreshTransferJob(id));
+    }).catch(() => undefined);
+  };
+
+  const handleOpenActivity = (): void => {
+    const list = webApi.listAuditEvents;
+    if (!list) return;
+    setActivityOpen(true);
+    void list({ limit: 50 }).then((response) => setActivityEvents(response.items)).catch(() => setActivityEvents([]));
+  };
+
+  const handleOpenRunFromActivity = (runId: string): void => {
+    setActivityOpen(false);
+    const get = webApi.getCommandRun;
+    if (!get) {
+      setExpiredRunIds((current) => new Set(current).add(runId));
+      return;
+    }
+    void get(runId).then((run) => {
+      setExpiredRunIds((current) => {
+        const next = new Set(current);
+        next.delete(runId);
+        return next;
+      });
+      setCommandRun(run);
+    }).catch(() => {
+      setExpiredRunIds((current) => new Set(current).add(runId));
+    });
+  };
+
+  const handleStartCommandRun = async (request: CommandRunRequest): Promise<void> => {
+    try {
+      if (!webApi.startCommandRun) throw new AppError('CAPABILITY_UNAVAILABLE');
+      const run = await webApi.startCommandRun(request);
+      setCommandRun(run);
+      setCommandDialogOpen(false);
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+      throw error;
+    }
+  };
+
+  const handleCancelCommandRun = (): void => {
+    if (!commandRun || !webApi.cancelCommandRun) return;
+    void webApi.cancelCommandRun(commandRun.id).then(() => refreshCommandRun(commandRun.id)).catch(() => undefined);
+  };
+
+  const refreshCommandRun = async (id: string): Promise<void> => {
+    if (!webApi.getCommandRun) return;
+    try {
+      setCommandRun(await webApi.getCommandRun(id));
+    } catch {
+      setCommandRun(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!commandRun || !['queued', 'running'].includes(commandRun.status)) return;
+    const timer = window.setTimeout(() => {
+      const get = webApi.getCommandRun;
+      if (!get) return;
+      void get(commandRun.id).then(setCommandRun).catch(() => undefined);
+    }, 750);
+    return () => window.clearTimeout(timer);
+  }, [commandRun]);
 
   const handleDeleteHost = async (host: HostMetadataState): Promise<void> => {
     if (!window.confirm(`确定删除 Server「${host.name}」吗？`)) return;
@@ -253,7 +504,7 @@ export const App = () => {
       await deleteHost(host.id);
       const remainingTerminals = state.terminals.filter((terminal) => terminal.hostId !== host.id);
       dispatch({ type: 'hostDeleted', hostId: host.id });
-      saveTerminalDescriptors(remainingTerminals.map(({ terminalId, hostId }) => ({ terminalId, hostId })));
+      saveTerminalDescriptors(remainingTerminals.map(({ terminalId, hostId }) => ({ terminalId, hostId, workspaceTabId: state.workspaceTabIdByTerminalId[terminalId] })));
       if (state.terminals.length > 0 && remainingTerminals.length === 0) setTerminalView(false);
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
@@ -351,10 +602,15 @@ export const App = () => {
   const handleLock = async (): Promise<void> => {
     try {
       await lockVault();
+      lockedFromCurrentAppRef.current = true;
       dispatch({ type: 'lock' });
       clearTerminalDescriptors();
       setTerminalView(false);
       closeHostForm();
+      setActivityOpen(false);
+      setCommandRun(null);
+      setTransferJobs([]);
+      transferFilesRef.current.clear();
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
     }
@@ -366,7 +622,7 @@ export const App = () => {
 
   return (
     <main className="app-shell">
-      {!terminalView && <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} />}
+      {!terminalView && <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} onActivity={handleOpenActivity} />}
       {state.errorMessage && (
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
@@ -389,9 +645,25 @@ export const App = () => {
             onClose={handleCloseTerminal}
             onConnectHost={handleOpenTerminal}
             onStatusChange={handleTerminalStatus}
+            onOpenBatchCommand={handleOpenBatchCommand}
+            onListSftp={async (hostId, path) => {
+              if (!webApi.listSftpEntries) throw new AppError('CAPABILITY_UNAVAILABLE');
+              return webApi.listSftpEntries(hostId, path);
+            }}
+            onDeleteSftp={async (hostId, path) => {
+              if (!webApi.mutateSftpEntry) throw new AppError('CAPABILITY_UNAVAILABLE');
+              await webApi.mutateSftpEntry(hostId, { action: 'delete', path, confirmed: true });
+            }}
+            onUploadSftp={handleUploadSftp}
+            onDownloadSftp={handleDownloadSftp}
+            transferJobs={transferJobs}
+            onCancelTransfer={handleCancelTransfer}
+            onRetryTransfer={handleRetryTransfer}
+            workspaceLayout={state.workspace.layout}
+            onLayoutChange={(layout) => dispatch({ type: 'workspaceLayoutChanged', layout })}
             preferences={preferences}
             onBackToHosts={() => setTerminalView(false)}
-            workspaceHeader={<WorkspaceHeader compact onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} />}
+            workspaceHeader={<WorkspaceHeader compact onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} onActivity={handleOpenActivity} />}
           />
         ) : (
           <HostWorkspace
@@ -415,12 +687,38 @@ export const App = () => {
       {hostFormOpen && (
         <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeHostForm(); }}>
           <aside ref={drawerRef} className="drawer" role="dialog" aria-modal="true" aria-labelledby="host-form-title" onMouseDown={(event) => event.stopPropagation()}>
-            {editingHost ? <HostForm mode="edit" initialHost={editingHost} groups={state.groups} onEditSubmit={handleUpdateHost} onCancel={closeHostForm} /> : <HostForm groups={state.groups} onSubmit={handleCreateHost} onCancel={closeHostForm} />}
+            {editingHost ? <HostForm mode="edit" initialHost={editingHost} groups={state.groups} hosts={state.hosts} onEditSubmit={handleUpdateHost} onCancel={closeHostForm} /> : <HostForm groups={state.groups} hosts={state.hosts} onSubmit={handleCreateHost} onCancel={closeHostForm} />}
           </aside>
         </div>
       )}
-      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} />}
-      <div className="app-watermark" aria-hidden="true">LOCAL-FIRST · ENCRYPTED BY DEFAULT</div>
+      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} onWorkspaceSettings={() => { setPreferencesOpen(false); setWorkspaceSettingsOpen(true); }} />}
+      {commandDialogOpen && <CommandRunDialog
+        hosts={state.hosts}
+        hostIds={state.terminals.map((terminal) => terminal.hostId)}
+        snippets={snippets}
+        onSnippetSelect={async (id): Promise<Snippet> => {
+          if (!webApi.getSnippet) throw new AppError('CAPABILITY_UNAVAILABLE');
+          return webApi.getSnippet(id);
+        }}
+        onClose={() => setCommandDialogOpen(false)}
+        onConfirm={handleStartCommandRun}
+      />}
+      {commandRun && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal" role="dialog" aria-modal="true" aria-labelledby="command-run-result-title"><CommandRunResults run={commandRun} hosts={state.hosts} onCancel={handleCancelCommandRun} /><button className="button button-ghost" id="command-run-result-title" type="button" onClick={() => setCommandRun(null)}>关闭结果</button></section></div>}
+      {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
+      {workspaceSettingsOpen && <WorkspaceSettings
+        onClose={() => setWorkspaceSettingsOpen(false)}
+        onExport={webWorkspaceAdapter.exportEncrypted}
+        onPreviewImport={webWorkspaceAdapter.previewImport}
+        onApplyImport={async (previewId, resolution) => {
+          const result = await webWorkspaceAdapter.applyImport(previewId, resolution);
+          const [hosts, groups, workspace] = await Promise.all([listHosts(), listGroups(), webWorkspaceAdapter.load()]);
+          dispatch({ type: 'hostsLoaded', hosts });
+          dispatch({ type: 'groupsLoaded', groups });
+          dispatch({ type: 'workspaceLoaded', workspace, terminalIds: createFreshTerminalIds(workspace, new Set(hosts.map((host) => host.id)), () => createTerminalId()) });
+          return result;
+        }}
+      />}
+      <div className="app-watermark" aria-hidden="true">LOCAL-FIRST · ENCRYPTED BY DEFAULT{snippetCount > 0 ? ` · ${snippetCount} 个片段` : ''}</div>
     </main>
   );
 };

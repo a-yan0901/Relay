@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TerminalStatus } from '@shared/protocol';
+import type { WorkspaceState } from '@shared/core/models';
 import {
   appReducer,
   initialAppState,
@@ -27,6 +28,49 @@ const host = (overrides: Partial<HostMetadataState> = {}): HostMetadataState => 
 });
 
 describe('appReducer', () => {
+  it('hydrates durable workspace tabs into fresh live terminal ids', () => {
+    const workspace: WorkspaceState = {
+      version: 4,
+      tabs: [
+        { id: 'tab-intent-1', hostId: 'host-1', title: 'Production' },
+        { id: 'tab-intent-2', hostId: 'host-2' }
+      ],
+      activeTabId: 'tab-intent-2',
+      layout: { mode: 'horizontal', ratio: 0.7 },
+      filters: { query: 'prod', groupId: null, favoriteOnly: false }
+    };
+    const hydrated = appReducer(initialAppState, {
+      type: 'workspaceLoaded',
+      workspace,
+      terminalIds: {
+        'tab-intent-1': 'terminal-new-1',
+        'tab-intent-2': 'terminal-new-2'
+      }
+    });
+
+    expect(hydrated.terminals.map(({ terminalId, hostId }) => ({ terminalId, hostId }))).toEqual([
+      { terminalId: 'terminal-new-1', hostId: 'host-1' },
+      { terminalId: 'terminal-new-2', hostId: 'host-2' }
+    ]);
+    expect(hydrated.activeTerminalId).toBe('terminal-new-2');
+    expect(hydrated.workspace).toEqual(workspace);
+    expect(hydrated.query).toBe('prod');
+  });
+
+  it('keeps durable workspace data free of live terminal state', () => {
+    let state = appReducer(initialAppState, { type: 'terminalOpened', terminalId: 'live-terminal', hostId: 'host-1' });
+    state = appReducer(state, { type: 'workspaceSynced', workspace: {
+      version: 1,
+      tabs: [{ id: 'intent-1', hostId: 'host-1' }],
+      activeTabId: 'intent-1',
+      layout: { mode: 'single', ratio: 0.5 },
+      filters: { query: '', groupId: null, favoriteOnly: false }
+    } });
+
+    expect(state.workspace.tabs[0]).toEqual({ id: 'intent-1', hostId: 'host-1' });
+    expect(JSON.stringify(state.workspace)).not.toContain('live-terminal');
+  });
+
   it('moves through setup, unlocked, and locked states', () => {
     const setup = appReducer(initialAppState, { type: 'setup', initialized: false });
     expect(setup.phase).toBe('setup');

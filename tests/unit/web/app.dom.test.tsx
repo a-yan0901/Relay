@@ -13,7 +13,9 @@ const apiMocks = vi.hoisted(() => ({
   unlockVault: vi.fn(),
   createHost: vi.fn(),
   updateHost: vi.fn(),
-  testConnection: vi.fn()
+  testConnection: vi.fn(),
+  listAuditEvents: vi.fn(),
+  getCommandRun: vi.fn()
 }));
 
 vi.mock('../../../src/web/api', () => apiMocks);
@@ -120,5 +122,31 @@ describe('App boot recovery', () => {
     expect(document.activeElement).toBe(screen.getByRole('combobox', { name: '色彩主题' }));
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: '偏好设置' })).not.toBeInTheDocument();
+  });
+
+  it('marks an audit link as expired when its result is no longer available', async () => {
+    const user = userEvent.setup();
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    apiMocks.listAuditEvents.mockResolvedValue({ items: [{
+      id: 'event-1',
+      ownerId: 'owner-a',
+      eventType: 'command_run_summary',
+      hostId: null,
+      requestId: 'request-1',
+      remoteAddress: null,
+      metadata: { runId: 'run-expired', targetCount: 1, successCount: 1, failureCount: 0 },
+      createdAt: '2026-09-15T00:00:00.000Z'
+    }] });
+    apiMocks.getCommandRun.mockRejectedValue(new Error('expired'));
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.click(screen.getByRole('button', { name: '活动' }));
+    await user.click(await screen.findByRole('button', { name: '查看结果' }));
+    await user.click(screen.getByRole('button', { name: '活动' }));
+
+    expect(await screen.findByRole('button', { name: '结果已过期，需要重新执行' })).toBeInTheDocument();
   });
 });

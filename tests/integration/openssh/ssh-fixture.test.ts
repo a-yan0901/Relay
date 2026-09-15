@@ -9,6 +9,8 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { Ssh2Adapter } from '../../../src/server/ssh/ssh2-adapter.js';
+import { Ssh2ResourceAdapter } from '../../../src/server/ssh/ssh2-adapter.js';
+import { openSftpResource } from '../../../src/server/sftp/sftp-adapter.js';
 import type { SshChannel, SshConnectConfig } from '../../../src/server/ssh/types.js';
 
 const execFile = promisify(execFileCallback);
@@ -24,6 +26,8 @@ const canRunLocalFixture = process.platform === 'linux' && process.getuid?.() ==
 interface LocalFixture {
   port: number;
   privateKey: string;
+  remoteDirectory: string;
+  knownFileName: string;
   close: () => Promise<void>;
 }
 
@@ -80,6 +84,9 @@ const startLocalFixture = async (): Promise<LocalFixture> => {
   await chmod(root, 0o755);
   const home = join(root, 'home');
   await mkdir(home, { mode: 0o700 });
+  const remoteDirectory = join('/tmp', `webssh-openssh-files-${randomUUID().replaceAll('-', '').slice(0, 12)}`);
+  const knownFileName = 'fixture-known.txt';
+  const knownFilePath = join(remoteDirectory, knownFileName);
   const port = await freePort();
   const hostKey = join(root, 'host_ed25519');
   const clientKeyPath = join(process.cwd(), 'tests/fixtures/openssh/test_client_ed25519');
@@ -103,6 +110,7 @@ const startLocalFixture = async (): Promise<LocalFixture> => {
     'X11Forwarding no',
     'AllowTcpForwarding no',
     'PermitTunnel no',
+    'Subsystem sftp /usr/lib/openssh/sftp-server',
     'PrintMotd no',
     'UseDNS no',
     'LogLevel QUIET'
@@ -110,6 +118,9 @@ const startLocalFixture = async (): Promise<LocalFixture> => {
   await execFile(USERADD_PATH, ['--no-create-home', '--shell', '/bin/sh', '--home-dir', home, FIXTURE_USER]);
   await execFile('/usr/bin/chown', [`${FIXTURE_USER}:${FIXTURE_USER}`, home, join(root, 'authorized_keys')]);
   await setPassword(FIXTURE_USER);
+  await mkdir(remoteDirectory, { mode: 0o700 });
+  await writeFile(knownFilePath, 'fixture-known-file\n', { mode: 0o600 });
+  await execFile('/usr/bin/chown', [`${FIXTURE_USER}:${FIXTURE_USER}`, remoteDirectory, knownFilePath]);
   await execFile(SSHD_PATH, ['-t', '-f', join(root, 'sshd_config')]);
   const child = spawn(SSHD_PATH, ['-D', '-e', '-f', join(root, 'sshd_config')], { stdio: ['ignore', 'ignore', 'pipe'] });
   child.stderr?.resume();
@@ -118,6 +129,7 @@ const startLocalFixture = async (): Promise<LocalFixture> => {
   } catch (error) {
     child.kill('SIGTERM');
     await execFile(USERDEL_PATH, ['--remove', FIXTURE_USER]).catch(() => undefined);
+    await rm(remoteDirectory, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
     throw error;
   }
@@ -133,10 +145,11 @@ const startLocalFixture = async (): Promise<LocalFixture> => {
       setTimeout(() => resolve(), 1_000).unref();
     });
     await execFile(USERDEL_PATH, ['--remove', FIXTURE_USER]).catch(() => undefined);
+    await rm(remoteDirectory, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
   };
 
-  return { port, privateKey, close };
+  return { port, privateKey, remoteDirectory, knownFileName, close };
 };
 
 const waitForOutput = (channel: SshChannel, matcher: RegExp): Promise<string> => new Promise((resolve, reject) => {
@@ -190,6 +203,35 @@ fixtureDescribe('real OpenSSH fixture', () => {
       await expect(adapter.connect(config(fixture, { type: 'password', password: 'wrong-fixture-password' }), acceptHostKey))
         .rejects.toMatchObject({ code: 'SSH_AUTH_FAILED' });
     } finally {
+      await fixture.close();
+    }
+  });
+
+  it('supports SFTP listing, streaming upload, atomic rename, and cleanup', async () => {
+    const fixture = await startLocalFixture();
+    const adapter = new Ssh2ResourceAdapter();
+    let connection: Awaited<ReturnType<Ssh2ResourceAdapter['connect']>> | undefined;
+    let sftp: Awaited<ReturnType<typeof openSftpResource>> | undefined;
+    const acceptHostKey = { onHostKey: async () => true };
+    const uploadedPath = `${fixture.remoteDirectory}/uploaded.txt`;
+    const temporaryPath = `${uploadedPath}.relay-tmp-test`;
+    try {
+      connection = await adapter.connect(config(fixture, { type: 'password', password: FIXTURE_PASSWORD }), acceptHostKey);
+      sftp = await openSftpResource(connection);
+      const entries = await sftp.list(fixture.remoteDirectory);
+      expect(entries.find((entry) => entry.name === fixture.knownFileName)?.type).toBe('file');
+      await sftp.writeFile(temporaryPath, (async function* (): AsyncGenerator<Uint8Array> {
+        yield Buffer.from('uploaded-content\n');
+      })());
+      await sftp.rename(temporaryPath, uploadedPath);
+      const chunks: Buffer[] = [];
+      for await (const chunk of await sftp.readFile(uploadedPath)) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks).toString('utf8')).toBe('uploaded-content\n');
+      await sftp.remove(uploadedPath);
+      await expect(sftp.stat(uploadedPath)).resolves.toBeNull();
+    } finally {
+      if (sftp) sftp.close();
+      else connection?.close();
       await fixture.close();
     }
   });
