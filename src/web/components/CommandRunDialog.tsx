@@ -36,6 +36,7 @@ export const CommandRunDialog = ({
   const [timeoutMs, setTimeoutMs] = useState(60_000);
   const [persistOutput, setPersistOutput] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const uniqueHostIds = useMemo(() => [...new Set(hostIds)], [hostIds]);
   const variableNames = useMemo(() => {
     try { return extractCommandVariables(command); } catch { return []; }
   }, [command]);
@@ -43,14 +44,14 @@ export const CommandRunDialog = ({
     try { return expandCommandTemplate(command, variables); } catch { return null; }
   }, [command, variables]);
   const risk = assessCommandRisk(expanded ?? command);
-  const selectedHosts = hostIds.map((id) => hosts.find((host) => host.id === id)).filter((host): host is HostMetadata => host !== undefined);
-  const canSubmit = expanded !== null && expanded.trim().length > 0 && selectedHosts.length === hostIds.length && !submitting;
+  const selectedHosts = uniqueHostIds.map((id) => hosts.find((host) => host.id === id)).filter((host): host is HostMetadata => host !== undefined);
+  const canSubmit = expanded !== null && expanded.trim().length > 0 && selectedHosts.length === uniqueHostIds.length && !submitting;
 
   const submit = async (): Promise<void> => {
     if (!canSubmit || expanded === null) return;
     setSubmitting(true);
     try {
-      await onConfirm({ command: expanded, hostIds: [...hostIds], variables: {}, concurrency, timeoutMs, persistOutput, confirmed: true });
+      await onConfirm({ command: expanded, hostIds: uniqueHostIds, variables: {}, concurrency, timeoutMs, persistOutput, confirmed: true });
     } finally {
       setSubmitting(false);
     }

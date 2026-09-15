@@ -5,6 +5,7 @@ import { transitionTransfer } from '../../shared/core/state-machines.js';
 import type { TransferJob, TransferRequest } from '../../shared/core/models.js';
 import { parseTransferRequest } from '../../shared/validation.js';
 import type { SftpResourceProvider } from './sftp-service.js';
+import { mapSftpError } from './error-mapping.js';
 
 export interface TransferManagerOptions {
   resourceProvider: SftpResourceProvider;
@@ -93,6 +94,7 @@ export class TransferManager {
       }, sessionKey);
       return { ...result };
     } catch (error) {
+      const mappedError = mapSftpError(error);
       if (temporaryPath) {
         try {
           const lease = sessionKey === undefined
@@ -105,9 +107,9 @@ export class TransferManager {
       if (managed.cancelRequested || managed.controller.signal.aborted || error instanceof AppError && error.code === 'TRANSFER_CANCELLED') {
         if ((managed.job.status as TransferJob['status']) !== 'cancelled') this.update(managed, 'cancelled');
       }
-      else this.fail(managed, error instanceof AppError ? error.code : 'SFTP_TRANSFER_FAILED');
+      else this.fail(managed, mappedError.code);
       onUpdate?.(managed.job);
-      throw error instanceof AppError ? error : new AppError('SFTP_TRANSFER_FAILED');
+      throw mappedError;
     }
   }
 
@@ -161,12 +163,13 @@ export class TransferManager {
       this.update(managed, 'completed');
       onUpdate?.(managed.job);
     } catch (error) {
+      const mappedError = mapSftpError(error);
       if (managed.cancelRequested || managed.controller.signal.aborted || error instanceof AppError && error.code === 'TRANSFER_CANCELLED') {
         if (managed.job.status !== 'cancelled') this.update(managed, 'cancelled');
       }
-      else this.fail(managed, error instanceof AppError ? error.code : 'SFTP_TRANSFER_FAILED');
+      else this.fail(managed, mappedError.code);
       onUpdate?.(managed.job);
-      throw error instanceof AppError ? error : new AppError('SFTP_TRANSFER_FAILED');
+      throw mappedError;
     } finally {
       await lease.close();
       this.release(managed.job.hostId);

@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 
+import { AppError } from '@shared/errors';
 import type { SftpEntry } from '../../shared/core/models';
+
+const sftpErrorMessage = (error: unknown, action: '上传' | '下载' | '删除'): string => {
+  if (error instanceof AppError) {
+    if (error.code === 'SFTP_PERMISSION_DENIED') return '当前目录没有写权限，请切换到可写目录（如 /tmp）';
+    if (error.code === 'SFTP_NOT_FOUND') return '远程文件或目录不存在，请刷新后重试';
+    if (error.code === 'SFTP_CONNECTION_FAILED') return `${action}失败，SFTP 连接已断开`;
+  }
+  return `${action}失败，请检查远程路径和权限`;
+};
 
 export interface SftpPanelProps {
   hostId: string;
@@ -55,8 +65,8 @@ export const SftpPanel = ({ hostId, onList, onDelete, onUpload, onDownload, onNa
       await onDelete(deletePath);
       setDeletePath(null);
       await load();
-    } catch {
-      setError('删除失败，请检查远程权限');
+    } catch (error) {
+      setError(sftpErrorMessage(error, '删除'));
     }
   };
 
@@ -69,8 +79,8 @@ export const SftpPanel = ({ hostId, onList, onDelete, onUpload, onDownload, onNa
     try {
       await onUpload(file, path);
       await load();
-    } catch {
-      setError('上传失败，请检查远程权限');
+    } catch (error) {
+      setError(sftpErrorMessage(error, '上传'));
     } finally {
       setUploading(false);
     }
@@ -81,8 +91,8 @@ export const SftpPanel = ({ hostId, onList, onDelete, onUpload, onDownload, onNa
     setError(null);
     try {
       await onDownload(entry.path, entry.name);
-    } catch {
-      setError('下载失败，请检查远程权限');
+    } catch (error) {
+      setError(sftpErrorMessage(error, '下载'));
     }
   };
 

@@ -59,6 +59,17 @@ describe('TransferManager', () => {
     await expect(manager.streamDownload(queued.id)).rejects.toMatchObject({ code: 'TRANSFER_CANCELLED' });
   });
 
+  it('maps a remote permission error to a retryable user-facing SFTP error', async () => {
+    const nextResource = fakeResource({
+      writeFile: async () => { throw Object.assign(new Error('Permission denied'), { code: 3 }); }
+    });
+    const manager = new TransferManager({ resourceProvider: { open: async () => ({ resource: nextResource, close: () => nextResource.close() }) } });
+    const job = await manager.create({ kind: 'upload', hostId: 'host-1', sourcePath: 'local.txt', targetPath: '/remote.txt' });
+
+    await expect(manager.consumeUpload(job.id, chunks(['payload']))).rejects.toMatchObject({ code: 'SFTP_PERMISSION_DENIED' });
+    expect((await manager.get(job.id))?.errorCode).toBe('SFTP_PERMISSION_DENIED');
+  });
+
   it('streams downloads with progress, cancellation and retry state transitions', async () => {
     const nextResource = fakeResource();
     const manager = new TransferManager({ resourceProvider: { open: async () => ({ resource: nextResource, close: () => nextResource.close() }) } });

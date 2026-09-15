@@ -2,6 +2,7 @@ import { AppError } from '../../shared/errors.js';
 import { normalizeSftpPath } from '../../shared/validation.js';
 import type { SftpEntry } from '../../shared/core/models.js';
 import type { SftpResource, SftpResourceLease } from './types.js';
+import { mapSftpError } from './error-mapping.js';
 
 export interface SftpResourceProvider {
   open(hostId: string, sessionKey?: Buffer): Promise<SftpResourceLease>;
@@ -16,14 +17,6 @@ export interface SftpServiceOptions {
   hostLookup: SftpHostLookup;
   resourceProvider: SftpResourceProvider;
 }
-
-const mapSftpError = (error: unknown): AppError => {
-  if (error instanceof AppError) return error;
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
-  if (message.includes('no such') || message.includes('not found') || message.includes('enoent')) return new AppError('SFTP_NOT_FOUND');
-  if (message.includes('permission') || message.includes('denied') || message.includes('eacces')) return new AppError('SFTP_PERMISSION_DENIED');
-  return new AppError('SFTP_TRANSFER_FAILED');
-};
 
 const sortEntries = (entries: readonly SftpEntry[]): SftpEntry[] => [...entries].sort((left, right) => {
   const leftDirectory = left.type === 'directory' ? 0 : 1;

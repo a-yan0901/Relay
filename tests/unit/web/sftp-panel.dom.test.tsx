@@ -4,6 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AppError } from '../../../src/shared/errors';
 import { SftpPanel } from '../../../src/web/components/SftpPanel';
 import { TransferQueue } from '../../../src/web/components/TransferQueue';
 
@@ -36,6 +37,18 @@ describe('SftpPanel', () => {
     expect(onUpload).toHaveBeenCalledWith(expect.objectContaining({ name: 'release.txt' }), '/');
     await user.click(screen.getByRole('button', { name: '下载 app.log' }));
     expect(onDownload).toHaveBeenCalledWith('/app.log', 'app.log');
+  });
+
+  it('explains when an upload directory is not writable', async () => {
+    const user = userEvent.setup();
+    const onList = vi.fn(async () => []);
+    const onUpload = vi.fn(async () => { throw new AppError('SFTP_PERMISSION_DENIED'); });
+    render(<SftpPanel hostId="host-1" onList={onList} onUpload={onUpload} />);
+
+    await screen.findByText('目录为空');
+    await user.upload(screen.getByLabelText('选择上传文件'), new File(['payload'], 'release.txt', { type: 'text/plain' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('当前目录没有写权限');
   });
 
   it('allows cancelling queued transfers and retrying failed ones', async () => {

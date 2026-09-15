@@ -41,4 +41,17 @@ describe('CommandRunDialog', () => {
       command: 'systemctl status api', hostIds: ['host-1', 'host-2'], confirmed: true
     }));
   });
+
+  it('deduplicates repeated terminal tabs before confirming a batch run', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    render(<CommandRunDialog hosts={hosts} hostIds={['host-1', 'host-1']} initialCommand="ls" onConfirm={onConfirm} onClose={vi.fn()} />);
+
+    expect(screen.getAllByText('Production API · 10.0.0.8')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: '确认执行' }));
+
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      command: 'ls', hostIds: ['host-1'], confirmed: true
+    }));
+  });
 });
