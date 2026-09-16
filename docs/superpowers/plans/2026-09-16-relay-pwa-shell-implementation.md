@@ -295,29 +295,29 @@ export const isStandaloneDisplayMode: (environment?: PwaRegistrationEnvironment)
 - Modify: `docs/architecture/cross-platform.md`
 - Modify: `docs/superpowers/plans/2026-09-16-relay-long-term-roadmap.md`
 
-- [ ] **Step 1: Write the failing browser checks.**
+- [x] **Step 1: Write the failing browser checks.**
 
   添加 Chromium 检查：`/manifest.webmanifest` 返回 JSON 且包含 `name/start_url/display/icons`；service worker 脚本可访问；离线事件显示网络提示且工作区仍在；在 320px viewport 下 `document.documentElement.scrollWidth <= window.innerWidth`。浏览器权限 API 不可用时测试只断言应用内降级，不强行授予权限。
 
-- [ ] **Step 2: Run the focused e2e checks and observe failure.**
+- [x] **Step 2: Run the focused e2e checks and observe failure.**
 
   Run: `npx playwright test tests/e2e/ssh-productivity.spec.ts --project=chromium`
   Expected: 新增 PWA 断言在静态资产或 UI 尚未完成时失败，既有 SSH productivity 场景保持可定位。
 
-- [ ] **Step 3: Implement the browser checks and fix only affected behavior.**
+- [x] **Step 3: Implement the browser checks and fix only affected behavior.**
 
   使用现有 `webServer` 构建路径；不把 service worker 注册状态当作 SSH 连接成功条件，不在 e2e 中依赖持久化浏览器权限。
 
-- [ ] **Step 4: Record architecture and roadmap evidence.**
+- [x] **Step 4: Record architecture and roadmap evidence.**
 
   在 `cross-platform.md` 增加当前 PWA 已交付项和明确未交付项；路线图 X-02 记录 PWA 子计划/验证证据，Desktop/Android 仍保持独立计划状态。
 
-- [ ] **Step 5: Run the affected release checks.**
+- [x] **Step 5: Run the affected release checks.**
 
   Run: `npx vitest run tests/unit/shared/platform-services-contract.test.ts tests/unit/web/browser-system-services.test.ts tests/unit/web/pwa-registration.test.ts tests/unit/web/app.dom.test.tsx tests/unit/web/terminal-panel.dom.test.tsx tests/unit/web/web-adapters.test.ts && npm run lint && npm run typecheck && npm run build && npx playwright test tests/e2e/ssh-productivity.spec.ts --project=chromium`
   Expected: 全部 PASS；build 仅允许已有 bundle size warning，不得出现类型、lint、manifest、service worker 或 PWA e2e 错误。
 
-- [ ] **Step 6: Commit the PWA verification evidence.**
+- [x] **Step 6: Commit the PWA verification evidence.**
 
   ```bash
   git add tests/e2e/ssh-productivity.spec.ts docs/architecture/cross-platform.md docs/superpowers/plans/2026-09-16-relay-long-term-roadmap.md

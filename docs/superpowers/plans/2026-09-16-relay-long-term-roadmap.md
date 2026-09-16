@@ -1022,7 +1022,7 @@ export interface TargetSelectionSnapshot {
 
 ## Task X-02: PWA、桌面和移动端产品化边界
 
-**Status:** In Progress（平台 shell spec 草案已提交，待用户审阅）
+**Status:** In Progress（PWA shell 子项目已交付；Desktop/Android implementation plan 待拆分）
 **Priority:** P2
 **Milestone:** M4
 **Depends on:** X-01；R-03 的生命周期状态；U-04 的交互 token。
@@ -1030,8 +1030,10 @@ export interface TargetSelectionSnapshot {
 **Files:**
 
 - Create: `docs/superpowers/specs/2026-09-16-relay-platform-shell-design.md`
+- Create: `docs/superpowers/plans/2026-09-16-relay-pwa-shell-implementation.md`
 - Modify: `docs/architecture/cross-platform.md`
-- Later implementation files: 由上述 spec 确定，不在本任务中直接创建桌面/Android 工程。
+- Implemented Web files: `index.html`, `public/`, `src/web/platform/pwa-registration.ts`, `src/web/platform/browser-system-services.ts`, `src/shared/core/ports.ts`, `src/shared/core/runtime.ts` 及对应测试。
+- Later Desktop/Android implementation files: 由上述 spec 确定，不在本任务中直接创建原生工程。
 
 **Interfaces and decisions to specify:**
 
@@ -1057,13 +1059,17 @@ export interface TargetSelectionSnapshot {
   git commit -m "docs: define relay platform shell boundaries"
   ```
 
-- [ ] **Step 4: spec 通过后另立 desktop/mobile implementation plan。**
+- [x] **Step 4: 建立并交付 PWA Web shell 子项目。**
+
+  实现计划为 [`relay-pwa-shell-implementation.md`](./2026-09-16-relay-pwa-shell-implementation.md)，已覆盖可安装 shell、service worker 安全缓存、网络/离线反馈、浏览器文件边界、剪贴板、通知权限和 320px/Chromium 验证；未引入 native 工程、local SSH 或后台凭据。
+
+- [ ] **Step 5: spec 通过后另立 Desktop/Android implementation plan。**
 
   桌面和 Android 不作为本 master plan 的隐式代码任务；每个平台有自己的文件地图、设备测试和发布门槛。
 
 **Acceptance:** 平台选择、离线/在线、secret store、生命周期和 UI 降级均有明确答案；没有把 Web DOM 或浏览器 Blob 传播到 shared core。
 
-**Verification:** spec artifact/链接检查、平台威胁模型评审和 capability/adapter contract review；spec 未批准前不创建桌面或移动端实现代码。
+**Verification:** spec artifact/链接检查、平台威胁模型评审和 capability/adapter contract review；PWA 子项目已通过 focused Vitest、lint、typecheck、Web build 和 Chromium e2e；spec 未批准前不创建桌面或移动端实现代码。
 
 ---
 

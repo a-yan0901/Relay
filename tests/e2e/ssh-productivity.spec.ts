@@ -95,6 +95,37 @@ test.describe('SSH productivity boundaries', () => {
     await fixture?.close();
   });
 
+  test('serves an installable shell, keeps API traffic out of the cache, and remains usable offline at 320px', async ({ page }) => {
+    const manifestResponse = await page.request.get('/manifest.webmanifest');
+    expect(manifestResponse.ok()).toBe(true);
+    const manifest = await manifestResponse.json() as {
+      name: string;
+      short_name: string;
+      start_url: string;
+      scope: string;
+      display: string;
+      icons: readonly { src: string; sizes: string }[];
+    };
+    expect(manifest).toMatchObject({ name: 'Relay SSH Workspace', short_name: 'Relay', start_url: '/', scope: '/', display: 'standalone' });
+    expect(manifest.icons.map((icon) => `${icon.src}:${icon.sizes}`)).toEqual([
+      '/icons/relay-192.svg:192x192',
+      '/icons/relay-512.svg:512x512'
+    ]);
+
+    const serviceWorkerResponse = await page.request.get('/sw.js');
+    expect(serviceWorkerResponse.ok()).toBe(true);
+    const serviceWorkerSource = await serviceWorkerResponse.text();
+    expect(serviceWorkerSource).toContain("url.pathname.startsWith('/api/')");
+    expect(serviceWorkerSource).toContain("url.pathname.startsWith('/ws/')");
+
+    await waitForReady(page);
+    await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+    await expect(page.getByText(/网络已断开/u)).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 640 });
+    const layout = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: window.innerWidth }));
+    expect(layout.width).toBeLessThanOrEqual(layout.viewport);
+  });
+
   test('recovers workspaces, closes live sockets, completes SFTP, and audits batch execution', async ({ page }) => {
     test.setTimeout(180_000);
     await installSocketCapture(page);

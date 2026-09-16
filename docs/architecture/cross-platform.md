@@ -162,6 +162,18 @@ X-02 将平台产品化边界单独固定在 [`relay-platform-shell-design.md`](
 
 该文档当前处于待评审草案状态，不代表 manifest、service worker、桌面/Android 工程或 proposed capability 已经实现。评审通过后，每个平台另立 implementation plan，并按真实浏览器、桌面和移动生命周期补充 contract、设备和安全验证。
 
+### PWA shell 当前交付
+
+Web 侧的 PWA 子项目已按上述边界落地，具体计划和验证记录见 [`relay-pwa-shell-implementation.md`](../superpowers/plans/2026-09-16-relay-pwa-shell-implementation.md)：
+
+- `index.html` 声明 manifest、移动 Web 元数据和本地品牌图标；`public/manifest.webmanifest` 提供 standalone 启动入口。
+- `public/sw.js` 只预缓存 app shell，并对同源静态 GET 做 runtime cache；`/api/`、`/ws/`、非 GET 和跨 origin 请求不进入 service worker cache。
+- `src/web/platform/pwa-registration.ts` 将 service worker 注册失败降级为非阻断结果；React 启动不依赖注册成功。
+- shared core 的 `platformServices` 是可选字段；Web adapter 用 browser adapter 提供用户主动剪贴板动作和通知权限/脱敏摘要，缺失时保留应用内反馈。
+- 网络断开保留工作区并暂停/等待会话恢复；恢复后只提示“正在检查会话状态”，以真实 session/task 状态为准。
+
+PWA 交付不代表账号同步、Desktop/Android 原生 shell、local SSH 或后台常驻连接已交付；这些仍需各自的 implementation plan、安全评审和设备验证。
+
 ## X-01 规模回归基线
 
 规模检查使用结构性上限和相对基线，不把一次机器的绝对耗时当作发布承诺：
