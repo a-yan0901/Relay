@@ -390,7 +390,7 @@ export interface TransferResumeRequest {
 - SFTP DOM/Web adapter/OpenSSH：3 个文件、17 个测试通过。
 - Full regression：`npm test`，83 个测试文件、308 个测试全部通过。
 - Browser：`npm run test:e2e -- --project=chromium tests/e2e/ssh-productivity.spec.ts`，2/2 通过；覆盖真实 OpenSSH SFTP 上传、原生下载、取消清理、Workspace 和批量任务边界。
-- `git diff --check` 通过；feature commit：待提交后补充 hash。
+- `git diff --check` 通过；feature commit：`c2b04fd`（`feat: add resumable streaming sftp transfers`）。
 
 **Evidence gap / follow-up:** 当前 Chromium E2E 固定关闭系统文件选择器，验证了原生下载 fallback；File System Access writer 的真实浏览器交互需要在有权限的 headed 浏览器矩阵补充。多块上传由 1 MiB+3 B fixture 覆盖，真实 OpenSSH 仍是小文件边界；后续 R-03 可加入网络切换、请求丢响应和大文件长时传输矩阵。
 
