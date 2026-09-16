@@ -48,11 +48,13 @@ X-04C 为现有 SyncResolution = 'export-both' 补齐真正可恢复的加密导
         hashLength: number;
         salt: string;
       };
-      wrappedBundleKey: EncryptedJson;
-      payload: EncryptedJson;
+      wrappedBundleKey: WrappedKeyEnvelope;
+      payload: WrappedKeyEnvelope;
     }
 
 copies 必须恰好包含一次 local 和一次 remote。每一侧都使用独立的随机 32-byte bundle key、16-byte salt、AES-256-GCM nonce 和 auth tag；导出密码通过现有 Argon2id 参数派生 wrapping key：
+
+其中 `WrappedKeyEnvelope` 使用现有 shared core 的字符串字段契约（`version`、`nonce`、`ciphertext`、`authTag`、`aad`）；服务端现有的 `EncryptedJson` 是同一 wire shape 的内部别名，不能泄漏到 shared core。
 
     export password
           |
@@ -125,7 +127,7 @@ SyncPort 增加：
       exportConflict(conflictId: string, exportPassword: string): Promise<SyncConflictExport>;
     }
 
-SyncConflictExport、SyncConflictExportCopy 和文件格式校验属于 shared contract；它们只使用字符串、数字、只读数组和 EncryptedJson，不引入 Blob、File、URL、DOM 或 Node stream。
+SyncConflictExport、SyncConflictExportCopy 和文件格式校验属于 shared contract；它们只使用字符串、数字、只读数组和 `WrappedKeyEnvelope`，不引入 Blob、File、URL、DOM 或 Node stream。
 
 Web API/adapter 负责：
 
