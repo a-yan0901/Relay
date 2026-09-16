@@ -54,7 +54,7 @@ X-04C 为现有 SyncResolution = 'export-both' 补齐真正可恢复的加密导
 
 copies 必须恰好包含一次 local 和一次 remote。每一侧都使用独立的随机 32-byte bundle key、16-byte salt、AES-256-GCM nonce 和 auth tag；导出密码通过现有 Argon2id 参数派生 wrapping key：
 
-其中 `WrappedKeyEnvelope` 使用现有 shared core 的字符串字段契约（`version`、`nonce`、`ciphertext`、`authTag`、`aad`）；服务端现有的 `EncryptedJson` 是同一 wire shape 的内部别名，不能泄漏到 shared core。
+其中 `WrappedKeyEnvelope` 使用现有 shared core 的字符串字段契约（`version`、`nonce`、`ciphertext`、`authTag`、`aad`）；服务端现有的 `EncryptedJson` 是同一 wire shape 的内部别名，不能泄漏到 shared core。`payloadHash` 原样保留对应冲突源 `SyncEnvelope` 的 hash，用于关联源版本，不代表导出 payload 的明文 hash。
 
     export password
           |
