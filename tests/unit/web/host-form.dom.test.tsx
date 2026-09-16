@@ -238,4 +238,25 @@ describe('HostForm', () => {
     }));
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('auth');
   });
+
+  it('uses an Identity username as a form default without overwriting an explicit Host username', async () => {
+    const user = userEvent.setup();
+    const identities: IdentityMetadata[] = [{
+      id: 'identity-1', name: 'Production deploy', type: 'password', username: 'identity-user',
+      keyFingerprint: null, usageCount: 0, createdAt: '', updatedAt: ''
+    }];
+    render(<HostForm identities={identities} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText('凭据来源'), 'identity');
+    await user.selectOptions(screen.getByLabelText('SSH 身份'), 'identity-1');
+    expect(screen.getByLabelText('用户名')).toHaveValue('identity-user');
+    expect(screen.getByText('选择身份时，身份用户名只作为默认值；已填写的 Host 用户名优先。')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('凭据来源'), 'inline');
+    await user.clear(screen.getByLabelText('用户名'));
+    await user.type(screen.getByLabelText('用户名'), 'explicit-user');
+    await user.selectOptions(screen.getByLabelText('凭据来源'), 'identity');
+    await user.selectOptions(screen.getByLabelText('SSH 身份'), 'identity-1');
+    expect(screen.getByLabelText('用户名')).toHaveValue('explicit-user');
+  });
 });

@@ -821,6 +821,17 @@ export const App = ({ runtime }: AppProps) => {
     }
   };
 
+  const handleClearHostKey = async (host: HostMetadataState): Promise<void> => {
+    if (!window.confirm(`清除 Server「${host.name}」已保存的 Host Key 信任吗？下次连接需要重新确认指纹。`)) return;
+    try {
+      await runtime.hosts.clearHostKey(host.id);
+      dispatch({ type: 'hostUpdated', host: { ...host, hostKeyAlgorithm: null, hostKeyFingerprint: null } });
+      setConnectionFeedback({ tone: 'info', message: `已清除 ${host.name} 的 Host Key 信任，下次连接会重新确认。` });
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+    }
+  };
+
   const handleTestConnection = async (host: HostMetadataState): Promise<void> => {
     setConnectionFeedback(null);
     try {
@@ -1022,6 +1033,7 @@ export const App = ({ runtime }: AppProps) => {
             onExport={capabilities.supports('vault.bundle') ? () => setWorkspaceSettingsMode('export') : undefined}
             onEdit={openEditHost}
             onDelete={(host) => void handleDeleteHost(host)}
+            onClearHostKey={(host) => void handleClearHostKey(host)}
             onTestConnection={(host) => void handleTestConnection(host)}
           />
         </div>

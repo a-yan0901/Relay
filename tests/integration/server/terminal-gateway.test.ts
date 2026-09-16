@@ -36,12 +36,14 @@ class FakeChannel extends EventEmitter implements SshChannel {
 class ChallengeAdapter implements SshAdapterPort {
   readonly channels: FakeChannel[] = [];
   readonly configs: SshConnectConfig[] = [];
+  challengeAlgorithm = 'ssh-ed25519';
+  challengeFingerprint = 'SHA256:fixture-key';
 
   async connect(config: SshConnectConfig, callbacks: SshConnectCallbacks): Promise<SshChannel> {
     this.configs.push(config);
     const challenge = {
-      algorithm: 'ssh-ed25519',
-      fingerprint: 'SHA256:fixture-key',
+      algorithm: this.challengeAlgorithm,
+      fingerprint: this.challengeFingerprint,
       address: config.address,
       port: config.port
     };
@@ -240,6 +242,59 @@ describe('terminal WebSocket gateway', () => {
     expect((await nextJson<{ type: string; state?: string }>(socket)).state).toBe('closed');
     expect(channel.closeCalls).toBe(1);
     socket.close();
+  });
+
+  it('shows old and new Host Key fingerprints before allowing an explicit replacement', async () => {
+    const { app, adapter } = await makeApp();
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const cookie = cookieFrom(setup);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: { name: 'Rotating Host Key', address: 'ssh-fixture', username: 'fixture', auth: { type: 'password', password: 'fixture-password' } }
+    });
+    const hostId = json<{ id: string }>(created).id;
+    const url = await listen(app);
+
+    const firstSocket = await connectSocket(url, { cookie, origin: ORIGIN });
+    firstSocket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'rotate-first' }));
+    await nextJson(firstSocket);
+    await nextJson(firstSocket);
+    await nextJson(firstSocket);
+    firstSocket.send(JSON.stringify({ type: 'host-key-decision', decision: 'trust', fingerprint: 'SHA256:fixture-key' }));
+    await nextJson(firstSocket);
+    firstSocket.send(JSON.stringify({ type: 'close' }));
+    await nextJson(firstSocket);
+    firstSocket.close();
+
+    adapter.challengeFingerprint = 'SHA256:replacement-key';
+    const secondSocket = await connectSocket(url, { cookie, origin: ORIGIN });
+    secondSocket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'rotate-second' }));
+    await nextJson(secondSocket);
+    await nextJson(secondSocket);
+    const changed = await nextJson<{
+      type: string;
+      reason?: string;
+      algorithm: string;
+      fingerprint: string;
+      previous?: { algorithm: string; fingerprint: string };
+    }>(secondSocket);
+    expect(changed).toEqual(expect.objectContaining({
+      type: 'host-key',
+      reason: 'changed',
+      algorithm: 'ssh-ed25519',
+      fingerprint: 'SHA256:replacement-key',
+      previous: { algorithm: 'ssh-ed25519', fingerprint: 'SHA256:fixture-key' }
+    }));
+    secondSocket.send(JSON.stringify({ type: 'host-key-decision', decision: 'trust', fingerprint: 'SHA256:replacement-key' }));
+    expect(await nextJson<{ type: string; state?: string }>(secondSocket)).toEqual(expect.objectContaining({ type: 'status', state: 'connected' }));
+
+    const listedHosts = await app.inject({ method: 'GET', url: '/api/hosts', headers: { cookie } });
+    expect(json<Array<{ hostKeyFingerprint: string | null }>>(listedHosts)[0]?.hostKeyFingerprint).toBe('SHA256:replacement-key');
+    secondSocket.send(JSON.stringify({ type: 'close' }));
+    await nextJson(secondSocket);
+    secondSocket.close();
   });
 
   it('persists a missing imported password after a successful connection', async () => {

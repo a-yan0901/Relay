@@ -84,6 +84,7 @@ export interface HostStore {
   create(input: HostCreateInput): Promise<HostMetadata>;
   update(id: string, input: HostPatchInput): Promise<HostMetadata>;
   delete(id: string): Promise<void>;
+  clearHostKey(id: string): Promise<void>;
 }
 
 export interface SecretStore<Secret = unknown> {

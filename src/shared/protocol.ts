@@ -119,6 +119,11 @@ export interface TerminalHostKeyEvent {
   port: number;
   hostId?: string;
   hopIndex?: number;
+  reason?: 'first-seen' | 'changed';
+  previous?: {
+    algorithm: string;
+    fingerprint: string;
+  };
 }
 
 export interface TerminalCredentialRequiredEvent {

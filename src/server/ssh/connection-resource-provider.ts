@@ -8,6 +8,7 @@ import { VaultService } from '../vault/vault-service.js';
 import type { IdentityService } from '../identity/identity-service.js';
 import type { ConnectionPathResolver } from './connection-path.js';
 import type { SshConnectConfig, SshConnectionResource, SshHostKeyChallenge, SshResourceAdapter } from './types.js';
+import { normalizeFingerprint } from './host-key-policy.js';
 
 export interface ConnectionResourceLease {
   resource: SshConnectionResource;
@@ -96,7 +97,12 @@ export const createConnectionResourceProvider = (options: ConnectionResourceProv
     }, {
       onHostKey: async (challenge: SshHostKeyChallenge): Promise<boolean> => {
         const row = options.hostRepository.getForConnection(challenge.hostId ?? hostId);
-        return Boolean(row?.hostKeyFingerprint && row.hostKeyFingerprint === challenge.fingerprint);
+        if (!row?.hostKeyAlgorithm || !row.hostKeyFingerprint || row.hostKeyAlgorithm !== challenge.algorithm) return false;
+        try {
+          return normalizeFingerprint(row.hostKeyFingerprint) === normalizeFingerprint(challenge.fingerprint);
+        } catch {
+          return false;
+        }
       }
     });
     return { resource: connection, close: () => connection.close() };

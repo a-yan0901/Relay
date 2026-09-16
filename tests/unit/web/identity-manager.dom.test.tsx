@@ -8,7 +8,7 @@ import type { IdentityMetadata } from '../../../src/shared/core/models.js';
 import { IdentityManager } from '../../../src/web/components/IdentityManager';
 
 const identity: IdentityMetadata = {
-  id: 'identity-1', name: 'Production deploy', type: 'password', username: 'deploy', keyFingerprint: null,
+  id: 'identity-1', name: 'Production deploy', type: 'password', username: 'deploy', keyFingerprint: 'SHA256:key-fixture',
   usageCount: 2, createdAt: '2026-09-15T00:00:00.000Z', updatedAt: '2026-09-15T00:00:00.000Z'
 };
 
@@ -21,7 +21,7 @@ describe('IdentityManager', () => {
     render(<IdentityManager identities={[identity]} onCreate={onCreate} onUpdate={vi.fn()} onDelete={vi.fn()} onClose={vi.fn()} />);
 
     expect(screen.getByText('Production deploy')).toBeInTheDocument();
-    expect(screen.getByText((_content, element) => element?.textContent === 'deploy · 密码 · 2 台 Server 使用中')).toBeInTheDocument();
+    expect(screen.getByText((_content, element) => element?.textContent === 'deploy · 密码 · SHA-256：SHA256:key-fixture · 2 台 Server 使用中')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '新建身份' }));
     await user.type(screen.getByLabelText('身份名称'), 'Staging ops');
     await user.type(screen.getByLabelText('身份用户名'), 'ops');

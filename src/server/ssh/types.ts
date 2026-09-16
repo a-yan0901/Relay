@@ -24,6 +24,11 @@ export interface SshHostKeyChallenge {
   port: number;
   hostId?: string;
   hopIndex?: number;
+  reason?: 'first-seen' | 'changed';
+  previous?: {
+    algorithm: string;
+    fingerprint: string;
+  };
 }
 
 export interface SshChannel {

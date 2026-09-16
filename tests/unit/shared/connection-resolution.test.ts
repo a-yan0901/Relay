@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AppError } from '../../../src/shared/errors.js';
 import { defaultConnectionProfileSettings, type HostMetadata } from '../../../src/shared/validation.js';
 import type { GroupNode } from '../../../src/shared/core/models.js';
-import { resolveConnectionConfiguration } from '../../../src/shared/core/connection-resolution.js';
+import { resolveConnectionConfiguration, resolveConnectionUsername } from '../../../src/shared/core/connection-resolution.js';
 
 const group = (id: string, parentId: string | null, overrides: Partial<GroupNode> = {}): GroupNode => ({
   id,
@@ -23,6 +23,25 @@ const host = (overrides: Partial<Pick<HostMetadata, 'groupId' | 'connectionProfi
 });
 
 describe('resolveConnectionConfiguration', () => {
+  it('keeps an explicit Host username ahead of Identity and Group defaults', () => {
+    expect(resolveConnectionUsername({
+      hostUsername: 'host-user',
+      identityUsername: 'identity-user',
+      groupIdentityUsername: 'group-user'
+    })).toEqual({ username: 'host-user', source: 'host' });
+    expect(resolveConnectionUsername({
+      hostUsername: null,
+      identityUsername: 'identity-user',
+      groupIdentityUsername: 'group-user'
+    })).toEqual({ username: 'identity-user', source: 'identity' });
+    expect(resolveConnectionUsername({
+      hostUsername: '',
+      identityUsername: null,
+      groupIdentityUsername: 'group-user'
+    })).toEqual({ username: 'group-user', source: 'group' });
+    expect(resolveConnectionUsername({ hostUsername: null })).toEqual({ username: null, source: 'none' });
+  });
+
   it('merges application defaults, ancestor groups, nearest group, and host overrides', () => {
     const result = resolveConnectionConfiguration(
       host({

@@ -62,11 +62,14 @@ const isServerEvent = (value: unknown): value is TerminalServerEvent => {
     (value.authType === 'password' || value.authType === 'private_key') &&
     typeof value.name === 'string' && typeof value.address === 'string' &&
     typeof value.port === 'number' && typeof value.username === 'string';
+  const previous = value.previous;
   return value.type === 'host-key' &&
     typeof value.algorithm === 'string' &&
     typeof value.fingerprint === 'string' &&
     typeof value.address === 'string' &&
-    typeof value.port === 'number';
+    typeof value.port === 'number' &&
+    (value.reason === undefined || value.reason === 'first-seen' || value.reason === 'changed') &&
+    (previous === undefined || (isRecord(previous) && typeof previous.algorithm === 'string' && typeof previous.fingerprint === 'string'));
 };
 
 const terminalSocketUrl = (): string => {

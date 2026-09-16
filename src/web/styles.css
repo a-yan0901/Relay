@@ -387,6 +387,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .host-key-status > span { color: var(--yellow); font-weight: 800; }
 
+.host-key-status .host-key-detail { color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 500; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.host-key-status .host-key-detail::before { color: #3c5672; content: "·"; margin: 0 6px 0 2px; }
+
 .host-last-connected { color: var(--faint); font-size: 10px; margin: 8px 0 0; }
 
 .tag-list { flex-wrap: wrap; gap: 5px; margin-top: 9px; }

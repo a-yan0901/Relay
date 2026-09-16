@@ -14,6 +14,7 @@ export interface HostKeyPolicyOptions {
   port: number;
   knownHostKey: KnownHostKey | null;
   saveHostKey: (hostId: string, algorithm: string, fingerprint: string) => void;
+  clearHostKey?: (hostId: string) => void;
   hopIndex?: number;
 }
 
@@ -71,8 +72,41 @@ export class HostKeyPolicy {
     }
 
     if (this.knownHostKey !== null) {
-      this.mismatch = fingerprint !== normalizeFingerprint(this.knownHostKey.fingerprint);
-      verify(!this.mismatch);
+      let knownFingerprint: string;
+      try {
+        knownFingerprint = normalizeFingerprint(this.knownHostKey.fingerprint);
+      } catch {
+        this.mismatch = true;
+        verify(false);
+        return;
+      }
+
+      const changed = algorithm !== this.knownHostKey.algorithm || fingerprint !== knownFingerprint;
+      this.mismatch = changed;
+      if (!changed) {
+        verify(true);
+        return;
+      }
+
+      if (this.pending !== null) {
+        this.pending.verify(false);
+      }
+      this.pending = {
+        challenge: {
+          algorithm,
+          fingerprint,
+          address: this.options.address,
+          port: this.options.port,
+          hostId: this.options.hostId,
+          reason: 'changed',
+          previous: {
+            algorithm: this.knownHostKey.algorithm,
+            fingerprint: knownFingerprint
+          },
+          ...(this.options.hopIndex === undefined ? {} : { hopIndex: this.options.hopIndex })
+        },
+        verify
+      };
       return;
     }
 
@@ -87,6 +121,7 @@ export class HostKeyPolicy {
         address: this.options.address,
         port: this.options.port,
         hostId: this.options.hostId,
+        reason: 'first-seen',
         ...(this.options.hopIndex === undefined ? {} : { hopIndex: this.options.hopIndex })
       },
       verify
@@ -98,7 +133,12 @@ export class HostKeyPolicy {
       return false;
     }
 
-    const normalized = normalizeFingerprint(fingerprint);
+    let normalized: string;
+    try {
+      normalized = normalizeFingerprint(fingerprint);
+    } catch {
+      return false;
+    }
     if (normalized !== this.pending.challenge.fingerprint) {
       return false;
     }
@@ -126,6 +166,23 @@ export class HostKeyPolicy {
       return true;
     } catch {
       pending.verify(false);
+      throw new AppError('HOST_KEY_MISMATCH');
+    }
+  }
+
+  clearKnownHostKey(): void {
+    if (!this.options.clearHostKey) {
+      throw new AppError('INTERNAL_ERROR', '当前 Host Key policy 未配置清除信任操作');
+    }
+
+    const pending = this.pending;
+    this.pending = null;
+    pending?.verify(false);
+    try {
+      this.options.clearHostKey(this.options.hostId);
+      this.knownHostKey = null;
+      this.mismatch = false;
+    } catch {
       throw new AppError('HOST_KEY_MISMATCH');
     }
   }

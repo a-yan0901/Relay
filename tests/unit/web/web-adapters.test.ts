@@ -200,6 +200,18 @@ describe('web adapters', () => {
     expect(createWebAdapters({ api: { listHosts: async () => [], getHost: async () => null } })).toHaveProperty('sessions');
   });
 
+  it('keeps Host Key trust removal behind the HostStore port', async () => {
+    const clearHostKey = vi.fn(async () => undefined);
+    const hosts = new WebHostStore({
+      listHosts: vi.fn(async () => [host]),
+      getHost: vi.fn(async () => host),
+      clearHostKey
+    });
+
+    await hosts.clearHostKey('host-1');
+    expect(clearHostKey).toHaveBeenCalledWith('host-1');
+  });
+
   it('splits browser uploads into bounded chunks while carrying the incremental checkpoint checksum', async () => {
     const totalBytes = 1024 * 1024 + 3;
     const data = new Uint8Array(totalBytes);

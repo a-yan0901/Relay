@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 
 import { AppError } from '@shared/errors';
+import { resolveConnectionUsername } from '@shared/core/connection-resolution';
 import {
   parseHostCreateInput,
   parseHostPatchInput,
@@ -46,6 +47,8 @@ interface HostFormState {
   reconnectBaseDelayMs: string;
   reconnectMaxDelayMs: string;
 }
+
+type UsernameFormSource = 'empty' | 'identity-default' | 'explicit';
 
 const defaultProfile = defaultConnectionProfileSettings();
 
@@ -128,11 +131,49 @@ export const HostForm = ({
 }: HostFormProps) => {
   const isEdit = mode === 'edit';
   const [form, setForm] = useState(() => initialHost ? formFromHost(initialHost) : initialForm);
+  const [usernameSource, setUsernameSource] = useState<UsernameFormSource>(() => initialHost?.username ? 'explicit' : 'empty');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const update = <K extends keyof HostFormState>(key: K, value: HostFormState[K]): void => {
     setForm((previous) => ({ ...previous, [key]: value }));
+  };
+
+  const applyUsernameDefault = (identityUsername?: string | null, groupIdentityUsername?: string | null): void => {
+    const resolved = resolveConnectionUsername({
+      hostUsername: usernameSource === 'explicit' ? form.username : null,
+      identityUsername,
+      groupIdentityUsername
+    });
+    if (resolved.source === 'host' || resolved.username === null) return;
+    update('username', resolved.username);
+    setUsernameSource('identity-default');
+  };
+
+  const selectCredentialMode = (credentialMode: HostFormState['credentialMode']): void => {
+    update('credentialMode', credentialMode);
+    if (credentialMode === 'identity') {
+      const identity = identities.find((candidate) => candidate.id === form.identityId);
+      applyUsernameDefault(identity?.username);
+    } else if (credentialMode === 'group') {
+      const group = groups.find((candidate) => candidate.id === form.groupId);
+      const identity = group?.defaultIdentityId ? identities.find((candidate) => candidate.id === group.defaultIdentityId) : undefined;
+      applyUsernameDefault(null, identity?.username);
+    }
+  };
+
+  const selectIdentity = (identityId: string): void => {
+    update('identityId', identityId);
+    applyUsernameDefault(identities.find((identity) => identity.id === identityId)?.username);
+  };
+
+  const selectGroup = (groupId: string): void => {
+    update('groupId', groupId);
+    if (!groupId && form.credentialMode === 'group') update('credentialMode', 'inline');
+    if (form.credentialMode !== 'group') return;
+    const group = groups.find((candidate) => candidate.id === groupId);
+    const identity = group?.defaultIdentityId ? identities.find((candidate) => candidate.id === group.defaultIdentityId) : undefined;
+    applyUsernameDefault(null, identity?.username);
   };
 
   const availableJumpHosts = hosts.filter((host) => host.id !== initialHost?.id);
@@ -238,11 +279,12 @@ export const HostForm = ({
         </div>
         <div className="field">
           <label htmlFor="host-username">用户名</label>
-          <input id="host-username" value={form.username} onChange={(event) => update('username', event.target.value)} autoComplete="off" spellCheck={false} />
+          <input id="host-username" aria-describedby="host-username-help" value={form.username} onChange={(event) => { const username = event.target.value; update('username', username); setUsernameSource(username.length > 0 ? 'explicit' : 'empty'); }} autoComplete="off" spellCheck={false} />
+          <small id="host-username-help" className="field-help">选择身份时，身份用户名只作为默认值；已填写的 Host 用户名优先。</small>
         </div>
         <div className="field field-wide">
           <label htmlFor="host-credential-source">凭据来源</label>
-          <select id="host-credential-source" value={form.credentialMode} onChange={(event) => update('credentialMode', event.target.value as HostFormState['credentialMode'])}>
+          <select id="host-credential-source" value={form.credentialMode} onChange={(event) => selectCredentialMode(event.target.value as HostFormState['credentialMode'])}>
             <option value="inline">主机独立凭据</option>
             <option value="identity" disabled={identities.length === 0}>使用已有身份</option>
             <option value="group" disabled={!form.groupId}>跟随分组默认身份</option>
@@ -252,7 +294,7 @@ export const HostForm = ({
         {form.credentialMode === 'identity' ? (
           <div className="field field-wide">
             <label htmlFor="host-identity">SSH 身份</label>
-            <select id="host-identity" value={form.identityId} onChange={(event) => update('identityId', event.target.value)}>
+            <select id="host-identity" value={form.identityId} onChange={(event) => selectIdentity(event.target.value)}>
               <option value="">请选择已有身份</option>
               {identities.map((identity) => <option value={identity.id} key={identity.id}>{identity.name} · {identity.username}</option>)}
             </select>
@@ -271,7 +313,7 @@ export const HostForm = ({
         )}
         <div className="field field-wide">
           <label htmlFor="host-group">分组</label>
-          <select id="host-group" value={form.groupId} onChange={(event) => { const groupId = event.target.value; update('groupId', groupId); if (!groupId && form.credentialMode === 'group') update('credentialMode', 'inline'); }}>
+          <select id="host-group" value={form.groupId} onChange={(event) => selectGroup(event.target.value)}>
             <option value="">未分组</option>
             {groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}
           </select>

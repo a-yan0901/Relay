@@ -64,6 +64,22 @@ describe('IdentityService', () => {
     await expect(service.getCredential('owner-a', created.id, vaultKey)).resolves.toEqual({ type: 'private_key', privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----' });
   });
 
+  it('clears stale key metadata when an identity credential is rotated', async () => {
+    const { service, repository, vaultKey } = fixture();
+    const created = await service.create('owner-a', {
+      ...input,
+      type: 'private_key',
+      auth: { type: 'private_key', privateKey: '-----BEGIN OPENSSH PRIVATE KEY----- old' }
+    }, vaultKey);
+    repository.update(created.id, { keyFingerprint: 'SHA256:old-public-key' });
+
+    await service.update('owner-a', created.id, {
+      auth: { type: 'private_key', privateKey: '-----BEGIN OPENSSH PRIVATE KEY----- new' }
+    }, vaultKey);
+
+    await expect(service.get('owner-a', created.id)).resolves.toMatchObject({ keyFingerprint: null });
+  });
+
   it('rejects deleting an identity that is still referenced', async () => {
     const { service, hostRepository, vaultKey } = fixture();
     const created = await service.create('owner-a', input, vaultKey);

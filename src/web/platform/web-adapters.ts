@@ -93,6 +93,7 @@ export interface WebApiClient {
   createHost?: typeof api.createHost;
   updateHost?: typeof api.updateHost;
   deleteHost?: typeof api.deleteHost;
+  clearHostKey?: typeof api.clearHostKey;
   listGroups?: typeof api.listGroups;
   getGroup?: typeof api.getGroup;
   createGroup?: typeof api.createGroup;
@@ -157,7 +158,7 @@ const profileFromHost = (host: HostMetadata): ConnectionProfile => ({
 });
 
 export class WebHostStore implements HostStore {
-  constructor(private readonly client: Pick<WebApiClient, 'listHosts' | 'getHost'> & Partial<Pick<WebApiClient, 'createHost' | 'updateHost' | 'deleteHost'>> = api) {}
+  constructor(private readonly client: Pick<WebApiClient, 'listHosts' | 'getHost'> & Partial<Pick<WebApiClient, 'createHost' | 'updateHost' | 'deleteHost' | 'clearHostKey'>> = api) {}
 
   list(filter: HostListFilter = {}): Promise<readonly HostMetadata[]> {
     return requireApi(this.client.listHosts)(filter);
@@ -192,6 +193,10 @@ export class WebHostStore implements HostStore {
 
   delete(hostId: string): Promise<void> {
     return requireApi(this.client.deleteHost)(hostId);
+  }
+
+  clearHostKey(hostId: string): Promise<void> {
+    return requireApi(this.client.clearHostKey)(hostId);
   }
 }
 

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../../src/server/app.js';
 import { openDatabase } from '../../../src/server/db/database.js';
 import { migrate } from '../../../src/server/db/migrations.js';
+import { HostRepository } from '../../../src/server/db/repositories.js';
 
 const MASTER_PASSWORD = 'correct horse battery staple';
 const databases: ReturnType<typeof openDatabase>[] = [];
@@ -247,5 +248,36 @@ describe('host routes', () => {
     });
     expect(inline.statusCode).toBe(200);
     expect(json<{ credentialSource: { type: string } }>(inline).credentialSource.type).toBe('inline');
+  });
+
+  it('requires an explicit authenticated operation to clear a trusted Host Key', async () => {
+    const app = await makeApp();
+    const cookie = await setup(app);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: { name: 'Trusted host', address: '10.0.0.13', username: 'deploy', auth: { type: 'password', password: 'fixture-password' } }
+    });
+    const hostId = json<{ id: string }>(created).id;
+    const repository = new HostRepository(databases.at(-1)!, 'default');
+    repository.setHostKey(hostId, 'ssh-ed25519', 'SHA256:trusted-key');
+
+    const before = await app.inject({ method: 'GET', url: `/api/hosts/${hostId}`, headers: { cookie } });
+    expect(json<{ hostKeyAlgorithm: string | null; hostKeyFingerprint: string | null }>(before)).toEqual(expect.objectContaining({
+      hostKeyAlgorithm: 'ssh-ed25519',
+      hostKeyFingerprint: 'SHA256:trusted-key'
+    }));
+
+    const unauthenticated = await app.inject({ method: 'DELETE', url: `/api/hosts/${hostId}/host-key` });
+    expect(unauthenticated.statusCode).toBe(401);
+
+    const cleared = await app.inject({ method: 'DELETE', url: `/api/hosts/${hostId}/host-key`, headers: { cookie } });
+    expect(cleared.statusCode).toBe(204);
+    const after = await app.inject({ method: 'GET', url: `/api/hosts/${hostId}`, headers: { cookie } });
+    expect(json<{ hostKeyAlgorithm: string | null; hostKeyFingerprint: string | null }>(after)).toEqual(expect.objectContaining({
+      hostKeyAlgorithm: null,
+      hostKeyFingerprint: null
+    }));
   });
 });

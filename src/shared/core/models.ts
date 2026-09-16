@@ -37,6 +37,11 @@ export interface ConnectionTestResult {
     fingerprint: string;
     address: string;
     port: number;
+    reason?: 'first-seen' | 'changed';
+    previous?: {
+      algorithm: string;
+      fingerprint: string;
+    };
   };
 }
 

@@ -24,6 +24,41 @@ export interface ResolvedConnectionConfiguration {
   identitySource: IdentitySource;
 }
 
+export type ConnectionUsernameSource = 'host' | 'identity' | 'group' | 'none';
+
+export interface ConnectionUsernameInputs {
+  hostUsername?: string | null;
+  identityUsername?: string | null;
+  groupIdentityUsername?: string | null;
+}
+
+export interface ResolvedConnectionUsername {
+  username: string | null;
+  source: ConnectionUsernameSource;
+}
+
+/**
+ * Resolves the username used by the form when reusable credentials provide a
+ * default. A username already entered on the Host always wins; Identity and
+ * Group values are only fallback defaults and never silently replace it.
+ */
+export const resolveConnectionUsername = ({
+  hostUsername,
+  identityUsername,
+  groupIdentityUsername
+}: ConnectionUsernameInputs): ResolvedConnectionUsername => {
+  if (typeof hostUsername === 'string' && hostUsername.length > 0) {
+    return { username: hostUsername, source: 'host' };
+  }
+  if (typeof identityUsername === 'string' && identityUsername.length > 0) {
+    return { username: identityUsername, source: 'identity' };
+  }
+  if (typeof groupIdentityUsername === 'string' && groupIdentityUsername.length > 0) {
+    return { username: groupIdentityUsername, source: 'group' };
+  }
+  return { username: null, source: 'none' };
+};
+
 const groupsById = (groups: readonly GroupNode[]): Map<string, GroupNode> => {
   const result = new Map<string, GroupNode>();
   for (const group of groups) {

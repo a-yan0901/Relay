@@ -183,6 +183,10 @@ export const deleteHost = (id: string): Promise<void> => request<void>(`/api/hos
   method: 'DELETE'
 });
 
+export const clearHostKey = (id: string): Promise<void> => request<void>(`/api/hosts/${encodeURIComponent(id)}/host-key`, {
+  method: 'DELETE'
+});
+
 export const listIdentities = (): Promise<IdentityMetadata[]> => request<IdentityMetadata[]>('/api/identities');
 
 export const getIdentity = (id: string): Promise<IdentityMetadata> => request<IdentityMetadata>(`/api/identities/${encodeURIComponent(id)}`);

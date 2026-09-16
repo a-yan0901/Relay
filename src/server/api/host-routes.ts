@@ -23,6 +23,7 @@ import { AuditRepository, HostRepository } from '../db/repositories.js';
 import type { GroupRepository } from '../db/repositories.js';
 import type { HostPatch } from '../db/types.js';
 import type { SshConnectConfig, SshHostKeyChallenge, SshSessionManagerPort } from '../ssh/types.js';
+import { HostKeyPolicy } from '../ssh/host-key-policy.js';
 import { IdentityService } from '../identity/identity-service.js';
 import { requireUnlockedSession, toHostMetadataDto } from './route-helpers.js';
 import type { IdentityMetadata } from '../../shared/core/models.js';
@@ -341,6 +342,15 @@ export const registerHostRoutes = async (
     reply.code(204).send();
   });
 
+  app.delete('/api/hosts/:id/host-key', async (request, reply) => {
+    requireUnlockedSession(request, dependencies.sessionStore);
+    const id = hostId(request.params);
+    readHost(dependencies, id);
+    dependencies.hostRepository.clearHostKey(id);
+    dependencies.auditRepository.insert({ eventType: 'host_key_cleared', hostId: id, requestId: request.id });
+    reply.code(204).send();
+  });
+
   app.post('/api/hosts/:id/test-connection', async (request, reply) => {
     const session = requireUnlockedSession(request, dependencies.sessionStore);
     if (!dependencies.sshSessionManager) {
@@ -349,13 +359,26 @@ export const registerHostRoutes = async (
 
     const id = hostId(request.params);
     const row = readHost(dependencies, id);
+    const hostKeyPolicy = new HostKeyPolicy({
+      hostId: row.id,
+      address: row.address,
+      port: row.port,
+      knownHostKey: row.hostKeyAlgorithm && row.hostKeyFingerprint
+        ? { algorithm: row.hostKeyAlgorithm, fingerprint: row.hostKeyFingerprint }
+        : null,
+      saveHostKey: (hostId, algorithm, fingerprint) => dependencies.hostRepository.setHostKey(hostId, algorithm, fingerprint)
+    });
     let challenge: SshHostKeyChallenge | undefined;
     const result = await dependencies.sshSessionManager.testConnection(
       await toSshConfig(dependencies, session.record.vaultKey, row),
       {
         onHostKey: async (nextChallenge) => {
-          challenge = nextChallenge;
-          return false;
+          let accepted: boolean | undefined;
+          hostKeyPolicy.verifyFingerprint(nextChallenge.fingerprint, nextChallenge.algorithm, (resultValue) => {
+            accepted = resultValue;
+          });
+          if (accepted !== true) challenge = hostKeyPolicy.pendingChallenge ?? nextChallenge;
+          return accepted === true;
         }
       }
     );

@@ -212,7 +212,8 @@ export const createInMemoryCoreRuntime = (
       async getProfile() { return null; },
       async create() { throw new Error('unused'); },
       async update() { throw new Error('unused'); },
-      async delete() {}
+      async delete() {},
+      async clearHostKey() {}
     },
     identities: {
       async list(): Promise<readonly IdentityMetadata[]> { return []; },

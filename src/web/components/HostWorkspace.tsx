@@ -28,6 +28,7 @@ export interface HostWorkspaceProps {
   onEdit?: (host: HostMetadataState) => void;
   onDelete?: (host: HostMetadataState) => void;
   onTestConnection?: (host: HostMetadataState) => void;
+  onClearHostKey?: (host: HostMetadataState) => void;
 }
 
 export const HostWorkspace = ({
@@ -51,7 +52,8 @@ export const HostWorkspace = ({
   onExport,
   onEdit,
   onDelete,
-  onTestConnection
+  onTestConnection,
+  onClearHostKey
 }: HostWorkspaceProps) => {
   const visibleHosts = useMemo(() => {
     const groupScope = selectedGroupId === null ? null : new Set(descendantGroupIds(selectedGroupId, groups));
@@ -122,7 +124,7 @@ export const HostWorkspace = ({
         </div>
         {isFilteredEmpty ? (
           <div className="empty-state empty-state-compact"><h2>没有匹配的 Server</h2><p>试试名称、IP、用户名或标签。</p></div>
-        ) : <HostList hosts={visibleHosts} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onAddHost={onAddHost} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onTagSelected={onTagSelected} />}
+        ) : <HostList hosts={visibleHosts} groups={groups} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onAddHost={onAddHost} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onClearHostKey={onClearHostKey} onTagSelected={onTagSelected} />}
       </section>
     </div>
   );

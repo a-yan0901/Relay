@@ -54,4 +54,26 @@ describe('HostCard', () => {
     expect(onTestConnection).toHaveBeenCalledWith(host);
     expect(onDelete).toHaveBeenCalledWith(host);
   });
+
+  it('shows trusted Host Key details and exposes an explicit clear-trust action', async () => {
+    const user = userEvent.setup();
+    const onClearHostKey = vi.fn();
+    const trustedHost = {
+      ...host,
+      hostKeyAlgorithm: 'ssh-ed25519',
+      hostKeyFingerprint: 'SHA256:fixture',
+      credentialSource: { type: 'identity' as const, identityId: 'identity-1' },
+      identityName: 'Production deploy',
+      identitySource: 'host' as const
+    };
+    render(<HostCard host={trustedHost} groupName="Production" onConnect={vi.fn()} onFavoriteToggle={vi.fn()} onClearHostKey={onClearHostKey} />);
+
+    expect(screen.getByText('指纹已验证')).toBeInTheDocument();
+    expect(screen.getByText('ssh-ed25519')).toBeInTheDocument();
+    expect(screen.getByText('SHA256:fixture')).toBeInTheDocument();
+    expect(screen.getByText('身份：Production deploy')).toBeInTheDocument();
+    expect(screen.getByText('环境：Production')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '清除 Host Key 信任 Production API' }));
+    expect(onClearHostKey).toHaveBeenCalledWith(trustedHost);
+  });
 });

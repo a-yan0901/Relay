@@ -28,12 +28,13 @@ describe('HostKeyPolicy', () => {
       fingerprint: 'SHA256:fixture-key',
       address: '10.0.0.8',
       hostId: 'host-1',
-      port: 22
+      port: 22,
+      reason: 'first-seen'
     });
     expect(saved).toEqual([]);
   });
 
-  it('accepts a matching fingerprint and hard-rejects a mismatch', () => {
+  it('accepts a matching fingerprint and pauses a changed key for an explicit decision', () => {
     const matching = new HostKeyPolicy({
       ...challengeOptions,
       knownHostKey: { algorithm: 'ssh-ed25519', fingerprint: 'SHA256:fixture-key' },
@@ -54,8 +55,44 @@ describe('HostKeyPolicy', () => {
     mismatch.verifyFingerprint('SHA256:new-key', 'ssh-ed25519', (result) => {
       rejected = result;
     });
-    expect(rejected).toBe(false);
-    expect(mismatch.pendingChallenge).toBeNull();
+    expect(rejected).toBeUndefined();
+    expect(mismatch.pendingChallenge).toEqual({
+      algorithm: 'ssh-ed25519',
+      fingerprint: 'SHA256:new-key',
+      address: '10.0.0.8',
+      hostId: 'host-1',
+      port: 22,
+      reason: 'changed',
+      previous: { algorithm: 'ssh-ed25519', fingerprint: 'SHA256:old-key' }
+    });
+  });
+
+  it('treats an algorithm change as a changed Host Key and preserves old trust after rejection', () => {
+    const policy = new HostKeyPolicy({
+      ...challengeOptions,
+      knownHostKey: { algorithm: 'ssh-ed25519', fingerprint: 'SHA256:fixture-key' },
+      saveHostKey: () => undefined
+    });
+    let accepted: boolean | undefined;
+
+    policy.verifyFingerprint('SHA256:fixture-key', 'ssh-rsa', (result) => {
+      accepted = result;
+    });
+    expect(accepted).toBeUndefined();
+    expect(policy.pendingChallenge).toMatchObject({
+      reason: 'changed',
+      previous: { algorithm: 'ssh-ed25519', fingerprint: 'SHA256:fixture-key' },
+      algorithm: 'ssh-rsa',
+      fingerprint: 'SHA256:fixture-key'
+    });
+    expect(policy.decide('reject', 'SHA256:fixture-key')).toBe(false);
+    expect(accepted).toBe(false);
+
+    let oldKeyAccepted: boolean | undefined;
+    policy.verifyFingerprint('SHA256:fixture-key', 'ssh-ed25519', (result) => {
+      oldKeyAccepted = result;
+    });
+    expect(oldKeyAccepted).toBe(true);
   });
 
   it('persists a trusted key only after a matching trust decision', () => {
@@ -98,5 +135,29 @@ describe('HostKeyPolicy', () => {
     expect(accepted).toBe(false);
     expect(saved).toEqual([]);
     expect(policy.pendingChallenge).toBeNull();
+  });
+
+  it('clears old trust only through an explicit operation before showing first-seen confirmation again', () => {
+    const cleared: string[] = [];
+    const policy = new HostKeyPolicy({
+      ...challengeOptions,
+      knownHostKey: { algorithm: 'ssh-ed25519', fingerprint: 'SHA256:old-key' },
+      saveHostKey: () => undefined,
+      clearHostKey: (hostId) => cleared.push(hostId)
+    });
+
+    policy.clearKnownHostKey();
+    expect(cleared).toEqual(['host-1']);
+
+    let accepted: boolean | undefined;
+    policy.verifyFingerprint('SHA256:new-key', 'ssh-ed25519', (result) => {
+      accepted = result;
+    });
+    expect(accepted).toBeUndefined();
+    expect(policy.pendingChallenge).toMatchObject({
+      reason: 'first-seen',
+      fingerprint: 'SHA256:new-key'
+    });
+    expect(policy.pendingChallenge).not.toHaveProperty('previous');
   });
 });

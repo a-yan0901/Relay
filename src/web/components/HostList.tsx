@@ -1,4 +1,4 @@
-import type { HostMetadataState } from '../state/app-state';
+import type { GroupSummary, HostMetadataState } from '../state/app-state';
 import { HostCard } from './HostCard';
 
 export interface HostListProps {
@@ -9,10 +9,12 @@ export interface HostListProps {
   onEdit?: (host: HostMetadataState) => void;
   onDelete?: (host: HostMetadataState) => void;
   onTestConnection?: (host: HostMetadataState) => void;
+  onClearHostKey?: (host: HostMetadataState) => void;
+  groups?: readonly GroupSummary[];
   onTagSelected?: (tag: string) => void;
 }
 
-export const HostList = ({ hosts, onConnect, onFavoriteToggle, onAddHost, onEdit, onDelete, onTestConnection, onTagSelected }: HostListProps) => {
+export const HostList = ({ hosts, onConnect, onFavoriteToggle, onAddHost, onEdit, onDelete, onTestConnection, onClearHostKey, groups = [], onTagSelected }: HostListProps) => {
   if (hosts.length === 0) {
     return (
       <div className="empty-state">
@@ -26,7 +28,7 @@ export const HostList = ({ hosts, onConnect, onFavoriteToggle, onAddHost, onEdit
 
   return (
     <div className="host-list" aria-label="Server 列表">
-      {hosts.map((host) => <HostCard key={host.id} host={host} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onTagSelected={onTagSelected} />)}
+      {hosts.map((host) => <HostCard key={host.id} host={host} groupName={groups.find((group) => group.id === host.groupId)?.name} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onClearHostKey={onClearHostKey} onTagSelected={onTagSelected} />)}
     </div>
   );
 };

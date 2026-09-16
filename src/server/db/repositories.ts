@@ -1123,6 +1123,19 @@ export class HostRepository {
     }
   }
 
+  clearHostKey(id: string): void {
+    const result = this.database.prepare(`
+      UPDATE hosts
+      SET host_key_algorithm = NULL,
+          host_key_fingerprint = NULL,
+          updated_at = @updatedAt
+      WHERE id = @id AND owner_id = @ownerId
+    `).run({ id, ownerId: this.ownerId, updatedAt: now() });
+    if (result.changes === 0) {
+      throw new AppError('HOST_NOT_FOUND');
+    }
+  }
+
   deleteHost(id: string): void {
     const deleteHost = this.database.transaction(() => {
       const result = this.database.prepare(`

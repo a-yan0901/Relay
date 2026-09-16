@@ -136,6 +136,8 @@ export class IdentityService {
       username: parsed.data.username,
       type: nextType,
       ...(parsed.data.auth ? {
+        // A rotated credential must not keep metadata derived from the old key.
+        keyFingerprint: null,
         credentialCiphertext: serializeEncrypted(await this.options.vaultService.encryptJson(vaultKey, identityAad(id), parsed.data.auth)),
         credentialVersion: 1
       } : {})
