@@ -805,6 +805,7 @@ export interface TargetSelectionSnapshot {
 
 **Delivery evidence（2026-09-16）:**
 
+- Code commit: `8374de6` (`feat: improve snippet and multi-host task workflow`).
 - 新增 `TargetSelectionSnapshot`，保留 source、capturedAt、去重后的 hostIds 和 displayNames；CommandRunner 在入队前校验请求 hostIds 与快照一致，并按 owner 重新解析 Host。
 - CommandRun 加入 requestId、目标快照和服务端计算的独立目标汇总；快照和 requestId 随命令密文恢复，输出仍只在 `persistOutput=true` 时进入 Vault 密文。
 - Snippet palette 与 Quick Switcher 共用 token/fuzzy 搜索；Snippet 进入批量预览，提交时回传模板和变量，由 server 再次校验缺失/多余变量；常见敏感变量只在预览中遮罩。
