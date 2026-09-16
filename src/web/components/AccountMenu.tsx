@@ -132,6 +132,7 @@ export const AccountMenu = ({
     if (!account) {
       setAccountEmail(null);
       setDestructiveAction(null);
+      setMode('sign-in');
     }
   }, [account]);
 
@@ -224,6 +225,7 @@ export const AccountMenu = ({
       setNotice(null);
       clearDestructiveInputs();
       setDestructiveAction(null);
+      setMode('sign-in');
       onAccountChange?.(null);
       onSyncChange?.(null);
       setDevices([]);
@@ -316,6 +318,7 @@ export const AccountMenu = ({
         setAccountDeletion(null);
         setAccountEmail(null);
         setDevices([]);
+        setMode('sign-in');
         onAccountChange?.(null);
         onSyncChange?.(null);
         setNotice('账号删除已计划，本地 Vault 保留');

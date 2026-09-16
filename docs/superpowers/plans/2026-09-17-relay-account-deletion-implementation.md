@@ -193,6 +193,18 @@
 - The roadmap and design implementation boundary match the shipped behavior.
 - The commit contains no unrelated or sensitive files.
 
+## Delivery record (2026-09-17)
+
+- [x] Task 1 complete: shared deletion states, confirmation constants, ports, errors and native-like fake contract are implemented and covered.
+- [x] Task 2 complete: session-bound 10-minute re-auth, schema v14, transactional account purge and local-data preservation are implemented and covered.
+- [x] Task 3 complete: account deletion request/status/restore routes, pending recovery login, expiry cleanup and redacted audit behavior are implemented and covered.
+- [x] Task 4 complete: cloud deletion re-auth, pending guards, coordinator race protection, restore and expiry behavior are implemented and covered.
+- [x] Task 5 complete: Web API/adapters, AccountMenu and SyncCenter deletion/recovery flows with capability fallback are implemented and covered.
+- [x] Task 6 complete: account-enabled Playwright coverage verifies account/cloud delete, recovery, expiry and local-data preservation; default and account E2E suites pass.
+- [x] Task 7 complete: release gate passed, generated test data and reports were removed, roadmap/spec evidence was updated, and the final diff is limited to X-04D files.
+
+**Release evidence:** `npx vitest run tests/unit/web/account-menu.dom.test.tsx` passed (`8/8`); `npm test` passed (`109 files / 518 tests`); `npm run typecheck`, `npm run lint`, and `npm run build` passed; default Playwright E2E passed (`4/4`); account-enabled Playwright E2E passed (`4/4`). Shared boundary scan found no Node, React, WebSocket, ssh2 or browser-storage dependency under `src/shared`. SQLite audit metadata and generated-artifact scans found no test password, token, host secret or marker; temporary databases and Playwright reports were removed before commit.
+
 ## Plan self-review
 
 - [x] Scope is limited to X-04D and explicitly excludes local-data deletion.

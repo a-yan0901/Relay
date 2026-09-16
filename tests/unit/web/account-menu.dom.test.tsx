@@ -83,6 +83,28 @@ describe('AccountMenu', () => {
     expect(screen.getByRole('button', { name: '账号菜单' })).toHaveTextContent('仅本地');
   });
 
+  it('returns to sign-in mode after logging out from registration mode', async () => {
+    const user = userEvent.setup();
+    const accountPort: AccountSessionPort = {
+      status: vi.fn(async () => null),
+      register: vi.fn(async () => account),
+      signIn: vi.fn(async () => account),
+      signOut: vi.fn(async () => undefined)
+    };
+    render(<AccountMenu capabilities={accountCapabilities} accountPort={accountPort} />);
+
+    await user.click(screen.getByRole('button', { name: '账号菜单' }));
+    await user.click(screen.getByRole('button', { name: '创建新账号' }));
+    await user.type(screen.getByLabelText('账号邮箱'), 'new@example.com');
+    await user.type(screen.getByLabelText('账号密码'), 'long enough password');
+    await user.click(screen.getByRole('button', { name: '注册' }));
+    expect(screen.getByRole('dialog', { name: '账号与同步' })).toHaveTextContent('账号已登录');
+    await user.click(screen.getByRole('button', { name: '退出登录' }));
+
+    expect(screen.getByRole('button', { name: '登录' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '注册' })).not.toBeInTheDocument();
+  });
+
   it('requires re-auth and exact confirmation before deleting the account while preserving local mode', async () => {
     const user = userEvent.setup();
     const onAccountChange = vi.fn();

@@ -1,7 +1,7 @@
 # Relay 账号重新认证与删除恢复设计
 
 日期：2026-09-17
-状态：Approved for implementation
+状态：Implemented and verified
 适用范围：路线图 X-04D；个人账号、云端同步数据删除、30 天恢复窗口、设备撤销和本地副本保留。
 
 ## 1. 决策摘要
@@ -105,6 +105,7 @@ POST /api/account/deletion/restore
 
 ```ts
 export interface AccountDeletionState {
+  kind: 'account';
   deleteAfter: string;
   requestedAt: string;
   remainingMs: number;

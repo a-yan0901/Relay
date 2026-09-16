@@ -13,6 +13,9 @@ const ACCOUNT_EMAIL = 'relay-account-e2e@example.com';
 const ACCOUNT_PASSWORD = 'relay account e2e password';
 const LOCAL_SECRET_MARKER = 'vault-secret-marker-e2e';
 const CONFLICT_EXPORT_PASSWORD = 'relay conflict export e2e password';
+const DELETION_ACCOUNT_EMAIL = 'relay-account-deletion-e2e@example.com';
+const DELETION_ACCOUNT_PASSWORD = 'relay account deletion e2e password';
+const DELETION_LOCAL_HOST = 'Account deletion local host';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -38,13 +41,21 @@ const ensureVaultReady = async (page: Page): Promise<void> => {
     if (await terminalBackButton.isVisible()) return 'ready';
     return 'loading';
   }, { timeout: 15_000 }).toMatch(/setup|locked|ready/u);
+  let workspaceLoaded: Promise<unknown> | undefined;
   if (await setupButton.isVisible()) {
+    workspaceLoaded = page.waitForResponse((response) => response.url().endsWith('/api/workspace') && response.request().method() === 'GET' && response.status() === 200);
     await page.getByLabel('主密码', { exact: true }).fill(MASTER_PASSWORD);
     await page.getByLabel('确认主密码', { exact: true }).fill(MASTER_PASSWORD);
     await setupButton.click();
   } else if (await unlockButton.isVisible()) {
+    workspaceLoaded = page.waitForResponse((response) => response.url().endsWith('/api/workspace') && response.request().method() === 'GET' && response.status() === 200);
     await page.getByLabel('主密码', { exact: true }).fill(MASTER_PASSWORD);
     await unlockButton.click();
+  }
+  if (workspaceLoaded) {
+    await workspaceLoaded;
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   }
   if (!await serverHeading.isVisible() && !await terminalBackButton.isVisible()) await expect(serverHeading).toBeVisible({ timeout: 15_000 });
 };
@@ -370,5 +381,142 @@ test.describe('account and encrypted sync boundaries', () => {
     await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Account sync local host', { exact: true })).toBeVisible();
     await expect(page.getByText('Account sync revision host', { exact: true })).toBeVisible();
+  });
+
+  test('keeps local data through account and cloud deletion recovery and expiry', async ({ page, browser }) => {
+    test.setTimeout(180_000);
+    await page.addInitScript(() => window.sessionStorage.removeItem('relay.terminal.descriptors.v1'));
+    await ensureVaultReady(page);
+    const serverHeading = page.getByRole('heading', { name: 'Server', exact: true });
+    const terminalBackButton = page.getByRole('button', { name: '← Server 列表', exact: true });
+    if (await terminalBackButton.isVisible()) await terminalBackButton.click();
+    await expect(serverHeading).toBeVisible({ timeout: 15_000 });
+
+    let menu = await openAccountMenu(page);
+    if (await menu.getByRole('button', { name: '退出登录', exact: true }).isVisible()) {
+      await menu.getByRole('button', { name: '退出登录', exact: true }).click();
+      await expect(page.getByRole('button', { name: '账号菜单', exact: true })).toContainText('仅本地');
+    }
+
+    menu = await openAccountMenu(page);
+    await menu.getByRole('button', { name: '创建新账号', exact: true }).click();
+    await menu.getByLabel('账号邮箱', { exact: true }).fill(DELETION_ACCOUNT_EMAIL);
+    await menu.getByLabel('账号密码', { exact: true }).fill(DELETION_ACCOUNT_PASSWORD);
+    await menu.getByLabel('设备名称').fill('Deletion browser');
+    await menu.getByRole('button', { name: '注册', exact: true }).click();
+    await expect(menu).toContainText('账号已登录');
+    await menu.getByRole('button', { name: '关闭账号菜单', exact: true }).click();
+
+    await addHost(page, DELETION_LOCAL_HOST, fixture);
+
+    const secondContext = await browser.newContext();
+    const secondPage = await secondContext.newPage();
+    try {
+      await secondPage.goto('/');
+      const secondMenu = await openAccountMenu(secondPage);
+      await secondMenu.getByLabel('账号邮箱', { exact: true }).fill(DELETION_ACCOUNT_EMAIL);
+      await secondMenu.getByLabel('账号密码', { exact: true }).fill(DELETION_ACCOUNT_PASSWORD);
+      await secondMenu.getByRole('button', { name: '登录', exact: true }).click();
+      await expect(secondMenu).toContainText('账号已登录');
+
+      menu = await openAccountMenu(page);
+      await menu.getByRole('button', { name: '删除账号', exact: true }).click();
+      const deleteAccountDialog = page.getByRole('dialog', { name: '确认删除账号', exact: true });
+      await deleteAccountDialog.getByLabel('重新输入账号密码', { exact: true }).fill(DELETION_ACCOUNT_PASSWORD);
+      await deleteAccountDialog.getByLabel('输入确认文本', { exact: true }).fill('DELETE MY ACCOUNT');
+      await deleteAccountDialog.getByRole('button', { name: '确认删除账号', exact: true }).click();
+      await expect(menu).toContainText('账号删除已计划，本地 Vault 保留');
+      await expect(page.getByText(DELETION_LOCAL_HOST, { exact: true })).toBeVisible();
+
+      const revokedSession = await readJson<{ account: null }>(secondPage, '/api/account/session');
+      expect(revokedSession.status).toBe(200);
+      expect(revokedSession.body.account).toBeNull();
+      expect(revokedSession.raw).not.toContain(DELETION_ACCOUNT_PASSWORD);
+      const deletedSession = await readJson<{ account: null }>(page, '/api/account/session');
+      expect(deletedSession.body.account).toBeNull();
+
+      menu = await openAccountMenu(page);
+      await menu.getByLabel('账号邮箱', { exact: true }).fill(DELETION_ACCOUNT_EMAIL);
+      await menu.getByLabel('账号密码', { exact: true }).fill(DELETION_ACCOUNT_PASSWORD);
+      await menu.getByRole('button', { name: '登录', exact: true }).click();
+      await expect(menu).toContainText('账号已登录');
+      await expect(menu).toContainText('账号将在约 30 天后删除');
+      const pendingDescriptor = await readJson<{ error?: { code?: string } }>(page, '/api/sync/v1/descriptor');
+      expect(pendingDescriptor.status).toBe(409);
+      expect(pendingDescriptor.body.error?.code).toBe('ACCOUNT_DELETION_PENDING');
+
+      await menu.getByRole('button', { name: '恢复账号删除', exact: true }).click();
+      const restoreAccountDialog = page.getByRole('dialog', { name: '恢复账号删除', exact: true });
+      await restoreAccountDialog.getByLabel('重新输入账号密码', { exact: true }).fill(DELETION_ACCOUNT_PASSWORD);
+      await restoreAccountDialog.getByLabel('输入确认文本', { exact: true }).fill('RESTORE ACCOUNT');
+      await restoreAccountDialog.getByRole('button', { name: '确认恢复账号删除', exact: true }).click();
+      await expect(menu).toContainText('账号删除已恢复');
+      const restoredAccountDeletion = await readJson<{ deletion: null }>(page, '/api/account/deletion');
+      expect(restoredAccountDeletion.body).toEqual({ deletion: null });
+
+      await expect(menu.getByRole('button', { name: '打开同步中心', exact: true })).toBeVisible({ timeout: 15_000 });
+      await menu.getByRole('button', { name: '打开同步中心', exact: true }).click();
+      const restoredSyncCenter = page.getByRole('dialog', { name: '同步中心', exact: true });
+      await restoredSyncCenter.getByRole('button', { name: '启用加密同步', exact: true }).click();
+      await expect(restoredSyncCenter).toContainText('已同步');
+      await restoredSyncCenter.getByRole('button', { name: '关闭同步中心', exact: true }).click();
+
+      menu = await openAccountMenu(page);
+      await menu.getByRole('button', { name: '删除云端同步数据', exact: true }).click();
+      const deleteCloudDialog = page.getByRole('dialog', { name: '确认删除云端同步数据', exact: true });
+      await deleteCloudDialog.getByLabel('重新输入账号密码', { exact: true }).fill(DELETION_ACCOUNT_PASSWORD);
+      await deleteCloudDialog.getByLabel('输入确认文本', { exact: true }).fill('DELETE MY CLOUD VAULT');
+      await deleteCloudDialog.getByRole('button', { name: '确认删除云端同步数据', exact: true }).click();
+      await expect(menu).toContainText('云端同步数据已计划删除，本地 Vault 保留');
+      await expect(menu).toContainText('云端同步数据将在约 30 天后删除');
+      const pendingCloudState = await readJson<{ sync: string; head: null; deletion: { kind: string } }>(page, '/api/sync/v1/state');
+      expect(pendingCloudState.body).toMatchObject({ sync: 'local-only', head: null, pendingCount: 0, deletion: { kind: 'cloud-sync' } });
+      const blockedCloudDescriptor = await readJson<{ error?: { code?: string } }>(page, '/api/sync/v1/descriptor');
+      expect(blockedCloudDescriptor.status).toBe(409);
+      expect(blockedCloudDescriptor.body.error?.code).toBe('SYNC_DELETE_PENDING');
+
+      await menu.getByRole('button', { name: '恢复云端删除', exact: true }).click();
+      const restoreCloudDialog = page.getByRole('dialog', { name: '恢复云端删除', exact: true });
+      await restoreCloudDialog.getByLabel('重新输入账号密码', { exact: true }).fill(DELETION_ACCOUNT_PASSWORD);
+      await restoreCloudDialog.getByLabel('输入确认文本', { exact: true }).fill('RESTORE CLOUD DATA');
+      await restoreCloudDialog.getByRole('button', { name: '确认恢复云端删除', exact: true }).click();
+      await expect(menu).toContainText('云端同步数据删除已恢复');
+      const restoredCloudState = await readJson<{ sync: string; deletion?: unknown }>(page, '/api/sync/v1/state');
+      expect(restoredCloudState.body.sync).toBe('synced');
+      expect(restoredCloudState.body).not.toHaveProperty('deletion');
+
+      await menu.getByRole('button', { name: '删除账号', exact: true }).click();
+      const deleteAgainDialog = page.getByRole('dialog', { name: '确认删除账号', exact: true });
+      await deleteAgainDialog.getByLabel('重新输入账号密码', { exact: true }).fill(DELETION_ACCOUNT_PASSWORD);
+      await deleteAgainDialog.getByLabel('输入确认文本', { exact: true }).fill('DELETE MY ACCOUNT');
+      await deleteAgainDialog.getByRole('button', { name: '确认删除账号', exact: true }).click();
+      await expect(menu).toContainText('账号删除已计划，本地 Vault 保留');
+
+      const database = new BetterSqlite3('.tmp-e2e-account-data/webssh.sqlite');
+      try {
+        const accountRow = database.prepare('SELECT id FROM accounts WHERE email = ?').get(DELETION_ACCOUNT_EMAIL) as { id: string } | undefined;
+        if (!accountRow) throw new Error('deletion account missing before expiry update');
+        database.prepare('UPDATE account_delete_requests SET delete_after = ? WHERE account_id = ?').run(new Date(Date.now() - 1_000).toISOString(), accountRow.id);
+      } finally {
+        database.close();
+      }
+
+      const expiredSession = await readJson<{ account: null }>(page, '/api/account/session');
+      expect(expiredSession.body.account).toBeNull();
+      expect(expiredSession.raw).not.toContain(DELETION_ACCOUNT_PASSWORD);
+      await expect(page.getByText(DELETION_LOCAL_HOST, { exact: true })).toBeVisible();
+
+      const verificationDatabase = new BetterSqlite3('.tmp-e2e-account-data/webssh.sqlite', { readonly: true });
+      try {
+        expect(verificationDatabase.prepare('SELECT id FROM accounts WHERE email = ?').get(DELETION_ACCOUNT_EMAIL)).toBeUndefined();
+        expect(verificationDatabase.prepare('SELECT id FROM hosts WHERE name = ?').get(DELETION_LOCAL_HOST)).toBeTruthy();
+        const auditRows = verificationDatabase.prepare('SELECT metadata_json FROM audit_events').all() as Array<{ metadata_json: string }>;
+        expect(auditRows.every((row) => !row.metadata_json.includes(DELETION_ACCOUNT_PASSWORD))).toBe(true);
+      } finally {
+        verificationDatabase.close();
+      }
+    } finally {
+      await secondContext.close();
+    }
   });
 });
