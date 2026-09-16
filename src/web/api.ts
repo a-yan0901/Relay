@@ -371,6 +371,10 @@ export const listAuditEvents = (filter: ActivityFilter = {}): Promise<AuditEvent
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.eventType) params.set('eventType', filter.eventType);
   if (filter.hostId) params.set('hostId', filter.hostId);
+  if (filter.requestId) params.set('requestId', filter.requestId);
+  if (filter.status) params.set('status', filter.status);
+  if (filter.from) params.set('from', filter.from);
+  if (filter.to) params.set('to', filter.to);
   const suffix = params.toString();
   return request<AuditEventsResponse>(`/api/audit${suffix ? `?${suffix}` : ''}`);
 };

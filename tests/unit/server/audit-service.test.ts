@@ -77,4 +77,39 @@ describe('AuditService', () => {
     expect(event.requestId).toBe('request-2');
     expect(event.metadata).toEqual(expect.objectContaining({ targetCount: 3, successCount: 1, failureCount: 1, cancelledCount: 1, anomalyCount: 2, truncatedCount: 1 }));
   });
+
+  it('filters activity by request, status and an inclusive time window', async () => {
+    const { database, service } = makeService();
+    const success = await service.record({ eventType: 'host_created', requestId: 'request-match' });
+    const failed = await service.record({ eventType: 'connection_failed', requestId: 'request-other' });
+    const outside = await service.record({ eventType: 'host_updated', requestId: 'request-match' });
+    database.prepare('UPDATE audit_events SET created_at = ? WHERE id = ?').run('2026-09-15T10:00:00.000Z', success.id);
+    database.prepare('UPDATE audit_events SET created_at = ? WHERE id = ?').run('2026-09-15T10:05:00.000Z', failed.id);
+    database.prepare('UPDATE audit_events SET created_at = ? WHERE id = ?').run('2026-09-16T10:00:00.000Z', outside.id);
+
+    const result = await service.list({
+      requestId: 'request-match',
+      status: 'succeeded',
+      from: '2026-09-15T00:00:00.000Z',
+      to: '2026-09-15T23:59:59.999Z'
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual(expect.objectContaining({ id: success.id, eventType: 'host_created', requestId: 'request-match' }));
+    await expect(service.list({ status: 'unknown' as never })).rejects.toMatchObject({ code: 'AUDIT_METADATA_INVALID' });
+    await expect(service.list({ from: 'not-a-date' })).rejects.toMatchObject({ code: 'AUDIT_METADATA_INVALID' });
+  });
+
+  it('keeps the command lifecycle status in metadata without command or output content', async () => {
+    const { service } = makeService();
+    const event = await service.recordCommandSummary({
+      id: 'run-failed', requestId: 'request-failed', command: 'echo secret-value', hostIds: ['host-1'], persistOutput: true, status: 'failed',
+      targets: [{ hostId: 'host-1', status: 'failed', exitCode: 1, output: 'password=secret-value', outputBytes: 20 }],
+      createdAt: '2026-09-15T00:00:00.000Z', finishedAt: '2026-09-15T00:00:01.000Z'
+    });
+
+    expect(event.metadata).toEqual(expect.objectContaining({ status: 'failed' }));
+    expect(JSON.stringify(event)).not.toContain('secret-value');
+    expect((await service.list({ status: 'failed' })).items).toEqual([expect.objectContaining({ id: event.id })]);
+  });
 });

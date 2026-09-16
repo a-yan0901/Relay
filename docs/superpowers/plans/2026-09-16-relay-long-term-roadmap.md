@@ -875,18 +875,17 @@ export interface TargetSelectionSnapshot {
 
 ## Task O-02: Activity、会话日志、复盘和远程编辑边界
 
-**Status:** Ready
+**Status:** Done（2026-09-16；Session Log 与远程编辑保持 Deferred）
 **Priority:** P1/P2
 **Milestone:** M3
 **Depends on:** R-01 的 operation event；O-01 的结果模型；现有审计脱敏规则。
 
 **Files:**
 
-- Modify: `src/shared/core/models.ts`, `src/shared/protocol.ts`, `src/shared/validation.ts`
-- Modify: `src/server/audit/audit-service.ts`, `src/server/api/audit-routes.ts`, `src/server/db/repositories.ts`, `src/server/db/migrations.ts`
-- Modify: `src/web/components/ActivityPanel.tsx`, `src/web/components/CommandRunResults.tsx`, `src/web/components/SftpPanel.tsx`, `src/web/App.tsx`
-- Create: `src/web/components/SessionLogPanel.tsx` only after opt-in log contract is approved
-- Test: `tests/unit/server/audit-service.test.ts`, `tests/integration/server/audit-routes.test.ts`, `tests/unit/web/activity-panel.dom.test.tsx`, `tests/unit/web/command-run-results.dom.test.tsx`
+- Modify: `src/shared/core/models.ts`, `src/shared/core/ports.ts`, `src/server/audit/audit-service.ts`, `src/server/api/audit-routes.ts`, `src/server/db/repositories.ts`, `src/server/db/types.ts`
+- Modify: `src/web/api.ts`, `src/web/platform/web-adapters.ts`, `src/web/components/ActivityPanel.tsx`, `src/web/components/CommandRunResults.tsx`, `src/web/App.tsx`, `src/web/styles.css`
+- Modify tests/fixtures: `tests/fixtures/native-runtime.ts`, `tests/unit/server/audit-service.test.ts`, `tests/integration/server/audit-routes.test.ts`, `tests/unit/server/command-run-store.test.ts`, `tests/unit/web/activity-panel.dom.test.tsx`, `tests/unit/web/command-run-results.dom.test.tsx`
+- Create: none; `SessionLogPanel` is not created while the opt-in raw-terminal contract remains unapproved.
 
 **Interfaces:**
 
@@ -894,29 +893,31 @@ export interface TargetSelectionSnapshot {
 - Session logs 必须是显式 opt-in、加密、可设 retention、可删除/导出，并在 UI 中标记是否包含终端原始内容；没有完整威胁模型前不实现默认录制。
 - 远程编辑第一阶段采用临时下载/外部编辑/保存回远端，不在浏览器中保留永久明文副本。
 
-- [ ] **Step 1: 写脱敏和 TTL 测试。**
+- [x] **Step 1: 写脱敏和 TTL 测试。**
 
-  断言审计事件不会包含 secrets/命令/变量/终端内容；已过期结果不可读取但显示“需要重新执行”；用户删除或锁定后临时数据清理。
+  审计 metadata 采用固定白名单，拒绝 secrets/命令/变量/终端内容；完成、失败、取消和服务重启中断的结果都会按 TTL 清理；结果删除会级联清理目标输出；Web 锁定时清空当前 Activity、诊断、结果和传输临时状态，过期链接显示“需要重新执行”。
 
-- [ ] **Step 2: 实现可搜索 Activity 和结果复盘。**
+- [x] **Step 2: 实现可搜索 Activity 和结果复盘。**
 
-  支持按 Host、类型、状态、时间和 request id 查询；批量结果提供异常聚合、跳转到具体 Host 和输出对比入口；分页避免一次加载所有输出。
+  Activity API/界面支持按 Host、类型、状态、时间和 request id 查询，服务端 cursor 分页并由前端显式加载更多；批量结果保留异常聚合、逐 Host 状态筛选、跳转到具体 Host、输出 diff 和每页 20 台的结果分页，输出默认折叠且沿用服务端截断上限。
 
-- [ ] **Step 3: 单独评审 Session Log 和远程编辑边界。**
+- [x] **Step 3: 单独评审 Session Log 和远程编辑边界。**
 
-  在实现前补充数据分类、retention、加密、导出、删除、权限和 UI 文案；若无法满足“不记录秘密”的验收，将该能力保持 Deferred，而不是绕过规则。
+  评审结论：普通 Activity 只允许结构化 metadata；命令正文、展开变量、终端原始 I/O、文件内容不进入普通 Activity。Session Log 暂不实现，待明确 opt-in、加密、retention、导出、删除、权限和“包含原始终端内容”标识后再立项；SFTP 继续保持浏览、传输和 entry mutation，不在浏览器落永久明文编辑副本。该边界记录为 Deferred。
 
-- [ ] **Step 4: 运行审计 focused tests 并提交。**
+- [x] **Step 4: 运行审计 focused tests 并提交。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-  npm test -- --run tests/unit/server/audit-service.test.ts tests/integration/server/audit-routes.test.ts tests/unit/web/activity-panel.dom.test.tsx tests/unit/web/command-run-results.dom.test.tsx
-  git add src/shared/core/models.ts src/shared/protocol.ts src/shared/validation.ts src/server/audit/audit-service.ts src/server/api/audit-routes.ts src/server/db/repositories.ts src/server/db/migrations.ts src/web/components/ActivityPanel.tsx src/web/components/CommandRunResults.tsx src/web/components/SftpPanel.tsx src/web/App.tsx tests/unit/server/audit-service.test.ts tests/integration/server/audit-routes.test.ts tests/unit/web/activity-panel.dom.test.tsx tests/unit/web/command-run-results.dom.test.tsx
+  npm test -- --run tests/unit/server/audit-service.test.ts tests/integration/server/audit-routes.test.ts tests/unit/server/command-run-store.test.ts tests/unit/web/activity-panel.dom.test.tsx tests/unit/web/command-run-results.dom.test.tsx
+  git add src/shared/core/models.ts src/shared/core/ports.ts src/server/audit/audit-service.ts src/server/api/audit-routes.ts src/server/db/repositories.ts src/server/db/types.ts src/web/api.ts src/web/platform/web-adapters.ts src/web/components/ActivityPanel.tsx src/web/components/CommandRunResults.tsx src/web/App.tsx src/web/styles.css tests/fixtures/native-runtime.ts tests/unit/server/audit-service.test.ts tests/integration/server/audit-routes.test.ts tests/unit/server/command-run-store.test.ts tests/unit/web/activity-panel.dom.test.tsx tests/unit/web/command-run-results.dom.test.tsx docs/superpowers/plans/2026-09-16-relay-long-term-roadmap.md
   git diff --cached --check
   git commit -m "feat: improve activity and task review"
   ```
 
-**Acceptance:** Activity 可检索、可关联、可过期；默认不记录交互式终端；任何日志/编辑能力都有明确的数据生命周期和安全开关。
+**Delivery evidence（2026-09-16）：** focused 5 files / 19 tests passed；此前完整回归 93 files / 387 tests passed；`npm run build`、`npm run typecheck`、`npm run lint`、`git diff --check` passed。最后追加的 Host 跳转为低风险 UI 增量，并由 `command-run-results.dom.test.tsx` 覆盖。
+
+**Acceptance:** Activity 可检索、可关联、可过期；默认不记录交互式终端；任何日志/编辑能力都有明确的数据生命周期和安全开关。Session Log 未通过安全评审，保持 Deferred。
 
 **Verification:** audit unit/integration、Activity/results DOM tests、TTL/锁定清理验证和人工数据分类走查；Session Log 未通过安全评审时只保留 Deferred 状态。
 

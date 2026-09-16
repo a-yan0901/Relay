@@ -19,7 +19,7 @@ import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { ShortcutMap } from './components/ShortcutMap';
 import { BroadcastPreview } from './components/BroadcastPreview';
-import type { AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
+import type { ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
 import type { BinarySource } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
@@ -194,6 +194,9 @@ export const App = ({ runtime }: AppProps) => {
   const [snippets, setSnippets] = useState<SnippetMetadata[]>([]);
   const [activityOpen, setActivityOpen] = useState(false);
   const [activityEvents, setActivityEvents] = useState<AuditEvent[]>([]);
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>({ limit: 50 });
+  const [activityNextCursor, setActivityNextCursor] = useState<string | undefined>();
+  const [activityLoading, setActivityLoading] = useState(false);
   const [operationDiagnostics, setOperationDiagnostics] = useState<OperationDiagnostic[]>([]);
   const [expiredRunIds, setExpiredRunIds] = useState<Set<string>>(new Set());
   const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
@@ -209,6 +212,7 @@ export const App = ({ runtime }: AppProps) => {
   const workspaceVersionRef = useRef(0);
   const workspaceSaveQueueRef = useRef(Promise.resolve());
   const workspaceLoadRequestRef = useRef(0);
+  const activityRequestRef = useRef(0);
 
   const quickSwitcherItems = useMemo(() => createQuickSwitcherItems({
     hosts: state.hosts,
@@ -519,6 +523,13 @@ export const App = ({ runtime }: AppProps) => {
     void loadSnippets();
   };
 
+  const handleOpenHostFromResult = (hostId: string): void => {
+    const host = latestStateRef.current.hosts.find((candidate) => candidate.id === hostId);
+    if (!host) return;
+    setCommandRun(null);
+    handleOpenTerminal(host);
+  };
+
   const handleOpenBroadcast = (): void => setBroadcastPreviewOpen(true);
 
   const handleConfirmBroadcast = (snapshot: BroadcastTargetSnapshot): void => {
@@ -756,9 +767,40 @@ export const App = ({ runtime }: AppProps) => {
     })).catch(() => undefined);
   };
 
+  const loadActivity = (filter: ActivityFilter, append: boolean): void => {
+    const requestId = activityRequestRef.current + 1;
+    activityRequestRef.current = requestId;
+    setActivityLoading(true);
+    void runtime.activity.list(filter).then((page) => {
+      if (requestId !== activityRequestRef.current) return;
+      setActivityEvents((current) => append ? [...current, ...page.items] : [...page.items]);
+      setActivityNextCursor(page.nextCursor);
+    }).catch(() => {
+      if (requestId !== activityRequestRef.current) return;
+      if (!append) setActivityEvents([]);
+      setActivityNextCursor(undefined);
+    }).finally(() => {
+      if (requestId === activityRequestRef.current) setActivityLoading(false);
+    });
+  };
+
   const handleOpenActivity = (): void => {
+    const nextFilter: ActivityFilter = { limit: 50 };
     setActivityOpen(true);
-    void runtime.activity.list({ limit: 50 }).then((events) => setActivityEvents([...events])).catch(() => setActivityEvents([]));
+    setActivityFilter(nextFilter);
+    setActivityNextCursor(undefined);
+    loadActivity(nextFilter, false);
+  };
+
+  const handleApplyActivityFilter = (nextFilter: ActivityFilter): void => {
+    setActivityFilter(nextFilter);
+    setActivityNextCursor(undefined);
+    loadActivity(nextFilter, false);
+  };
+
+  const handleLoadMoreActivity = (): void => {
+    if (!activityNextCursor || activityLoading) return;
+    loadActivity({ ...activityFilter, cursor: activityNextCursor }, true);
   };
 
   const handleOpenRunFromActivity = (runId: string): void => {
@@ -954,6 +996,13 @@ export const App = ({ runtime }: AppProps) => {
       setTerminalView(false);
       closeHostForm();
       setActivityOpen(false);
+      activityRequestRef.current += 1;
+      setActivityEvents([]);
+      setActivityFilter({ limit: 50 });
+      setActivityNextCursor(undefined);
+      setActivityLoading(false);
+      setOperationDiagnostics([]);
+      setExpiredRunIds(new Set());
       setSnippetManagerOpen(false);
       setSnippetPaletteOpen(false);
       setQuickSwitcherOpen(false);
@@ -1122,8 +1171,8 @@ export const App = ({ runtime }: AppProps) => {
         onClose={() => setCommandDialogOpen(false)}
         onConfirm={handleStartCommandRun}
       />}
-      {commandRun && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal" role="dialog" aria-modal="true" aria-labelledby="command-run-result-title"><CommandRunResults run={commandRun} hosts={state.hosts} onCancel={handleCancelCommandRun} /><button className="button button-ghost" id="command-run-result-title" type="button" onClick={() => setCommandRun(null)}>关闭结果</button></section></div>}
-      {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} diagnostics={operationDiagnostics} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
+      {commandRun && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal" role="dialog" aria-modal="true" aria-labelledby="command-run-result-title"><CommandRunResults run={commandRun} hosts={state.hosts} onCancel={handleCancelCommandRun} onOpenHost={handleOpenHostFromResult} /><button className="button button-ghost" id="command-run-result-title" type="button" onClick={() => setCommandRun(null)}>关闭结果</button></section></div>}
+      {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} hosts={state.hosts} filter={activityFilter} loading={activityLoading} hasMore={activityNextCursor !== undefined} diagnostics={operationDiagnostics} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} onApplyFilter={handleApplyActivityFilter} onLoadMore={handleLoadMoreActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
       {workspaceSettingsMode && <WorkspaceSettings
         mode={workspaceSettingsMode}
         onClose={() => setWorkspaceSettingsMode(null)}

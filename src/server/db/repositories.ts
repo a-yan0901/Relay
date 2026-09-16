@@ -202,7 +202,20 @@ const parseStringArray = (value: string): string[] => {
   }
 };
 
-const AUDIT_METADATA_KEYS = new Set(['runId', 'transferId', 'targetCount', 'successCount', 'failureCount', 'cancelledCount', 'interruptedCount', 'anomalyCount', 'truncatedCount', 'durationMs']);
+const AUDIT_METADATA_KEYS = new Set(['runId', 'transferId', 'status', 'targetCount', 'successCount', 'failureCount', 'cancelledCount', 'interruptedCount', 'anomalyCount', 'truncatedCount', 'durationMs']);
+
+const AUDIT_STATUS_SQL = `CASE
+  WHEN json_extract(metadata_json, '$.status') IN ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted') THEN json_extract(metadata_json, '$.status')
+  WHEN event_type LIKE '%_queued' THEN 'queued'
+  WHEN event_type LIKE '%_started' OR event_type LIKE '%_running' THEN 'running'
+  WHEN event_type LIKE '%_failed' THEN 'failed'
+  WHEN event_type LIKE '%_cancelled' THEN 'cancelled'
+  WHEN event_type LIKE '%_interrupted' THEN 'interrupted'
+  WHEN event_type = 'command_run_summary' AND CAST(json_extract(metadata_json, '$.failureCount') AS INTEGER) > 0 THEN 'failed'
+  WHEN event_type = 'command_run_summary' AND CAST(json_extract(metadata_json, '$.interruptedCount') AS INTEGER) > 0 THEN 'interrupted'
+  WHEN event_type = 'command_run_summary' AND CAST(json_extract(metadata_json, '$.cancelledCount') AS INTEGER) > 0 THEN 'cancelled'
+  ELSE 'succeeded'
+END`;
 
 const parseAuditMetadata = (value: string): AuditMetadata => {
   try {
@@ -1214,6 +1227,22 @@ export class AuditRepository {
       clauses.push('host_id = @hostId');
       parameters.hostId = filter.hostId;
     }
+    if (filter.requestId !== undefined) {
+      clauses.push('request_id = @requestId');
+      parameters.requestId = filter.requestId;
+    }
+    if (filter.status !== undefined) {
+      clauses.push(`(${AUDIT_STATUS_SQL}) = @status`);
+      parameters.status = filter.status;
+    }
+    if (filter.from !== undefined) {
+      clauses.push('created_at >= @from');
+      parameters.from = filter.from;
+    }
+    if (filter.to !== undefined) {
+      clauses.push('created_at <= @to');
+      parameters.to = filter.to;
+    }
     if (filter.cursor !== undefined) {
       if (filter.cursor.sequence === undefined) {
         clauses.push('(created_at < @cursorCreatedAt OR (created_at = @cursorCreatedAt AND id < @cursorId))');
@@ -1453,7 +1482,7 @@ export class CommandRunRepository {
     this.database.prepare(`
       DELETE FROM command_runs
       WHERE owner_id = @ownerId
-        AND status IN ('completed', 'failed', 'cancelled')
+        AND status IN ('completed', 'failed', 'cancelled', 'interrupted')
         AND COALESCE(finished_at, created_at) <= @cutoff
     `).run({ ownerId: this.ownerId, cutoff });
   }

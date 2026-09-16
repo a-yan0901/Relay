@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CommandRun } from '../../../src/shared/core/models';
 import type { HostMetadata } from '../../../src/shared/validation';
@@ -65,5 +65,34 @@ describe('CommandRunResults', () => {
     expect(screen.getByRole('heading', { name: '输出 diff' })).toBeInTheDocument();
     expect(screen.getByText(/- version=1/u)).toBeInTheDocument();
     expect(screen.getByText(/\+ version=2/u)).toBeInTheDocument();
+  });
+
+  it('paginates large result sets while keeping each output collapsed', async () => {
+    const user = userEvent.setup();
+    const targets = Array.from({ length: 21 }, (_, index) => ({
+      hostId: `host-${index + 1}`,
+      status: 'completed' as const,
+      exitCode: 0,
+      output: `output-${index + 1}`,
+      outputBytes: 8
+    }));
+    render(<CommandRunResults run={{ ...run, hostIds: targets.map((target) => target.hostId), targets, summary: undefined }} hosts={[]} />);
+
+    expect(screen.getByText('host-1')).toBeInTheDocument();
+    expect(screen.queryByText('host-21')).not.toBeInTheDocument();
+    expect(screen.getByText('第 1 / 2 页 · 21 条')).toBeInTheDocument();
+    expect(screen.queryByText('output-1')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '下一页' }));
+    expect(screen.getByText('host-21')).toBeInTheDocument();
+    expect(screen.queryByText('host-1')).not.toBeInTheDocument();
+  });
+
+  it('offers an explicit jump from a result row to its host', async () => {
+    const user = userEvent.setup();
+    const onOpenHost = vi.fn();
+    render(<CommandRunResults run={run} hosts={hosts} onOpenHost={onOpenHost} />);
+
+    await user.click(screen.getByRole('button', { name: '打开主机 Production API' }));
+    expect(onOpenHost).toHaveBeenCalledWith('host-1');
   });
 });

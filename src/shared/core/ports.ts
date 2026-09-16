@@ -1,5 +1,6 @@
 import type {
   ActivityFilter,
+  ActivityPage,
   CommandRun,
   CommandRunRequest,
   ConnectionTestResult,
@@ -137,7 +138,7 @@ export interface SnippetStore {
 }
 
 export interface ActivityStore {
-  list(filter?: ActivityFilter): Promise<readonly import('./models.js').AuditEvent[]>;
+  list(filter?: ActivityFilter): Promise<ActivityPage>;
 }
 
 export interface ImportExportPort {

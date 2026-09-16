@@ -820,6 +820,8 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 .command-result-filters { align-items: end; display: grid; gap: 8px; grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(100px, 1fr)); margin-top: 12px; }
 .command-result-filters label { color: var(--muted); display: grid; font-size: 10px; gap: 5px; }
 .command-result-filters input, .command-result-filters select { background: var(--panel-soft); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font: inherit; min-height: 32px; min-width: 0; padding: 7px 8px; }
+.command-result-pagination { align-items: center; color: var(--faint); display: flex; font-size: 9px; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.command-result-pagination > span { margin-right: auto; }
 .command-output-diff { border: 1px solid rgba(86, 201, 165, 0.28); border-radius: 8px; margin-top: 13px; padding: 10px; }
 .command-output-diff-heading { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; }
 .command-output-diff h3 { font-size: 12px; margin: 0; }
@@ -837,11 +839,16 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 .command-target small { color: var(--faint); font-size: 10px; margin-top: 3px; }
 .command-target-actions { align-items: center; display: flex; gap: 8px; justify-content: space-between; margin-top: 7px; }
 .command-target-actions > span { color: var(--faint); font-size: 9px; }
+.command-target-buttons { align-items: center; display: flex; gap: 6px; }
 .command-target pre { background: rgba(5, 15, 28, 0.48); border-radius: 6px; color: var(--text); font-size: 10px; margin: 8px 0 0; max-height: 180px; overflow: auto; padding: 9px; white-space: pre-wrap; }
 .activity-item { align-items: center; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: space-between; padding: 11px 0; }
 .activity-item strong, .activity-item small { display: block; }
 .activity-item strong { font-size: 11px; }
 .activity-item small { color: var(--faint); font-size: 9px; margin-top: 4px; }
+.activity-filters { align-items: end; display: grid; gap: 8px; grid-template-columns: minmax(120px, 1.3fr) repeat(2, minmax(90px, 1fr)); margin: 12px 0 2px; }
+.activity-filters label { color: var(--muted); display: grid; font-size: 10px; gap: 5px; }
+.activity-filters input, .activity-filters select { background: var(--panel-soft); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font: inherit; min-height: 32px; min-width: 0; padding: 7px 8px; }
+.activity-load-more { display: block; margin: 12px auto 0; }
 .activity-modal { max-width: 720px; }
 
 .terminal-topbar { align-items: stretch; background: rgba(10, 24, 41, 0.96); border-bottom: 1px solid var(--border); display: flex; min-height: 38px; position: relative; z-index: 5; }

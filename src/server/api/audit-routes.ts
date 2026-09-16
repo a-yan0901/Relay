@@ -15,7 +15,11 @@ const querySchema = z.object({
   cursor: z.string().min(1).max(512).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   eventType: z.string().min(2).max(64).optional(),
-  hostId: z.string().min(1).max(128).optional()
+  hostId: z.string().min(1).max(128).optional(),
+  requestId: z.string().min(1).max(128).optional(),
+  status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted']).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional()
 }).strict();
 
 export const registerAuditRoutes = async (app: FastifyInstance, dependencies: AuditRouteDependencies): Promise<void> => {

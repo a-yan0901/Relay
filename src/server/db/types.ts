@@ -1,4 +1,4 @@
-import type { ConnectionProfileOverrides, GroupNode, TransferJob, TransferStatus, TransferKind, WorkspaceState } from '../../shared/core/models.js';
+import type { ActivityStatus, ConnectionProfileOverrides, GroupNode, TransferJob, TransferStatus, TransferKind, WorkspaceState } from '../../shared/core/models.js';
 import type { ConnectionProfileSettings, HostCredentialInput, HostMetadata } from '../../shared/validation.js';
 import type { VaultConfig } from '../vault/types.js';
 
@@ -130,6 +130,10 @@ export interface AuditListFilter {
   limit?: number;
   eventType?: string;
   hostId?: string;
+  requestId?: string;
+  status?: ActivityStatus;
+  from?: string;
+  to?: string;
 }
 
 export interface WorkspaceSnapshot {

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ActivityFilter } from '../../../src/shared/core/models';
 import { ActivityPanel } from '../../../src/web/components/ActivityPanel';
 
 describe('ActivityPanel', () => {
@@ -28,5 +30,27 @@ describe('ActivityPanel', () => {
     }]} />);
 
     expect(screen.getByText(/执行命令 · 已中断 · 重试/u)).toBeInTheDocument();
+  });
+
+  it('applies searchable activity filters and loads the next page explicitly', async () => {
+    const user = userEvent.setup();
+    const onApplyFilter = vi.fn<(filter: ActivityFilter) => void>();
+    const onLoadMore = vi.fn();
+    render(<ActivityPanel
+      events={[]}
+      hosts={[{ id: 'host-1', name: 'Production API' }]}
+      hasMore
+      onApplyFilter={onApplyFilter}
+      onLoadMore={onLoadMore}
+    />);
+
+    await user.selectOptions(screen.getByLabelText('筛选活动状态'), 'failed');
+    await user.selectOptions(screen.getByLabelText('筛选活动主机'), 'host-1');
+    await user.type(screen.getByLabelText('活动请求 ID'), 'request-1');
+    await user.click(screen.getByRole('button', { name: '应用筛选' }));
+
+    expect(onApplyFilter).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', hostId: 'host-1', requestId: 'request-1', limit: 50 }));
+    await user.click(screen.getByRole('button', { name: '加载更多活动' }));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
   });
 });

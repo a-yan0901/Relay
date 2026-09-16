@@ -41,4 +41,32 @@ describe('audit routes', () => {
     expect(response.body).not.toContain('host-secret');
     expect(JSON.parse(response.body)).toEqual(expect.objectContaining({ items: expect.any(Array) }));
   });
+
+  it('accepts request, status and time filters and returns a cursor for the next page', async () => {
+    const { app, cookie } = await setup();
+    const first = await app.inject({
+      method: 'POST', url: '/api/hosts', headers: { cookie },
+      payload: { name: 'Audit Fixture One', address: '10.0.0.8', username: 'deploy', auth: { type: 'password', password: 'host-secret' } }
+    });
+    const second = await app.inject({
+      method: 'POST', url: '/api/hosts', headers: { cookie },
+      payload: { name: 'Audit Fixture Two', address: '10.0.0.9', username: 'deploy', auth: { type: 'password', password: 'host-secret-2' } }
+    });
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+
+    const requestId = first.headers['x-request-id'];
+    expect(typeof requestId).toBe('string');
+    const filtered = await app.inject({
+      method: 'GET',
+      url: `/api/audit?requestId=${encodeURIComponent(String(requestId))}&status=succeeded&from=2026-09-15T00%3A00%3A00.000Z&to=2026-09-17T00%3A00%3A00.000Z`,
+      headers: { cookie }
+    });
+    expect(filtered.statusCode).toBe(200);
+    expect(JSON.parse(filtered.body).items).toEqual([expect.objectContaining({ eventType: 'host_created', requestId })]);
+
+    const paged = await app.inject({ method: 'GET', url: '/api/audit?status=succeeded&limit=1', headers: { cookie } });
+    expect(paged.statusCode).toBe(200);
+    expect(JSON.parse(paged.body)).toEqual(expect.objectContaining({ items: expect.any(Array), nextCursor: expect.any(String) }));
+  });
 });

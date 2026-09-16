@@ -274,11 +274,43 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+export const activityStatuses = ['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'] as const;
+export type ActivityStatus = typeof activityStatuses[number];
+
+export const isActivityStatus = (value: unknown): value is ActivityStatus => typeof value === 'string' && activityStatuses.includes(value as ActivityStatus);
+
+export const activityStatusFromEvent = (event: Pick<AuditEvent, 'eventType' | 'metadata'>): ActivityStatus => {
+  const explicit = event.metadata.status;
+  if (isActivityStatus(explicit)) return explicit;
+  if (event.eventType === 'command_run_summary') {
+    const numeric = (key: string): number => typeof event.metadata[key] === 'number' ? event.metadata[key] as number : 0;
+    if (numeric('failureCount') > 0) return 'failed';
+    if (numeric('interruptedCount') > 0) return 'interrupted';
+    if (numeric('cancelledCount') > 0) return 'cancelled';
+    return 'succeeded';
+  }
+  if (event.eventType.endsWith('_queued')) return 'queued';
+  if (event.eventType.endsWith('_started') || event.eventType.endsWith('_running')) return 'running';
+  if (event.eventType.endsWith('_failed')) return 'failed';
+  if (event.eventType.endsWith('_cancelled')) return 'cancelled';
+  if (event.eventType.endsWith('_interrupted')) return 'interrupted';
+  return 'succeeded';
+};
+
 export interface ActivityFilter {
   cursor?: string;
   limit?: number;
   eventType?: string;
   hostId?: string;
+  requestId?: string;
+  status?: ActivityStatus;
+  from?: string;
+  to?: string;
+}
+
+export interface ActivityPage {
+  items: readonly AuditEvent[];
+  nextCursor?: string;
 }
 
 export type ConnectionStage = 'resolve' | 'tcp' | 'jump' | 'host-key' | 'authentication' | 'channel';

@@ -252,7 +252,7 @@ export const createInMemoryCoreRuntime = (
       async delete() {}
     },
     activity: {
-      async list() { return []; }
+      async list() { return { items: [] }; }
     },
     imports: {
       async previewExternalImport() { throw new Error('unused'); },

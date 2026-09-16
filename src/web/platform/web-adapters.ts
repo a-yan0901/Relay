@@ -2,6 +2,7 @@ import type { CapabilitySet } from '../../shared/core/capabilities';
 import { createCapabilitySet, createWebCapabilitySet } from '../../shared/core/capabilities';
 import type {
   ActivityFilter,
+  ActivityPage,
   Capability,
   CommandRun,
   CommandRunRequest,
@@ -534,8 +535,8 @@ export class WebSnippetStore implements SnippetStore {
 export class WebActivityStore {
   constructor(private readonly client: Pick<WebApiClient, 'listAuditEvents'> = api) {}
 
-  async list(filter: ActivityFilter = {}): Promise<readonly import('../../shared/core/models').AuditEvent[]> {
-    return (await requireApi(this.client.listAuditEvents)(filter)).items;
+  async list(filter: ActivityFilter = {}): Promise<ActivityPage> {
+    return requireApi(this.client.listAuditEvents)(filter);
   }
 }
 

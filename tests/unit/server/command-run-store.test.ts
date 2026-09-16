@@ -73,6 +73,43 @@ describe('CommandRunStore', () => {
     expect(repository.listTargets('run-1')).toEqual([]);
   });
 
+  it('expires interrupted results and lets the user delete encrypted target data', async () => {
+    const database = openDatabase(':memory:');
+    migrate(database);
+    databases.push(database);
+    const vault = await VaultService.create('correct horse battery staple');
+    const repository = new CommandRunRepository(database, 'owner-a');
+    let currentTime = 0;
+    const store = new CommandRunStore({
+      ownerId: 'owner-a',
+      repository,
+      vaultService: new VaultService(),
+      ttlMs: 1_000,
+      now: () => currentTime
+    });
+    const run: CommandRun = {
+      id: 'run-interrupted',
+      command: 'uname -a',
+      hostIds: ['host-1'],
+      persistOutput: true,
+      status: 'interrupted',
+      targets: [{ hostId: 'host-1', status: 'interrupted', exitCode: null, output: 'partial output', outputBytes: 14, errorCode: 'SERVICE_RESTARTED' }],
+      createdAt: new Date(currentTime).toISOString(),
+      finishedAt: new Date(currentTime).toISOString()
+    };
+
+    await store.create(run, vault.vaultKey);
+    await store.delete(run.id);
+    expect(repository.getRun(run.id)).toBeNull();
+    expect(repository.listTargets(run.id)).toEqual([]);
+
+    const secondRun = { ...run, id: 'run-interrupted-expired' };
+    await store.create(secondRun, vault.vaultKey);
+    currentTime = 2_000;
+    await expect(store.get(secondRun.id)).resolves.toBeNull();
+    expect(repository.getRun(secondRun.id)).toBeNull();
+  });
+
   it('restores the request id and fixed target snapshot from encrypted run metadata', async () => {
     const database = openDatabase(':memory:');
     migrate(database);
