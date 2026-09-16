@@ -1115,7 +1115,7 @@ export interface TargetSelectionSnapshot {
 
 ## Task X-04: 个人账号、设备信任与端到端加密同步
 
-**Status:** Ready（方向已确认，spec 已建立，implementation plan 待单独创建）
+**Status:** In Progress（implementation plan 已建立，正在执行）
 **Priority:** P2
 **Milestone:** M5
 **Depends on:** X-01 的 capability/contract；X-02 的平台 secret store 和生命周期；R-03 的 Local/恢复语义；现有 Vault crypto 和事务导入边界。
@@ -1123,6 +1123,7 @@ export interface TargetSelectionSnapshot {
 **Files:**
 
 - Read: `docs/superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md`
+- Create: `docs/superpowers/plans/2026-09-16-relay-account-and-encrypted-sync-implementation.md`
 - Modify: `src/shared/core/capabilities.ts`, `src/shared/core/ports.ts`, `src/shared/core/models.ts`, `src/shared/errors.ts` only after implementation plan approval
 - Create: `src/shared/core/account-sync.ts`, `src/server/account/`, `src/server/sync/`, `src/web/components/AccountMenu.tsx`, `src/web/components/SyncCenter.tsx` only after the implementation plan fixes exact file boundaries
 - Test: `tests/unit/shared/account-sync-contract.test.ts`, `tests/unit/server/account-service.test.ts`, `tests/unit/server/sync-crypto.test.ts`, `tests/integration/server/sync-routes.test.ts`, `tests/unit/web/account-menu.dom.test.tsx`, `tests/unit/web/sync-center.dom.test.tsx`, `tests/e2e/account-sync.spec.ts`
@@ -1163,7 +1164,9 @@ export interface TargetSelectionSnapshot {
 
 **Acceptance:** 未登录时完整 Local-only 可用且没有同步请求；登录并解锁后跨设备恢复加密 Vault；云端无法解密或读取 Vault 明文；离线、撤销、登出、冲突、密钥恢复和删除都有清晰终态；个人同步不改变现有 SSH/SFTP/批量安全不变量。
 
-**Verification:** account/sync shared contract、加密单元、server integration、DOM/E2E、跨端 fake 和敏感数据扫描；通过安全/威胁模型评审后才能创建正式 implementation plan 和代码。
+**Verification:** account/sync shared contract、加密单元、server integration、DOM/E2E、跨端 fake 和敏感数据扫描；implementation plan 已把安全/威胁模型评审列为代码进入正式发布范围的门槛。
+
+**Progress record (2026-09-16):** 已创建 [`relay-account-and-encrypted-sync-implementation.md`](./2026-09-16-relay-account-and-encrypted-sync-implementation.md)，明确 shared contract、AES-256-GCM envelope、账号/设备 session、schema 迁移、blind store、revision conflict、Web UI、跨端 fake、E2E 和重大变更 release gate；下一步按该计划从 Task 1 的失败 contract tests 开始。
 
 ---
 
