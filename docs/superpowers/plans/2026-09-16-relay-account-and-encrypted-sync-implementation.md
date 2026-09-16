@@ -222,7 +222,7 @@ export interface SyncPort {
 
   Expected: PASS; existing fake runtime and existing Web/native-like contract remain green.
 
-- [ ] **Step 5: Commit the shared contract.**
+- [x] **Step 5: Commit the shared contract.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -262,11 +262,11 @@ export const decryptSyncPayload = (syncKey: Buffer, envelope: SyncEnvelope): Buf
 export const validateSyncEnvelope = (value: unknown): SyncEnvelope;
 ```
 
-- [ ] **Step 1: Write failing crypto tests.**
+- [x] **Step 1: Write failing crypto tests.**
 
   覆盖随机 32-byte `K_sync`、wrap/unwrap round trip、envelope round trip、AAD 修改、ciphertext/authTag/hash 修改、vaultId/revision/deviceId/keyVersion 不一致、超过 32 MiB、错误 base64、未知 schema/key version、不同 revision 产生不同 AAD。断言序列化 envelope 不包含 snapshot 中的 `password`、`privateKey`、`passphrase`、`command` 明文。
 
-- [ ] **Step 2: Run the crypto tests and observe failure.**
+- [x] **Step 2: Run the crypto tests and observe failure.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -275,11 +275,11 @@ export const validateSyncEnvelope = (value: unknown): SyncEnvelope;
 
   Expected: FAIL because `src/server/sync/sync-crypto.ts` is absent.
 
-- [ ] **Step 3: Implement versioned AEAD and validation.**
+- [x] **Step 3: Implement versioned AEAD and validation.**
 
-  使用现有 `encryptBytes`/`decryptBytes` 的 AES-256-GCM 约束和 `VAULT_KEY_LENGTH`，为 sync 定义 `relay-sync:key:v1:<vaultId>:<keyVersion>` 与 `relay-sync:payload:v1:<vaultId>:<revision>:<keyVersion>:<deviceId>` AAD。对所有字段做长度、整数、base64、hash 和最大 payload 校验；错误分别映射到 `SYNC_PAYLOAD_INVALID`、`SYNC_KEY_VERSION_UNSUPPORTED` 或 `VAULT_CRYPTO_FAILED`。解密失败时释放临时 Buffer，不把 plaintext 放入异常文本。
+  使用现有 `encryptBytes`/`decryptBytes` 的 AES-256-GCM 约束和 `VAULT_KEY_LENGTH`，为 sync 定义 `relay-sync:key:v1:<vaultId>:<keyVersion>` 与 `relay-sync:payload:v1:<vaultId>:<revision>:<parentRevision|root>:<keyVersion>:<deviceId>` AAD。对所有字段做长度、整数、base64、hash 和最大 payload 校验；错误分别映射到 `SYNC_PAYLOAD_INVALID`、`SYNC_KEY_VERSION_UNSUPPORTED` 或 `VAULT_CRYPTO_FAILED`。解密失败时释放临时 Buffer，不把 plaintext 放入异常文本。
 
-- [ ] **Step 4: Run the crypto tests.**
+- [x] **Step 4: Run the crypto tests.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -288,7 +288,7 @@ export const validateSyncEnvelope = (value: unknown): SyncEnvelope;
 
   Expected: PASS with tamper and size-limit assertions.
 
-- [ ] **Step 5: Commit the crypto slice.**
+- [x] **Step 5: Commit the crypto slice.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
