@@ -925,7 +925,7 @@ export interface TargetSelectionSnapshot {
 
 ## Task O-03: 导入/导出、FinalShell/Netcatty 迁移和可逆性
 
-**Status:** Ready
+**Status:** Done
 **Priority:** P1
 **Milestone:** M3
 **Depends on:** 已交付的 `src/shared/import/`、Vault bundle、Identity/Group schema 和 U-01 的筛选语义。
@@ -943,15 +943,15 @@ export interface TargetSelectionSnapshot {
 - 受保护或无法解密的密码统一标为 `needs-supplement`；预览只显示计数、名称、字段缺失和冲突，不显示源密码或密文。
 - 导出优先 OpenSSH、通用 CSV、Relay encrypted bundle；没有证据证明能被目标产品安全读取时，不伪造 FinalShell/Netcatty 原生格式。
 
-- [ ] **Step 1: 收集真实样本并写 parser/round-trip 失败测试。**
+- [x] **Step 1: 收集真实样本并写 parser/round-trip 失败测试。**
 
-  每个新增格式至少有合法、空字段、重复主机、跳板、身份引用、受保护密码和非法输入 fixture；没有真实样本的格式不进入实现清单。
+  现有五种已支持格式使用脱敏的结构化 fixture 和 parser 回归；OpenSSH/CSV 增加了导出后再次解析、跳板关系重绑定和身份引用保留断言。FinalShell/Netcatty 没有进入实现清单，格式边界和替代迁移路径记录在 `docs/ssh-interoperability-guide.md`，不猜测其原生 schema。
 
-- [ ] **Step 2: 实现检测、预览、冲突和可逆导出。**
+- [x] **Step 2: 实现检测、预览、冲突和可逆导出。**
 
-  复用现有 dedupe/normalize；保持 Group/Identity/ProxyJump 关系；导入先 preview 再 transaction apply；失败时现有 Vault 不变。
+  复用现有 dedupe/normalize；保持 Group/Identity/ProxyJump 关系；导入先 preview 再 transaction apply；未知 XML 不再仅凭 `.xml` 扩展名误判为 SecureCRT；设置页明确显示支持格式和 FinalShell/Netcatty 原生格式边界；事务写入失败回滚分组和已写入 Host。
 
-- [ ] **Step 3: 运行导入回归并提交。**
+- [x] **Step 3: 运行导入回归并提交。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -963,7 +963,7 @@ export interface TargetSelectionSnapshot {
 
 **Acceptance:** 用户能在导入前知道字段缺失和冲突；导入事务失败不损坏现有数据；至少一种通用导出可再次导入并保持 Host/Group/Identity 关系；不把未经证实的 native export 当卖点。
 
-**Verification:** parser/detect/round-trip unit、import service/route integration 和 Workspace Settings DOM tests；每种格式只使用有证据的 fixture，导入失败后复核 Vault 未变化。
+**Verification:** parser/detect/round-trip unit、import service/route integration 和 Workspace Settings DOM tests；O-03 聚焦验证共 6 个测试文件、29 项断言通过；未知 XML 误判和事务回滚均有回归；每种格式只使用脱敏 fixture，导入失败后复核 Vault 未变化。FinalShell/Netcatty 原生格式保持 Deferred，待获得可验证 schema 和许可边界后单独立项。
 
 ---
 

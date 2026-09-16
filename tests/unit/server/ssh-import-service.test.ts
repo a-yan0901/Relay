@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ImportSourceFile } from '../../../src/shared/import/types.js';
 import { GroupRepository, HostRepository } from '../../../src/server/db/repositories.js';
@@ -117,6 +117,31 @@ describe('SshImportService', () => {
     const app = hosts.find((host) => host.name === 'app');
     const bastion = hosts.find((host) => host.name === 'bastion');
     expect(app?.jumpHostIds).toEqual([bastion?.id]);
+    fixture.database.close();
+  });
+
+  it('rolls back groups and previously written hosts when a transaction write fails', async () => {
+    const fixture = await createFixture();
+    const preview = await fixture.service.preview([{
+      filename: 'rollback.csv',
+      content: 'group,name,host,port,user,password\nProduction,app,app.example.com,22,deploy,app-secret\nProduction,api,api.example.com,22,deploy,api-secret\n'
+    }]);
+    const createHost = fixture.hosts.createHost.bind(fixture.hosts);
+    let writes = 0;
+    const createHostSpy = vi.spyOn(fixture.hosts, 'createHost').mockImplementation((input) => {
+      writes += 1;
+      if (writes === 2) throw new Error('simulated host write failure');
+      return createHost(input);
+    });
+
+    await expect(fixture.service.apply(fixture.sessionKey, preview.previewId, {
+      selectedSourceIds: preview.connections.map((connection) => connection.sourceId),
+      conflictPolicy: 'create'
+    })).rejects.toThrow('simulated host write failure');
+
+    expect(fixture.hosts.listMetadata()).toEqual([]);
+    expect(fixture.groups.list()).toEqual([]);
+    createHostSpy.mockRestore();
     fixture.database.close();
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { exportGenericCsv, exportOpenSshConfig } from '@shared/import/export';
+import { resolveImportConnections } from '@shared/import/dedupe';
 import { parseSshCsv } from '@shared/import/parsers/csv';
 import { parseOpenSshConfig } from '@shared/import/parsers/openssh';
 import type { ImportedConnection } from '@shared/import/types';
@@ -29,5 +30,17 @@ describe('standard exchange round trips', () => {
       { name: 'bastion', address: 'bastion.example.com', groupPath: ['prod'], identityFile: '~/.ssh/id_ed25519' },
       { name: 'app', address: 'app.example.com', tags: ['web'], jumpHostSourceIds: ['csv:bastion'] }
     ]);
+  });
+
+  it('resolves exported CSV jump references again without losing group or identity metadata', () => {
+    const parsed = parseSshCsv(exportGenericCsv(source), 'connections.csv');
+    const resolved = resolveImportConnections(parsed.connections);
+    const bastion = resolved.connections.find((connection) => connection.name === 'bastion');
+    const app = resolved.connections.find((connection) => connection.name === 'app');
+
+    expect(resolved.conflicts).toEqual([]);
+    expect(bastion).toMatchObject({ groupPath: ['prod'], identityFile: '~/.ssh/id_ed25519' });
+    expect(app).toMatchObject({ groupPath: ['prod'], tags: ['web'] });
+    expect(app?.jumpHostSourceIds).toEqual([bastion?.sourceId]);
   });
 });

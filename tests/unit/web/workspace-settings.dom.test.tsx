@@ -24,6 +24,20 @@ const preview: ImportPreview = {
 describe('WorkspaceSettings import/export flows', () => {
   afterEach(() => cleanup());
 
+  it('explains the native-format boundary before a user uploads a migration file', () => {
+    render(<WorkspaceSettings
+      mode="import"
+      onClose={vi.fn()}
+      onExport={vi.fn(async () => '{}')}
+      onPreviewImport={vi.fn(async () => ({ previewId: 'vault', hostCount: 0, groupCount: 0, conflicts: [], expiresAt: '' }))}
+      onApplyImport={vi.fn(async () => ({ importedHosts: 0, importedGroups: 0, skippedHosts: 0, skippedGroups: 0 }))}
+      onPreviewExternalImport={vi.fn(async () => preview)}
+      onApplyExternalImport={vi.fn(async () => ({ importedHosts: 0, skippedHosts: 0, importedGroups: 0, skippedGroups: 0, warnings: [] }))}
+    />);
+
+    expect(screen.getByText(/FinalShell、Netcatty 原生数据暂不直接读取/u)).toBeInTheDocument();
+  });
+
   it('previews an external file, supports credential补录, and does not render source secrets', async () => {
     const user = userEvent.setup();
     const onPreviewExternalImport = vi.fn(async () => preview);

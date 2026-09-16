@@ -21,4 +21,9 @@ describe('external SSH format detection', () => {
     const result = detectImportFormats('just some notes', 'notes.txt');
     expect(result).toEqual([]);
   });
+
+  it('does not classify unrelated XML as SecureCRT by extension alone', () => {
+    const result = detectImportFormats('<profile><host>app.example.com</host></profile>', 'profile.xml');
+    expect(result).toEqual([]);
+  });
 });

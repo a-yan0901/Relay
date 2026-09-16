@@ -231,7 +231,8 @@ export const WorkspaceSettings = ({ mode, onClose, onExport, onPreviewImport, on
         </div>
         {mode === 'import' ? (
           <>
-            <p className="preferences-note">上传 Vault 数据包或其它 SSH 客户端配置，系统会自动识别格式。</p>
+            <p className="preferences-note">上传 Vault 数据包或其它 SSH 客户端配置，系统会自动识别格式。支持 OpenSSH、SSH / Termius CSV、MobaXterm、Xshell 和 SecureCRT。</p>
+            <p className="preferences-note">FinalShell、Netcatty 原生数据暂不直接读取，请先从客户端导出 OpenSSH / CSV；Relay 加密数据包可用于 Relay 之间的完整迁移。</p>
             <div className="workspace-settings-section workspace-transfer-section">
               <label htmlFor="vault-import-file">导入文件</label>
               <input id="vault-import-file" type="file" multiple accept="application/json,.json,.config,.conf,.ssh_config,.csv,.mxtsessions,.mobaconf,.xsh,.xml,.ini,.zip" onChange={(event) => void loadImportFiles([...event.target.files ?? []])} />

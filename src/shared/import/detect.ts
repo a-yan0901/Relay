@@ -38,7 +38,7 @@ export const detectImportFormats = (content: string | Uint8Array, filename = '')
   if (/^\s*(?:Product\s*=\s*Xshell|Host\s*=|Xshell)/imu.test(text) || extension === 'xsh') {
     results.push({ format: 'xshell', confidence: extension === 'xsh' ? 'high' : 'medium', reason: '符合 Xshell session 结构' });
   }
-  if (/^\s*<\?xml[\s\S]*?(?:VanDykeSoftware|SecureCRT)/iu.test(text) || /(?:VanDykeSoftware|SecureCRT|S:"Hostname")/iu.test(text) || extension === 'xml') {
+  if (/^\s*<\?xml[\s\S]*?(?:VanDykeSoftware|SecureCRT)/iu.test(text) || /(?:VanDykeSoftware|SecureCRT|S:"Hostname")/iu.test(text)) {
     results.push({ format: 'securecrt', confidence: extension === 'xml' ? 'high' : 'medium', reason: '符合 SecureCRT XML/INI 结构' });
   }
   return results.sort((left, right) => {
