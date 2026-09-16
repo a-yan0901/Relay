@@ -7,6 +7,7 @@ export interface HostCardProps {
   onEdit?: (host: HostMetadataState) => void;
   onDelete?: (host: HostMetadataState) => void;
   onTestConnection?: (host: HostMetadataState) => void;
+  onTagSelected?: (tag: string) => void;
 }
 
 const formatLastConnected = (value: string | null): string => {
@@ -16,7 +17,7 @@ const formatLastConnected = (value: string | null): string => {
   return `最近连接：${timestamp.toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })}`;
 };
 
-export const HostCard = ({ host, onConnect, onFavoriteToggle, onEdit, onDelete, onTestConnection }: HostCardProps) => (
+export const HostCard = ({ host, onConnect, onFavoriteToggle, onEdit, onDelete, onTestConnection, onTagSelected }: HostCardProps) => (
   <article className="host-card">
     <div className="host-card-main">
       <div className="card-title-line">
@@ -30,7 +31,9 @@ export const HostCard = ({ host, onConnect, onFavoriteToggle, onEdit, onDelete, 
         {host.identityName && <span>{host.identitySource === 'group' ? `继承身份：${host.identityName}` : `身份：${host.identityName}`}</span>}
       </div>
       <p className="host-last-connected">{formatLastConnected(host.lastConnectedAt)}</p>
-      {host.tags.length > 0 && <div className="tag-list">{host.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>)}</div>}
+      {host.tags.length > 0 && <div className="tag-list">{host.tags.map((tag) => onTagSelected
+        ? <button className="tag tag-button" type="button" key={tag} aria-label={`筛选标签 ${tag}`} onClick={() => onTagSelected(tag)}>{tag}</button>
+        : <span className="tag" key={tag}>{tag}</span>)}</div>}
     </div>
     <div className="host-card-actions">
       <button className="card-action" type="button" aria-label={`收藏 ${host.name}`} aria-pressed={host.isFavorite} onClick={() => onFavoriteToggle(host)}>{host.isFavorite ? '取消收藏' : '收藏'}</button>

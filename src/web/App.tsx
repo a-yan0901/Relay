@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import { AppError } from '@shared/errors';
 import type { HostCreateInput, HostPatchInput, IdentityCreateInput, IdentityUpdateInput, SnippetInput } from '@shared/validation';
@@ -16,6 +16,7 @@ import { IdentityManager } from './components/IdentityManager';
 import { SnippetManager } from './components/SnippetManager';
 import { SnippetPalette } from './components/SnippetPalette';
 import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
+import { QuickSwitcher } from './components/QuickSwitcher';
 import type { AuditEvent, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import type { CapabilitySet } from '../shared/core/capabilities';
 import type { BinarySource } from '../shared/core/ports';
@@ -33,6 +34,7 @@ import {
   type TerminalDescriptor
 } from './state/app-state';
 import { createFreshTerminalIds, restoreWorkspace, workspaceStateFromAppState } from './state/workspace-state';
+import { createQuickSwitcherItems, type PrimaryDestination, type QuickSwitcherItem } from './state/navigation-state';
 import type { WorkspaceState } from '../shared/core/models';
 import {
   applyPreferences,
@@ -99,19 +101,24 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, onActivity, onIdentities, onSnippets, onWorkspaces, compact = false }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void; onActivity?: () => void; onIdentities?: () => void; onSnippets?: () => void; onWorkspaces?: () => void; compact?: boolean }) => (
+const WorkspaceHeader = ({ destination, onLock, onServers, onQuickSwitcher, onSettings, onActivity, onIdentities, onSnippets, onWorkspaces, compact = false }: { destination: PrimaryDestination; onLock: () => void; onServers: () => void; onQuickSwitcher: () => void; onSettings: () => void; onActivity?: () => void; onIdentities?: () => void; onSnippets?: () => void; onWorkspaces?: () => void; compact?: boolean }) => (
   <header className={`app-header ${compact ? 'app-header-embedded' : ''}`}>
-    <Brand />
+    <div className="app-header-main">
+      <Brand />
+      {!compact && <nav className="primary-nav" aria-label="主导航">
+        <button className={`primary-nav-item ${destination === 'servers' ? 'is-active' : ''}`} type="button" aria-current={destination === 'servers' ? 'page' : undefined} onClick={onServers}>Server</button>
+        {onWorkspaces && <button className={`primary-nav-item ${destination === 'workspaces' ? 'is-active' : ''}`} type="button" aria-current={destination === 'workspaces' ? 'page' : undefined} onClick={onWorkspaces}>工作区</button>}
+        {onActivity && <button className={`primary-nav-item ${destination === 'activity' ? 'is-active' : ''}`} type="button" aria-current={destination === 'activity' ? 'page' : undefined} onClick={onActivity}>活动</button>}
+      </nav>}
+    </div>
     <div className="app-header-actions">
+      <button className="button button-ghost button-small quick-switcher-trigger" type="button" aria-label="快速切换" onClick={onQuickSwitcher}><span aria-hidden="true">⌘K</span><span className="quick-switcher-trigger-label">快速切换</span></button>
       <span className="secure-pill"><span className="status-dot status-dot-green" />Vault 已解锁</span>
       <button className="button button-ghost button-small" type="button" onClick={onLock}>
         <span aria-hidden="true">↥</span> 锁定
       </button>
-      {terminalCount > 0 && !compact && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
-      {onActivity && <button className="button button-ghost button-small" type="button" onClick={onActivity}>活动</button>}
       {onIdentities && <button className="button button-ghost button-small" type="button" onClick={onIdentities}>身份</button>}
       {onSnippets && <button className="button button-ghost button-small" type="button" onClick={onSnippets}>片段</button>}
-      {onWorkspaces && <button className="button button-ghost button-small" type="button" onClick={onWorkspaces}>工作区</button>}
       <button className="button button-ghost button-small" type="button" aria-label="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
@@ -157,6 +164,8 @@ export const App = ({ runtime }: AppProps) => {
   const [terminalView, setTerminalView] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
+  const [recentOnly, setRecentOnly] = useState(false);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [networkOnline, setNetworkOnline] = useState(() => globalThis.navigator?.onLine !== false);
   const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
   const [capabilities, setCapabilities] = useState<CapabilitySet>(() => runtime.capabilities);
@@ -165,6 +174,7 @@ export const App = ({ runtime }: AppProps) => {
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
   const [snippetPaletteOpen, setSnippetPaletteOpen] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
+  const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
   const [workspaceTemplates, setWorkspaceTemplates] = useState<WorkspaceTemplate[]>([]);
   const [workspaceSettingsMode, setWorkspaceSettingsMode] = useState<'import' | 'export' | null>(null);
   const [commandDialogOpen, setCommandDialogOpen] = useState(false);
@@ -191,6 +201,14 @@ export const App = ({ runtime }: AppProps) => {
   const workspaceVersionRef = useRef(0);
   const workspaceSaveQueueRef = useRef(Promise.resolve());
   const workspaceLoadRequestRef = useRef(0);
+
+  const quickSwitcherItems = useMemo(() => createQuickSwitcherItems({
+    hosts: state.hosts,
+    groups: state.groups,
+    terminals: state.terminals,
+    workspaceTemplates,
+    snippets
+  }), [snippets, state.groups, state.hosts, state.terminals, workspaceTemplates]);
 
   useEffect(() => {
     const handleOffline = (): void => setNetworkOnline(false);
@@ -442,6 +460,19 @@ export const App = ({ runtime }: AppProps) => {
     void loadSnippets();
   };
 
+  const handleOpenQuickSwitcher = (): void => {
+    setQuickSwitcherOpen(true);
+    void runtime.workspace.listTemplates().then((templates) => setWorkspaceTemplates([...templates])).catch(() => setWorkspaceTemplates([]));
+    void loadSnippets();
+  };
+
+  const handleOpenServers = (): void => {
+    setTerminalView(false);
+    setActivityOpen(false);
+    setWorkspaceSwitcherOpen(false);
+    setQuickSwitcherOpen(false);
+  };
+
   const handleOpenWorkspaceSwitcher = (): void => {
     setWorkspaceSwitcherOpen(true);
     void runtime.workspace.listTemplates().then((templates) => setWorkspaceTemplates([...templates])).catch(() => setWorkspaceTemplates([]));
@@ -488,6 +519,28 @@ export const App = ({ runtime }: AppProps) => {
       setCommandTargetHostIds([...new Set(state.terminals.map((terminal) => terminal.hostId))]);
       setCommandDialogOpen(true);
     }).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
+  };
+
+  const handleQuickSwitcherSelect = (item: QuickSwitcherItem): void => {
+    setQuickSwitcherOpen(false);
+    if (item.type === 'host') {
+      const host = latestStateRef.current.hosts.find((candidate) => candidate.id === item.id);
+      if (host) handleOpenTerminal(host);
+      return;
+    }
+    if (item.type === 'tab') {
+      if (latestStateRef.current.terminals.some((terminal) => terminal.terminalId === item.id)) {
+        dispatch({ type: 'terminalActivated', terminalId: item.id });
+        setTerminalView(true);
+      }
+      return;
+    }
+    if (item.type === 'workspace') {
+      const template = workspaceTemplates.find((candidate) => candidate.id === item.id);
+      if (template) handleOpenWorkspaceTemplate(template);
+      return;
+    }
+    handleSelectSnippetFromPalette(item.id);
   };
 
   const handleCreateSnippet = async (input: SnippetInput): Promise<void> => {
@@ -791,16 +844,11 @@ export const App = ({ runtime }: AppProps) => {
       }
       const isTerminalInput = target instanceof HTMLTextAreaElement && target.classList.contains('xterm-helper-textarea');
       const isTextEntry = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
+      if (isTerminalInput && key === 'k') return;
       if (isTextEntry && !(isTerminalInput && (key === 'k' || key === 'w'))) return;
       if (key === 'k') {
         event.preventDefault();
-        if (terminalView) {
-          const terminalSearch = document.getElementById('terminal-host-search');
-          if (terminalSearch) terminalSearch.focus();
-          else document.getElementById('terminal-new-terminal')?.click();
-        } else {
-          document.getElementById('host-search')?.focus();
-        }
+        handleOpenQuickSwitcher();
       } else if (key === 'w' && terminalView && state.activeTerminalId) {
         event.preventDefault();
         handleCloseTerminal(state.activeTerminalId);
@@ -850,6 +898,7 @@ export const App = ({ runtime }: AppProps) => {
       setActivityOpen(false);
       setSnippetManagerOpen(false);
       setSnippetPaletteOpen(false);
+      setQuickSwitcherOpen(false);
       setCommandRun(null);
       setTransferJobs([]);
       transferFilesRef.current.clear();
@@ -865,7 +914,17 @@ export const App = ({ runtime }: AppProps) => {
 
   return (
     <main className="app-shell">
-      {!terminalView && <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} onActivity={capabilities.supports('audit.activity') ? handleOpenActivity : undefined} onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined} onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined} onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined} />}
+      {!terminalView && <WorkspaceHeader
+        destination={activityOpen ? 'activity' : workspaceSwitcherOpen ? 'workspaces' : 'servers'}
+        onLock={() => void handleLock()}
+        onServers={handleOpenServers}
+        onQuickSwitcher={handleOpenQuickSwitcher}
+        onSettings={() => setPreferencesOpen(true)}
+        onActivity={capabilities.supports('audit.activity') ? handleOpenActivity : undefined}
+        onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined}
+        onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined}
+        onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined}
+      />}
       {state.errorMessage && (
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
@@ -900,9 +959,13 @@ export const App = ({ runtime }: AppProps) => {
             query={state.query}
             selectedGroupId={state.selectedGroupId}
             favoriteOnly={state.favoriteOnly}
+            recentOnly={recentOnly}
+            selectedTag={selectedTag}
             onQueryChange={(query) => dispatch({ type: 'queryChanged', query })}
-            onGroupSelected={(groupId) => dispatch({ type: 'groupSelected', groupId })}
-            onFavoriteFilter={(favoriteOnly) => dispatch({ type: 'favoriteFilterChanged', favoriteOnly })}
+            onGroupSelected={(groupId) => { dispatch({ type: 'groupSelected', groupId }); setRecentOnly(false); setSelectedTag(null); }}
+            onFavoriteFilter={(favoriteOnly) => { dispatch({ type: 'favoriteFilterChanged', favoriteOnly }); setRecentOnly(false); setSelectedTag(null); }}
+            onRecentFilter={(nextRecentOnly) => { setRecentOnly(nextRecentOnly); if (nextRecentOnly) { dispatch({ type: 'groupSelected', groupId: null }); dispatch({ type: 'favoriteFilterChanged', favoriteOnly: false }); } }}
+            onTagSelected={(tag) => { setSelectedTag(tag); if (tag !== null) { dispatch({ type: 'groupSelected', groupId: null }); dispatch({ type: 'favoriteFilterChanged', favoriteOnly: false }); setRecentOnly(false); } }}
             onFavoriteToggle={(host) => void handleFavoriteToggle(host)}
             onConnect={handleOpenTerminal}
             onAddHost={openCreateHost}
@@ -942,10 +1005,22 @@ export const App = ({ runtime }: AppProps) => {
             preferences={preferences}
             visible={terminalView}
             onBackToHosts={() => setTerminalView(false)}
-            workspaceHeader={<WorkspaceHeader compact onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} onActivity={capabilities.supports('audit.activity') ? handleOpenActivity : undefined} onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined} onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined} onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined} />}
+            workspaceHeader={<WorkspaceHeader
+              compact
+              destination="servers"
+              onLock={() => void handleLock()}
+              onServers={handleOpenServers}
+              onQuickSwitcher={handleOpenQuickSwitcher}
+              onSettings={() => setPreferencesOpen(true)}
+              onActivity={capabilities.supports('audit.activity') ? handleOpenActivity : undefined}
+              onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined}
+              onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined}
+              onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined}
+            />}
           />
         </div>
       </div>
+      {quickSwitcherOpen && <QuickSwitcher items={quickSwitcherItems} onSelect={handleQuickSwitcherSelect} onClose={() => setQuickSwitcherOpen(false)} />}
       {hostFormOpen && (
         <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeHostForm(); }}>
           <aside ref={drawerRef} className="drawer" role="dialog" aria-modal="true" aria-labelledby="host-form-title" onMouseDown={(event) => event.stopPropagation()}>

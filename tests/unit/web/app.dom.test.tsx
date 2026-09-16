@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -108,7 +108,7 @@ describe('App boot recovery', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('focuses the active Server search with the platform shortcut', async () => {
+  it('opens the unified Quick Switcher with the platform shortcut', async () => {
     const user = userEvent.setup();
     apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
     apiMocks.listHosts.mockResolvedValue([]);
@@ -118,7 +118,22 @@ describe('App boot recovery', () => {
     await screen.findByRole('heading', { name: 'Server', exact: true });
     await user.keyboard('{Control>}k{/Control}');
 
-    expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: '搜索 Server' }));
+    expect(screen.getByRole('dialog', { name: '快速切换' })).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: '快速搜索' }));
+  });
+
+  it('keeps the header focused on task destinations', async () => {
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    renderApp();
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    const navigation = screen.getByRole('navigation', { name: '主导航' });
+    expect(within(navigation).getByRole('button', { name: 'Server' })).toHaveAttribute('aria-current', 'page');
+    expect(within(navigation).getByRole('button', { name: '工作区' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: '活动' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /终端 \d+/u })).not.toBeInTheDocument();
   });
 
   it('moves focus into overlays and closes them with Escape', async () => {
@@ -129,6 +144,12 @@ describe('App boot recovery', () => {
     renderApp();
 
     await screen.findByRole('heading', { name: 'Server', exact: true });
+    const quickSwitcher = screen.getByRole('button', { name: '快速切换' });
+    await user.click(quickSwitcher);
+    expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: '快速搜索' }));
+    await user.keyboard('{Escape}');
+    expect(document.activeElement).toBe(quickSwitcher);
+
     const addHost = screen.getByRole('button', { name: '添加第一台 Server' });
     await user.click(addHost);
     expect(document.activeElement).toBe(screen.getByLabelText('服务器名称'));

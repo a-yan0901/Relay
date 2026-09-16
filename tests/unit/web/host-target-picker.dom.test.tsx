@@ -42,4 +42,22 @@ describe('HostTargetPicker', () => {
     expect(screen.getByRole('checkbox', { name: '选择目标 Production Shell' })).toBeChecked();
     expect(screen.queryByRole('checkbox', { name: '选择目标 API Shell' })).not.toBeInTheDocument();
   });
+
+  it('reuses recent and tag filters when choosing batch targets', async () => {
+    const user = userEvent.setup();
+    const selection: TargetSelection = { hostIds: [], groupIds: [], favoriteOnly: false, query: '' };
+    const hosts = [
+      { ...host('host-1', 'Production Shell'), tags: ['prod'], lastConnectedAt: '2026-09-16T08:00:00.000Z' },
+      { ...host('host-2', 'Staging Shell'), tags: ['staging'] }
+    ];
+    render(<HostTargetPicker hosts={hosts} groups={groups} selection={selection} onChange={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: '最近' }));
+    expect(screen.getByRole('checkbox', { name: '选择目标 Production Shell' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: '选择目标 Staging Shell' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '按标签 staging' }));
+    expect(screen.getByRole('checkbox', { name: '选择目标 Staging Shell' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: '选择目标 Production Shell' })).not.toBeInTheDocument();
+  });
 });

@@ -41,7 +41,9 @@ test.describe('host to terminal journey', () => {
     await expect(page.getByText('Fixture SSH A')).toBeVisible();
 
     await page.keyboard.press('Control+K');
-    await expect(page.locator('#host-search')).toBeFocused();
+    await expect(page.getByRole('dialog', { name: '快速切换' })).toBeVisible();
+    await expect(page.locator('#quick-switcher-search')).toBeFocused();
+    await page.keyboard.press('Escape');
 
     await page.getByRole('button', { name: '连接 Fixture SSH A', exact: true }).click();
     const hostKeyDialog = page.getByRole('dialog');
@@ -102,12 +104,18 @@ test.describe('host to terminal journey', () => {
     await page.getByRole('button', { name: '← Server 列表' }).click();
     await expect(page.getByText('指纹已验证', { exact: true })).toBeVisible();
     await expect(page.locator('.host-last-connected')).toContainText('最近连接：');
-    await page.getByRole('button', { name: '终端 1' }).click();
-    await page.keyboard.press('Control+K');
-    await expect(page.locator('#terminal-host-search')).toBeFocused();
-    await page.getByRole('button', { name: '关闭 Server 选择器' }).click();
+    const quickSwitcher = page.getByRole('button', { name: '快速切换' });
+    await quickSwitcher.click();
+    await page.getByRole('dialog', { name: '快速切换' }).getByRole('option').filter({ hasText: '打开 Console' }).click();
+    await page.getByRole('button', { name: '快速切换' }).click();
+    await expect(page.getByRole('dialog', { name: '快速切换' })).toBeVisible();
+    await expect(page.locator('#quick-switcher-search')).toBeFocused();
+    await page.keyboard.press('Escape');
 
     await terminalInput.click();
+    await page.keyboard.press('Control+K');
+    await expect(page.getByRole('dialog', { name: '快速切换' })).toHaveCount(0);
+    await expect(terminalInput).toBeFocused();
     await terminalInput.pressSequentially("printf 'web-ssh-e2e\\n'");
     await terminalInput.press('Enter');
     await expect(page.locator('.terminal-panel.is-active .terminal-canvas')).toContainText('web-ssh-e2e', { timeout: 15_000 });

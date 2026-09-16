@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -182,5 +182,96 @@ describe('HostWorkspace', () => {
     );
 
     expect(screen.getByText('Production API')).toBeInTheDocument();
+  });
+
+  it('exposes recent and tag filters from the same Server navigation', async () => {
+    const user = userEvent.setup();
+    const onRecentFilter = vi.fn();
+    const onTagSelected = vi.fn();
+    render(
+      <HostWorkspace
+        hosts={hosts}
+        groups={groups}
+        query=""
+        selectedGroupId={null}
+        favoriteOnly={false}
+        recentOnly={false}
+        selectedTag={null}
+        onQueryChange={vi.fn()}
+        onGroupSelected={vi.fn()}
+        onFavoriteFilter={vi.fn()}
+        onRecentFilter={onRecentFilter}
+        onTagSelected={onTagSelected}
+        onFavoriteToggle={vi.fn()}
+        onConnect={vi.fn()}
+        onAddHost={vi.fn()}
+      />
+    );
+
+    const navigation = screen.getByRole('complementary', { name: 'Server 导航' });
+    await user.click(within(navigation).getByRole('button', { name: '最近' }));
+    await user.click(within(navigation).getByRole('button', { name: '标签 prod' }));
+
+    expect(onRecentFilter).toHaveBeenCalledWith(true);
+    expect(onTagSelected).toHaveBeenCalledWith('prod');
+  });
+
+  it('filters the Server list by recent connection and explicit tag', () => {
+    render(
+      <HostWorkspace
+        hosts={hosts.map((host) => host.id === 'host-2' ? { ...host, lastConnectedAt: '2026-09-16T08:00:00.000Z' } : host)}
+        groups={groups}
+        query=""
+        selectedGroupId={null}
+        favoriteOnly={false}
+        recentOnly
+        selectedTag="staging"
+        onQueryChange={vi.fn()}
+        onGroupSelected={vi.fn()}
+        onFavoriteFilter={vi.fn()}
+        onRecentFilter={vi.fn()}
+        onTagSelected={vi.fn()}
+        onFavoriteToggle={vi.fn()}
+        onConnect={vi.fn()}
+        onAddHost={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Staging Shell')).toBeInTheDocument();
+    expect(screen.queryByText('Production API')).not.toBeInTheDocument();
+  });
+
+  it('shows the active filter and clears it from the workspace toolbar', async () => {
+    const user = userEvent.setup();
+    const onGroupSelected = vi.fn();
+    const onFavoriteFilter = vi.fn();
+    const onRecentFilter = vi.fn();
+    const onTagSelected = vi.fn();
+    render(
+      <HostWorkspace
+        hosts={hosts}
+        groups={groups}
+        query=""
+        selectedGroupId={null}
+        favoriteOnly={false}
+        recentOnly
+        selectedTag="prod"
+        onQueryChange={vi.fn()}
+        onGroupSelected={onGroupSelected}
+        onFavoriteFilter={onFavoriteFilter}
+        onRecentFilter={onRecentFilter}
+        onTagSelected={onTagSelected}
+        onFavoriteToggle={vi.fn()}
+        onConnect={vi.fn()}
+        onAddHost={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('标签：prod')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '清除筛选' }));
+    expect(onGroupSelected).toHaveBeenCalledWith(null);
+    expect(onFavoriteFilter).toHaveBeenCalledWith(false);
+    expect(onRecentFilter).toHaveBeenCalledWith(false);
+    expect(onTagSelected).toHaveBeenCalledWith(null);
   });
 });

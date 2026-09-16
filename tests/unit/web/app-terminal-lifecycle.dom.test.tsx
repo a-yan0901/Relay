@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -73,7 +73,8 @@ describe('App terminal lifecycle', () => {
 
     expect(screen.getByTestId('terminal-workspace')).toBeInTheDocument();
     expect(lifecycle.unmounts).toBe(0);
-    await user.click(screen.getByRole('button', { name: /终端/ }));
+    await user.click(screen.getByRole('button', { name: '快速切换' }));
+    await user.click(within(screen.getByRole('dialog', { name: '快速切换' })).getByRole('option', { name: /打开 Console/ }));
     expect(screen.getByTestId('terminal-workspace')).toBeInTheDocument();
   });
 });
