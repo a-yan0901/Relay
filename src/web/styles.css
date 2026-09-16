@@ -1371,6 +1371,7 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 @media (max-height: 560px) {
   .app-body-terminal { padding: 3px 7px 5px; }
   .terminal-topbar, .terminal-topbar .terminal-tabs, .terminal-topbar > .app-header { min-height: 32px; }
+  .terminal-topbar .account-menu-trigger { min-height: 32px; padding: 2px 4px; }
   .terminal-topbar-button, .terminal-topbar .toolbar-button { min-height: 26px; }
   .terminal-tab { min-height: 32px; }
   .terminal-pane-toolbar { flex-basis: 22px; }
