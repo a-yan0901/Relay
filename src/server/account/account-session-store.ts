@@ -168,6 +168,13 @@ export class AccountSessionStore {
     return true;
   }
 
+  clearReauthentication(token: string): void {
+    const tokenHash = hashToken(token);
+    if (!tokenHash) return;
+    const stored = this.sessions.get(tokenHash);
+    if (stored) stored.reauthenticatedAt = null;
+  }
+
   sweep(at = this.clock()): number {
     if (!Number.isSafeInteger(at)) return 0;
     let swept = 0;

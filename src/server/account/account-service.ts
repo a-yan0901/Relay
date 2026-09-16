@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
-import type { AccountSession, ClientPlatform, DeviceDescriptor } from '../../shared/core/models.js';
+import type { AccountDeletionState, AccountSession, ClientPlatform, DeviceDescriptor } from '../../shared/core/models.js';
+import { ACCOUNT_DELETION_CONFIRMATION } from '../../shared/core/account-sync.js';
 import { AppError } from '../../shared/errors.js';
 import {
   ACCOUNT_PASSWORD_MAX_LENGTH,
@@ -10,6 +11,7 @@ import {
 } from './account-crypto.js';
 import { AccountSessionStore, type AccountSessionRecord } from './account-session-store.js';
 import { AccountRepository } from '../db/repositories.js';
+import type { AccountDeletionRequestRow } from '../db/types.js';
 
 const ACCOUNT_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 const DEVICE_LABEL_MAX_LENGTH = 128;
@@ -19,6 +21,8 @@ const DEVICE_PLATFORM_LABELS: Record<ClientPlatform, string> = {
   android: 'Android app'
 };
 
+export const ACCOUNT_DELETION_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
+
 export interface AccountDeviceInput {
   label?: string;
   platform: ClientPlatform;
@@ -27,6 +31,7 @@ export interface AccountDeviceInput {
 export interface AccountServiceDependencies {
   accountRepository: AccountRepository;
   sessionStore: AccountSessionStore;
+  now?: () => number;
 }
 
 export const normalizeAccountEmail = (email: string): string => {
@@ -80,13 +85,22 @@ const toAccountSession = (
   expiresAt: new Date(record.expiresAt).toISOString()
 });
 
+const toAccountDeletionState = (request: AccountDeletionRequestRow, at: number): AccountDeletionState => ({
+  kind: 'account',
+  requestedAt: request.requestedAt,
+  deleteAfter: request.deleteAfter,
+  remainingMs: Math.max(0, Date.parse(request.deleteAfter) - at)
+});
+
 export class AccountService {
   private readonly accountRepository: AccountRepository;
   private readonly sessionStore: AccountSessionStore;
+  private readonly clock: () => number;
 
   constructor(dependencies: AccountServiceDependencies) {
     this.accountRepository = dependencies.accountRepository;
     this.sessionStore = dependencies.sessionStore;
+    this.clock = dependencies.now ?? Date.now;
   }
 
   async register(
@@ -94,6 +108,7 @@ export class AccountService {
     password: string,
     device: AccountDeviceInput
   ): Promise<AccountSession> {
+    this.purgeExpiredDeletions();
     const normalizedEmail = normalizeAccountEmail(email);
     assertRegistrationPassword(password);
     const normalizedDevice = normalizeDevice(device);
@@ -128,6 +143,7 @@ export class AccountService {
     password: string,
     device: AccountDeviceInput
   ): Promise<AccountSession> {
+    this.purgeExpiredDeletions();
     const normalizedEmail = normalizeAccountEmail(email);
     const normalizedDevice = normalizeDevice(device);
     const account = this.accountRepository.getAccountByEmail(normalizedEmail);
@@ -160,6 +176,7 @@ export class AccountService {
   }
 
   status(sessionId: string): AccountSession | null {
+    this.purgeExpiredDeletions();
     const record = this.sessionStore.get(sessionId);
     if (!record) return null;
     const device = this.accountRepository.getDevice(record.accountId, record.deviceId);
@@ -190,6 +207,55 @@ export class AccountService {
       throw new AppError('ACCOUNT_REAUTH_REQUIRED');
     }
     return session;
+  }
+
+  getDeletion(sessionId: string): AccountDeletionState | null {
+    const session = this.requireSession(sessionId);
+    const request = this.accountRepository.getAccountDeletionRequest(session.accountId);
+    return request ? toAccountDeletionState(request, this.clock()) : null;
+  }
+
+  requestDeletion(sessionId: string, confirmDelete: string): AccountDeletionState {
+    const session = this.assertReauthenticated(sessionId);
+    if (confirmDelete !== ACCOUNT_DELETION_CONFIRMATION) {
+      throw new AppError('ACCOUNT_DELETION_CONFIRMATION_REQUIRED');
+    }
+    if (this.accountRepository.getAccountDeletionRequest(session.accountId)) {
+      throw new AppError('ACCOUNT_DELETION_PENDING');
+    }
+    const requestedAt = new Date(this.clock()).toISOString();
+    const request = this.accountRepository.requestAccountDeletion(
+      session.accountId,
+      new Date(this.clock() + ACCOUNT_DELETION_GRACE_MS).toISOString(),
+      requestedAt
+    );
+    // The database transaction above is the source of truth. Only after it
+    // succeeds do we revoke the in-memory sessions and make the cookie stale.
+    this.sessionStore.revokeAccount(session.accountId);
+    return toAccountDeletionState(request, this.clock());
+  }
+
+  restoreDeletion(sessionId: string): void {
+    const session = this.assertReauthenticated(sessionId);
+    const request = this.accountRepository.getAccountDeletionRequest(session.accountId);
+    if (!request) throw new AppError('ACCOUNT_DELETION_NOT_PENDING');
+    if (Date.parse(request.deleteAfter) <= this.clock()) {
+      this.purgeExpiredDeletions();
+      throw new AppError('ACCOUNT_DELETION_NOT_PENDING');
+    }
+    this.accountRepository.restoreAccountDeletion(session.accountId, new Date(this.clock()).toISOString());
+    this.sessionStore.clearReauthentication(sessionId);
+  }
+
+  isDeletionPending(accountId: string): boolean {
+    this.purgeExpiredDeletions();
+    return this.accountRepository.getAccountDeletionRequest(accountId) !== null;
+  }
+
+  purgeExpiredDeletions(): readonly string[] {
+    const purged = this.accountRepository.purgeExpiredAccountDeletions(new Date(this.clock()).toISOString());
+    for (const accountId of purged) this.sessionStore.revokeAccount(accountId);
+    return purged;
   }
 
   async listDevices(sessionId: string): Promise<readonly DeviceDescriptor[]> {

@@ -851,24 +851,23 @@ export class AccountRepository {
         WHERE account_id = @accountId AND restored_at IS NULL AND delete_after <= @at
       `).get({ accountId, at: normalizedAt });
       if (!request) return false;
-
-      // The envelope device FK is RESTRICT, so cloud rows and server sessions
-      // must be removed before devices; local Vault/host owner rows are not in
-      // this account-scoped purge list by design.
-      for (const table of [
-        'sync_client_state',
-        'sync_conflicts',
-        'sync_envelopes',
-        'sync_vaults',
-        'sync_delete_requests',
-        'account_sessions',
-        'account_delete_requests',
-        'account_devices'
-      ]) {
-        this.database.prepare(`DELETE FROM ${table} WHERE account_id = @accountId`).run({ accountId });
-      }
-      this.database.prepare('DELETE FROM accounts WHERE id = @accountId').run({ accountId });
+      this.purgeAccountDeletionRows(accountId);
       return true;
+    });
+    return operation();
+  }
+
+  purgeExpiredAccountDeletions(at = now()): string[] {
+    const normalizedAt = this.normalizeAccountDeletionTimestamp(at);
+    const operation = this.database.transaction(() => {
+      const requests = this.database.prepare(`
+        SELECT account_id
+        FROM account_delete_requests
+        WHERE restored_at IS NULL AND delete_after <= @at
+        ORDER BY delete_after ASC, account_id ASC
+      `).all({ at: normalizedAt }) as Array<{ account_id: string }>;
+      for (const request of requests) this.purgeAccountDeletionRows(request.account_id);
+      return requests.map((request) => request.account_id);
     });
     return operation();
   }
@@ -878,6 +877,25 @@ export class AccountRepository {
       throw new AppError('ACCOUNT_SESSION_INVALID');
     }
     return new Date(Date.parse(value)).toISOString();
+  }
+
+  private purgeAccountDeletionRows(accountId: string): void {
+    // The envelope device FK is RESTRICT, so cloud rows and server sessions
+    // must be removed before devices; local Vault/host owner rows are not in
+    // this account-scoped purge list by design.
+    for (const table of [
+      'sync_client_state',
+      'sync_conflicts',
+      'sync_envelopes',
+      'sync_vaults',
+      'sync_delete_requests',
+      'account_sessions',
+      'account_delete_requests',
+      'account_devices'
+    ]) {
+      this.database.prepare(`DELETE FROM ${table} WHERE account_id = @accountId`).run({ accountId });
+    }
+    this.database.prepare('DELETE FROM accounts WHERE id = @accountId').run({ accountId });
   }
 }
 

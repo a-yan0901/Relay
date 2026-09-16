@@ -161,4 +161,138 @@ describe('optional account routes', () => {
     });
     expect(untrusted.statusCode).toBe(403);
   });
+
+  it('requires server-side re-authentication for account deletion and supports recovery before expiry', async () => {
+    const { app, database } = await makeApp(true);
+    database.prepare(`
+      INSERT INTO hosts (id, owner_id, name, address, port, username, auth_type, credential_ciphertext, credential_version, created_at, updated_at)
+      VALUES ('account-delete-local-host', 'default', 'Keep local after account delete', '10.0.0.9', 22, 'deploy', 'password', 'local-only-ciphertext', 1, '2026-01-01', '2026-01-01')
+    `).run();
+
+    const registered = await app.inject({
+      method: 'POST',
+      url: '/api/account/register',
+      headers: { origin: ORIGIN },
+      payload: { email: 'account-delete@example.com', password: 'long enough password', deviceLabel: 'Delete browser' }
+    });
+    const accountCookie = cookieFrom(registered, 'relay_account_session');
+
+    const missingReauth = await app.inject({
+      method: 'POST',
+      url: '/api/account/deletion',
+      headers: { origin: ORIGIN, cookie: accountCookie },
+      payload: { confirmDelete: 'DELETE MY ACCOUNT' }
+    });
+    expect(missingReauth.statusCode).toBe(401);
+    expect(json<{ error: { code: string } }>(missingReauth).error.code).toBe('ACCOUNT_REAUTH_REQUIRED');
+
+    const forgedReauth = await app.inject({
+      method: 'POST',
+      url: '/api/account/deletion',
+      headers: { origin: ORIGIN, cookie: accountCookie },
+      payload: { reauthenticated: true, confirmDelete: 'DELETE MY ACCOUNT' }
+    });
+    expect(forgedReauth.statusCode).toBe(400);
+    expect(json<{ error: { code: string } }>(forgedReauth).error.code).toBe('PROTOCOL_INVALID_MESSAGE');
+
+    const badPassword = await app.inject({
+      method: 'POST',
+      url: '/api/account/session/reauth',
+      headers: { origin: ORIGIN, cookie: accountCookie },
+      payload: { password: 'wrong password' }
+    });
+    expect(badPassword.statusCode).toBe(401);
+    expect(json<{ error: { code: string } }>(badPassword).error.code).toBe('ACCOUNT_REAUTH_FAILED');
+
+    const reauthenticated = await app.inject({
+      method: 'POST',
+      url: '/api/account/session/reauth',
+      headers: { origin: ORIGIN, cookie: accountCookie },
+      payload: { password: 'long enough password' }
+    });
+    expect(reauthenticated.statusCode).toBe(204);
+    expect(reauthenticated.headers['cache-control']).toMatch(/no-store/iu);
+
+    const requested = await app.inject({
+      method: 'POST',
+      url: '/api/account/deletion',
+      headers: { origin: ORIGIN, cookie: accountCookie },
+      payload: { confirmDelete: 'DELETE MY ACCOUNT' }
+    });
+    expect(requested.statusCode).toBe(202);
+    expect(json<{ deletion: { kind: string; remainingMs: number } }>(requested).deletion)
+      .toEqual(expect.objectContaining({ kind: 'account', remainingMs: expect.any(Number) }));
+    expect(requested.headers['set-cookie']).toMatch(/relay_account_session=/u);
+
+    const oldSession = await app.inject({ method: 'GET', url: '/api/account/session', headers: { cookie: accountCookie } });
+    expect(json<{ account: null }>(oldSession).account).toBeNull();
+    expect((database.prepare('SELECT id, name FROM hosts WHERE id = ?').get('account-delete-local-host')))
+      .toEqual({ id: 'account-delete-local-host', name: 'Keep local after account delete' });
+
+    const recoveryLogin = await app.inject({
+      method: 'POST',
+      url: '/api/account/session',
+      headers: { origin: ORIGIN },
+      payload: { email: 'account-delete@example.com', password: 'long enough password', deviceLabel: 'Recovery browser' }
+    });
+    expect(recoveryLogin.statusCode).toBe(200);
+    const recoveryCookie = cookieFrom(recoveryLogin, 'relay_account_session');
+    const pending = await app.inject({ method: 'GET', url: '/api/account/deletion', headers: { cookie: recoveryCookie } });
+    expect(pending.statusCode).toBe(200);
+    expect(json<{ deletion: { kind: string } }>(pending).deletion.kind).toBe('account');
+
+    const restoreWithoutReauth = await app.inject({
+      method: 'POST',
+      url: '/api/account/deletion/restore',
+      headers: { origin: ORIGIN, cookie: recoveryCookie },
+      payload: {}
+    });
+    expect(restoreWithoutReauth.statusCode).toBe(401);
+    expect(json<{ error: { code: string } }>(restoreWithoutReauth).error.code).toBe('ACCOUNT_REAUTH_REQUIRED');
+
+    await expect(app.inject({
+      method: 'POST',
+      url: '/api/account/session/reauth',
+      headers: { origin: ORIGIN, cookie: recoveryCookie },
+      payload: { password: 'long enough password' }
+    })).resolves.toMatchObject({ statusCode: 204 });
+    const restored = await app.inject({
+      method: 'POST',
+      url: '/api/account/deletion/restore',
+      headers: { origin: ORIGIN, cookie: recoveryCookie },
+      payload: {}
+    });
+    expect(restored.statusCode).toBe(204);
+    expect((await app.inject({ method: 'GET', url: '/api/account/deletion', headers: { cookie: recoveryCookie } })).json())
+      .toEqual({ deletion: null });
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/account/session/reauth',
+      headers: { origin: ORIGIN, cookie: recoveryCookie },
+      payload: { password: 'long enough password' }
+    });
+    const requestedAgain = await app.inject({
+      method: 'POST',
+      url: '/api/account/deletion',
+      headers: { origin: ORIGIN, cookie: recoveryCookie },
+      payload: { confirmDelete: 'DELETE MY ACCOUNT' }
+    });
+    expect(requestedAgain.statusCode).toBe(202);
+    database.prepare('UPDATE account_delete_requests SET delete_after = ? WHERE account_id = (SELECT id FROM accounts WHERE email = ?)')
+      .run(new Date(Date.now() - 1_000).toISOString(), 'account-delete@example.com');
+
+    const expiredSession = await app.inject({ method: 'GET', url: '/api/account/session', headers: { cookie: recoveryCookie } });
+    expect(expiredSession.json()).toEqual({ account: null });
+    const expiredLogin = await app.inject({
+      method: 'POST',
+      url: '/api/account/session',
+      headers: { origin: ORIGIN },
+      payload: { email: 'account-delete@example.com', password: 'long enough password' }
+    });
+    expect(expiredLogin.statusCode).toBe(401);
+    expect(json<{ error: { code: string } }>(expiredLogin).error.code).toBe('ACCOUNT_AUTH_FAILED');
+    expect(database.prepare('SELECT id FROM accounts WHERE email = ?').get('account-delete@example.com')).toBeUndefined();
+    expect(database.prepare('SELECT id FROM hosts WHERE id = ?').get('account-delete-local-host')).toBeTruthy();
+  });
 });
