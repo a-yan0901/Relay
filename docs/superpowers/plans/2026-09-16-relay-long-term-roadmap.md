@@ -672,7 +672,7 @@ export interface BroadcastTargetSnapshot {
 
 ## Task U-04: 视觉系统、快捷键、可访问性和响应式
 
-**Status:** Ready
+**Status:** Done（2026-09-16）
 **Priority:** P1
 **Milestone:** M2
 **Depends on:** U-01、U-02、U-03 的组件结构；现有主题和 Dialog 基线。
@@ -680,8 +680,9 @@ export interface BroadcastTargetSnapshot {
 **Files:**
 
 - Create: `src/web/state/shortcut-map.ts`
-- Modify: `src/web/theme.ts`, `src/web/styles.css`, `src/web/components/Dialog.tsx`, `src/web/components/HostKeyDialog.tsx`, `src/web/components/HostCard.tsx`, `src/web/components/TerminalToolbar.tsx`, `src/web/components/SftpPanel.tsx`, `src/web/App.tsx`
-- Test: `tests/unit/web/theme.test.ts`, `tests/unit/web/dialog.dom.test.tsx`, `tests/unit/web/host-key-dialog.dom.test.tsx`, `tests/unit/web/host-card.dom.test.tsx`, `tests/unit/web/terminal-workspace.dom.test.tsx`, `tests/e2e/host-to-terminal.spec.ts`
+- Create: `src/web/components/ShortcutMap.tsx`
+- Modify: `src/web/theme.ts`, `src/web/styles.css`, `src/web/components/Dialog.tsx`, `src/web/components/HostKeyDialog.tsx`, `src/web/components/HostCard.tsx`, `src/web/components/TerminalToolbar.tsx`, `src/web/components/SftpPanel.tsx`, `src/web/components/TerminalWorkspace.tsx`, `src/web/components/HostForm.tsx`, `src/web/components/IdentityEditor.tsx`, `src/web/components/SnippetEditor.tsx`, `src/web/components/WorkspaceSettings.tsx`, `src/web/App.tsx`
+- Test: `tests/unit/web/theme.test.ts`, `tests/unit/web/dialog.dom.test.tsx`, `tests/unit/web/host-key-dialog.dom.test.tsx`, `tests/unit/web/host-card.dom.test.tsx`, `tests/unit/web/sftp-panel.dom.test.tsx`, `tests/unit/web/shortcut-map.test.ts`, `tests/unit/web/shortcut-map.dom.test.tsx`, `tests/unit/web/app.dom.test.tsx`, `tests/unit/web/terminal-workspace.dom.test.tsx`, `tests/e2e/host-to-terminal.spec.ts`
 
 **Interfaces:**
 
@@ -699,19 +700,19 @@ export interface ShortcutDefinition {
 - 所有 icon-only action 有 `aria-label` 和可见 tooltip；Dialog 有初始焦点、Tab 循环、Escape 和关闭后焦点恢复。
 - 不增加全局动画库；只保留状态变化所需的短过渡，并尊重 `prefers-reduced-motion`。
 
-- [ ] **Step 1: 写键盘、焦点和视口回归测试。**
+- [x] **Step 1: 写键盘、焦点和视口回归测试。**
 
   覆盖输入框内不抢快捷键、终端内 Ctrl/Cmd+C 的复制/中断语义、Quick Switcher 焦点、Host Key 高风险默认按钮、320/390px 宽度、短高度、软键盘等价路径和高对比主题。
 
-- [ ] **Step 2: 实现 Shortcut Map 和统一控制规范。**
+- [x] **Step 2: 实现 Shortcut Map 和统一控制规范。**
 
   将快捷键定义从组件事件中集中出来；展示可搜索的 Shortcut Map；同一动作提供按钮、快捷键和可访问名称，不让浏览器、终端和 Relay 互相抢占。
 
-- [ ] **Step 3: 收敛视觉层级。**
+- [x] **Step 3: 收敛视觉层级。**
 
   终端占主要视觉空间；资产使用卡片/列表；减少顶部按钮、无意义渐变和过量阴影；用环境徽标、协议、最近活动和 Host Key 状态辅助扫视。
 
-- [ ] **Step 4: 运行页面级验证。**
+- [x] **Step 4: 运行页面级验证。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -719,7 +720,7 @@ export interface ShortcutDefinition {
   npm run test:e2e -- --project=chromium tests/e2e/host-to-terminal.spec.ts
   ```
 
-- [ ] **Step 5: 提交 UI 基础 slice。**
+- [x] **Step 5: 提交 UI 基础 slice。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -728,9 +729,18 @@ export interface ShortcutDefinition {
   git commit -m "feat: standardize relay interaction and accessibility"
   ```
 
+  Feature commit：`4ee6efd`（`feat: standardize relay interaction and accessibility`）。
+
 **Acceptance:** 核心任务可以键盘或触控完成；320/390px 和短视口不溢出；高风险操作可读、可聚焦、可撤销/拒绝；主题和状态不依赖颜色单独传达。
 
-**Verification:** 组件 DOM/keyboard tests、Chromium 320/390px 与短视口验证、可访问性审查和主题切换人工走查；纯视觉调整不触发无关全量测试。
+**Verification:**
+
+- [x] Focused DOM/keyboard 回归：9 个文件、42 个测试通过；覆盖普通输入框不抢快捷键、终端 Ctrl/Cmd+C 与 Ctrl/Cmd+K 语义、Alt+数字聚焦面板、Dialog/Host Key 焦点循环和 icon-only tooltip。
+- [x] Chromium：`npm run test:e2e -- --project=chromium tests/e2e/host-to-terminal.spec.ts`，1/1 通过；覆盖表单输入、快捷键面板、高对比主题、320px/390px 宽度和 430px 短视口无横向溢出。
+- [x] 静态检查：`npm run typecheck`、`npm run lint` 通过。
+- [x] 生产构建：`npm run build` 通过；仅保留既有前端 chunk 超过 500 kB 的提示。
+- [x] `git diff --check` 通过；代码 feature commit：`4ee6efd`。
+- [ ] 证据缺口：真实屏幕阅读器（NVDA/VoiceOver）、实体移动设备软键盘和原生触控拖放尚未覆盖，保留给移动端/跨端验证（X-02）和后续可访问性专项。
 
 ---
 
