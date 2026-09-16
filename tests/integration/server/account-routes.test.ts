@@ -240,6 +240,12 @@ describe('optional account routes', () => {
     const pending = await app.inject({ method: 'GET', url: '/api/account/deletion', headers: { cookie: recoveryCookie } });
     expect(pending.statusCode).toBe(200);
     expect(json<{ deletion: { kind: string } }>(pending).deletion.kind).toBe('account');
+    const pendingSyncState = await app.inject({ method: 'GET', url: '/api/sync/v1/state', headers: { cookie: recoveryCookie } });
+    expect(pendingSyncState.statusCode).toBe(200);
+    expect(pendingSyncState.json()).toEqual({ sync: 'local-only', head: null, pendingCount: 0, lastErrorCode: 'ACCOUNT_DELETION_PENDING' });
+    const blockedPendingDescriptor = await app.inject({ method: 'GET', url: '/api/sync/v1/descriptor', headers: { cookie: recoveryCookie } });
+    expect(blockedPendingDescriptor.statusCode).toBe(409);
+    expect(blockedPendingDescriptor.json().error.code).toBe('ACCOUNT_DELETION_PENDING');
 
     const restoreWithoutReauth = await app.inject({
       method: 'POST',

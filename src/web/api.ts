@@ -360,13 +360,14 @@ const parseSyncStateResponse = (value: unknown): WebSyncStateResponse => {
   let deletion: SyncState['deletion'] | undefined;
   if (value.deletion !== undefined) {
     if (!isRecord(value.deletion)
-      || !hasExactKeys(value.deletion, ['deleteAfter', 'requestedAt', 'remainingMs'])
+      || !hasExactKeys(value.deletion, ['kind', 'deleteAfter', 'requestedAt', 'remainingMs'])
+      || value.deletion.kind !== 'cloud-sync'
       || !isIsoDate(value.deletion.deleteAfter)
       || !isIsoDate(value.deletion.requestedAt)
       || typeof value.deletion.remainingMs !== 'number'
       || !Number.isFinite(value.deletion.remainingMs)
       || value.deletion.remainingMs < 0) return invalidResponse();
-    deletion = { deleteAfter: value.deletion.deleteAfter, requestedAt: value.deletion.requestedAt, remainingMs: value.deletion.remainingMs };
+    deletion = { kind: 'cloud-sync', deleteAfter: value.deletion.deleteAfter, requestedAt: value.deletion.requestedAt, remainingMs: value.deletion.remainingMs };
   }
   return {
     sync: value.sync,

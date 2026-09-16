@@ -11,6 +11,7 @@ import type {
   RecoveryKeyState,
   VaultRecoveryPreview,
   SyncResolution,
+  SyncDeletionState,
   SyncState,
   SyncStatus,
   VaultUnlockEnvelope
@@ -183,7 +184,15 @@ export class SyncService implements SyncServiceContract {
   }
 
   status(accountId: string): SyncState {
-    this.store.purgeExpiredVault(accountId, new Date(this.clock()).toISOString());
+    const deletion = this.activeDeleteRequest(accountId);
+    if (deletion) {
+      return {
+        sync: 'local-only',
+        head: null,
+        pendingCount: 0,
+        deletion: this.toDeletionState(deletion)
+      };
+    }
     const descriptor = this.store.getDescriptor(accountId);
     if (!descriptor) return { sync: 'local-only', head: null, pendingCount: 0 };
 
@@ -200,7 +209,6 @@ export class SyncService implements SyncServiceContract {
       sync = 'pending';
     }
 
-    const deletion = this.store.getDeleteRequest(accountId);
     const state: SyncState = {
       sync,
       head,
@@ -208,18 +216,12 @@ export class SyncService implements SyncServiceContract {
       recovery: recoveryKeyStateFromDescriptor(descriptor),
       ...(clientState?.errorCode === null || clientState?.errorCode === undefined ? {} : { lastErrorCode: clientState.errorCode }),
       ...(head ? { lastSyncedAt: head.updatedAt } : {}),
-      ...(deletion ? {
-        deletion: {
-          ...deletion,
-          remainingMs: Math.max(0, Date.parse(deletion.deleteAfter) - this.clock())
-        }
-      } : {})
     };
     return state;
   }
 
   getDescriptor(accountId: string): SyncDescriptor | null {
-    this.store.purgeExpiredVault(accountId, new Date(this.clock()).toISOString());
+    this.assertCloudSyncAvailable(accountId);
     return this.store.getDescriptor(accountId);
   }
 
@@ -228,7 +230,7 @@ export class SyncService implements SyncServiceContract {
   }
 
   getEnvelope(accountId: string): SyncEnvelope | null {
-    this.store.purgeExpiredVault(accountId, new Date(this.clock()).toISOString());
+    this.assertCloudSyncAvailable(accountId);
     return this.store.getEnvelope(accountId);
   }
 
@@ -239,6 +241,7 @@ export class SyncService implements SyncServiceContract {
     vaultKey: Buffer,
     vaultConfig: VaultConfig
   ): Promise<SyncHead> {
+    this.assertCloudSyncAvailable(accountId);
     let descriptor = this.store.getDescriptor(accountId);
     let syncKey: Buffer;
     if (descriptor) {
@@ -272,6 +275,7 @@ export class SyncService implements SyncServiceContract {
         keyVersion: descriptor.keyVersion,
         plaintext
       });
+      this.assertCloudSyncAvailable(accountId);
       this.store.saveDescriptor(accountId, descriptor);
       const head = this.store.putEnvelope(accountId, envelope, `enable:${accountId}:${descriptor.vaultId}`);
       this.store.clearClientState(accountId);
@@ -345,6 +349,7 @@ export class SyncService implements SyncServiceContract {
   }
 
   async prepareEnvelope(accountId: string, ownerId: string, deviceId: string, vaultKey: Buffer): Promise<SyncEnvelope> {
+    this.assertCloudSyncAvailable(accountId);
     const descriptor = this.store.getDescriptor(accountId);
     if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
     const current = this.store.getHead(accountId);
@@ -352,6 +357,7 @@ export class SyncService implements SyncServiceContract {
     let plaintext: Buffer | undefined;
     try {
       plaintext = await this.snapshotService.create(ownerId, vaultKey);
+      this.assertCloudSyncAvailable(accountId);
       return encryptSyncPayload({
         syncKey,
         vaultId: descriptor.vaultId,
@@ -372,12 +378,14 @@ export class SyncService implements SyncServiceContract {
   }
 
   push(accountId: string, envelope: SyncEnvelope, idempotencyKey: string): SyncHead {
+    this.assertCloudSyncAvailable(accountId);
     const head = this.store.putEnvelope(accountId, envelope, idempotencyKey);
     this.store.clearClientState(accountId);
     return head;
   }
 
   async previewPull(accountId: string, ownerId: string, vaultKey: Buffer): Promise<SyncPreview> {
+    this.assertCloudSyncAvailable(accountId);
     const descriptor = this.getDescriptor(accountId);
     if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
     const remote = this.getEnvelope(accountId);
@@ -387,6 +395,7 @@ export class SyncService implements SyncServiceContract {
     try {
       plaintext = decryptSyncPayload(syncKey, remote);
       const preview = await this.snapshotService.previewApply(ownerId, vaultKey, plaintext);
+      this.assertCloudSyncAvailable(accountId);
       const pending = this.store.getClientState(accountId)?.pendingEnvelope;
       if (pending && pending.payloadHash !== remote.payloadHash && pending.parentRevision !== remote.revision) {
         const conflictId = this.store.saveConflict(accountId, pending, remote);
@@ -413,6 +422,7 @@ export class SyncService implements SyncServiceContract {
 
   async previewRecovery(accountId: string, deviceId: string, ownerId: string, vaultKey: Buffer): Promise<VaultRecoveryPreview> {
     this.pruneRecoveryPreviews();
+    this.assertCloudSyncAvailable(accountId);
     const descriptor = this.getDescriptor(accountId);
     if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
     const remote = this.getEnvelope(accountId);
@@ -461,6 +471,7 @@ export class SyncService implements SyncServiceContract {
     afterApply?: () => void
   ): Promise<void> {
     this.pruneRecoveryPreviews();
+    this.assertCloudSyncAvailable(accountId);
     const pending = this.recoveryPreviews.get(previewId);
     if (!pending || pending.accountId !== accountId || pending.deviceId !== deviceId || pending.ownerId !== ownerId) {
       throw new AppError('SYNC_NOT_FOUND');
@@ -508,6 +519,7 @@ export class SyncService implements SyncServiceContract {
     conflictId: string,
     exportPassword: string
   ): Promise<SyncConflictExport> {
+    this.assertCloudSyncAvailable(accountId);
     assertSyncConflictExportPassword(exportPassword);
     const conflict = this.store.getConflict(accountId, conflictId);
     if (!conflict) throw new AppError('SYNC_NOT_FOUND');
@@ -576,6 +588,7 @@ export class SyncService implements SyncServiceContract {
     conflictId: string,
     resolution: SyncResolution
   ): Promise<void> {
+    this.assertCloudSyncAvailable(accountId);
     const conflict = this.store.getConflict(accountId, conflictId);
     if (!conflict) throw new AppError('SYNC_NOT_FOUND');
     if (resolution === 'export-both') throw new AppError('SYNC_CONFLICT', '请先导出本地和远端副本');
@@ -591,6 +604,7 @@ export class SyncService implements SyncServiceContract {
     try {
       plaintext = decryptSyncPayload(syncKey, conflict.remote);
       await this.snapshotService.apply(ownerId, vaultKey, plaintext, 'use-remote');
+      this.assertCloudSyncAvailable(accountId);
       this.store.resolveConflict(accountId, conflictId);
       this.store.clearClientState(accountId);
     } finally {
@@ -609,6 +623,7 @@ export class SyncService implements SyncServiceContract {
     status: Extract<SyncStatus, 'pending' | 'offline' | 'conflict' | 'needs-unlock' | 'device-revoked'>,
     errorCode: string | null = null
   ): void {
+    if (this.activeDeleteRequest(accountId)) return;
     this.store.saveClientState(accountId, {
       pendingEnvelope: envelope,
       status,
@@ -618,13 +633,14 @@ export class SyncService implements SyncServiceContract {
   }
 
   markSynced(accountId: string): void {
+    if (this.activeDeleteRequest(accountId)) return;
     this.store.clearClientState(accountId);
   }
 
   requestDeletion(accountId: string): SyncDeleteRequest {
-    if (!this.getDescriptor(accountId)) throw new AppError('SYNC_NOT_ENABLED');
-    const existing = this.store.getDeleteRequest(accountId);
-    if (existing) return existing;
+    const existing = this.activeDeleteRequest(accountId);
+    if (existing) throw new AppError('SYNC_DELETE_PENDING');
+    if (!this.store.getDescriptor(accountId)) throw new AppError('SYNC_NOT_ENABLED');
     const deleteAfter = new Date(this.clock() + SYNC_DELETE_GRACE_MS).toISOString();
     this.store.deleteAccountVault(accountId, deleteAfter);
     const request = this.store.getDeleteRequest(accountId);
@@ -633,10 +649,11 @@ export class SyncService implements SyncServiceContract {
   }
 
   getDeleteRequest(accountId: string): SyncDeleteRequest | null {
-    return this.store.getDeleteRequest(accountId);
+    return this.activeDeleteRequest(accountId);
   }
 
   restoreDeletion(accountId: string): void {
+    if (!this.activeDeleteRequest(accountId)) throw new AppError('SYNC_NOT_FOUND');
     this.store.restoreDeleteRequest(accountId);
   }
 
@@ -650,6 +667,24 @@ export class SyncService implements SyncServiceContract {
       if (typeof first !== 'string') return;
       this.recoveryPreviews.delete(first);
     }
+  }
+
+  private activeDeleteRequest(accountId: string): SyncDeleteRequest | null {
+    this.store.purgeExpiredVault(accountId, new Date(this.clock()).toISOString());
+    return this.store.getDeleteRequest(accountId);
+  }
+
+  private assertCloudSyncAvailable(accountId: string): void {
+    if (this.activeDeleteRequest(accountId)) throw new AppError('SYNC_DELETE_PENDING');
+  }
+
+  private toDeletionState(request: SyncDeleteRequest): SyncDeletionState {
+    return {
+      kind: 'cloud-sync',
+      deleteAfter: request.deleteAfter,
+      requestedAt: request.requestedAt,
+      remainingMs: Math.max(0, Date.parse(request.deleteAfter) - this.clock())
+    };
   }
 }
 
@@ -687,6 +722,7 @@ export class SyncCoordinator implements SyncCoordinatorPort {
     if (!accountSessionId) return;
     const account = this.accountService.status(accountSessionId);
     if (!account) return;
+    if (this.isDeletionBlocked(account.accountId)) return;
     const vaultSessionId = getSessionId(request);
     if (!vaultSessionId) return;
     const vaultSession = this.sessionStore.get(vaultSessionId);
@@ -703,7 +739,7 @@ export class SyncCoordinator implements SyncCoordinatorPort {
   }
 
   markDirty(context: SyncMutationContext): void {
-    if (this.stopped) return;
+    if (this.stopped || this.isDeletionBlocked(context.accountId)) return;
     const seen = this.requestIds.get(context.accountId) ?? new Set<string>();
     if (seen.has(context.requestId)) return;
     seen.add(context.requestId);
@@ -713,7 +749,7 @@ export class SyncCoordinator implements SyncCoordinatorPort {
     const prior = this.queues.get(context.accountId) ?? Promise.resolve();
     const task = prior
       .then(async () => {
-        if (!this.isActive(context.accountId, generation)) return;
+        if (!this.isActive(context.accountId, generation) || this.isDeletionBlocked(context.accountId)) return;
         await this.process(context, generation);
       })
       .catch((error: unknown) => {
@@ -728,15 +764,16 @@ export class SyncCoordinator implements SyncCoordinatorPort {
   }
 
   async retry(accountId: string): Promise<void> {
-    if (this.stopped) return;
+    if (this.stopped || this.isDeletionBlocked(accountId)) return;
     this.clearRetryTimer(accountId);
     const generation = this.generations.get(accountId) ?? 0;
     const prior = this.queues.get(accountId) ?? Promise.resolve();
     const task = prior.then(async () => {
-      if (!this.isActive(accountId, generation)) return;
+      if (!this.isActive(accountId, generation) || this.isDeletionBlocked(accountId)) return;
       const state = this.syncService.getClientState(accountId);
       if (!state?.pendingEnvelope) return;
       try {
+        if (this.isDeletionBlocked(accountId)) return;
         await this.transport.push(accountId, state.pendingEnvelope, syncEnvelopeIdempotencyKey(accountId, state.pendingEnvelope));
         if (!this.isActive(accountId, generation)) return;
         this.syncService.markSynced(accountId);
@@ -758,6 +795,10 @@ export class SyncCoordinator implements SyncCoordinatorPort {
   cancelAccount(accountId: string): void {
     this.generations.set(accountId, (this.generations.get(accountId) ?? 0) + 1);
     this.clearRetryTimer(accountId);
+    if (this.isDeletionBlocked(accountId)) {
+      this.dirtyAccounts.delete(accountId);
+      return;
+    }
     const state = this.syncService.getClientState(accountId);
     if (this.dirtyAccounts.has(accountId) && !state?.pendingEnvelope) {
       this.syncService.savePending(accountId, null, 'needs-unlock', state?.errorCode ?? 'SESSION_INVALID');
@@ -781,15 +822,16 @@ export class SyncCoordinator implements SyncCoordinatorPort {
   }
 
   private async process(context: SyncMutationContext, generation: number): Promise<void> {
-    if (!this.isActive(context.accountId, generation)) return;
+    if (!this.isActive(context.accountId, generation) || this.isDeletionBlocked(context.accountId)) return;
     if (!this.sessionStore.get(context.vaultSessionId)) {
       const state = this.syncService.getClientState(context.accountId);
       this.syncService.savePending(context.accountId, state?.pendingEnvelope ?? null, 'needs-unlock', state?.errorCode ?? 'SESSION_INVALID');
       return;
     }
     const envelope = await this.syncService.prepareEnvelope(context.accountId, context.ownerId, context.deviceId, context.vaultKey);
-    if (!this.isActive(context.accountId, generation)) return;
+    if (!this.isActive(context.accountId, generation) || this.isDeletionBlocked(context.accountId)) return;
     this.syncService.savePending(context.accountId, envelope, 'pending');
+    if (!this.isActive(context.accountId, generation) || this.isDeletionBlocked(context.accountId)) return;
     await this.transport.push(context.accountId, envelope, syncEnvelopeIdempotencyKey(context.accountId, envelope));
     if (!this.isActive(context.accountId, generation)) return;
     this.syncService.markSynced(context.accountId);
@@ -803,6 +845,10 @@ export class SyncCoordinator implements SyncCoordinatorPort {
 
   private recordFailureForAccount(accountId: string, error: unknown, vaultSessionId?: string): void {
     const code = errorCodeOf(error);
+    if (code === 'SYNC_DELETE_PENDING' || code === 'ACCOUNT_DELETION_PENDING') {
+      this.dirtyAccounts.delete(accountId);
+      return;
+    }
     if (code === 'SYNC_NOT_ENABLED' || code === 'SYNC_NOT_FOUND') {
       this.dirtyAccounts.delete(accountId);
       return;
@@ -841,6 +887,10 @@ export class SyncCoordinator implements SyncCoordinatorPort {
 
   private isActive(accountId: string, generation: number): boolean {
     return !this.stopped && (this.generations.get(accountId) ?? 0) === generation;
+  }
+
+  private isDeletionBlocked(accountId: string): boolean {
+    return this.accountService.isDeletionPending(accountId) || this.syncService.getDeleteRequest(accountId) !== null;
   }
 }
 

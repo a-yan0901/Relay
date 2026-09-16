@@ -209,6 +209,11 @@ export class AccountService {
     return session;
   }
 
+  clearReauthentication(sessionId: string): void {
+    this.requireSession(sessionId);
+    this.sessionStore.clearReauthentication(sessionId);
+  }
+
   getDeletion(sessionId: string): AccountDeletionState | null {
     const session = this.requireSession(sessionId);
     const request = this.accountRepository.getAccountDeletionRequest(session.accountId);

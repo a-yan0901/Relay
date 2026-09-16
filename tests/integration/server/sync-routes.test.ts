@@ -959,36 +959,66 @@ describe('blind sync storage and snapshot bridge', () => {
     const missingConfirmation = await app.inject({ method: 'POST', url: '/api/sync/v1/vault/delete', headers: { origin: ORIGIN, cookie: accountCookie }, payload: {} });
     expect(missingConfirmation.statusCode).toBe(400);
     expect(missingConfirmation.json().error.code).toBe('SYNC_DELETE_CONFIRMATION_REQUIRED');
+    const forgedReauth = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/vault/delete',
+      headers: { origin: ORIGIN, cookie: accountCookie },
+      payload: { reauthenticated: true, confirmDelete: 'DELETE MY CLOUD VAULT' }
+    });
+    expect(forgedReauth.statusCode).toBe(400);
+    expect(forgedReauth.json().error.code).toBe('SYNC_DELETE_CONFIRMATION_REQUIRED');
+
     const missingReauth = await app.inject({
       method: 'POST',
       url: '/api/sync/v1/vault/delete',
       headers: { origin: ORIGIN, cookie: accountCookie },
-      payload: { reauthenticated: false, confirmDelete: 'DELETE MY CLOUD VAULT' }
+      payload: { confirmDelete: 'DELETE MY CLOUD VAULT' }
     });
-    expect(missingReauth.statusCode).toBe(400);
-    expect(missingReauth.json().error.code).toBe('SYNC_DELETE_CONFIRMATION_REQUIRED');
+    expect(missingReauth.statusCode).toBe(401);
+    expect(missingReauth.json().error.code).toBe('ACCOUNT_REAUTH_REQUIRED');
+
+    const reauthenticated = await app.inject({
+      method: 'POST',
+      url: '/api/account/session/reauth',
+      headers: { origin: ORIGIN, cookie: accountCookie },
+      payload: { password: ACCOUNT_PASSWORD }
+    });
+    expect(reauthenticated.statusCode).toBe(204);
 
     const requested = await app.inject({
       method: 'POST',
       url: '/api/sync/v1/vault/delete',
       headers: { origin: ORIGIN, cookie: accountCookie },
-      payload: { reauthenticated: true, confirmDelete: 'DELETE MY CLOUD VAULT' }
+      payload: { confirmDelete: 'DELETE MY CLOUD VAULT' }
     });
     expect(requested.statusCode).toBe(202);
     const state = await app.inject({ method: 'GET', url: '/api/sync/v1/state', headers: { cookie: accountCookie } });
-    expect(state.json()).toEqual(expect.objectContaining({ deletion: expect.objectContaining({ deleteAfter: expect.any(String), remainingMs: expect.any(Number) }) }));
-    expect((await app.inject({ method: 'GET', url: '/api/sync/v1/descriptor', headers: { cookie: accountCookie } })).json().descriptor).not.toBeNull();
+    expect(state.json()).toEqual(expect.objectContaining({ sync: 'local-only', head: null, pendingCount: 0, deletion: expect.objectContaining({ kind: 'cloud-sync', deleteAfter: expect.any(String), remainingMs: expect.any(Number) }) }));
+    const blockedDescriptor = await app.inject({ method: 'GET', url: '/api/sync/v1/descriptor', headers: { cookie: accountCookie } });
+    expect(blockedDescriptor.statusCode).toBe(409);
+    expect(blockedDescriptor.json().error.code).toBe('SYNC_DELETE_PENDING');
+    const blockedEnvelope = await app.inject({ method: 'GET', url: '/api/sync/v1/envelope', headers: { cookie: accountCookie } });
+    expect(blockedEnvelope.statusCode).toBe(409);
+    expect(blockedEnvelope.json().error.code).toBe('SYNC_DELETE_PENDING');
+    const blockedRetry = await app.inject({ method: 'POST', url: '/api/sync/v1/retry', headers: { origin: ORIGIN, cookie: accountCookie } });
+    expect(blockedRetry.statusCode).toBe(409);
+    expect(blockedRetry.json().error.code).toBe('SYNC_DELETE_PENDING');
     expect((await app.inject({ method: 'GET', url: '/api/session', headers: { cookie: vaultCookie } })).json()).toEqual({ initialized: true, locked: false });
 
-    const restored = await app.inject({ method: 'POST', url: '/api/sync/v1/vault/restore', headers: { origin: ORIGIN, cookie: accountCookie } });
+    const restoreWithoutReauth = await app.inject({ method: 'POST', url: '/api/sync/v1/vault/restore', headers: { origin: ORIGIN, cookie: accountCookie }, payload: {} });
+    expect(restoreWithoutReauth.statusCode).toBe(401);
+    expect(restoreWithoutReauth.json().error.code).toBe('ACCOUNT_REAUTH_REQUIRED');
+    await app.inject({ method: 'POST', url: '/api/account/session/reauth', headers: { origin: ORIGIN, cookie: accountCookie }, payload: { password: ACCOUNT_PASSWORD } });
+    const restored = await app.inject({ method: 'POST', url: '/api/sync/v1/vault/restore', headers: { origin: ORIGIN, cookie: accountCookie }, payload: {} });
     expect(restored.statusCode).toBe(204);
     expect((await app.inject({ method: 'GET', url: '/api/sync/v1/state', headers: { cookie: accountCookie } })).json()).not.toHaveProperty('deletion');
 
+    await app.inject({ method: 'POST', url: '/api/account/session/reauth', headers: { origin: ORIGIN, cookie: accountCookie }, payload: { password: ACCOUNT_PASSWORD } });
     const requestedAgain = await app.inject({
       method: 'POST',
       url: '/api/sync/v1/vault/delete',
       headers: { origin: ORIGIN, cookie: accountCookie },
-      payload: { reauthenticated: true, confirmDelete: 'DELETE MY CLOUD VAULT' }
+      payload: { confirmDelete: 'DELETE MY CLOUD VAULT' }
     });
     expect(requestedAgain.statusCode).toBe(202);
     database.prepare('UPDATE sync_delete_requests SET delete_after = ? WHERE account_id = (SELECT id FROM accounts WHERE email = ?)').run(new Date(Date.now() - 1_000).toISOString(), 'delete@example.com');
@@ -998,5 +1028,64 @@ describe('blind sync storage and snapshot bridge', () => {
     expect(expired.json()).toEqual({ sync: 'local-only', head: null, pendingCount: 0 });
     expect((await app.inject({ method: 'GET', url: '/api/sync/v1/descriptor', headers: { cookie: accountCookie } })).json()).toEqual({ descriptor: null });
     expect((await app.inject({ method: 'GET', url: '/api/hosts', headers: { cookie: vaultCookie } })).json()).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Retained local host' })]));
+  });
+
+  it('does not start queued coordinator uploads after cloud deletion becomes pending', async () => {
+    let pushCalls = 0;
+    let releaseFirstPush: (() => void) | undefined;
+    let signalFirstPush: () => void = () => undefined;
+    const firstPushStarted = new Promise<void>((resolve) => { signalFirstPush = resolve; });
+    const firstPushGate = new Promise<void>((resolve) => { releaseFirstPush = resolve; });
+    const { app } = await makeApp(() => ({
+      async push(_accountId, envelope) {
+        pushCalls += 1;
+        if (pushCalls === 1) {
+          signalFirstPush();
+          await firstPushGate;
+        }
+        return {
+          vaultId: envelope.vaultId,
+          revision: envelope.revision,
+          keyVersion: envelope.keyVersion,
+          payloadHash: envelope.payloadHash,
+          updatedAt: '2026-09-17T00:00:00.000Z'
+        };
+      }
+    }));
+    const registered = await app.inject({ method: 'POST', url: '/api/account/register', headers: { origin: ORIGIN }, payload: { email: 'queued-delete@example.com', password: ACCOUNT_PASSWORD } });
+    const accountCookie = cookieFrom(registered, 'relay_account_session');
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', headers: { origin: ORIGIN }, payload: { masterPassword: MASTER_PASSWORD } });
+    const vaultCookie = cookieFrom(setup, 'webssh_session');
+    const cookies = `${accountCookie}; ${vaultCookie}`;
+    expect((await app.inject({ method: 'POST', url: '/api/sync/v1/enable', headers: { origin: ORIGIN, cookie: cookies } })).statusCode).toBe(201);
+
+    const firstMutation = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { name: 'Queued host one', address: '127.0.0.11', username: 'fixture', auth: { type: 'password', password: 'fixture-password' } }
+    });
+    expect(firstMutation.statusCode).toBe(201);
+    await firstPushStarted;
+
+    const secondMutation = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { name: 'Queued host two', address: '127.0.0.12', username: 'fixture', auth: { type: 'password', password: 'fixture-password' } }
+    });
+    expect(secondMutation.statusCode).toBe(201);
+    await app.inject({ method: 'POST', url: '/api/account/session/reauth', headers: { origin: ORIGIN, cookie: accountCookie }, payload: { password: ACCOUNT_PASSWORD } });
+    const deletion = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/vault/delete',
+      headers: { origin: ORIGIN, cookie: accountCookie },
+      payload: { confirmDelete: 'DELETE MY CLOUD VAULT' }
+    });
+    expect(deletion.statusCode).toBe(202);
+
+    releaseFirstPush?.();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(pushCalls).toBe(1);
   });
 });

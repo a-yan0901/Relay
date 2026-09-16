@@ -171,11 +171,7 @@ export interface SyncState {
   lastErrorCode?: string;
   lastSyncedAt?: string;
   recovery?: RecoveryKeyState;
-  deletion?: {
-    deleteAfter: string;
-    requestedAt: string;
-    remainingMs: number;
-  };
+  deletion?: SyncDeletionState;
 }
 
 export interface ReconnectPolicy {
