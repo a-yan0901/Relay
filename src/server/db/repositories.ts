@@ -1567,7 +1567,7 @@ export class TransferRepository {
   deleteExpired(cutoff: string): void {
     this.database.prepare(`
       DELETE FROM transfer_jobs
-      WHERE owner_id = @ownerId AND status IN ('completed', 'failed', 'cancelled', 'interrupted') AND updated_at <= @cutoff
+      WHERE owner_id = @ownerId AND status IN ('paused', 'completed', 'failed', 'cancelled', 'interrupted') AND updated_at <= @cutoff
     `).run({ ownerId: this.ownerId, cutoff });
   }
 }

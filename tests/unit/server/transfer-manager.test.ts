@@ -269,4 +269,33 @@ describe('TransferManager', () => {
     expect(nextResource.target.toString()).toBe('hello world');
     expect(completed.checkpoint?.checksum).toBe(finalChecksum);
   });
+
+  it('pauses an in-flight upload, keeps its temporary checkpoint, and resumes after an explicit retry', async () => {
+    let resolveWrite!: () => void;
+    let writeStarted!: () => void;
+    const started = new Promise<void>((resolve) => { writeStarted = resolve; });
+    const nextResource = fakeResource({
+      writeFile: async (_path, source, onProgress, signal) => {
+        let completed = 0;
+        for await (const chunk of source) {
+          completed += chunk.byteLength;
+          onProgress?.(completed);
+          writeStarted();
+          await new Promise<void>((resolve) => { resolveWrite = resolve; });
+          if (signal?.aborted) throw new AppError('TRANSFER_CANCELLED');
+        }
+      }
+    });
+    const manager = new TransferManager({ resourceProvider: { open: async () => ({ resource: nextResource, close: () => nextResource.close() }) } });
+    const job = await manager.create({ kind: 'upload', hostId: 'host-1', sourcePath: 'local.txt', targetPath: '/remote.txt', totalBytes: 5 });
+    const upload = manager.consumeUpload(job.id, chunks(['hello']));
+    await started;
+
+    await manager.pause(job.id);
+    resolveWrite();
+    await expect(upload).rejects.toMatchObject({ code: 'TRANSFER_CANCELLED' });
+    expect(await manager.get(job.id)).toMatchObject({ status: 'paused', completedBytes: 5, checkpoint: { offset: 5 } });
+
+    expect((await manager.retry(job.id)).status).toBe('queued');
+  });
 });

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { HostMetadataState, TerminalTabState } from '../../../src/web/state/app-state';
 import type { WorkspaceLayout } from '../../../src/shared/core/models';
+import type { FileTransport } from '../../../src/shared/core/ports';
 import type { TerminalSessionSnapshot } from '../../../src/web/hooks/use-terminal-session';
 import { HostKeyDialog } from '../../../src/web/components/HostKeyDialog';
 import { TerminalToolbar } from '../../../src/web/components/TerminalToolbar';
@@ -175,6 +176,35 @@ describe('TerminalWorkspace', () => {
 
     await user.click(screen.getByRole('button', { name: '模拟 tab-2 错误' }));
     expect(screen.getByLabelText('未读错误')).toBeInTheDocument();
+  });
+
+  it('keeps the active Host file context in a dual-pane workspace and returns to the terminal', async () => {
+    const user = userEvent.setup();
+    const fileTransport: Pick<FileTransport, 'list' | 'createDirectory' | 'rename' | 'remove'> = {
+      list: vi.fn(async () => [{ name: '.env', path: '/.env', type: 'file' as const, size: 2, mode: 0o600, modifiedAt: null }]),
+      createDirectory: vi.fn(async () => {}),
+      rename: vi.fn(async () => {}),
+      remove: vi.fn(async () => {})
+    };
+    render(
+      <TerminalWorkspace
+        hosts={[host('host-1', 'Production')]}
+        terminals={[{ terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null }]}
+        activeTerminalId="tab-1"
+        onActivate={vi.fn()}
+        onClose={vi.fn()}
+        fileTransport={fileTransport}
+        transferJobs={[]}
+        onUploadSftp={vi.fn(async () => {})}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '远程文件' }));
+    expect(await screen.findByRole('region', { name: 'SFTP 工作区' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '本地文件' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '传输中心' })).toHaveTextContent('暂无文件传输');
+    await user.click(screen.getByRole('button', { name: '返回终端' }));
+    expect(screen.queryByRole('region', { name: 'SFTP 工作区' })).not.toBeInTheDocument();
   });
 
   it('embeds the global header and session tools into the single terminal bar', async () => {

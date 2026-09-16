@@ -117,12 +117,26 @@ test.describe('SSH productivity boundaries', () => {
 
     await page.getByRole('button', { name: '远程文件' }).click();
     const filePanel = page.locator('.sftp-panel');
+    const fileWorkspace = page.getByRole('region', { name: 'SFTP 工作区' });
+    await expect(fileWorkspace.getByRole('heading', { name: '本地文件' })).toBeVisible();
+    await expect(fileWorkspace.getByRole('heading', { name: '传输中心' })).toBeVisible();
+    const desktopFileColumns = await fileWorkspace.locator('.sftp-workspace-columns').evaluate((element) => getComputedStyle(element).gridTemplateColumns);
+    expect(desktopFileColumns.split(' ').length).toBeGreaterThanOrEqual(2);
+    await page.setViewportSize({ width: 390, height: 640 });
+    const mobileFileLayout = await fileWorkspace.locator('.sftp-workspace-columns').evaluate((element) => ({
+      columns: getComputedStyle(element).gridTemplateColumns,
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth
+    }));
+    expect(mobileFileLayout.columns.split(' ').length).toBe(1);
+    expect(mobileFileLayout.documentWidth).toBeLessThanOrEqual(mobileFileLayout.viewportWidth);
+    await page.setViewportSize({ width: 1280, height: 900 });
     await expect(filePanel.getByText('正在读取目录…')).toBeHidden({ timeout: 15_000 });
     await filePanel.getByRole('textbox', { name: '远程路径', exact: true }).fill(fixture.remoteDirectory);
     await filePanel.getByRole('button', { name: '跳转' }).click();
     await expect(filePanel.getByRole('button', { name: fixture.knownFileName, exact: true })).toBeVisible({ timeout: 15_000 });
 
-    await filePanel.getByLabel('选择上传文件').setInputFiles({
+    await page.locator('.local-file-panel').getByLabel('选择本地文件').setInputFiles({
       name: 'browser-upload.txt',
       mimeType: 'text/plain',
       buffer: Buffer.from('browser-upload-content\n')

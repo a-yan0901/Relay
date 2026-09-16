@@ -89,6 +89,20 @@ describe('parseTerminalClientMessage', () => {
     })).toThrow();
   });
 
+  it('accepts an intentional paused transfer with an explicit resume action', () => {
+    expect(operationDiagnosticSchema.parse({
+      operationId: 'transfer-1',
+      hostId: 'host-1',
+      kind: 'transfer',
+      stage: 'sftp',
+      state: 'paused',
+      retryable: true,
+      nextAction: 'resume',
+      startedAt: '2026-09-16T00:00:00.000Z',
+      endedAt: '2026-09-16T00:00:01.000Z'
+    })).toEqual(expect.objectContaining({ state: 'paused', nextAction: 'resume' }));
+  });
+
   it.each([
     { type: 'resize', cols: 0, rows: 24 },
     { type: 'resize', cols: 80, rows: -1 },

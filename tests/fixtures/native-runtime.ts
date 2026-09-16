@@ -123,6 +123,10 @@ const createFileTransport = (): FileTransport => {
       const current = transfers.get(id);
       if (current) transfers.set(id, { ...current, status: 'cancelled' });
     },
+    async pauseTransfer(id) {
+      const current = transfers.get(id);
+      if (current && (current.status === 'queued' || current.status === 'running')) transfers.set(id, { ...current, status: 'paused' });
+    },
     async retryTransfer(id) {
       const current = transfers.get(id);
       if (!current) throw new Error('transfer not found');

@@ -24,6 +24,7 @@ export const operationNextAction = (
   errorCode?: string
 ): OperationNextAction => {
   if (state === 'running') return 'wait';
+  if (state === 'paused') return 'resume';
   if (state === 'completed' || state === 'cancelled') return 'none';
   if (state === 'interrupted' || state === 'needs-reopen') return state === 'needs-reopen' ? 'reopen' : 'retry';
   if (errorCode === 'SSH_AUTH_FAILED' || errorCode === 'IMPORT_RECORD_INVALID') return 'edit-credentials';
@@ -233,6 +234,7 @@ export interface TransferState {
 export type TransferEvent =
   | { type: 'start'; totalBytes?: number | null }
   | { type: 'progress'; completedBytes: number; checkpointOffset?: number }
+  | { type: 'paused' }
   | { type: 'completed' }
   | { type: 'failed'; code: string }
   | { type: 'interrupted'; code: string }
@@ -270,6 +272,9 @@ export const transitionTransfer = (state: TransferState, event: TransferEvent): 
     case 'completed':
       if (state.status !== 'running') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'completed', completedBytes: state.totalBytes ?? state.completedBytes };
+    case 'paused':
+      if (state.status !== 'queued' && state.status !== 'running') throw invalidTransition(state.status, event.type);
+      return { ...state, status: 'paused', errorCode: undefined };
     case 'failed':
       if (state.status !== 'running' && state.status !== 'queued') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'failed', errorCode: event.code };
@@ -277,10 +282,10 @@ export const transitionTransfer = (state: TransferState, event: TransferEvent): 
       if (state.status !== 'queued' && state.status !== 'running') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'interrupted', errorCode: event.code };
     case 'cancelled':
-      if (state.status !== 'queued' && state.status !== 'running') throw invalidTransition(state.status, event.type);
+      if (state.status !== 'queued' && state.status !== 'running' && state.status !== 'paused') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'cancelled' };
     case 'retry':
-      if (state.status !== 'failed' && state.status !== 'interrupted') throw invalidTransition(state.status, event.type);
+      if (state.status !== 'failed' && state.status !== 'paused' && state.status !== 'interrupted') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'queued', errorCode: undefined };
   }
 };

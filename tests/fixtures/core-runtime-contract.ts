@@ -58,6 +58,7 @@ export const assertFileTransportContract = async (transport: FileTransport): Pro
   for await (const chunk of await transport.download(job.id)) chunks.push(chunk);
   expect(chunks.length).toBeGreaterThan(0);
   expect(chunks.every((chunk) => chunk instanceof Uint8Array)).toBe(true);
+  await transport.pauseTransfer(job.id);
   await transport.cancelTransfer(job.id);
   await transport.retryTransfer(job.id);
 };

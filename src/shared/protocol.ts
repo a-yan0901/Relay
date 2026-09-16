@@ -85,9 +85,9 @@ export const operationDiagnosticSchema = z.object({
   hostId: identifierSchema,
   kind: z.enum(['terminal', 'transfer', 'command']),
   stage: z.enum(['dns', 'tcp', 'jump-host', 'host-key', 'auth', 'pty', 'sftp', 'command']),
-  state: z.enum(['running', 'completed', 'failed', 'cancelled', 'interrupted', 'needs-reopen']),
+  state: z.enum(['running', 'paused', 'completed', 'failed', 'cancelled', 'interrupted', 'needs-reopen']),
   retryable: z.boolean(),
-  nextAction: z.enum(['wait', 'retry', 'edit-credentials', 'confirm-host-key', 'reopen', 'none']),
+  nextAction: z.enum(['wait', 'resume', 'retry', 'edit-credentials', 'confirm-host-key', 'reopen', 'none']),
   errorCode: identifierSchema.optional(),
   requestId: requestIdSchema.optional(),
   startedAt: z.string().datetime({ offset: true }),
@@ -162,7 +162,7 @@ export type TerminalServerEvent =
   | TerminalPongEvent;
 
 export type OperationKind = 'connection' | 'transfer' | 'command-run' | 'workspace';
-export type OperationStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export type OperationStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
 export interface OperationEvent {
   type: 'operation';

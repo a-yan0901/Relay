@@ -165,6 +165,7 @@ export interface FileTransport {
   getTransfer(transferId: string): Promise<TransferJob | null>;
   upload(transferId: string, source: BinarySource, resume?: TransferResumeRequest): Promise<TransferJob>;
   download(transferId: string, resume?: TransferResumeRequest): Promise<ByteStream>;
+  pauseTransfer(transferId: string): Promise<void>;
   cancelTransfer(transferId: string): Promise<void>;
   retryTransfer(transferId: string): Promise<TransferJob>;
 }

@@ -22,6 +22,7 @@ const eventLabel = (event: AuditEvent): string => {
 
 const diagnosticStateLabels: Record<OperationDiagnostic['state'], string> = {
   running: '进行中',
+  paused: '已暂停',
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',

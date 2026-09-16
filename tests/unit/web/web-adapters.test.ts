@@ -67,6 +67,7 @@ const createWebContractApi = () => {
       }
     }),
     cancelTransfer: async () => {},
+    pauseTransfer: async () => {},
     retryTransfer: async () => transfer,
     startCommandRun: async () => commandRun,
     getCommandRun: async () => commandRun,
@@ -145,6 +146,7 @@ describe('web adapters', () => {
         }
       })),
       cancelTransfer: vi.fn(async () => {}),
+      pauseTransfer: vi.fn(async () => {}),
       retryTransfer: vi.fn(async () => ({ id: 'transfer-1', kind: 'download' as const, hostId: 'host-1', sourcePath: '/source', targetPath: 'target', status: 'queued' as const, completedBytes: 0, totalBytes: null, createdAt: '', updatedAt: '' })),
       startCommandRun: vi.fn(async (request) => ({ id: 'run-1', command: request.command, hostIds: request.hostIds, persistOutput: request.persistOutput, status: 'queued' as const, targets: request.hostIds.map((hostId) => ({ hostId, status: 'queued' as const, exitCode: null, output: '', outputBytes: 0 })), createdAt: '' })),
       getCommandRun: vi.fn(async () => null),
@@ -161,6 +163,7 @@ describe('web adapters', () => {
     const downloaded: Uint8Array[] = [];
     for await (const chunk of await files.download('transfer-1')) downloaded.push(chunk);
     await files.cancelTransfer('transfer-1');
+    await files.pauseTransfer('transfer-1');
     await files.retryTransfer('transfer-1');
     expect(api.listSftpEntries).toHaveBeenCalledWith('host-1', '/');
     expect(api.getTransfer).toHaveBeenCalledWith('transfer-1');
@@ -176,6 +179,7 @@ describe('web adapters', () => {
     expect(uploadCall?.[4]).toBe(true);
     expect(downloaded).toEqual([new Uint8Array([99, 111]), new Uint8Array([110, 116, 101, 110, 116])]);
     expect(api.cancelTransfer).toHaveBeenCalledWith('transfer-1');
+    expect(api.pauseTransfer).toHaveBeenCalledWith('transfer-1');
     expect(api.retryTransfer).toHaveBeenCalledWith('transfer-1');
 
     const commands = new WebCommandTransport(api);
@@ -205,6 +209,7 @@ describe('web adapters', () => {
       listSftpEntries: vi.fn(async () => []),
       createTransfer: vi.fn(async () => ({ id: 'transfer-large', kind: 'upload' as const, hostId: 'host-1', sourcePath: 'source', targetPath: '/target', status: 'queued' as const, completedBytes: 0, totalBytes, createdAt: '', updatedAt: '' })),
       cancelTransfer: vi.fn(async () => {}),
+      pauseTransfer: vi.fn(async () => {}),
       uploadTransferChunk: vi.fn(async (_id: string, chunk: Blob, resume: TransferResumeRequest, nextChecksum: string, final: boolean) => {
         calls.push({ size: chunk.size, offset: resume.expectedOffset, checksum: resume.checksum, nextChecksum, final });
         const offset = resume.expectedOffset + chunk.size;

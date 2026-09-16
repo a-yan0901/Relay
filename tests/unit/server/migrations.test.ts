@@ -75,4 +75,41 @@ describe('database migrations', () => {
       reconnect: { enabled: true, maxAttempts: 2, baseDelayMs: 300, maxDelayMs: 2_000 }
     });
   });
+
+  it('migrates existing transfer jobs to the pausable lifecycle without losing checkpoints', () => {
+    const database = openDatabase(':memory:');
+    databases.push(database);
+    migrate(database);
+    database.pragma('foreign_keys = OFF');
+    database.exec('DROP INDEX idx_transfer_jobs_owner_updated; DROP TABLE transfer_jobs;');
+    database.exec(`
+      CREATE TABLE transfer_jobs (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL DEFAULT 'default',
+        kind TEXT NOT NULL CHECK (kind IN ('upload', 'download')),
+        host_id TEXT NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+        source_path TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted')),
+        completed_bytes INTEGER NOT NULL DEFAULT 0 CHECK (completed_bytes >= 0),
+        total_bytes INTEGER CHECK (total_bytes IS NULL OR total_bytes >= 0),
+        error_code TEXT,
+        checkpoint_offset INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_offset >= 0),
+        checkpoint_checksum TEXT,
+        temporary_path TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO transfer_jobs (id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, checkpoint_offset, checkpoint_checksum, temporary_path, created_at, updated_at)
+      VALUES ('transfer-legacy', 'owner-a', 'upload', 'host-legacy', 'local.bin', '/remote.bin', 'interrupted', 4, 10, 4, 'a', '/remote.bin.tmp', '2026-09-16T00:00:00.000Z', '2026-09-16T00:00:01.000Z');
+    `);
+    database.pragma('foreign_keys = ON');
+
+    migrate(database);
+
+    const table = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transfer_jobs'").get() as { sql: string };
+    expect(table.sql).toContain("'paused'");
+    expect(database.prepare('SELECT status, checkpoint_offset, temporary_path FROM transfer_jobs WHERE id = ?').get('transfer-legacy')).toEqual({ status: 'interrupted', checkpoint_offset: 4, temporary_path: '/remote.bin.tmp' });
+    expect(database.pragma('user_version', { simple: true })).toBe(11);
+  });
 });

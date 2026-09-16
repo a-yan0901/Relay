@@ -143,7 +143,7 @@ export interface SftpEntry {
 }
 
 export type TransferKind = 'upload' | 'download';
-export type TransferStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
 export interface TransferCheckpoint {
   transferId: string;
@@ -281,9 +281,9 @@ export type OperationStage =
   | 'sftp'
   | 'command';
 
-export type OperationDiagnosticState = 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'needs-reopen';
+export type OperationDiagnosticState = 'running' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'needs-reopen';
 
-export type OperationNextAction = 'wait' | 'retry' | 'edit-credentials' | 'confirm-host-key' | 'reopen' | 'none';
+export type OperationNextAction = 'wait' | 'resume' | 'retry' | 'edit-credentials' | 'confirm-host-key' | 'reopen' | 'none';
 
 export interface OperationDiagnostic {
   operationId: string;

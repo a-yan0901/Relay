@@ -159,4 +159,19 @@ describe('sftp routes', () => {
     expect(response.statusCode).toBe(200);
     expect(consumeUploadChunk).toHaveBeenCalledOnce();
   });
+
+  it('exposes an explicit pause endpoint for resumable transfers', async () => {
+    const pause = vi.fn(async () => {});
+    const transferManager = { pause, get: async () => null } as unknown as TransferManager;
+    const { app, cookie } = await setup(transferManager);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/transfers/transfer-pause/pause',
+      headers: { cookie }
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(pause).toHaveBeenCalledWith('transfer-pause', expect.anything());
+  });
 });

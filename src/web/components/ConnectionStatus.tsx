@@ -21,6 +21,7 @@ export const operationStageLabels: Record<OperationStage, string> = {
 
 export const operationNextActionLabels: Record<OperationNextAction, string> = {
   wait: '请稍候',
+  resume: '继续',
   retry: '重试',
   'edit-credentials': '编辑凭据',
   'confirm-host-key': '确认 Host Key',

@@ -6,22 +6,28 @@ import { sftpChildPath, sftpParentPath } from '../../shared/core/sftp-path';
 import { Dialog } from './Dialog';
 import { SftpBreadcrumbs } from './SftpBreadcrumbs';
 
-type SftpAction = '上传' | '下载' | '删除' | '新建目录' | '重命名';
+type SftpAction = '读取' | '上传' | '下载' | '删除' | '新建目录' | '重命名';
 
-const sftpErrorMessage = (error: unknown, action: SftpAction): string => {
+export const sftpErrorMessage = (error: unknown, action: SftpAction, path?: string): string => {
   if (error instanceof AppError) {
-    if (error.code === 'SFTP_PERMISSION_DENIED') return '当前目录没有写权限，请切换到可写目录（如 /tmp）';
-    if (error.code === 'SFTP_NOT_FOUND') return '远程文件或目录不存在，请刷新后重试';
-    if (error.code === 'SFTP_PATH_INVALID') return '远程路径无效，请检查路径后重试';
-    if (error.code === 'SFTP_CONNECTION_FAILED') return `${action}失败，SFTP 连接已断开`;
+    if (error.code === 'SFTP_PERMISSION_DENIED') return action === '读取'
+      ? `读取失败：${path ?? '当前目录'}没有访问权限，请检查权限后重试`
+      : '当前目录没有写权限，请切换到可写目录（如 /tmp）';
+    if (error.code === 'SFTP_NOT_FOUND') return `远程文件或目录不存在${path ? `：${path}` : ''}，请刷新后重试`;
+    if (error.code === 'SFTP_PATH_INVALID') return `远程路径无效${path ? `：${path}` : ''}，请检查路径后重试`;
+    if (error.code === 'SFTP_CONNECTION_FAILED') return `${action}失败${path ? `（${path}）` : ''}，SFTP 连接已断开，请恢复连接后重试`;
     if (error.code === 'TRANSFER_RESUME_INVALID') return `${action}的断点校验失败，已回退到安全位置，请重试`;
   }
-  return `${action}失败，请检查远程路径和权限`;
+  return `${action}失败${path ? `（${path}）` : ''}，请检查远程路径和权限后重试`;
 };
 
 export interface SftpPanelProps {
   hostId: string;
   onList: (hostId: string, path: string) => Promise<readonly SftpEntry[]>;
+  /** Parent-owned path keeps the SFTP view scoped to the active Host/Workspace. */
+  remotePath?: string;
+  /** Increment after an upload/drop outside this component to refresh the listing. */
+  refreshToken?: number;
   onCreateDirectory?: (path: string) => Promise<void>;
   onRename?: (from: string, to: string) => Promise<void>;
   onDelete?: (path: string) => Promise<void>;
@@ -39,6 +45,8 @@ type SftpDialog =
 export const SftpPanel = ({
   hostId,
   onList,
+  remotePath,
+  refreshToken,
   onCreateDirectory,
   onRename,
   onDelete,
@@ -46,8 +54,9 @@ export const SftpPanel = ({
   onDownload,
   onNavigate
 }: SftpPanelProps) => {
-  const [path, setPath] = useState('/');
-  const [pathInput, setPathInput] = useState('/');
+  const initialPath = remotePath?.trim() || '/';
+  const [path, setPath] = useState(initialPath);
+  const [pathInput, setPathInput] = useState(initialPath);
   const [entries, setEntries] = useState<readonly SftpEntry[]>([]);
   const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string>>(new Set());
   const [dialog, setDialog] = useState<SftpDialog>(null);
@@ -69,18 +78,26 @@ export const SftpPanel = ({
         setEntries(nextEntries);
         setSelectedPaths((current) => new Set([...current].filter((selectedPath) => nextEntries.some((entry) => entry.path === selectedPath))));
       }
-    } catch {
+    } catch (listError) {
       if (sequence === loadSequence.current) {
         setEntries([]);
         setSelectedPaths(new Set());
-        setError('无法读取远程目录');
+        setError(sftpErrorMessage(listError, '读取', path));
       }
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
   }, [hostId, onList, path]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (remotePath === undefined) return;
+    const nextPath = remotePath.trim() || '/';
+    setPath(nextPath);
+    setPathInput(nextPath);
+    setSelectedPaths(new Set());
+  }, [hostId, remotePath]);
+
+  useEffect(() => { void load(); }, [load, refreshToken]);
 
   const selectedEntries = useMemo(
     () => entries.filter((entry) => selectedPaths.has(entry.path)),
@@ -179,13 +196,13 @@ export const SftpPanel = ({
   };
 
   const upload = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (!file || !onUpload) return;
+    if (files.length === 0 || !onUpload) return;
     setUploading(true);
     setError(null);
     try {
-      await onUpload(file, path);
+      for (const file of files) await onUpload(file, path);
       await load();
     } catch (uploadError) {
       setError(sftpErrorMessage(uploadError, '上传'));
@@ -238,7 +255,7 @@ export const SftpPanel = ({
           <button className="button button-ghost button-small" type="button" onClick={navigateToPath}>跳转</button>
           <button className="button button-ghost button-small" type="button" onClick={() => void load()}>刷新</button>
           {onCreateDirectory && <button className="button button-ghost button-small" type="button" onClick={() => { setDirectoryName(''); setError(null); setDialog({ type: 'create-directory' }); }}>新建目录</button>}
-          {onUpload && <label className="button button-ghost button-small sftp-upload-button">{uploading ? '上传中…' : '上传'}<input type="file" aria-label="选择上传文件" onChange={(event) => void upload(event)} disabled={uploading || busy} /></label>}
+          {onUpload && <label className="button button-ghost button-small sftp-upload-button">{uploading ? '上传中…' : '上传'}<input type="file" multiple aria-label="选择上传文件" onChange={(event) => void upload(event)} disabled={uploading || busy} /></label>}
         </div>
       </div>
       <SftpBreadcrumbs path={path} onNavigate={navigateTo} />

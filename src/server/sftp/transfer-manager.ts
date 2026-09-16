@@ -26,6 +26,7 @@ interface ManagedTransfer {
   controller: AbortController;
   running: boolean;
   cancelRequested: boolean;
+  pauseRequested: boolean;
   temporaryPath?: string;
   startedAtMs?: number;
   startedBytes?: number;
@@ -88,7 +89,7 @@ export class TransferManager {
     this.repository?.deleteExpired(new Date(this.options.now() - this.options.ttlMs).toISOString());
     for (const job of this.repository?.list() ?? []) {
       const sharedJob = sharedJobFromRow(job);
-      this.jobs.set(sharedJob.id, { job: sharedJob, controller: new AbortController(), running: false, cancelRequested: false, checkpointVerified: false, temporaryPath: job.temporaryPath ?? undefined });
+      this.jobs.set(sharedJob.id, { job: sharedJob, controller: new AbortController(), running: false, cancelRequested: false, pauseRequested: false, checkpointVerified: false, temporaryPath: job.temporaryPath ?? undefined });
     }
   }
 
@@ -111,7 +112,7 @@ export class TransferManager {
       updatedAt: now
     };
     this.repository?.create({ ownerId: this.options.ownerId ?? 'default', ...job, checkpointOffset: 0, checkpointChecksum: null, temporaryPath: null });
-    this.jobs.set(id, { job, controller: new AbortController(), running: false, cancelRequested: false });
+    this.jobs.set(id, { job, controller: new AbortController(), running: false, cancelRequested: false, pauseRequested: false });
     return { ...job };
   }
 
@@ -167,21 +168,21 @@ export class TransferManager {
       return { ...result };
     } catch (error) {
       const mappedError = mapSftpError(error);
-      const preserveTemporary = mappedError.code === 'SFTP_CONNECTION_FAILED' && temporaryPath !== undefined;
+      const preserveTemporary = (managed.pauseRequested || mappedError.code === 'SFTP_CONNECTION_FAILED') && temporaryPath !== undefined;
       if (temporaryPath && !preserveTemporary) {
-        try {
-          const lease = sessionKey === undefined
-            ? await this.options.resourceProvider.open(managed.job.hostId)
-            : await this.options.resourceProvider.open(managed.job.hostId, sessionKey);
-          await lease.resource.remove(temporaryPath);
-          await lease.close();
-        } catch { /* cleanup is best effort */ }
+        await this.removeTemporaryPath(managed.job.hostId, temporaryPath, sessionKey);
       }
-      if (managed.cancelRequested || managed.controller.signal.aborted || error instanceof AppError && error.code === 'TRANSFER_CANCELLED') {
+      if (managed.pauseRequested) {
+        if ((managed.job.status as TransferJob['status']) !== 'paused') this.update(managed, 'paused');
+      } else if (managed.cancelRequested || managed.controller.signal.aborted || error instanceof AppError && error.code === 'TRANSFER_CANCELLED') {
         this.resetCheckpoint(managed);
+        this.clearTemporary(managed);
         if ((managed.job.status as TransferJob['status']) !== 'cancelled') this.update(managed, 'cancelled');
       } else {
-        if (!preserveTemporary) this.resetCheckpoint(managed);
+        if (!preserveTemporary) {
+          this.resetCheckpoint(managed);
+          this.clearTemporary(managed);
+        }
         this.fail(managed, mappedError.code);
       }
       onUpdate?.(managed.job);
@@ -250,23 +251,21 @@ export class TransferManager {
       return { ...result };
     } catch (error) {
       const mappedError = mapSftpError(error);
-      const preserveTemporary = mappedError.code === 'SFTP_CONNECTION_FAILED';
+      const preserveTemporary = managed.pauseRequested || mappedError.code === 'SFTP_CONNECTION_FAILED';
       if (!preserveTemporary) {
-        try {
-          const lease = sessionKey === undefined
-            ? await this.options.resourceProvider.open(managed.job.hostId)
-            : await this.options.resourceProvider.open(managed.job.hostId, sessionKey);
-          await lease.resource.remove(temporaryPath);
-          await lease.close();
-        } catch { /* cleanup is best effort */ }
+        await this.removeTemporaryPath(managed.job.hostId, temporaryPath, sessionKey);
       }
-      if (managed.cancelRequested || managed.controller.signal.aborted || error instanceof AppError && error.code === 'TRANSFER_CANCELLED') {
+      if (managed.pauseRequested) {
+        if ((managed.job.status as TransferJob['status']) !== 'paused') this.update(managed, 'paused');
+      } else if (managed.cancelRequested || managed.controller.signal.aborted || error instanceof AppError && error.code === 'TRANSFER_CANCELLED') {
         this.resetCheckpoint(managed);
+        this.clearTemporary(managed);
         managed.checkpointVerified = false;
         if ((managed.job.status as TransferJob['status']) !== 'cancelled') this.update(managed, 'cancelled');
       } else {
         if (!preserveTemporary) {
           this.resetCheckpoint(managed);
+          this.clearTemporary(managed);
           managed.checkpointVerified = false;
         }
         this.fail(managed, mappedError.code);
@@ -285,19 +284,37 @@ export class TransferManager {
     return this.downloadGenerator(managed, sessionKey, onUpdate, plan);
   }
 
-  async cancel(transferId: string): Promise<void> {
+  async pause(transferId: string, _sessionKey?: Buffer): Promise<void> {
+    const managed = this.require(transferId);
+    if (managed.job.status === 'completed' || managed.job.status === 'failed' || managed.job.status === 'cancelled' || managed.job.status === 'interrupted' || managed.job.status === 'paused') return;
+    managed.pauseRequested = true;
+    managed.cancelRequested = false;
+    managed.controller.abort();
+    if (managed.job.status === 'queued' || (managed.job.status === 'running' && !managed.running)) this.update(managed, 'paused');
+  }
+
+  async cancel(transferId: string, sessionKey?: Buffer): Promise<void> {
     const managed = this.require(transferId);
     if (managed.job.status === 'completed' || managed.job.status === 'failed' || managed.job.status === 'cancelled' || managed.job.status === 'interrupted') return;
     managed.cancelRequested = true;
+    managed.pauseRequested = false;
     managed.controller.abort();
-    if (managed.job.status === 'queued' || (managed.job.status === 'running' && !managed.running)) this.update(managed, 'cancelled');
+    if (managed.job.status === 'queued' || managed.job.status === 'paused' || (managed.job.status === 'running' && !managed.running)) {
+      if (managed.temporaryPath) {
+        await this.removeTemporaryPath(managed.job.hostId, managed.temporaryPath, sessionKey);
+        this.clearTemporary(managed);
+      }
+      this.resetCheckpoint(managed);
+      if ((managed.job.status as TransferJob['status']) !== 'cancelled') this.update(managed, 'cancelled');
+    }
   }
 
   async retry(transferId: string): Promise<TransferJob> {
     const managed = this.require(transferId);
-    if (managed.job.status !== 'failed' && managed.job.status !== 'interrupted') throw new AppError('TRANSFER_CANCELLED');
+    if (managed.job.status !== 'failed' && managed.job.status !== 'paused' && managed.job.status !== 'interrupted') throw new AppError('TRANSFER_CANCELLED');
     managed.controller = new AbortController();
     managed.cancelRequested = false;
+    managed.pauseRequested = false;
     managed.startedAtMs = undefined;
     managed.startedBytes = undefined;
     managed.checkpointVerified = false;
@@ -354,8 +371,11 @@ export class TransferManager {
       onUpdate?.(managed.job);
     } catch (error) {
       const mappedError = mapSftpError(error);
-      if (managed.cancelRequested || managed.controller.signal.aborted || error instanceof AppError && error.code === 'TRANSFER_CANCELLED') {
+      if (managed.pauseRequested) {
+        if (managed.job.status !== 'paused') this.update(managed, 'paused');
+      } else if (managed.cancelRequested || managed.controller.signal.aborted || error instanceof AppError && error.code === 'TRANSFER_CANCELLED') {
         this.resetCheckpoint(managed);
+        this.clearTemporary(managed);
         if (managed.job.status !== 'cancelled') this.update(managed, 'cancelled');
       } else {
         if (mappedError.code !== 'SFTP_CONNECTION_FAILED') this.resetCheckpoint(managed);
@@ -625,12 +645,12 @@ export class TransferManager {
     onUpdate?.(managed.job);
   }
 
-  private update(managed: ManagedTransfer, status: 'running' | 'completed' | 'cancelled'): void {
+  private update(managed: ManagedTransfer, status: 'running' | 'paused' | 'completed' | 'cancelled'): void {
     if (status === 'running' && managed.startedAtMs === undefined) {
       managed.startedAtMs = this.options.now();
       managed.startedBytes = managed.job.completedBytes;
     }
-    const event = status === 'running' ? { type: 'start' as const, totalBytes: managed.job.totalBytes } : status === 'completed' ? { type: 'completed' as const } : { type: 'cancelled' as const };
+    const event = status === 'running' ? { type: 'start' as const, totalBytes: managed.job.totalBytes } : status === 'paused' ? { type: 'paused' as const } : status === 'completed' ? { type: 'completed' as const } : { type: 'cancelled' as const };
     const state = transitionTransfer({ id: managed.job.id, status: managed.job.status, completedBytes: managed.job.completedBytes, totalBytes: managed.job.totalBytes, errorCode: managed.job.errorCode }, event);
     managed.job = { ...managed.job, status: state.status, completedBytes: state.completedBytes, totalBytes: state.totalBytes, errorCode: state.errorCode, etaSeconds: state.status === 'completed' ? 0 : managed.job.etaSeconds, updatedAt: timestamp(this.options.now) };
     this.persist(managed, { status: managed.job.status, completedBytes: managed.job.completedBytes, totalBytes: managed.job.totalBytes, errorCode: managed.job.errorCode ?? null, checkpointOffset: managed.job.checkpoint?.offset ?? managed.job.completedBytes, checkpointChecksum: managed.job.checkpoint?.checksum ?? null, updatedAt: managed.job.updatedAt });
@@ -640,6 +660,25 @@ export class TransferManager {
     if (managed.job.status !== 'queued' && managed.job.status !== 'running') return;
     managed.job = { ...managed.job, status: 'failed', errorCode: code, updatedAt: timestamp(this.options.now) };
     this.persist(managed, { status: managed.job.status, errorCode: code, updatedAt: managed.job.updatedAt });
+  }
+
+  private async removeTemporaryPath(hostId: string, path: string, sessionKey?: Buffer): Promise<void> {
+    try {
+      const lease = sessionKey === undefined
+        ? await this.options.resourceProvider.open(hostId)
+        : await this.options.resourceProvider.open(hostId, sessionKey);
+      try {
+        await lease.resource.remove(path);
+      } finally {
+        await lease.close();
+      }
+    } catch { /* cleanup is best effort */ }
+  }
+
+  private clearTemporary(managed: ManagedTransfer): void {
+    if (managed.temporaryPath === undefined) return;
+    managed.temporaryPath = undefined;
+    this.persist(managed, { temporaryPath: null });
   }
 
   private require(transferId: string): ManagedTransfer {

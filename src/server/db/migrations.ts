@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from './database.js';
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 export const migrate = (database: SqliteDatabase): void => {
   const applyMigration = database.transaction(() => {
@@ -171,7 +171,7 @@ export const migrate = (database: SqliteDatabase): void => {
         host_id TEXT NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
         source_path TEXT NOT NULL,
         target_path TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted')),
+        status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'paused', 'completed', 'failed', 'cancelled', 'interrupted')),
         completed_bytes INTEGER NOT NULL DEFAULT 0 CHECK (completed_bytes >= 0),
         total_bytes INTEGER CHECK (total_bytes IS NULL OR total_bytes >= 0),
         error_code TEXT,
@@ -326,6 +326,36 @@ export const migrate = (database: SqliteDatabase): void => {
     }
     if (!transferColumns.some((column) => column.name === 'temporary_path')) {
       database.exec('ALTER TABLE transfer_jobs ADD COLUMN temporary_path TEXT');
+    }
+
+    const transferTableSql = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transfer_jobs'").get() as { sql?: string } | undefined;
+    if (transferTableSql?.sql && !transferTableSql.sql.includes("'paused'")) {
+      database.exec(`
+        DROP INDEX IF EXISTS idx_transfer_jobs_owner_updated;
+        CREATE TABLE transfer_jobs_v11 (
+          id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL DEFAULT 'default',
+          kind TEXT NOT NULL CHECK (kind IN ('upload', 'download')),
+          host_id TEXT NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+          source_path TEXT NOT NULL,
+          target_path TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'paused', 'completed', 'failed', 'cancelled', 'interrupted')),
+          completed_bytes INTEGER NOT NULL DEFAULT 0 CHECK (completed_bytes >= 0),
+          total_bytes INTEGER CHECK (total_bytes IS NULL OR total_bytes >= 0),
+          error_code TEXT,
+          checkpoint_offset INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_offset >= 0),
+          checkpoint_checksum TEXT,
+          temporary_path TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO transfer_jobs_v11 (id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, checkpoint_offset, checkpoint_checksum, temporary_path, created_at, updated_at)
+          SELECT id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, checkpoint_offset, checkpoint_checksum, temporary_path, created_at, updated_at
+          FROM transfer_jobs;
+        DROP TABLE transfer_jobs;
+        ALTER TABLE transfer_jobs_v11 RENAME TO transfer_jobs;
+        CREATE INDEX idx_transfer_jobs_owner_updated ON transfer_jobs (owner_id, updated_at DESC);
+      `);
     }
 
     database.pragma(`user_version = ${SCHEMA_VERSION}`);

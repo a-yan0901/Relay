@@ -88,6 +88,7 @@ describe('shared core adapter contracts', () => {
           yield new Uint8Array([0x6f, 0x6b]);
         })();
       },
+      async pauseTransfer() {},
       async cancelTransfer(id) { cancelled = id; },
       async retryTransfer(id) { return fakeTransfer(id); }
     };

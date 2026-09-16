@@ -57,6 +57,17 @@ describe('shared core state machines', () => {
     expect(transitionTransfer(interrupted, { type: 'retry' })).toMatchObject({ status: 'queued', completedBytes: 4 });
   });
 
+  it('pauses an active transfer without losing its checkpoint and resumes it explicitly', () => {
+    let state = initialTransferState('transfer-pause');
+    state = transitionTransfer(state, { type: 'start', totalBytes: 10 });
+    state = transitionTransfer(state, { type: 'progress', completedBytes: 4 });
+    state = transitionTransfer(state, { type: 'paused' });
+
+    expect(state).toMatchObject({ status: 'paused', completedBytes: 4, checkpointOffset: 4 });
+    expect(transitionTransfer(state, { type: 'retry' })).toMatchObject({ status: 'queued', completedBytes: 4 });
+    expect(() => transitionTransfer(state, { type: 'completed' })).toThrow();
+  });
+
   it('does not move a completed command target back to running', () => {
     let state = initialCommandTargetState('host-1');
     state = transitionCommandTarget(state, { type: 'start' });

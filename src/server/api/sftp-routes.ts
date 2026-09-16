@@ -73,7 +73,7 @@ const readTransferChunk = (request: FastifyRequest, transferId: string): { resum
 const transferDiagnostic = (job: TransferJob, requestId: string): OperationDiagnostic | null => {
   if (job.status === 'queued') return null;
   const state: OperationDiagnostic['state'] = job.status;
-  const retryable = job.status === 'interrupted' || (job.status === 'failed' && !['SFTP_PATH_INVALID', 'SFTP_PERMISSION_DENIED'].includes(job.errorCode ?? ''));
+  const retryable = job.status === 'paused' || job.status === 'interrupted' || (job.status === 'failed' && !['SFTP_PATH_INVALID', 'SFTP_PERMISSION_DENIED'].includes(job.errorCode ?? ''));
   return {
     operationId: job.id,
     hostId: job.hostId,
@@ -94,7 +94,7 @@ export const registerSftpRoutes = async (app: FastifyInstance, dependencies: Sft
     dependencies.operationBus.publish(dependencies.ownerId, { type: 'transfer', job });
     const diagnostic = transferDiagnostic(job, requestId);
     if (diagnostic) dependencies.operationBus.publishDiagnostic(dependencies.ownerId, diagnostic);
-    if (['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status)) {
+    if (['paused', 'completed', 'failed', 'cancelled', 'interrupted'].includes(job.status)) {
       dependencies.auditRepository.insert({
         eventType: `sftp_transfer_${job.status}`,
         hostId: job.hostId,
@@ -187,12 +187,21 @@ export const registerSftpRoutes = async (app: FastifyInstance, dependencies: Sft
   });
 
   app.delete('/api/transfers/:transferId', async (request, reply) => {
-    requireUnlockedSession(request, dependencies.sessionStore);
+    const session = requireUnlockedSession(request, dependencies.sessionStore);
     const transferId = readTransferId(request.params);
     const before = await dependencies.transferManager.get(transferId);
-    await dependencies.transferManager.cancel(transferId);
+    await dependencies.transferManager.cancel(transferId, session.record.vaultKey);
     const job = await dependencies.transferManager.get(transferId);
-    if (before?.status === 'queued' && job?.status === 'cancelled') publishTransferUpdate(request.id, job);
+    if (['queued', 'paused'].includes(before?.status ?? '') && job?.status === 'cancelled') publishTransferUpdate(request.id, job);
+    reply.code(204).send();
+  });
+
+  app.post('/api/transfers/:transferId/pause', async (request, reply) => {
+    const session = requireUnlockedSession(request, dependencies.sessionStore);
+    const transferId = readTransferId(request.params);
+    await dependencies.transferManager.pause(transferId, session.record.vaultKey);
+    const job = await dependencies.transferManager.get(transferId);
+    if (job?.status === 'paused') publishTransferUpdate(request.id, job);
     reply.code(204).send();
   });
 

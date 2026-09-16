@@ -113,6 +113,7 @@ export interface WebApiClient {
   uploadTransferChunk?: typeof api.uploadTransferChunk;
   downloadTransferContent?: typeof api.downloadTransferContent;
   cancelTransfer?: typeof api.cancelTransfer;
+  pauseTransfer?: typeof api.pauseTransfer;
   retryTransfer?: typeof api.retryTransfer;
   listSnippets?: typeof api.listSnippets;
   getSnippet?: typeof api.getSnippet;
@@ -208,7 +209,7 @@ export class WebSecretStore implements SecretStore {
   }
 }
 
-type WebFileClient = Pick<WebApiClient, 'listSftpEntries' | 'createTransfer' | 'cancelTransfer'> & Partial<Pick<WebApiClient, 'listTransfers' | 'getTransfer' | 'mutateSftpEntry' | 'uploadTransferContent' | 'uploadTransferChunk' | 'downloadTransferContent' | 'retryTransfer'>>;
+type WebFileClient = Pick<WebApiClient, 'listSftpEntries' | 'createTransfer' | 'cancelTransfer'> & Partial<Pick<WebApiClient, 'listTransfers' | 'getTransfer' | 'mutateSftpEntry' | 'uploadTransferContent' | 'uploadTransferChunk' | 'downloadTransferContent' | 'pauseTransfer' | 'retryTransfer'>>;
 
 const readableStreamToByteStream = (stream: ReadableStream<Uint8Array>): ByteStream => (async function* () {
   const reader = stream.getReader();
@@ -383,6 +384,10 @@ export class WebFileTransport implements FileTransport {
 
   cancelTransfer(transferId: string): Promise<void> {
     return requireApi(this.client.cancelTransfer)(transferId);
+  }
+
+  pauseTransfer(transferId: string): Promise<void> {
+    return requireApi(this.client.pauseTransfer)(transferId);
   }
 
   retryTransfer(transferId: string): Promise<TransferJob> {

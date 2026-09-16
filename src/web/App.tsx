@@ -687,7 +687,8 @@ export const App = ({ runtime }: AppProps) => {
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
       updateTransferJob(await runtime.files.upload(job.id, fileToBinarySource(file)));
     } catch (error) {
-      await refreshTransferJob(job.id);
+      const latest = await refreshTransferJob(job.id);
+      if (latest?.status === 'paused') return;
       throw error;
     }
   };
@@ -705,7 +706,8 @@ export const App = ({ runtime }: AppProps) => {
       await saveDownloadStream(job.id, await runtime.files.download(job.id), name, 0, writer);
       await refreshTransferJob(job.id);
     } catch (error) {
-      await refreshTransferJob(job.id);
+      const latest = await refreshTransferJob(job.id);
+      if (latest?.status === 'paused') return;
       throw error;
     }
   };
@@ -714,6 +716,12 @@ export const App = ({ runtime }: AppProps) => {
     const job = transferJobs.find((candidate) => candidate.id === id);
     if (job) updateTransferJob({ ...job, status: 'cancelled', updatedAt: new Date().toISOString() });
     void runtime.files.cancelTransfer(id).then(() => refreshTransferJob(id));
+  };
+
+  const handlePauseTransfer = (id: string): void => {
+    const job = transferJobs.find((candidate) => candidate.id === id);
+    if (job) updateTransferJob({ ...job, status: 'paused', updatedAt: new Date().toISOString() });
+    void runtime.files.pauseTransfer(id).then(() => refreshTransferJob(id)).catch(() => refreshTransferJob(id));
   };
 
   const handleRetryTransfer = (id: string): void => {
@@ -1011,11 +1019,15 @@ export const App = ({ runtime }: AppProps) => {
             onCreateDirectorySftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.createDirectory(hostId, path) : undefined}
             onRenameSftp={capabilities.supports('sftp.entry-mutations') ? (hostId, from, to) => runtime.files.rename(hostId, from, to) : undefined}
             onDeleteSftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.remove(hostId, path) : undefined}
+            fileTransport={capabilities.supports('sftp.browse') ? runtime.files : undefined}
+            sftpMutationsEnabled={capabilities.supports('sftp.entry-mutations')}
             onUploadSftp={capabilities.supports('sftp.transfer') ? handleUploadSftp : undefined}
             onDownloadSftp={capabilities.supports('sftp.transfer') ? handleDownloadSftp : undefined}
             transferJobs={capabilities.supports('sftp.transfer') ? transferJobs : []}
             onCancelTransfer={capabilities.supports('sftp.transfer') ? handleCancelTransfer : undefined}
+            onPauseTransfer={capabilities.supports('sftp.transfer') ? handlePauseTransfer : undefined}
             onRetryTransfer={capabilities.supports('sftp.transfer') ? handleRetryTransfer : undefined}
+            onResumeTransfer={capabilities.supports('sftp.transfer') ? handleRetryTransfer : undefined}
             allowMultiPane={supportsWorkspacePanes(capabilities)}
             maxPanes={maxWorkspacePanes}
             workspaceLayout={state.workspace.layout}

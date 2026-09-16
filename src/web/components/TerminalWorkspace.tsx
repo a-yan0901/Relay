@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
 import type { SftpEntry, TransferJob, WorkspaceLayout } from '../../shared/core/models';
+import type { FileTransport } from '../../shared/core/ports';
+import { sftpParentPath } from '../../shared/core/sftp-path';
 import type { TerminalSessionSnapshot } from '../hooks/use-terminal-session';
 import { DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
 import { terminalStatusDotClass, terminalStatusLabels, TerminalToolbar } from './TerminalToolbar';
 import { TerminalPanel, type TerminalPanelToolbarState } from './TerminalPanel';
 import { SftpPanel } from './SftpPanel';
 import { TransferQueue } from './TransferQueue';
+import { SftpWorkspace } from './SftpWorkspace';
 
 type SplitOrientation = 'horizontal' | 'vertical';
 type PaneKey = 'primary' | 'secondary';
@@ -38,9 +41,14 @@ export interface TerminalWorkspaceProps {
   onDeleteSftp?: (hostId: string, path: string) => Promise<void>;
   onUploadSftp?: (hostId: string, file: File, path: string) => Promise<void>;
   onDownloadSftp?: (hostId: string, path: string, name: string) => Promise<void>;
+  fileTransport?: Pick<FileTransport, 'list' | 'createDirectory' | 'rename' | 'remove'>;
   transferJobs?: readonly TransferJob[];
   onCancelTransfer?: (id: string) => void;
+  onPauseTransfer?: (id: string) => void;
   onRetryTransfer?: (id: string) => void;
+  onResumeTransfer?: (id: string) => void;
+  sftpMutationsEnabled?: boolean;
+  workspaceId?: string | null;
   onStatusChange?: (terminalId: string, snapshot: TerminalSessionSnapshot) => void;
   preferences?: UiPreferences;
   onBackToHosts?: () => void;
@@ -103,9 +111,13 @@ export const TerminalWorkspace = ({
   onDeleteSftp,
   onUploadSftp,
   onDownloadSftp,
+  fileTransport,
   transferJobs = [],
   onCancelTransfer,
+  onPauseTransfer,
   onRetryTransfer,
+  onResumeTransfer,
+  sftpMutationsEnabled = true,
   onStatusChange,
   onEditHost,
   preferences = DEFAULT_PREFERENCES,
@@ -116,7 +128,8 @@ export const TerminalWorkspace = ({
   workspaceTabIdByTerminalId,
   onLayoutChange,
   allowMultiPane = true,
-  maxPanes
+  maxPanes,
+  workspaceId = null
 }: TerminalWorkspaceProps) => {
   const paneLimit = normalizePaneLimit(maxPanes, allowMultiPane);
   const [hostQuery, setHostQuery] = useState('');
@@ -131,6 +144,7 @@ export const TerminalWorkspace = ({
   const [toolbarByTerminalId, setToolbarByTerminalId] = useState<Record<string, TerminalPanelToolbarState | null>>({});
   const [attentionByTerminalId, setAttentionByTerminalId] = useState<Record<string, TerminalAttention>>({});
   const [filePanelOpen, setFilePanelOpen] = useState(false);
+  const [sftpPathByHostId, setSftpPathByHostId] = useState<Record<string, string>>({});
   const layoutRef = useRef<HTMLDivElement>(null);
   const pendingPaneRef = useRef<PaneKey | null>(null);
   const previousTerminalIdsRef = useRef(new Set(terminals.map((terminal) => terminal.terminalId)));
@@ -241,9 +255,24 @@ export const TerminalWorkspace = ({
   const visibleGridTerminalIds = gridTerminalIds.filter((terminalId) => terminalById.has(terminalId)).slice(0, paneLimit);
   const activeToolbar = activeTerminalId ? toolbarByTerminalId[activeTerminalId] : null;
   const activeHostId = activeTerminalId ? terminalById.get(activeTerminalId)?.hostId ?? null : null;
+  const hostAliases = useMemo(() => Object.fromEntries(hosts.map((host) => [host.id, host.name])), [hosts]);
   const writableHostCount = new Set(terminals
     .filter((terminal) => terminal.state === 'connected' && terminal.recoveryStatus !== 'missing-host' && terminal.recoveryStatus !== 'needs-reopen' && hostById.has(terminal.hostId))
     .map((terminal) => terminal.hostId)).size;
+
+  const handleRemotePathChange = useCallback((path: string): void => {
+    if (!activeHostId) return;
+    setSftpPathByHostId((current) => current[activeHostId] === path ? current : { ...current, [activeHostId]: path });
+  }, [activeHostId]);
+
+  const handleOpenTransferPath = useCallback((job: TransferJob): void => {
+    const targetTerminal = terminals.find((terminal) => terminal.hostId === job.hostId);
+    if (!targetTerminal) return;
+    const remotePath = sftpParentPath(job.kind === 'upload' ? job.targetPath : job.sourcePath);
+    setSftpPathByHostId((current) => ({ ...current, [job.hostId]: remotePath }));
+    setFilePanelOpen(true);
+    if (targetTerminal.terminalId !== activeTerminalId) onActivate(targetTerminal.terminalId);
+  }, [activeTerminalId, onActivate, terminals]);
 
   const labelForTerminal = (terminalId: string | null): string => {
     if (!terminalId) return '选择 Console';
@@ -464,7 +493,7 @@ export const TerminalWorkspace = ({
             {onOpenBatchCommand && <button className="terminal-topbar-button" type="button" aria-label="批量执行" onClick={onOpenBatchCommand}>⌘<span>批量</span></button>}
             {onOpenBroadcast && writableHostCount >= 2 && <button className="terminal-topbar-button terminal-broadcast-button" type="button" aria-label="广播" onClick={onOpenBroadcast}>◉<span>广播</span></button>}
             {onOpenSnippetPalette && <button className="terminal-topbar-button" type="button" aria-label="命令片段" onClick={onOpenSnippetPalette}>✦<span>片段</span></button>}
-            {onListSftp && <button className="terminal-topbar-button" type="button" aria-label="远程文件" aria-pressed={filePanelOpen} onClick={() => setFilePanelOpen((open) => !open)}>▤<span>文件</span></button>}
+            {(fileTransport || onListSftp) && <button className="terminal-topbar-button" type="button" aria-label="远程文件" aria-pressed={filePanelOpen} onClick={() => setFilePanelOpen((open) => !open)}>▤<span>文件</span></button>}
             {paneLimit > 1 && <>
               <button className="terminal-topbar-button" type="button" aria-label="左右分屏" aria-pressed={splitLayout?.orientation === 'horizontal'} onClick={() => toggleSplit('horizontal')} title="左右分屏">◫</button>
               <button className="terminal-topbar-button" type="button" aria-label="上下分屏" aria-pressed={splitLayout?.orientation === 'vertical'} onClick={() => toggleSplit('vertical')} title="上下分屏">▤</button>
@@ -557,7 +586,34 @@ export const TerminalWorkspace = ({
           )}
         </div>
       </section>
-      {filePanelOpen && onListSftp && activeHostId && <aside className="terminal-file-panel" aria-label="远程文件面板"><SftpPanel hostId={activeHostId} onList={onListSftp} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} /><TransferQueue jobs={transferJobs} onCancel={onCancelTransfer} onRetry={onRetryTransfer} /></aside>}
+      {filePanelOpen && activeHostId && (
+        <aside className="terminal-file-panel" aria-label="远程文件面板">
+          {fileTransport
+            ? <SftpWorkspace
+              key={`${workspaceId ?? 'local'}:${activeHostId}`}
+              hostId={activeHostId}
+              workspaceId={workspaceId}
+              remotePath={sftpPathByHostId[activeHostId] ?? '/'}
+              fileTransport={fileTransport}
+              transferJobs={transferJobs}
+              hostAliases={hostAliases}
+              onRemotePathChange={handleRemotePathChange}
+              onUploadFile={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined}
+              onDownloadFile={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined}
+              mutationsEnabled={sftpMutationsEnabled}
+              onCancelTransfer={onCancelTransfer}
+              onPauseTransfer={onPauseTransfer}
+              onRetryTransfer={onRetryTransfer}
+              onResumeTransfer={onResumeTransfer}
+              onOpenTransferPath={handleOpenTransferPath}
+              onBackToTerminal={() => setFilePanelOpen(false)}
+            />
+            : onListSftp && <>
+              <SftpPanel hostId={activeHostId} remotePath={sftpPathByHostId[activeHostId] ?? '/'} onNavigate={handleRemotePathChange} onList={onListSftp} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} />
+              <TransferQueue jobs={transferJobs} onCancel={onCancelTransfer} onRetry={onRetryTransfer} />
+            </>}
+        </aside>
+      )}
     </div>
   );
 };

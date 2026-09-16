@@ -357,6 +357,8 @@ export const downloadTransferContent = (id: string, resume?: TransferResumeReque
 
 export const cancelTransfer = (id: string): Promise<void> => request<void>(`/api/transfers/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
+export const pauseTransfer = (id: string): Promise<void> => request<void>(`/api/transfers/${encodeURIComponent(id)}/pause`, { method: 'POST' });
+
 export const retryTransfer = (id: string): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}/retry`, { method: 'POST' });
 
 export const listAuditEvents = (filter: ActivityFilter = {}): Promise<AuditEventsResponse> => {

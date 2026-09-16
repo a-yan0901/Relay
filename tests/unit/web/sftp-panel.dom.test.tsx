@@ -148,4 +148,15 @@ describe('SftpPanel', () => {
     expect(onDelete).toHaveBeenCalledWith('/one.log');
     expect(onDelete).toHaveBeenCalledWith('/two.log');
   });
+
+  it('uses the supplied Host path context when the active Host changes', async () => {
+    const onList = vi.fn(async (_hostId: string, path: string) => [{ name: path.slice(1) || 'root', path, type: 'file' as const, size: 1, mode: 0o644, modifiedAt: null }]);
+    const { rerender } = render(<SftpPanel hostId="host-1" remotePath="/prod" onList={onList} />);
+
+    expect(await screen.findByText('prod')).toBeInTheDocument();
+    rerender(<SftpPanel hostId="host-2" remotePath="/staging" onList={onList} />);
+
+    expect(await screen.findByText('staging')).toBeInTheDocument();
+    expect(onList).toHaveBeenLastCalledWith('host-2', '/staging');
+  });
 });
