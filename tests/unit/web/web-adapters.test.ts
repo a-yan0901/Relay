@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
 import type { TransferResumeRequest } from '../../../src/shared/core/models.js';
 import type { HostMetadata } from '../../../src/shared/validation.js';
-import { createWebAdapters, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport } from '../../../src/web/platform/web-adapters.js';
+import { createWebAdapters, WebAccountSession, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync } from '../../../src/web/platform/web-adapters.js';
 import type { TerminalSocketLike } from '../../../src/web/hooks/use-terminal-session.js';
 
 const host: HostMetadata = {
@@ -41,6 +41,19 @@ const createWebContractApi = () => {
     status: 'queued' as const,
     targets: ['host-1', 'host-2'].map((hostId) => ({ hostId, status: 'queued' as const, exitCode: null, output: '', outputBytes: 0 })),
     createdAt: ''
+  };
+  const account = {
+    accountId: 'account-1',
+    deviceId: 'device-1',
+    state: 'signed-in' as const,
+    expiresAt: '2026-09-17T00:00:00.000Z'
+  };
+  const syncHead = {
+    vaultId: 'vault-1',
+    revision: 1,
+    keyVersion: 1,
+    payloadHash: 'a'.repeat(64),
+    updatedAt: '2026-09-16T00:00:00.000Z'
   };
   return {
     getCapabilities: async () => ({ client: 'web' as const, version: 1 as const, capabilities: ['workspace.persistence', 'account.auth', 'sync.encrypted'] as const }),
@@ -88,7 +101,21 @@ const createWebContractApi = () => {
     exportSshCsv: async () => new Blob(['name,address']),
     exportVaultBundle: async () => ({ bundle: 'web-vault-bundle' }),
     previewVaultImport: async () => ({ previewId: 'preview-1', hostCount: 0, groupCount: 0, conflicts: [], expiresAt: '' }),
-    applyVaultImport: async () => ({ importedHosts: 0, skippedHosts: 0, importedGroups: 0, skippedGroups: 0 })
+    applyVaultImport: async () => ({ importedHosts: 0, skippedHosts: 0, importedGroups: 0, skippedGroups: 0 }),
+    getAccountSession: async () => ({ account }),
+    register: async () => ({ account }),
+    signIn: async () => ({ account }),
+    signOut: async () => undefined,
+    listDevices: async () => [{ id: 'device-1', label: 'Browser', platform: 'web' as const, lastSeenAt: null, current: true, revokedAt: null }],
+    revokeDevice: async () => undefined,
+    getSyncState: async () => ({ sync: 'synced' as const, head: syncHead, pendingCount: 0 }),
+    getSyncDescriptor: async () => null,
+    enableSync: async () => syncHead,
+    retrySync: async () => undefined,
+    getSyncEnvelope: async () => null,
+    pushSyncEnvelope: async () => syncHead,
+    previewPull: async () => ({ conflictId: 'conflict-1', localRevision: 0, remoteRevision: 1, conflictTypes: ['host'] as const, localBackupRevision: 0 }),
+    resolveConflict: async () => undefined
   };
 };
 
@@ -271,6 +298,34 @@ describe('web adapters', () => {
     expect(runtime.capabilities.supports('transfer.resume')).toBe(false);
     expect(runtime.capabilities.supports('account.auth')).toBe(true);
     expect(runtime.capabilities.supports('sync.encrypted')).toBe(true);
+  });
+
+  it('injects account, device and sync ports only after matching capabilities are negotiated', async () => {
+    const runtime = createWebAdapters({ api: createWebContractApi() });
+
+    expect(runtime.account).toBeUndefined();
+    expect(runtime.devices).toBeUndefined();
+    expect(runtime.sync).toBeUndefined();
+
+    await runtime.refreshCapabilities();
+
+    expect(runtime.account).toBeDefined();
+    expect(runtime.devices).toBeUndefined();
+    expect(runtime.sync).toBeDefined();
+    await expect(runtime.account?.status()).resolves.toMatchObject({ accountId: 'account-1' });
+    await expect(runtime.sync?.status()).resolves.toMatchObject({ sync: 'synced', head: expect.objectContaining({ revision: 1 }) });
+  });
+
+  it('maps missing optional functions to CAPABILITY_UNAVAILABLE at the port boundary', async () => {
+    await expect(new WebAccountSession({}).status()).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
+    expect(() => new WebSync({
+      getSyncState: async () => ({ sync: 'local-only' as const, head: null }),
+      getSyncDescriptor: async () => null,
+      enableSync: async () => { throw new Error('not used'); },
+      retrySync: async () => undefined,
+      previewPull: async () => { throw new Error('not used'); },
+      resolveConflict: async () => undefined
+    }).pull()).toThrowError(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
   });
 
   it('intersects a server pane limit with the Web platform upper bound', async () => {

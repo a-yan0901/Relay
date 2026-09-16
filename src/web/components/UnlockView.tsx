@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 
 import { AppError } from '@shared/errors';
 
@@ -7,9 +7,10 @@ const MASTER_PASSWORD_MIN_LENGTH = 8;
 export interface UnlockViewProps {
   onSubmit: (masterPassword: string) => Promise<void>;
   errorMessage?: string | null;
+  headerSlot?: ReactNode;
 }
 
-export const UnlockView = ({ onSubmit, errorMessage }: UnlockViewProps) => {
+export const UnlockView = ({ onSubmit, errorMessage, headerSlot }: UnlockViewProps) => {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +35,7 @@ export const UnlockView = ({ onSubmit, errorMessage }: UnlockViewProps) => {
 
   return (
     <main className="auth-stage">
+      {headerSlot && <div className="auth-header-slot">{headerSlot}</div>}
       <section className="auth-card" aria-labelledby="unlock-title">
         <div className="brand-mark">W</div>
         <p className="eyebrow">WEB SSH WORKSPACE</p>

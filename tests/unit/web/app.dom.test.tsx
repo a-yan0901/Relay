@@ -21,7 +21,22 @@ const apiMocks = vi.hoisted(() => ({
   updateHost: vi.fn(),
   testConnection: vi.fn(),
   listAuditEvents: vi.fn(),
-  getCommandRun: vi.fn()
+  getCommandRun: vi.fn(),
+  getCapabilities: vi.fn(),
+  getAccountSession: vi.fn(),
+  register: vi.fn(),
+  signIn: vi.fn(),
+  signOut: vi.fn(),
+  listDevices: vi.fn(),
+  revokeDevice: vi.fn(),
+  getSyncState: vi.fn(),
+  getSyncDescriptor: vi.fn(),
+  enableSync: vi.fn(),
+  retrySync: vi.fn(),
+  getSyncEnvelope: vi.fn(),
+  pushSyncEnvelope: vi.fn(),
+  previewPull: vi.fn(),
+  resolveConflict: vi.fn()
 }));
 
 vi.mock('../../../src/web/api', () => apiMocks);
@@ -247,5 +262,34 @@ describe('App boot recovery', () => {
 
     window.dispatchEvent(new Event('online'));
     await waitFor(() => expect(screen.queryByText(/网络已断开/u)).not.toBeInTheDocument());
+  });
+
+  it('loads the optional account entry after capability negotiation without blocking the workspace', async () => {
+    const user = userEvent.setup();
+    const account = {
+      accountId: 'account-1',
+      deviceId: 'device-1',
+      state: 'signed-in' as const,
+      expiresAt: '2026-09-17T00:00:00.000Z'
+    };
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.getCapabilities.mockResolvedValue({ client: 'web', version: 1, capabilities: ['account.auth', 'device.trust', 'sync.encrypted'] });
+    apiMocks.getAccountSession.mockResolvedValue({ account: null });
+    apiMocks.signIn.mockResolvedValue({ account });
+    apiMocks.getSyncState.mockResolvedValue({ sync: 'local-only', head: null, pendingCount: 0 });
+    apiMocks.listDevices.mockResolvedValue([]);
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    renderApp();
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.click(screen.getByRole('button', { name: '账号菜单' }));
+    await user.type(await screen.findByLabelText('账号邮箱'), 'user@example.com');
+    await user.type(screen.getByLabelText('账号密码'), 'account-password');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    expect(apiMocks.signIn).toHaveBeenCalledWith('user@example.com', 'account-password', undefined);
+    expect(within(screen.getByRole('dialog', { name: '账号与同步' })).getByText('账号已登录')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Server', exact: true })).toBeInTheDocument();
   });
 });

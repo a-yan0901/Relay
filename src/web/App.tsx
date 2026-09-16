@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 
 import { AppError } from '@shared/errors';
 import type { HostCreateInput, HostPatchInput, IdentityCreateInput, IdentityUpdateInput, SnippetInput } from '@shared/validation';
@@ -19,7 +19,9 @@ import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { ShortcutMap } from './components/ShortcutMap';
 import { BroadcastPreview } from './components/BroadcastPreview';
-import type { ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
+import { AccountMenu } from './components/AccountMenu';
+import { SyncCenter } from './components/SyncCenter';
+import type { AccountSession, ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, SyncState, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
 import type { BinarySource, NotificationPermission, NotificationPort } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
@@ -104,7 +106,7 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ destination, onLock, onServers, onQuickSwitcher, onSettings, onActivity, onIdentities, onSnippets, onWorkspaces, compact = false }: { destination: PrimaryDestination; onLock: () => void; onServers: () => void; onQuickSwitcher: () => void; onSettings: () => void; onActivity?: () => void; onIdentities?: () => void; onSnippets?: () => void; onWorkspaces?: () => void; compact?: boolean }) => (
+const WorkspaceHeader = ({ destination, onLock, onServers, onQuickSwitcher, onSettings, onActivity, onIdentities, onSnippets, onWorkspaces, accountMenu, compact = false }: { destination: PrimaryDestination; onLock: () => void; onServers: () => void; onQuickSwitcher: () => void; onSettings: () => void; onActivity?: () => void; onIdentities?: () => void; onSnippets?: () => void; onWorkspaces?: () => void; accountMenu?: ReactNode; compact?: boolean }) => (
   <header className={`app-header ${compact ? 'app-header-embedded' : ''}`}>
     <div className="app-header-main">
       <Brand />
@@ -124,7 +126,7 @@ const WorkspaceHeader = ({ destination, onLock, onServers, onQuickSwitcher, onSe
       {onSnippets && <button className="button button-ghost button-small" type="button" onClick={onSnippets}>片段</button>}
       {compact && onActivity && <button className="button button-ghost button-small" type="button" onClick={onActivity}>活动</button>}
       <button className="button button-ghost button-small" type="button" aria-label="偏好设置" title="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
-      <span className="avatar" aria-label="本地用户">L</span>
+      {accountMenu ?? <span className="avatar" aria-label="本地用户">L</span>}
     </div>
   </header>
 );
@@ -198,6 +200,9 @@ export const App = ({ runtime }: AppProps) => {
   const [networkRecoveryVisible, setNetworkRecoveryVisible] = useState(false);
   const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
   const [capabilities, setCapabilities] = useState<CapabilitySet>(() => runtime.capabilities);
+  const [accountSession, setAccountSession] = useState<AccountSession | null>(null);
+  const [syncState, setSyncState] = useState<SyncState | null>(null);
+  const [syncCenterOpen, setSyncCenterOpen] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('denied');
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(false);
@@ -394,6 +399,10 @@ export const App = ({ runtime }: AppProps) => {
         dispatch({ type: 'setup', initialized: status.phase !== 'uninitialized', locked: status.phase !== 'unlocked' });
         if (status.phase === 'unlocked') {
           void loadWorkspace();
+        } else if (status.phase === 'locked') {
+          void runtime.negotiateCapabilities().then((nextCapabilities) => {
+            if (!cancelled) setCapabilities(nextCapabilities);
+          }).catch(() => undefined);
         } else if (status.phase === 'uninitialized') {
           clearTerminalDescriptors();
         }
@@ -406,6 +415,42 @@ export const App = ({ runtime }: AppProps) => {
       cancelled = true;
     };
   }, [bootAttempt, loadWorkspace]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const accountPort = runtime.account;
+    if (!capabilities.supports('account.auth') || !accountPort) {
+      setAccountSession(null);
+      setSyncState(null);
+      setSyncCenterOpen(false);
+      return () => { cancelled = true; };
+    }
+
+    void accountPort.status()
+      .then((account) => {
+        if (cancelled) return;
+        setAccountSession(account);
+        if (!account || !capabilities.supports('sync.encrypted') || !runtime.sync) {
+          setSyncState(null);
+          return;
+        }
+        void runtime.sync.status()
+          .then((nextSync) => {
+            if (!cancelled) setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }) });
+          })
+          .catch(() => {
+            if (!cancelled) setSyncState({ sync: 'offline', head: null, pendingCount: 0 });
+          });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAccountSession(null);
+          setSyncState(null);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [capabilities, runtime]);
 
   useEffect(() => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
@@ -1093,6 +1138,7 @@ export const App = ({ runtime }: AppProps) => {
       setSnippetManagerOpen(false);
       setSnippetPaletteOpen(false);
       setQuickSwitcherOpen(false);
+      setSyncCenterOpen(false);
       setBroadcastPreviewOpen(false);
       setCommandRun(null);
       setTransferJobs([]);
@@ -1103,9 +1149,39 @@ export const App = ({ runtime }: AppProps) => {
     }
   };
 
+  const handleAccountChange = (nextAccount: AccountSession | null): void => {
+    setAccountSession(nextAccount);
+    setSyncState(null);
+    if (!nextAccount || !capabilities.supports('sync.encrypted') || !runtime.sync) return;
+    void runtime.sync.status()
+      .then((nextSync) => setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }) }))
+      .catch(() => setSyncState({ sync: 'offline', head: null, pendingCount: 0 }));
+  };
+
+  const accountMenu = <AccountMenu
+    capabilities={capabilities}
+    account={accountSession}
+    sync={syncState}
+    accountPort={runtime.account}
+    devicesPort={runtime.devices}
+    syncPort={runtime.sync}
+    onAccountChange={handleAccountChange}
+    onSyncChange={setSyncState}
+    onOpenSync={() => setSyncCenterOpen(true)}
+  />;
+
+  const syncCenterState = useMemo<SyncState>(() => syncState ?? {
+    sync: state.phase === 'locked' ? 'needs-unlock' : 'local-only',
+    head: null,
+    pendingCount: 0
+  }, [state.phase, syncState]);
+
   if (state.phase === 'loading') return <LoadingView errorMessage={state.errorMessage} onRetry={retryBoot} />;
   if (state.phase === 'setup') return <SetupGate onSubmit={completeSetup} errorMessage={state.errorMessage} />;
-  if (state.phase === 'locked') return <UnlockView onSubmit={completeUnlock} errorMessage={state.errorMessage} />;
+  if (state.phase === 'locked') return <>
+    <UnlockView onSubmit={completeUnlock} errorMessage={state.errorMessage} headerSlot={accountMenu} />
+    {syncCenterOpen && accountSession && runtime.sync && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked syncPort={runtime.sync} devicesPort={runtime.devices} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
+  </>;
 
   return (
     <main className="app-shell">
@@ -1119,6 +1195,7 @@ export const App = ({ runtime }: AppProps) => {
         onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined}
         onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined}
         onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined}
+        accountMenu={accountMenu}
       />}
       {state.errorMessage && (
         <div className="global-alert" role="alert">
@@ -1226,6 +1303,7 @@ export const App = ({ runtime }: AppProps) => {
               onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined}
               onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined}
               onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined}
+              accountMenu={accountMenu}
             />}
           />
         </div>
@@ -1268,6 +1346,7 @@ export const App = ({ runtime }: AppProps) => {
       />}
       {commandRun && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal" role="dialog" aria-modal="true" aria-labelledby="command-run-result-title"><CommandRunResults run={commandRun} hosts={state.hosts} onCancel={handleCancelCommandRun} onOpenHost={handleOpenHostFromResult} /><button className="button button-ghost" id="command-run-result-title" type="button" onClick={() => setCommandRun(null)}>关闭结果</button></section></div>}
       {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} hosts={state.hosts} filter={activityFilter} loading={activityLoading} hasMore={activityNextCursor !== undefined} diagnostics={operationDiagnostics} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} onApplyFilter={handleApplyActivityFilter} onLoadMore={handleLoadMoreActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
+      {syncCenterOpen && accountSession && runtime.sync && capabilities.supports('sync.encrypted') && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked={false} syncPort={runtime.sync} devicesPort={runtime.devices} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
       {workspaceSettingsMode && <WorkspaceSettings
         mode={workspaceSettingsMode}
         onClose={() => setWorkspaceSettingsMode(null)}

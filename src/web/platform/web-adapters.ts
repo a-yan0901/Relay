@@ -1,6 +1,7 @@
 import type { CapabilitySet } from '../../shared/core/capabilities';
 import { createWebCapabilitySet, negotiateCapabilitySet, WEB_CLIENT_CAPABILITIES } from '../../shared/core/capabilities';
 import type {
+  AccountSession,
   ActivityFilter,
   ActivityPage,
   Capability,
@@ -8,12 +9,19 @@ import type {
   CommandRunRequest,
   ConnectionTestResult,
   ConnectionProfile,
+  DeviceDescriptor,
   GroupNode,
   HostListFilter,
   IdentityMetadata,
   SftpEntry,
   Snippet,
   SnippetMetadata,
+  SyncDescriptor,
+  SyncEnvelope,
+  SyncHead,
+  SyncPreview,
+  SyncResolution,
+  SyncStatus,
   TransferJob,
   TransferResumeRequest,
   TransferRequest,
@@ -23,10 +31,12 @@ import type { GroupPatchInput, HostCreateInput, HostMetadata, HostPatchInput, Id
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview, ImportSourceFile, VaultBundleApplyResult, VaultBundlePreview, VaultBundleResolution } from '../../shared/import/types';
 import { defaultConnectionProfileSettings } from '../../shared/validation';
 import type {
+  AccountSessionPort,
   BinarySource,
   ByteStream,
   CommandTransport,
   ConnectionProbe,
+  DeviceTrustPort,
   FileTransport,
   GroupStore,
   HostStore,
@@ -39,6 +49,7 @@ import type {
   SessionHandle,
   SessionTransport,
   SnippetStore,
+  SyncPort,
   VaultSessionPort,
   WorkspaceStore,
   OpenShellRequest
@@ -60,8 +71,8 @@ const webPaneLimit = (serverLimit: number | undefined): number => {
   return Math.max(1, Math.min(WEB_PLATFORM_MAX_PANES, Math.floor(serverLimit)));
 };
 
-const createEffectiveWebCapabilitySet = (serverCapabilities: readonly Capability[], serverLimit?: number): CapabilitySet => {
-  return negotiateCapabilitySet('web', WEB_CLIENT_CAPABILITIES, serverCapabilities, { maxWorkspacePanes: webPaneLimit(serverLimit) });
+const createEffectiveWebCapabilitySet = (clientCapabilities: readonly Capability[], serverCapabilities: readonly Capability[], serverLimit?: number): CapabilitySet => {
+  return negotiateCapabilitySet('web', clientCapabilities, serverCapabilities, { maxWorkspacePanes: webPaneLimit(serverLimit) });
 };
 
 const emptyWorkspace = (): WorkspaceState => ({
@@ -129,12 +140,53 @@ export interface WebApiClient {
   cancelCommandRun?: typeof api.cancelCommandRun;
   listAuditEvents?: typeof api.listAuditEvents;
   getCapabilities?: typeof api.getCapabilities;
+  getAccountSession?: typeof api.getAccountSession;
+  register?: typeof api.register;
+  signIn?: typeof api.signIn;
+  signOut?: typeof api.signOut;
+  listDevices?: typeof api.listDevices;
+  revokeDevice?: typeof api.revokeDevice;
+  getSyncState?: typeof api.getSyncState;
+  getSyncDescriptor?: typeof api.getSyncDescriptor;
+  enableSync?: typeof api.enableSync;
+  retrySync?: typeof api.retrySync;
+  getSyncEnvelope?: typeof api.getSyncEnvelope;
+  pushSyncEnvelope?: typeof api.pushSyncEnvelope;
+  previewPull?: typeof api.previewPull;
+  resolveConflict?: typeof api.resolveConflict;
 }
 
 const requireApi = <T>(value: T | undefined): T => {
   if (!value) throw new AppError('CAPABILITY_UNAVAILABLE');
   return value;
 };
+
+const hasFunction = (client: WebApiClient, name: keyof WebApiClient): boolean => {
+  try {
+    return typeof client[name] === 'function';
+  } catch {
+    // Partial module mocks may throw when an optional export is absent.
+    return false;
+  }
+};
+
+const hasAccountApi = (client: WebApiClient): boolean => (
+  hasFunction(client, 'getAccountSession')
+  && hasFunction(client, 'register')
+  && hasFunction(client, 'signIn')
+  && hasFunction(client, 'signOut')
+);
+
+const hasDeviceApi = (client: WebApiClient): boolean => hasFunction(client, 'listDevices') && hasFunction(client, 'revokeDevice');
+
+const hasSyncApi = (client: WebApiClient): boolean => (
+  hasFunction(client, 'getSyncState')
+  && hasFunction(client, 'getSyncDescriptor')
+  && hasFunction(client, 'enableSync')
+  && hasFunction(client, 'retrySync')
+  && hasFunction(client, 'previewPull')
+  && hasFunction(client, 'resolveConflict')
+);
 
 export const createWorkspaceWebAdapter = (client: WebApiClient = api): WorkspaceWebAdapter => ({
   load: () => client.getWorkspace?.() ?? Promise.resolve(emptyWorkspace()),
@@ -403,6 +455,86 @@ export class WebFileTransport implements FileTransport {
   }
 }
 
+type WebAccountClient = Pick<WebApiClient, 'getAccountSession' | 'register' | 'signIn' | 'signOut'>;
+
+export class WebAccountSession implements AccountSessionPort {
+  constructor(private readonly client: WebAccountClient = api) {}
+
+  async status(): Promise<AccountSession | null> {
+    return (await requireApi(this.client.getAccountSession)()).account;
+  }
+
+  async register(email: string, password: string, label?: string): Promise<AccountSession> {
+    return (await requireApi(this.client.register)(email, password, label)).account;
+  }
+
+  async signIn(email: string, password: string, label?: string): Promise<AccountSession> {
+    return (await requireApi(this.client.signIn)(email, password, label)).account;
+  }
+
+  signOut(): Promise<void> {
+    return requireApi(this.client.signOut)();
+  }
+}
+
+type WebDeviceClient = Pick<WebApiClient, 'listDevices' | 'revokeDevice'>;
+
+export class WebDeviceTrust implements DeviceTrustPort {
+  constructor(private readonly client: WebDeviceClient = api) {}
+
+  listDevices(): Promise<readonly DeviceDescriptor[]> {
+    return requireApi(this.client.listDevices)();
+  }
+
+  revokeDevice(deviceId: string): Promise<void> {
+    return requireApi(this.client.revokeDevice)(deviceId);
+  }
+}
+
+type WebSyncClient = Pick<WebApiClient, 'getSyncState' | 'getSyncDescriptor' | 'enableSync' | 'retrySync' | 'previewPull' | 'resolveConflict'> & Partial<Pick<WebApiClient, 'getSyncEnvelope' | 'pushSyncEnvelope'>>;
+
+export class WebSync implements SyncPort {
+  constructor(private readonly client: WebSyncClient = api) {}
+
+  async status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string }> {
+    const response = await requireApi(this.client.getSyncState)();
+    return {
+      sync: response.sync,
+      head: response.head,
+      ...(response.pendingCount === undefined ? {} : { pendingCount: response.pendingCount }),
+      ...(response.lastErrorCode === undefined && response.lastError === undefined ? {} : { lastErrorCode: response.lastErrorCode ?? response.lastError })
+    };
+  }
+
+  descriptor(): Promise<SyncDescriptor | null> {
+    return requireApi(this.client.getSyncDescriptor)();
+  }
+
+  pull(): Promise<SyncEnvelope | null> {
+    return requireApi(this.client.getSyncEnvelope)();
+  }
+
+  push(envelope: SyncEnvelope, idempotencyKey: string): Promise<SyncHead> {
+    return requireApi(this.client.pushSyncEnvelope)(envelope, idempotencyKey);
+  }
+
+  previewPull(): Promise<SyncPreview> {
+    return requireApi(this.client.previewPull)();
+  }
+
+  resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void> {
+    return requireApi(this.client.resolveConflict)(conflictId, resolution);
+  }
+
+  enable(): Promise<SyncHead> {
+    return requireApi(this.client.enableSync)();
+  }
+
+  retry(): Promise<void> {
+    return requireApi(this.client.retrySync)();
+  }
+}
+
 export class WebVaultSession implements VaultSessionPort {
   constructor(private readonly client: Pick<WebApiClient, 'getSetupStatus'> & Partial<Pick<WebApiClient, 'setupVault' | 'unlockVault' | 'lockVault'>> = api) {}
 
@@ -597,13 +729,16 @@ export class WebCommandTransport implements CommandTransport {
 }
 
 export class WebCapabilityAdapter {
-  constructor(private readonly client: Pick<WebApiClient, 'getCapabilities'> = api) {}
+  constructor(
+    private readonly client: Pick<WebApiClient, 'getCapabilities'> = api,
+    private readonly clientCapabilities: readonly Capability[] = WEB_CLIENT_CAPABILITIES
+  ) {}
 
   async load(): Promise<CapabilitySet> {
     const response = await this.client.getCapabilities?.() ?? { client: 'web', version: 1, capabilities: [...createWebCapabilitySet().capabilities] } satisfies CapabilityResponse;
     if (response.version !== 1 || response.client !== 'web' || !Array.isArray(response.capabilities)) throw new AppError('CAPABILITY_UNAVAILABLE');
     const serverLimit = response.limits?.maxWorkspacePanes ?? response.limits?.maxPanes;
-    return createEffectiveWebCapabilitySet(response.capabilities, serverLimit);
+    return createEffectiveWebCapabilitySet(this.clientCapabilities, response.capabilities, serverLimit);
   }
 }
 
@@ -680,6 +815,9 @@ export const createWebAdapters = (options: {
   } = {}): WebAdapters => {
   const client = options.api ?? api;
   const capabilityAdapter = new WebCapabilityAdapter(client as Pick<WebApiClient, 'getCapabilities'>);
+  const accountAdapter = hasAccountApi(client) ? new WebAccountSession(client) : undefined;
+  const deviceAdapter = hasDeviceApi(client) ? new WebDeviceTrust(client) : undefined;
+  const syncAdapter = hasSyncApi(client) ? new WebSync(client) : undefined;
   const browserSystemServices = createBrowserSystemServices();
   const platformServices = options.platformServices ?? {
     clipboard: browserSystemServices.capabilities.clipboardRead && browserSystemServices.capabilities.clipboardWrite
@@ -704,9 +842,15 @@ export const createWebAdapters = (options: {
     snippets: new WebSnippetStore(client as Pick<WebApiClient, 'listSnippets'>),
     activity: new WebActivityStore(client as Pick<WebApiClient, 'listAuditEvents'>),
     imports: new WebImportExportAdapter(client as Pick<WebApiClient, 'previewExternalImport' | 'applyExternalImport' | 'exportOpenSshConfig' | 'exportSshCsv' | 'exportVaultBundle' | 'previewVaultImport' | 'applyVaultImport'>),
+    account: undefined,
+    devices: undefined,
+    sync: undefined,
     capabilityAdapter,
     negotiateCapabilities: async (): Promise<CapabilitySet> => {
       runtime.capabilities = await capabilityAdapter.load();
+      runtime.account = runtime.capabilities.supports('account.auth') ? accountAdapter : undefined;
+      runtime.devices = runtime.capabilities.supports('device.trust') ? deviceAdapter : undefined;
+      runtime.sync = runtime.capabilities.supports('sync.encrypted') ? syncAdapter : undefined;
       return runtime.capabilities;
     },
     refreshCapabilities: async (): Promise<CapabilitySet> => runtime.negotiateCapabilities()

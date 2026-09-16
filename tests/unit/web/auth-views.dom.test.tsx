@@ -49,4 +49,11 @@ describe('authentication views', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('主密码至少需要 8 个字符');
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it('can show an account entry while the local Vault remains locked', () => {
+    render(<UnlockView onSubmit={vi.fn(async () => undefined)} headerSlot={<button type="button">账号菜单</button>} />);
+
+    expect(screen.getByRole('button', { name: '账号菜单' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument();
+  });
 });

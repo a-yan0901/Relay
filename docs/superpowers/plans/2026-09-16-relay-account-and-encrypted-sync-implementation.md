@@ -666,11 +666,11 @@ export interface WebSyncApi {
 }
 ```
 
-- [ ] **Step 1: Write failing adapter/UI tests.**
+- [x] **Step 1: Write failing adapter/UI tests.**
 
   `AccountMenu` 测试 Local-only 显示“仅本地，不同步”、未配置 capability 不渲染登录请求、登录/注册错误有明确原因、登出不触发 Vault lock；`SyncCenter` 测试 locked → `needs-unlock`、signed-in/unlocked → enable/sync、pending/offline/retry、conflict 三种动作、device-revoked，以及 DOM/状态中不存在 password/token/privateKey/command 明文。
 
-- [ ] **Step 2: Run Web tests to verify failure.**
+- [x] **Step 2: Run Web tests to verify failure.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin
@@ -679,19 +679,19 @@ export interface WebSyncApi {
 
   Expected: FAIL because API methods, adapter ports and components are absent.
 
-- [ ] **Step 3: Implement API and optional Web ports.**
+- [x] **Step 3: Implement API and optional Web ports.**
 
   在 `src/web/api.ts` 增加严格 response types 和 account/sync functions；使用现有 `request` 的 same-origin credentials，永不读取/写入 localStorage/sessionStorage token。`web-adapters.ts` 实现 `WebAccountSession`、`WebDeviceTrust`、`WebSync`，当 client function 缺失或 capability 不支持时统一抛 `CAPABILITY_UNAVAILABLE`；`createWebAdapters` 仅在 server negotiation 返回三项能力时注入 ports，旧 fake 保持 undefined。
 
-- [ ] **Step 4: Implement AccountMenu and SyncCenter states.**
+- [x] **Step 4: Implement AccountMenu and SyncCenter states.**
 
   AccountMenu 只显示账号 email 的非敏感摘要、Local/Synced badge、最后同步时间和 sign-in/out/device actions；首次注册/登录不超过三步。SyncCenter 显示状态文字、reason、next action、revision/pending count、device list、冲突类型/时间和 keep-local/use-remote/export-both；密码只绑定 input action，不进入 state/log；logout 回到 Local-only 且不锁 Vault。
 
-- [ ] **Step 5: Integrate header/boot without blocking Local.**
+- [x] **Step 5: Integrate header/boot without blocking Local.**
 
   `App.tsx` 在能力协商后加载 account/sync status；请求失败只显示 Local fallback。Header 的本地 avatar 改为可选 AccountMenu 入口，当前页面不因为 account service unavailable 而阻塞 Host/terminal boot；SyncCenter 关闭后保留工作区和终端。
 
-- [ ] **Step 6: Run Web focused tests.**
+- [x] **Step 6: Run Web focused tests.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -700,7 +700,7 @@ export interface WebSyncApi {
 
   Expected: PASS; existing setup/unlock/terminal/sftp UI remains usable when account capability is absent.
 
-- [ ] **Step 7: Commit Web account/sync UI.**
+- [x] **Step 7: Commit Web account/sync UI.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

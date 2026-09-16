@@ -1,5 +1,5 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
-import type { ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, GroupNode, HostListFilter, IdentityMetadata, SftpEntry, Snippet, SnippetMetadata, TransferJob, TransferResumeRequest, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
+import type { AccountSession, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, SftpEntry, Snippet, SnippetMetadata, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
 
@@ -17,6 +17,42 @@ export interface CapabilityResponse {
     /** @deprecated Older servers called this limit maxPanes. */
     maxPanes?: number;
   };
+}
+
+export interface AccountSessionResponse {
+  account: AccountSession | null;
+}
+
+export interface AccountAuthResponse {
+  account: AccountSession;
+}
+
+export interface WebAccountApi {
+  getAccountSession(): Promise<AccountSessionResponse>;
+  register(email: string, password: string, deviceLabel?: string): Promise<AccountAuthResponse>;
+  signIn(email: string, password: string, deviceLabel?: string): Promise<AccountAuthResponse>;
+  signOut(): Promise<void>;
+  listDevices(): Promise<DeviceDescriptor[]>;
+  revokeDevice(deviceId: string): Promise<void>;
+}
+
+export interface WebSyncStateResponse {
+  sync: SyncStatus;
+  head: SyncHead | null;
+  pendingCount?: number;
+  lastError?: string;
+  lastErrorCode?: string;
+  lastSyncedAt?: string;
+  deletion?: SyncState['deletion'];
+}
+
+export interface WebSyncApi {
+  getSyncState(): Promise<WebSyncStateResponse>;
+  getSyncDescriptor(): Promise<SyncDescriptor | null>;
+  enableSync(): Promise<SyncHead>;
+  retrySync(): Promise<void>;
+  previewPull(): Promise<SyncPreview>;
+  resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void>;
 }
 
 export type GroupSummaryResponse = GroupNode;
@@ -142,9 +178,253 @@ const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> =>
 
 const json = (value: unknown): RequestOptions => ({ body: JSON.stringify(value) });
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const invalidResponse = (): never => {
+  throw new AppError('PROTOCOL_INVALID_MESSAGE', '服务返回的数据格式无效');
+};
+
+const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+
+const isInteger = (value: unknown): value is number => Number.isInteger(value);
+
+const isIsoDate = (value: unknown): value is string => isNonEmptyString(value) && Number.isFinite(Date.parse(value));
+
+const hasExactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean => {
+  const expected = new Set(keys);
+  return Object.keys(value).length === expected.size && Object.keys(value).every((key) => expected.has(key));
+};
+
+const parseAccountSession = (value: unknown): AccountSession => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['accountId', 'deviceId', 'state', 'expiresAt'])
+    || !isNonEmptyString(value.accountId)
+    || !isNonEmptyString(value.deviceId)
+    || (value.state !== 'signed-in' && value.state !== 'revoked')
+    || !isIsoDate(value.expiresAt)) return invalidResponse();
+  return {
+    accountId: value.accountId,
+    deviceId: value.deviceId,
+    state: value.state,
+    expiresAt: value.expiresAt
+  };
+};
+
+const parseAccountSessionResponse = (value: unknown): AccountSessionResponse => {
+  if (!isRecord(value) || !hasExactKeys(value, ['account']) || (value.account !== null && value.account !== undefined && !isRecord(value.account))) return invalidResponse();
+  return { account: value.account === null || value.account === undefined ? null : parseAccountSession(value.account) };
+};
+
+const parseAccountAuthResponse = (value: unknown): AccountAuthResponse => {
+  if (!isRecord(value) || !hasExactKeys(value, ['account'])) return invalidResponse();
+  return { account: parseAccountSession(value.account) };
+};
+
+const parseDevice = (value: unknown): DeviceDescriptor => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['id', 'label', 'platform', 'lastSeenAt', 'current', 'revokedAt'])
+    || !isNonEmptyString(value.id)
+    || !isNonEmptyString(value.label)
+    || (value.platform !== 'web' && value.platform !== 'desktop' && value.platform !== 'android')
+    || (value.lastSeenAt !== null && !isIsoDate(value.lastSeenAt))
+    || typeof value.current !== 'boolean'
+    || (value.revokedAt !== null && !isIsoDate(value.revokedAt))) return invalidResponse();
+  return {
+    id: value.id,
+    label: value.label,
+    platform: value.platform,
+    lastSeenAt: value.lastSeenAt,
+    current: value.current,
+    revokedAt: value.revokedAt
+  };
+};
+
+const parseSyncHead = (value: unknown): SyncHead => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['vaultId', 'revision', 'keyVersion', 'payloadHash', 'updatedAt'])
+    || !isNonEmptyString(value.vaultId)
+    || !isInteger(value.revision)
+    || !isInteger(value.keyVersion)
+    || !isNonEmptyString(value.payloadHash)
+    || !isIsoDate(value.updatedAt)) return invalidResponse();
+  return {
+    vaultId: value.vaultId,
+    revision: value.revision,
+    keyVersion: value.keyVersion,
+    payloadHash: value.payloadHash,
+    updatedAt: value.updatedAt
+  };
+};
+
+const parseWrappedKeyEnvelope = (value: unknown): boolean => isRecord(value)
+  && hasExactKeys(value, ['version', 'nonce', 'ciphertext', 'authTag', 'aad'])
+  && isInteger(value.version)
+  && isNonEmptyString(value.nonce)
+  && isNonEmptyString(value.ciphertext)
+  && isNonEmptyString(value.authTag)
+  && isNonEmptyString(value.aad);
+
+const parseVaultUnlockEnvelope = (value: unknown): boolean => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['version', 'kdf', 'wrappedVaultKey']) && !hasExactKeys(value, ['version', 'kdf', 'wrappedVaultKey', 'recoveryWrappedVaultKey'])
+    || !isInteger(value.version)
+    || !isRecord(value.kdf)
+    || !hasExactKeys(value.kdf, ['algorithm', 'salt', 'memoryCost', 'timeCost', 'parallelism', 'hashLength'])
+    || !isNonEmptyString(value.kdf.algorithm)
+    || !isNonEmptyString(value.kdf.salt)
+    || !isInteger(value.kdf.memoryCost)
+    || !isInteger(value.kdf.timeCost)
+    || !isInteger(value.kdf.parallelism)
+    || !isInteger(value.kdf.hashLength)
+    || !parseWrappedKeyEnvelope(value.wrappedVaultKey)) return false;
+  return value.recoveryWrappedVaultKey === undefined || parseWrappedKeyEnvelope(value.recoveryWrappedVaultKey);
+};
+
+const parseSyncDescriptor = (value: unknown): SyncDescriptor => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['vaultId', 'keyVersion', 'vaultUnlockEnvelope', 'wrappedSyncKey'])
+    || !isNonEmptyString(value.vaultId)
+    || !isInteger(value.keyVersion)
+    || !parseVaultUnlockEnvelope(value.vaultUnlockEnvelope)
+    || !parseWrappedKeyEnvelope(value.wrappedSyncKey)) return invalidResponse();
+  return value as unknown as SyncDescriptor;
+};
+
+const syncStatuses: readonly SyncStatus[] = ['local-only', 'needs-unlock', 'syncing', 'synced', 'pending', 'offline', 'conflict', 'device-revoked'];
+
+const isSyncStatus = (value: unknown): value is SyncStatus => typeof value === 'string' && syncStatuses.includes(value as SyncStatus);
+
+const parseSyncStateResponse = (value: unknown): WebSyncStateResponse => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['sync', 'head', 'pendingCount', 'lastError', 'lastErrorCode', 'lastSyncedAt', 'deletion'].filter((key) => value[key] !== undefined))
+    || !isSyncStatus(value.sync)
+    || (value.head !== null && !isRecord(value.head))) return invalidResponse();
+  const pendingCount = value.pendingCount === undefined ? undefined : isInteger(value.pendingCount) && value.pendingCount >= 0 ? value.pendingCount : invalidResponse();
+  if (value.lastError !== undefined && typeof value.lastError !== 'string') return invalidResponse();
+  if (value.lastErrorCode !== undefined && typeof value.lastErrorCode !== 'string') return invalidResponse();
+  if (value.lastSyncedAt !== undefined && !isIsoDate(value.lastSyncedAt)) return invalidResponse();
+  const head = value.head === null ? null : parseSyncHead(value.head);
+  let deletion: SyncState['deletion'] | undefined;
+  if (value.deletion !== undefined) {
+    if (!isRecord(value.deletion)
+      || !hasExactKeys(value.deletion, ['deleteAfter', 'requestedAt', 'remainingMs'])
+      || !isIsoDate(value.deletion.deleteAfter)
+      || !isIsoDate(value.deletion.requestedAt)
+      || typeof value.deletion.remainingMs !== 'number'
+      || !Number.isFinite(value.deletion.remainingMs)
+      || value.deletion.remainingMs < 0) return invalidResponse();
+    deletion = { deleteAfter: value.deletion.deleteAfter, requestedAt: value.deletion.requestedAt, remainingMs: value.deletion.remainingMs };
+  }
+  return {
+    sync: value.sync,
+    head,
+    ...(pendingCount === undefined ? {} : { pendingCount }),
+    ...(value.lastError === undefined ? {} : { lastError: value.lastError }),
+    ...(value.lastErrorCode === undefined ? {} : { lastErrorCode: value.lastErrorCode }),
+    ...(value.lastSyncedAt === undefined ? {} : { lastSyncedAt: value.lastSyncedAt }),
+    ...(deletion === undefined ? {} : { deletion })
+  };
+};
+
+const parseSyncPreview = (value: unknown): SyncPreview => {
+  const conflictTypes: SyncPreview['conflictTypes'] = ['host', 'group', 'identity', 'snippet', 'workspace', 'host-key'];
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['conflictId', 'localRevision', 'remoteRevision', 'conflictTypes', 'localBackupRevision'])
+    || !isNonEmptyString(value.conflictId)
+    || !isInteger(value.localRevision)
+    || !isInteger(value.remoteRevision)
+    || !Array.isArray(value.conflictTypes)
+    || value.conflictTypes.some((type) => !conflictTypes.includes(type as SyncPreview['conflictTypes'][number]))
+    || !isInteger(value.localBackupRevision)) return invalidResponse();
+  return {
+    conflictId: value.conflictId,
+    localRevision: value.localRevision,
+    remoteRevision: value.remoteRevision,
+    conflictTypes: value.conflictTypes as SyncPreview['conflictTypes'],
+    localBackupRevision: value.localBackupRevision
+  };
+};
+
+const parseSyncDescriptorResponse = (value: unknown): SyncDescriptor | null => {
+  if (!isRecord(value) || !hasExactKeys(value, ['descriptor']) || (value.descriptor !== null && value.descriptor !== undefined && !isRecord(value.descriptor))) return invalidResponse();
+  return value.descriptor === null || value.descriptor === undefined ? null : parseSyncDescriptor(value.descriptor);
+};
+
+const parseSyncEnvelope = (envelope: unknown): SyncEnvelope => {
+  if (!isRecord(envelope)) return invalidResponse();
+  if (!hasExactKeys(envelope, ['schemaVersion', 'vaultId', 'revision', 'parentRevision', 'deviceId', 'keyVersion', 'nonce', 'ciphertext', 'authTag', 'aad', 'payloadHash', 'byteLength'])
+    || envelope.schemaVersion !== 1
+    || !isNonEmptyString(envelope.vaultId)
+    || !isInteger(envelope.revision)
+    || (envelope.parentRevision !== null && !isInteger(envelope.parentRevision))
+    || !isNonEmptyString(envelope.deviceId)
+    || !isInteger(envelope.keyVersion)
+    || !isNonEmptyString(envelope.nonce)
+    || !isNonEmptyString(envelope.ciphertext)
+    || !isNonEmptyString(envelope.authTag)
+    || !isNonEmptyString(envelope.aad)
+    || !/^[a-f0-9]{64}$/iu.test(typeof envelope.payloadHash === 'string' ? envelope.payloadHash : '')
+    || !isInteger(envelope.byteLength)
+    || envelope.byteLength < 0
+    || envelope.byteLength > 32 * 1024 * 1024) return invalidResponse();
+  return envelope as unknown as SyncEnvelope;
+};
+
+const parseSyncEnvelopeResponse = (value: unknown): SyncEnvelope | null => {
+  if (!isRecord(value) || !hasExactKeys(value, ['envelope']) || (value.envelope !== null && value.envelope !== undefined && !isRecord(value.envelope))) return invalidResponse();
+  if (value.envelope === null || value.envelope === undefined) return null;
+  return parseSyncEnvelope(value.envelope);
+};
+
 export const getSetupStatus = (): Promise<SetupStatus> => request<SetupStatus>('/api/setup/status');
 
 export const getCapabilities = (): Promise<CapabilityResponse> => request<CapabilityResponse>('/api/capabilities');
+
+export const getAccountSession: WebAccountApi['getAccountSession'] = () => request<unknown>('/api/account/session').then(parseAccountSessionResponse);
+
+export const register: WebAccountApi['register'] = (email, password, deviceLabel) => request<unknown>('/api/account/register', {
+  method: 'POST',
+  ...json({ email, password, ...(deviceLabel === undefined ? {} : { deviceLabel }) })
+}).then(parseAccountAuthResponse);
+
+export const signIn: WebAccountApi['signIn'] = (email, password, deviceLabel) => request<unknown>('/api/account/session', {
+  method: 'POST',
+  ...json({ email, password, ...(deviceLabel === undefined ? {} : { deviceLabel }) })
+}).then(parseAccountAuthResponse);
+
+export const signOut: WebAccountApi['signOut'] = () => request<void>('/api/account/session', { method: 'DELETE' });
+
+export const listDevices: WebAccountApi['listDevices'] = () => request<unknown>('/api/account/devices').then((value) => {
+  if (!Array.isArray(value)) return invalidResponse();
+  return value.map(parseDevice);
+});
+
+export const revokeDevice: WebAccountApi['revokeDevice'] = (deviceId) => request<void>(`/api/account/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
+
+export const getSyncState: WebSyncApi['getSyncState'] = () => request<unknown>('/api/sync/v1/state').then(parseSyncStateResponse);
+
+export const getSyncDescriptor: WebSyncApi['getSyncDescriptor'] = () => request<unknown>('/api/sync/v1/descriptor').then(parseSyncDescriptorResponse);
+
+export const enableSync: WebSyncApi['enableSync'] = () => request<unknown>('/api/sync/v1/enable', { method: 'POST' }).then(parseSyncHead);
+
+export const retrySync: WebSyncApi['retrySync'] = async () => {
+  await request<unknown>('/api/sync/v1/retry', { method: 'POST' });
+};
+
+export const getSyncEnvelope = (): Promise<SyncEnvelope | null> => request<unknown>('/api/sync/v1/envelope').then(parseSyncEnvelopeResponse);
+
+export const pushSyncEnvelope = (envelope: SyncEnvelope, idempotencyKey: string): Promise<SyncHead> => request<unknown>('/api/sync/v1/envelope', {
+  method: 'PUT',
+  headers: new Headers({ 'idempotency-key': idempotencyKey }),
+  ...json(parseSyncEnvelope(envelope))
+}).then(parseSyncHead);
+
+export const previewPull: WebSyncApi['previewPull'] = () => request<unknown>('/api/sync/v1/pull/preview', { method: 'POST' }).then(parseSyncPreview);
+
+export const resolveConflict: WebSyncApi['resolveConflict'] = (conflictId, resolution) => request<void>(`/api/sync/v1/conflicts/${encodeURIComponent(conflictId)}/resolve`, {
+  method: 'POST',
+  ...json({ resolution })
+});
 
 export const setupVault = (masterPassword: string): Promise<SetupStatus> => request<SetupStatus>('/api/setup', {
   method: 'POST',
