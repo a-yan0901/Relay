@@ -17,10 +17,12 @@ import { SnippetManager } from './components/SnippetManager';
 import { SnippetPalette } from './components/SnippetPalette';
 import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { QuickSwitcher } from './components/QuickSwitcher';
-import type { AuditEvent, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TransferJob, WorkspaceTemplate } from '../shared/core/models';
-import type { CapabilitySet } from '../shared/core/capabilities';
+import { BroadcastPreview } from './components/BroadcastPreview';
+import type { AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TransferJob, WorkspaceTemplate } from '../shared/core/models';
+import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
 import type { BinarySource } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
+import { WEB_PLATFORM_MAX_PANES } from './platform/web-adapters';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
 import {
@@ -119,6 +121,7 @@ const WorkspaceHeader = ({ destination, onLock, onServers, onQuickSwitcher, onSe
       </button>
       {onIdentities && <button className="button button-ghost button-small" type="button" onClick={onIdentities}>身份</button>}
       {onSnippets && <button className="button button-ghost button-small" type="button" onClick={onSnippets}>片段</button>}
+      {compact && onActivity && <button className="button button-ghost button-small" type="button" onClick={onActivity}>活动</button>}
       <button className="button button-ghost button-small" type="button" aria-label="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
@@ -178,6 +181,7 @@ export const App = ({ runtime }: AppProps) => {
   const [workspaceTemplates, setWorkspaceTemplates] = useState<WorkspaceTemplate[]>([]);
   const [workspaceSettingsMode, setWorkspaceSettingsMode] = useState<'import' | 'export' | null>(null);
   const [commandDialogOpen, setCommandDialogOpen] = useState(false);
+  const [broadcastPreviewOpen, setBroadcastPreviewOpen] = useState(false);
   const [commandTargetHostIds, setCommandTargetHostIds] = useState<string[]>([]);
   const [commandInitialCommand, setCommandInitialCommand] = useState('');
   const [commandInitialVariables, setCommandInitialVariables] = useState<Record<string, string>>({});
@@ -209,6 +213,7 @@ export const App = ({ runtime }: AppProps) => {
     workspaceTemplates,
     snippets
   }), [snippets, state.groups, state.hosts, state.terminals, workspaceTemplates]);
+  const maxWorkspacePanes = effectiveMaxPanes(capabilities, WEB_PLATFORM_MAX_PANES);
 
   useEffect(() => {
     const handleOffline = (): void => setNetworkOnline(false);
@@ -505,6 +510,17 @@ export const App = ({ runtime }: AppProps) => {
     setCommandInitialCommand('');
     setCommandInitialVariables({});
     setCommandTargetHostIds(uniqueHostIds);
+    setCommandDialogOpen(true);
+    void loadSnippets();
+  };
+
+  const handleOpenBroadcast = (): void => setBroadcastPreviewOpen(true);
+
+  const handleConfirmBroadcast = (snapshot: BroadcastTargetSnapshot): void => {
+    setBroadcastPreviewOpen(false);
+    setCommandInitialCommand('');
+    setCommandInitialVariables({});
+    setCommandTargetHostIds([...snapshot.hostIds]);
     setCommandDialogOpen(true);
     void loadSnippets();
   };
@@ -899,6 +915,7 @@ export const App = ({ runtime }: AppProps) => {
       setSnippetManagerOpen(false);
       setSnippetPaletteOpen(false);
       setQuickSwitcherOpen(false);
+      setBroadcastPreviewOpen(false);
       setCommandRun(null);
       setTransferJobs([]);
       transferFilesRef.current.clear();
@@ -988,6 +1005,7 @@ export const App = ({ runtime }: AppProps) => {
             onConnectHost={handleOpenTerminal}
             onStatusChange={handleTerminalStatus}
             onOpenBatchCommand={capabilities.supports('automation.batch-exec') ? () => handleOpenBatchCommand() : undefined}
+            onOpenBroadcast={capabilities.supports('automation.batch-exec') && capabilities.supports('terminal.broadcast') && maxWorkspacePanes > 1 ? handleOpenBroadcast : undefined}
             onOpenSnippetPalette={capabilities.supports('automation.snippets') ? handleOpenSnippetPalette : undefined}
             onListSftp={capabilities.supports('sftp.browse') ? (hostId, path) => runtime.files.list(hostId, path) : undefined}
             onCreateDirectorySftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.createDirectory(hostId, path) : undefined}
@@ -998,7 +1016,8 @@ export const App = ({ runtime }: AppProps) => {
             transferJobs={capabilities.supports('sftp.transfer') ? transferJobs : []}
             onCancelTransfer={capabilities.supports('sftp.transfer') ? handleCancelTransfer : undefined}
             onRetryTransfer={capabilities.supports('sftp.transfer') ? handleRetryTransfer : undefined}
-            allowMultiPane={capabilities.supports('workspace.multi-pane')}
+            allowMultiPane={supportsWorkspacePanes(capabilities)}
+            maxPanes={maxWorkspacePanes}
             workspaceLayout={state.workspace.layout}
             workspaceTabIdByTerminalId={state.workspaceTabIdByTerminalId}
             onLayoutChange={(layout) => dispatch({ type: 'workspaceLayoutChanged', layout })}
@@ -1033,6 +1052,7 @@ export const App = ({ runtime }: AppProps) => {
       {snippetManagerOpen && capabilities.supports('automation.snippet-manager') && <SnippetManager snippets={snippets} onGet={(id) => runtime.snippets.get(id)} onCreate={handleCreateSnippet} onUpdate={handleUpdateSnippet} onDelete={handleDeleteSnippet} onClose={() => setSnippetManagerOpen(false)} />}
       {snippetPaletteOpen && capabilities.supports('automation.snippets') && <SnippetPalette snippets={snippets} onSelect={handleSelectSnippetFromPalette} onClose={() => setSnippetPaletteOpen(false)} />}
       {workspaceSwitcherOpen && capabilities.supports('workspace.templates') && <WorkspaceSwitcher templates={workspaceTemplates} currentWorkspace={workspaceStateFromAppState(state)} hosts={state.hosts} onOpen={handleOpenWorkspaceTemplate} onSave={handleSaveWorkspaceTemplate} onDelete={handleDeleteWorkspaceTemplate} onClose={() => setWorkspaceSwitcherOpen(false)} />}
+      {broadcastPreviewOpen && <BroadcastPreview workspaceId={null} hosts={state.hosts} groups={state.groups} terminals={state.terminals} workspaceTabIdByTerminalId={state.workspaceTabIdByTerminalId} onConfirm={handleConfirmBroadcast} onClose={() => setBroadcastPreviewOpen(false)} />}
       {commandDialogOpen && <CommandRunDialog
         hosts={state.hosts}
         hostIds={commandTargetHostIds}

@@ -1,4 +1,4 @@
-import type { GroupNode, TargetSelection } from './models.js';
+import type { BroadcastTargetSnapshot, GroupNode, TargetSelection } from './models.js';
 import { descendantGroupIds } from './group-tree.js';
 
 export interface TargetHostLike {
@@ -11,7 +11,9 @@ export interface TargetHostLike {
   tags?: readonly string[];
 }
 
-export const dedupeTargetHostIds = (hostIds: readonly string[]): string[] => [...new Set(hostIds)];
+const dedupeIds = (ids: readonly string[]): string[] => [...new Set(ids)];
+
+export const dedupeTargetHostIds = (hostIds: readonly string[]): string[] => dedupeIds(hostIds);
 
 export const groupHostIds = (
   groupId: string,
@@ -32,3 +34,20 @@ export const snapshotTargetSelection = (
   favoriteOnly: selection.favoriteOnly,
   query: selection.query
 });
+
+export const createBroadcastTargetSnapshot = (input: {
+  workspaceId: string | null;
+  tabIds: readonly string[];
+  hostIds: readonly string[];
+  capturedAt?: string;
+}): BroadcastTargetSnapshot => {
+  const tabIds = dedupeIds(input.tabIds);
+  const hostIds = dedupeIds(input.hostIds);
+  return Object.freeze({
+    workspaceId: input.workspaceId,
+    tabIds: Object.freeze(tabIds),
+    hostIds: Object.freeze(hostIds),
+    capturedAt: input.capturedAt ?? new Date().toISOString(),
+    highRisk: tabIds.length > 1
+  });
+};

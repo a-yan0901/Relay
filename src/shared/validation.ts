@@ -348,7 +348,9 @@ export const workspaceStateSchema = z.object({
   layout: z.object({
     mode: z.enum(['single', 'vertical', 'horizontal', 'grid']),
     ratio: z.number().min(0.2).max(0.8),
-    paneTabIds: z.array(identifierSchema).max(4).optional()
+    // Durable layout intent may outlive the current platform's visible pane
+    // limit. The UI applies the negotiated limit without dropping tab ids.
+    paneTabIds: z.array(identifierSchema).max(64).optional()
   }).strict(),
   filters: z.object({
     query: z.string().max(255).refine((value) => !hasControlCharacter(value)),

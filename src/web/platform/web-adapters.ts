@@ -2,6 +2,7 @@ import type { CapabilitySet } from '../../shared/core/capabilities';
 import { createCapabilitySet, createWebCapabilitySet } from '../../shared/core/capabilities';
 import type {
   ActivityFilter,
+  Capability,
   CommandRun,
   CommandRunRequest,
   ConnectionTestResult,
@@ -47,6 +48,18 @@ import { TerminalSessionController } from '../hooks/use-terminal-session';
 import * as api from '../api';
 import type { CapabilityResponse } from '../api';
 import { Sha256 } from '../../shared/crypto/sha256';
+
+/** Browser UI upper bound; server capabilities are intersected with this value below. */
+export const WEB_PLATFORM_MAX_PANES = 4;
+
+const webPaneLimit = (serverLimit: number | undefined): number => {
+  if (serverLimit === undefined || !Number.isFinite(serverLimit)) return WEB_PLATFORM_MAX_PANES;
+  return Math.max(1, Math.min(WEB_PLATFORM_MAX_PANES, Math.floor(serverLimit)));
+};
+
+const createEffectiveWebCapabilitySet = (capabilities: readonly Capability[], serverLimit?: number): CapabilitySet => (
+  createCapabilitySet('web', capabilities, { maxWorkspacePanes: webPaneLimit(serverLimit) })
+);
 
 const emptyWorkspace = (): WorkspaceState => ({
   version: 0,
@@ -577,7 +590,8 @@ export class WebCapabilityAdapter {
     const response = await this.client.getCapabilities?.() ?? { client: 'web', version: 1, capabilities: [...createWebCapabilitySet().capabilities] } satisfies CapabilityResponse;
     if (response.version !== 1 || response.client !== 'web' || !Array.isArray(response.capabilities)) throw new AppError('CAPABILITY_UNAVAILABLE');
     const webCapabilities = createWebCapabilitySet();
-    return createCapabilitySet('web', response.capabilities.filter((capability): capability is typeof webCapabilities.capabilities[number] => webCapabilities.supports(capability)));
+    const serverLimit = response.limits?.maxWorkspacePanes ?? response.limits?.maxPanes;
+    return createEffectiveWebCapabilitySet(response.capabilities.filter((capability): capability is typeof webCapabilities.capabilities[number] => webCapabilities.supports(capability)), serverLimit);
   }
 }
 
@@ -652,7 +666,7 @@ export const createWebAdapters = (options: { api?: WebApiClient; webSocketFactor
   const capabilityAdapter = new WebCapabilityAdapter(client as Pick<WebApiClient, 'getCapabilities'>);
   const runtime = {
     platform: 'web',
-    capabilities: createWebCapabilitySet(),
+    capabilities: createWebCapabilitySet({ maxWorkspacePanes: WEB_PLATFORM_MAX_PANES }),
     vault: new WebVaultSession(client as Pick<WebApiClient, 'getSetupStatus'>),
     connection: new WebConnectionProbe(client as Pick<WebApiClient, 'testConnection'>),
     workspace: createWorkspaceWebAdapter(client),
@@ -670,7 +684,7 @@ export const createWebAdapters = (options: { api?: WebApiClient; webSocketFactor
     negotiateCapabilities: async (): Promise<CapabilitySet> => {
       const serverCapabilities = await capabilityAdapter.load();
       const webCapabilities = createWebCapabilitySet();
-      runtime.capabilities = createCapabilitySet('web', webCapabilities.capabilities.filter((capability) => serverCapabilities.supports(capability)));
+      runtime.capabilities = createEffectiveWebCapabilitySet(webCapabilities.capabilities.filter((capability) => serverCapabilities.supports(capability)), serverCapabilities.limits.maxWorkspacePanes);
       return runtime.capabilities;
     },
     refreshCapabilities: async (): Promise<CapabilitySet> => runtime.negotiateCapabilities()

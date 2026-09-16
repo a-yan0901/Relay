@@ -8,7 +8,7 @@ import {
   type AppState,
   type HostMetadataState
 } from '../../../src/web/state/app-state';
-import { restoreWorkspace, workspaceStateFromAppState } from '../../../src/web/state/workspace-state';
+import { restoreWorkspace, withWorkspaceLayout, workspaceStateFromAppState } from '../../../src/web/state/workspace-state';
 
 const host = (overrides: Partial<HostMetadataState> = {}): HostMetadataState => ({
   id: 'host-1',
@@ -281,5 +281,15 @@ describe('appReducer', () => {
       });
     }
     expect(state.terminals[0]).toMatchObject({ state: 'failed', reconnectDelayMs: 0, errorMessage: '连接失败' });
+  });
+
+  it('preserves overflow pane intent when the current client cannot render it', () => {
+    const state = withWorkspaceLayout(initialAppState.workspace, {
+      mode: 'grid',
+      ratio: 0.5,
+      paneTabIds: ['tab-1', 'tab-2', 'tab-3', 'tab-4', 'tab-5']
+    });
+
+    expect(state.layout.paneTabIds).toEqual(['tab-1', 'tab-2', 'tab-3', 'tab-4', 'tab-5']);
   });
 });

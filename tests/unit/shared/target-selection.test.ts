@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GroupNode, TargetSelection } from '../../../src/shared/core/models.js';
-import { dedupeTargetHostIds, groupHostIds, snapshotTargetSelection } from '../../../src/shared/core/target-selection.js';
+import { createBroadcastTargetSnapshot, dedupeTargetHostIds, groupHostIds, snapshotTargetSelection } from '../../../src/shared/core/target-selection.js';
 
 const groups: GroupNode[] = [
   { id: 'prod', name: 'Production', parentId: null, sortOrder: 0, defaultIdentityId: null, connectionProfile: null },
@@ -26,5 +26,25 @@ describe('target selection snapshot', () => {
       favoriteOnly: false,
       query: 'api'
     });
+  });
+
+  it('freezes a deduplicated broadcast target snapshot with an explicit risk marker', () => {
+    const snapshot = createBroadcastTargetSnapshot({
+      workspaceId: 'workspace-1',
+      tabIds: ['tab-1', 'tab-1', 'tab-2'],
+      hostIds: ['host-1', 'host-2', 'host-1'],
+      capturedAt: '2026-09-16T09:00:00.000Z'
+    });
+
+    expect(snapshot).toEqual({
+      workspaceId: 'workspace-1',
+      tabIds: ['tab-1', 'tab-2'],
+      hostIds: ['host-1', 'host-2'],
+      capturedAt: '2026-09-16T09:00:00.000Z',
+      highRisk: true
+    });
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.tabIds)).toBe(true);
+    expect(Object.isFrozen(snapshot.hostIds)).toBe(true);
   });
 });

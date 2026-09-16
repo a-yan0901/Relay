@@ -11,6 +11,9 @@ import { TransferQueue } from './TransferQueue';
 
 type SplitOrientation = 'horizontal' | 'vertical';
 type PaneKey = 'primary' | 'secondary';
+type TerminalAttention = 'completed' | 'error';
+const MAX_GRID_PANES = 4;
+const MIN_GRID_PANES = 3;
 
 interface SplitLayout {
   orientation: SplitOrientation;
@@ -27,6 +30,7 @@ export interface TerminalWorkspaceProps {
   onEditHost?: (host: HostMetadataState) => void;
   onConnectHost?: (host: HostMetadataState) => void;
   onOpenBatchCommand?: () => void;
+  onOpenBroadcast?: () => void;
   onOpenSnippetPalette?: () => void;
   onListSftp?: (hostId: string, path: string) => Promise<readonly SftpEntry[]>;
   onCreateDirectorySftp?: (hostId: string, path: string) => Promise<void>;
@@ -46,9 +50,16 @@ export interface TerminalWorkspaceProps {
   workspaceTabIdByTerminalId?: Readonly<Record<string, string>>;
   onLayoutChange?: (layout: WorkspaceLayout) => void;
   allowMultiPane?: boolean;
+  maxPanes?: number;
 }
 
 const clampSplitRatio = (ratio: number): number => Math.round(Math.min(0.8, Math.max(0.2, ratio)) * 100) / 100;
+
+const normalizePaneLimit = (maxPanes: number | undefined, allowMultiPane: boolean): number => {
+  if (!allowMultiPane) return 1;
+  const requested = maxPanes === undefined || !Number.isFinite(maxPanes) ? MAX_GRID_PANES : Math.floor(maxPanes);
+  return Math.max(1, Math.min(MAX_GRID_PANES, requested));
+};
 
 const replacePane = (layout: SplitLayout, pane: PaneKey, terminalId: string | null): SplitLayout => (
   pane === 'primary' ? { ...layout, primaryId: terminalId } : { ...layout, secondaryId: terminalId }
@@ -68,11 +79,12 @@ const splitLayoutFromWorkspace = (layout: WorkspaceLayout | undefined, terminalI
 const gridTerminalIdsFromWorkspace = (
   layout: WorkspaceLayout | undefined,
   terminals: readonly TerminalTabState[],
-  workspaceTabIdByTerminalId: Readonly<Record<string, string>> | undefined
+  workspaceTabIdByTerminalId: Readonly<Record<string, string>> | undefined,
+  maxPanes = MAX_GRID_PANES
 ): string[] => {
   const terminalIdByWorkspaceTabId = new Map(Object.entries(workspaceTabIdByTerminalId ?? {}).map(([terminalId, tabId]) => [tabId, terminalId]));
   const requested = layout?.paneTabIds?.map((tabId) => terminalIdByWorkspaceTabId.get(tabId)).filter((id): id is string => id !== undefined) ?? [];
-  return [...new Set([...requested, ...terminals.map((terminal) => terminal.terminalId)])].slice(0, 4);
+  return [...new Set([...requested, ...terminals.map((terminal) => terminal.terminalId)])].slice(0, maxPanes);
 };
 
 export const TerminalWorkspace = ({
@@ -83,6 +95,7 @@ export const TerminalWorkspace = ({
   onClose,
   onConnectHost,
   onOpenBatchCommand,
+  onOpenBroadcast,
   onOpenSnippetPalette,
   onListSftp,
   onCreateDirectorySftp,
@@ -102,25 +115,28 @@ export const TerminalWorkspace = ({
   workspaceLayout,
   workspaceTabIdByTerminalId,
   onLayoutChange,
-  allowMultiPane = true
+  allowMultiPane = true,
+  maxPanes
 }: TerminalWorkspaceProps) => {
+  const paneLimit = normalizePaneLimit(maxPanes, allowMultiPane);
   const [hostQuery, setHostQuery] = useState('');
   const [hostPickerOpen, setHostPickerOpen] = useState(false);
   const [splitLayout, setSplitLayout] = useState<SplitLayout | null>(() => splitLayoutFromWorkspace(workspaceLayout, terminals.map((terminal) => terminal.terminalId)));
-  const [gridLayout, setGridLayout] = useState(() => workspaceLayout?.mode === 'grid');
-  const [gridTerminalIds, setGridTerminalIds] = useState(() => gridTerminalIdsFromWorkspace(workspaceLayout, terminals, workspaceTabIdByTerminalId));
+  const [gridLayout, setGridLayout] = useState(() => workspaceLayout?.mode === 'grid' && paneLimit >= MIN_GRID_PANES);
+  const [gridTerminalIds, setGridTerminalIds] = useState(() => gridTerminalIdsFromWorkspace(workspaceLayout, terminals, workspaceTabIdByTerminalId, paneLimit));
   const [focusedGridIndex, setFocusedGridIndex] = useState(0);
   const [focusedPane, setFocusedPane] = useState<PaneKey>('primary');
   const [splitRatio, setSplitRatio] = useState(() => clampSplitRatio(workspaceLayout?.ratio ?? 0.5));
   const [isDraggingDivider, setIsDraggingDivider] = useState(false);
   const [toolbarByTerminalId, setToolbarByTerminalId] = useState<Record<string, TerminalPanelToolbarState | null>>({});
+  const [attentionByTerminalId, setAttentionByTerminalId] = useState<Record<string, TerminalAttention>>({});
   const [filePanelOpen, setFilePanelOpen] = useState(false);
   const layoutRef = useRef<HTMLDivElement>(null);
   const pendingPaneRef = useRef<PaneKey | null>(null);
   const previousTerminalIdsRef = useRef(new Set(terminals.map((terminal) => terminal.terminalId)));
 
   useEffect(() => {
-    if (!allowMultiPane) {
+    if (!allowMultiPane || paneLimit <= 1) {
       setGridLayout(false);
       setGridTerminalIds([]);
       setSplitLayout(null);
@@ -128,19 +144,51 @@ export const TerminalWorkspace = ({
     }
     if (!workspaceLayout) return;
     setSplitRatio(clampSplitRatio(workspaceLayout.ratio));
-    setGridLayout(workspaceLayout.mode === 'grid');
-    if (workspaceLayout.mode === 'grid') {
+    const workspaceTerminalIds = terminals.map((terminal) => terminal.terminalId);
+    setGridLayout(workspaceLayout.mode === 'grid' && paneLimit >= MIN_GRID_PANES);
+    if (workspaceLayout.mode === 'grid' && paneLimit >= MIN_GRID_PANES) {
       setSplitLayout(null);
-      setGridTerminalIds(gridTerminalIdsFromWorkspace(workspaceLayout, terminals, workspaceTabIdByTerminalId));
+      setGridTerminalIds(gridTerminalIdsFromWorkspace(workspaceLayout, terminals, workspaceTabIdByTerminalId, paneLimit));
+    } else if (workspaceLayout.mode === 'grid') {
+      // A smaller client keeps the durable grid intent and shows its first
+      // available panes as a split; overflow tabs remain in the tab strip.
+      setGridTerminalIds([]);
+      setSplitLayout(splitLayoutFromWorkspace(
+        workspaceLayout,
+        gridTerminalIdsFromWorkspace(workspaceLayout, terminals, workspaceTabIdByTerminalId, 2)
+      ));
     } else {
       setGridTerminalIds([]);
-      setSplitLayout(splitLayoutFromWorkspace(workspaceLayout, terminals.map((terminal) => terminal.terminalId)));
+      setSplitLayout(splitLayoutFromWorkspace(workspaceLayout, workspaceTerminalIds));
     }
-  }, [allowMultiPane, terminals, workspaceLayout?.mode, workspaceLayout?.ratio, workspaceLayout?.paneTabIds, workspaceTabIdByTerminalId]);
+  }, [allowMultiPane, paneLimit, terminals, workspaceLayout?.mode, workspaceLayout?.ratio, workspaceLayout?.paneTabIds, workspaceTabIdByTerminalId]);
 
   const handleToolbarChange = useCallback((terminalId: string, toolbar: TerminalPanelToolbarState | null): void => {
     setToolbarByTerminalId((current) => current[terminalId] === toolbar ? current : { ...current, [terminalId]: toolbar });
   }, []);
+
+  const clearTerminalAttention = useCallback((terminalId: string): void => {
+    setAttentionByTerminalId((current) => {
+      if (current[terminalId] === undefined) return current;
+      const next = { ...current };
+      delete next[terminalId];
+      return next;
+    });
+  }, []);
+
+  const handleTerminalStatus = useCallback((terminalId: string, snapshot: TerminalSessionSnapshot): void => {
+    if (terminalId !== activeTerminalId) {
+      const attention: TerminalAttention | null = snapshot.state === 'failed' || snapshot.error !== null || (snapshot.exit !== null && snapshot.exit.code !== 0)
+        ? 'error'
+        : snapshot.exit !== null ? 'completed' : null;
+      if (attention !== null) setAttentionByTerminalId((current) => current[terminalId] === attention ? current : { ...current, [terminalId]: attention });
+    }
+    onStatusChange?.(terminalId, snapshot);
+  }, [activeTerminalId, onStatusChange]);
+
+  useEffect(() => {
+    if (activeTerminalId) clearTerminalAttention(activeTerminalId);
+  }, [activeTerminalId, clearTerminalAttention]);
 
   const visibleHosts = useMemo(() => {
     const normalized = hostQuery.trim().toLowerCase();
@@ -169,14 +217,14 @@ export const TerminalWorkspace = ({
     const pendingPane = pendingPaneRef.current;
     if (!addedTerminal) return;
     if (gridLayout) {
-      setGridTerminalIds((current) => current.includes(addedTerminal.terminalId) || current.length >= 4 ? current : [...current, addedTerminal.terminalId]);
+      setGridTerminalIds((current) => current.includes(addedTerminal.terminalId) || current.length >= paneLimit ? current : [...current, addedTerminal.terminalId]);
       return;
     }
     if (!pendingPane) return;
     setSplitLayout((layout) => layout ? replacePane(layout, pendingPane, addedTerminal.terminalId) : layout);
     setFocusedPane(pendingPane);
     pendingPaneRef.current = null;
-  }, [gridLayout, terminals]);
+  }, [gridLayout, paneLimit, terminals]);
 
   const fallbackTerminalId = activeTerminalId && terminalById.has(activeTerminalId)
     ? activeTerminalId
@@ -190,9 +238,12 @@ export const TerminalWorkspace = ({
       ? splitLayout.secondaryId
       : secondaryCandidate
     : null;
-  const visibleGridTerminalIds = gridTerminalIds.filter((terminalId) => terminalById.has(terminalId)).slice(0, 4);
+  const visibleGridTerminalIds = gridTerminalIds.filter((terminalId) => terminalById.has(terminalId)).slice(0, paneLimit);
   const activeToolbar = activeTerminalId ? toolbarByTerminalId[activeTerminalId] : null;
   const activeHostId = activeTerminalId ? terminalById.get(activeTerminalId)?.hostId ?? null : null;
+  const writableHostCount = new Set(terminals
+    .filter((terminal) => terminal.state === 'connected' && terminal.recoveryStatus !== 'missing-host' && terminal.recoveryStatus !== 'needs-reopen' && hostById.has(terminal.hostId))
+    .map((terminal) => terminal.hostId)).size;
 
   const labelForTerminal = (terminalId: string | null): string => {
     if (!terminalId) return '选择 Console';
@@ -224,6 +275,7 @@ export const TerminalWorkspace = ({
     if (!splitLayout || !terminalById.has(terminalId)) return;
     const otherId = pane === 'primary' ? secondaryTerminalId : primaryTerminalId;
     if (terminalId === otherId) return;
+    clearTerminalAttention(terminalId);
     setSplitLayout((layout) => layout ? replacePane(layout, pane, terminalId) : layout);
     setFocusedPane(pane);
     onActivate(terminalId);
@@ -231,12 +283,14 @@ export const TerminalWorkspace = ({
 
   const selectGridTerminal = (index: number, terminalId: string): void => {
     if (!gridLayout || !terminalById.has(terminalId) || visibleGridTerminalIds.some((id, candidateIndex) => candidateIndex !== index && id === terminalId)) return;
+    clearTerminalAttention(terminalId);
     setGridTerminalIds((current) => current.map((id, candidateIndex) => candidateIndex === index ? terminalId : id));
     setFocusedGridIndex(index);
     onActivate(terminalId);
   };
 
   const activateTerminal = (terminalId: string): void => {
+    clearTerminalAttention(terminalId);
     if (gridLayout) {
       const existingIndex = visibleGridTerminalIds.indexOf(terminalId);
       if (existingIndex >= 0) setFocusedGridIndex(existingIndex);
@@ -297,7 +351,7 @@ export const TerminalWorkspace = ({
     }
     setSplitLayout(null);
     setGridLayout(true);
-    const ids = [...new Set([...visibleGridTerminalIds, ...terminals.map((terminal) => terminal.terminalId)])].slice(0, 4);
+    const ids = [...new Set([...visibleGridTerminalIds, ...terminals.map((terminal) => terminal.terminalId)])].slice(0, paneLimit);
     setGridTerminalIds(ids);
     setFocusedGridIndex(0);
     onLayoutChange?.({ mode: 'grid', ratio: splitRatio, paneTabIds: ids.map((terminalId) => workspaceTabIdByTerminalId?.[terminalId]).filter((tabId): tabId is string => tabId !== undefined) });
@@ -371,6 +425,7 @@ export const TerminalWorkspace = ({
                     <span className={`status-dot ${terminalStatusDotClass(terminal.state)}`} aria-hidden="true" />
                     <span className="terminal-tab-meta"><strong>{label}</strong><small>{host?.address ?? 'Server 已不存在'}</small></span>
                     <span className="terminal-tab-status">{terminal.recoveryStatus === 'missing-host' ? 'Server 已不存在' : terminalStatusLabels[terminal.state]}</span>
+                    {attentionByTerminalId[terminal.terminalId] && <span className={`terminal-tab-attention terminal-tab-attention-${attentionByTerminalId[terminal.terminalId]}`} aria-label={attentionByTerminalId[terminal.terminalId] === 'error' ? '未读错误' : '未读完成'} title={attentionByTerminalId[terminal.terminalId] === 'error' ? '未读错误' : '未读完成'}>{attentionByTerminalId[terminal.terminalId] === 'error' ? '!' : '✓'}</span>}
                   </button>
                   <button className="terminal-tab-close" type="button" aria-label={`关闭 ${label}`} onClick={(event) => { event.stopPropagation(); onClose(terminal.terminalId); }}>×</button>
                 </div>
@@ -407,12 +462,13 @@ export const TerminalWorkspace = ({
               </div>
             )}
             {onOpenBatchCommand && <button className="terminal-topbar-button" type="button" aria-label="批量执行" onClick={onOpenBatchCommand}>⌘<span>批量</span></button>}
+            {onOpenBroadcast && writableHostCount >= 2 && <button className="terminal-topbar-button terminal-broadcast-button" type="button" aria-label="广播" onClick={onOpenBroadcast}>◉<span>广播</span></button>}
             {onOpenSnippetPalette && <button className="terminal-topbar-button" type="button" aria-label="命令片段" onClick={onOpenSnippetPalette}>✦<span>片段</span></button>}
             {onListSftp && <button className="terminal-topbar-button" type="button" aria-label="远程文件" aria-pressed={filePanelOpen} onClick={() => setFilePanelOpen((open) => !open)}>▤<span>文件</span></button>}
-            {allowMultiPane && <>
+            {paneLimit > 1 && <>
               <button className="terminal-topbar-button" type="button" aria-label="左右分屏" aria-pressed={splitLayout?.orientation === 'horizontal'} onClick={() => toggleSplit('horizontal')} title="左右分屏">◫</button>
               <button className="terminal-topbar-button" type="button" aria-label="上下分屏" aria-pressed={splitLayout?.orientation === 'vertical'} onClick={() => toggleSplit('vertical')} title="上下分屏">▤</button>
-              <button className="terminal-topbar-button" type="button" aria-label="四格布局" aria-pressed={gridLayout} onClick={toggleGrid} title="最多四格布局">⊞<span>四格</span></button>
+              {paneLimit >= MIN_GRID_PANES && <button className="terminal-topbar-button" type="button" aria-label={paneLimit >= MAX_GRID_PANES ? '四格布局' : '多格布局'} aria-pressed={gridLayout} onClick={toggleGrid} title={`最多${paneLimit}格布局`}>⊞<span>{paneLimit >= MAX_GRID_PANES ? '四格' : '多格'}</span></button>}
               {(splitLayout || gridLayout) && <button className="terminal-topbar-button terminal-exit-split-button" type="button" aria-label="退出分屏" onClick={() => { setSplitLayout(null); setGridLayout(false); setGridTerminalIds([]); setFocusedPane('primary'); onLayoutChange?.({ mode: 'single', ratio: splitRatio }); }}>×<span>退出分屏</span></button>}
             </>}
           </div>
@@ -440,11 +496,13 @@ export const TerminalWorkspace = ({
                 aria-label={visiblePaneLabel}
                 onMouseDown={() => {
                   if (gridLayout && gridIndex >= 0) {
+                    clearTerminalAttention(terminal.terminalId);
                     setFocusedGridIndex(gridIndex);
                     if (terminal.terminalId !== activeTerminalId) onActivate(terminal.terminalId);
                     return;
                   }
                   if (!pane) return;
+                  clearTerminalAttention(terminal.terminalId);
                   setFocusedPane(pane);
                   if (terminal.terminalId !== activeTerminalId) onActivate(terminal.terminalId);
                 }}
@@ -460,7 +518,7 @@ export const TerminalWorkspace = ({
                     </label>
                   </div>
                 )}
-                {host ? <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} recoveryStatus={terminal.recoveryStatus} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} /> : paneVisible && <div className="terminal-recovery-pane" role="status"><strong>Server 已不存在</strong><p>这个工作区标签关联的 Server 已不存在。</p><button className="button button-ghost button-small" type="button" onClick={() => onClose(terminal.terminalId)}>关闭标签</button></div>}
+                {host ? <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} recoveryStatus={terminal.recoveryStatus} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onStatusChange={(snapshot) => handleTerminalStatus(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} /> : paneVisible && <div className="terminal-recovery-pane" role="status"><strong>Server 已不存在</strong><p>这个工作区标签关联的 Server 已不存在。</p><button className="button button-ghost button-small" type="button" onClick={() => onClose(terminal.terminalId)}>关闭标签</button></div>}
               </div>
             );
           })}
@@ -479,12 +537,12 @@ export const TerminalWorkspace = ({
               <div className="terminal-pane-empty-content"><span>等待第二个 Console</span>{onConnectHost && <button className="button button-ghost button-small" type="button" onClick={() => setHostPickerOpen(true)}>选择 Server</button>}</div>
             </div>
           )}
-          {allowMultiPane && (splitLayout || gridLayout) && (
+          {paneLimit > 1 && (splitLayout || gridLayout) && (
             <div
               className="terminal-divider"
               role="separator"
               tabIndex={0}
-              aria-label={gridLayout ? '调整四格布局大小' : splitLayout?.orientation === 'horizontal' ? '调整左右分屏大小' : '调整上下分屏大小'}
+              aria-label={gridLayout ? paneLimit >= MAX_GRID_PANES ? '调整四格布局大小' : '调整多格布局大小' : splitLayout?.orientation === 'horizontal' ? '调整左右分屏大小' : '调整上下分屏大小'}
               aria-orientation={gridLayout || splitLayout?.orientation !== 'horizontal' ? 'horizontal' : 'vertical'}
               aria-valuemin={20}
               aria-valuemax={80}

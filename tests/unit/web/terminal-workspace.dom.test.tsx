@@ -7,12 +7,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { HostMetadataState, TerminalTabState } from '../../../src/web/state/app-state';
 import type { WorkspaceLayout } from '../../../src/shared/core/models';
+import type { TerminalSessionSnapshot } from '../../../src/web/hooks/use-terminal-session';
 import { HostKeyDialog } from '../../../src/web/components/HostKeyDialog';
 import { TerminalToolbar } from '../../../src/web/components/TerminalToolbar';
 import { TerminalWorkspace } from '../../../src/web/components/TerminalWorkspace';
 
 vi.mock('../../../src/web/components/TerminalPanel', () => ({
-  TerminalPanel: ({ terminalId, host, active, onClose, onToolbarChange }: { terminalId: string; host: HostMetadataState; active: boolean; onClose: () => void; onToolbarChange?: (terminalId: string, toolbar: MockTerminalToolbar | null) => void }) => {
+  TerminalPanel: ({ terminalId, host, active, onClose, onStatusChange, onToolbarChange }: { terminalId: string; host: HostMetadataState; active: boolean; onClose: () => void; onStatusChange?: (snapshot: TerminalSessionSnapshot) => void; onToolbarChange?: (terminalId: string, toolbar: MockTerminalToolbar | null) => void }) => {
     useEffect(() => {
       onToolbarChange?.(terminalId, {
         state: 'connected',
@@ -30,6 +31,8 @@ vi.mock('../../../src/web/components/TerminalPanel', () => ({
       <section data-testid={`terminal-panel-${terminalId}`} hidden={!active}>
         <h2>{host.name}</h2>
         <button type="button" onClick={onClose}>关闭模拟终端</button>
+        <button type="button" onClick={() => onStatusChange?.({ state: 'closed', hostKey: null, credential: null, error: null, exit: { type: 'exit', code: 0 }, reconnectDelayMs: 0, networkOffline: false, diagnostics: [] })}>模拟 {terminalId} 完成</button>
+        <button type="button" onClick={() => onStatusChange?.({ state: 'failed', hostKey: null, credential: null, error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '连接失败' }, exit: null, reconnectDelayMs: 0, networkOffline: false, diagnostics: [] })}>模拟 {terminalId} 错误</button>
       </section>
     );
   }
@@ -125,6 +128,53 @@ describe('TerminalWorkspace', () => {
 
     await user.click(screen.getByRole('button', { name: '关闭 Production · 2' }));
     expect(onClose).toHaveBeenCalledWith('tab-2');
+  });
+
+  it('offers Broadcast only when at least two sessions are writable', async () => {
+    const user = userEvent.setup();
+    const onOpenBroadcast = vi.fn();
+    const hosts = [host('host-1', 'Production'), host('host-2', 'Staging')];
+    render(
+      <TerminalWorkspace
+        hosts={hosts}
+        terminals={[
+          { terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null },
+          { terminalId: 'tab-2', hostId: 'host-2', state: 'connected', reconnectDelayMs: 0, errorMessage: null }
+        ]}
+        activeTerminalId="tab-1"
+        onActivate={vi.fn()}
+        onClose={vi.fn()}
+        onOpenBroadcast={onOpenBroadcast}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '广播' }));
+    expect(onOpenBroadcast).toHaveBeenCalledOnce();
+  });
+
+  it('shows unread completion and error attention for a background Console', async () => {
+    const user = userEvent.setup();
+    render(
+      <TerminalWorkspace
+        hosts={[host('host-1', 'Production'), host('host-2', 'Staging')]}
+        terminals={[
+          { terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null },
+          { terminalId: 'tab-2', hostId: 'host-2', state: 'connected', reconnectDelayMs: 0, errorMessage: null }
+        ]}
+        activeTerminalId="tab-1"
+        onActivate={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '左右分屏' }));
+    await user.click(screen.getByRole('button', { name: '模拟 tab-2 完成' }));
+    expect(screen.getByLabelText('未读完成')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: '切换 Staging · 1' }));
+    expect(screen.queryByLabelText('未读完成')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '模拟 tab-2 错误' }));
+    expect(screen.getByLabelText('未读错误')).toBeInTheDocument();
   });
 
   it('embeds the global header and session tools into the single terminal bar', async () => {

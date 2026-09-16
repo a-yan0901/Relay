@@ -240,8 +240,10 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   });
 
   app.get('/api/capabilities', async (_request, reply) => {
-    const capabilitySet = createWebCapabilitySet();
-    reply.send({ client: capabilitySet.client, version: capabilitySet.version, capabilities: capabilitySet.capabilities });
+    // maxSessions is a safe server-side upper bound; the browser adapter still
+    // intersects it with its own local rendering limit.
+    const capabilitySet = createWebCapabilitySet({ maxWorkspacePanes: dependencies.config.maxSessions });
+    reply.send({ client: capabilitySet.client, version: capabilitySet.version, capabilities: capabilitySet.capabilities, limits: capabilitySet.limits });
   });
 
   await registerSetupRoutes(app, {

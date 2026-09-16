@@ -162,7 +162,13 @@ test.describe('SSH productivity boundaries', () => {
     await page.getByRole('button', { name: '左右分屏' }).click();
     await expect(page.getByRole('separator', { name: '调整左右分屏大小' })).toBeVisible();
 
-    await page.getByRole('button', { name: '批量执行' }).click();
+    await page.getByRole('button', { name: '广播' }).click();
+    const broadcastPreview = page.getByRole('dialog', { name: '广播执行预览' });
+    await expect(broadcastPreview).toContainText('2 个可写 Console');
+    await expect(broadcastPreview).toContainText(firstHost);
+    await expect(broadcastPreview).toContainText(secondHost);
+    await broadcastPreview.getByRole('button', { name: '确认并填写命令' }).click();
+
     const commandDialog = page.getByRole('dialog', { name: '批量执行' });
     await commandDialog.getByLabel('命令').fill("printf 'batch={{message}}\\n'; sleep 5");
     await commandDialog.locator('#command-variable-message').fill('e2e-ok');
@@ -194,7 +200,7 @@ test.describe('SSH productivity boundaries', () => {
       const sockets = (window as Window & { __relaySockets?: WebSocket[] }).__relaySockets ?? [];
       for (const socket of sockets.filter((candidate) => candidate.url.includes('/ws/terminal'))) socket.close();
     });
-    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText(/重连中|已断开|连接失败/u, { timeout: 1_000 });
+    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText(/重连中|已断开|连接失败|需要重新连接/u, { timeout: 1_000 });
     await expect(page.getByRole('button', { name: '新建终端' })).toBeVisible();
   });
 });

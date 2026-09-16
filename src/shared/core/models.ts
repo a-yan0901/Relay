@@ -56,6 +56,14 @@ export interface TargetSelection {
   query: string;
 }
 
+export interface BroadcastTargetSnapshot {
+  workspaceId: string | null;
+  tabIds: readonly string[];
+  hostIds: readonly string[];
+  capturedAt: string;
+  highRisk: boolean;
+}
+
 export interface IdentityMetadata {
   id: string;
   name: string;
@@ -295,6 +303,8 @@ export type Capability =
   | 'workspace.persistence'
   | 'workspace.templates'
   | 'workspace.multi-pane'
+  | 'workspace.max-panes'
+  | 'terminal.broadcast'
   | 'vault.bundle'
   | 'vault.identities'
   | 'ssh.shell'

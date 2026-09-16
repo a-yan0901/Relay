@@ -7,6 +7,7 @@ import {
   type WorkspaceState
 } from '../../../src/shared/core/models.js';
 import { connectionProfileSchema, workspaceStateSchema } from '../../../src/shared/validation.js';
+import { createCapabilitySet, effectiveMaxPanes } from '../../../src/shared/core/capabilities.js';
 
 const profile = (hostId: string, jumpHostIds: string[] = []): ConnectionProfile => ({
   hostId,
@@ -51,5 +52,19 @@ describe('shared core models', () => {
     expect(normalizeWorkspaceState(workspace(0.01)).layout.ratio).toBe(0.2);
     expect(normalizeWorkspaceState(workspace(0.99)).layout.ratio).toBe(0.8);
     expect(workspaceStateSchema.safeParse(workspace(0.5)).success).toBe(true);
+    const expandedWorkspace = {
+      ...workspace(0.5),
+      tabs: Array.from({ length: 16 }, (_, index) => ({ id: `tab-${index + 1}`, hostId: `host-${index + 1}` })),
+      activeTabId: 'tab-1',
+      layout: { mode: 'grid' as const, ratio: 0.5, paneTabIds: Array.from({ length: 16 }, (_, index) => `tab-${index + 1}`) }
+    };
+    expect(workspaceStateSchema.safeParse(expandedWorkspace).success).toBe(true);
+  });
+
+  it('limits visible panes by the negotiated capability and client platform', () => {
+    expect(effectiveMaxPanes(createCapabilitySet('web', ['workspace.max-panes'], { maxWorkspacePanes: 16 }), 4)).toBe(4);
+    expect(effectiveMaxPanes(createCapabilitySet('desktop', ['workspace.max-panes'], { maxWorkspacePanes: 2 }), 16)).toBe(2);
+    expect(effectiveMaxPanes(createCapabilitySet('web', ['workspace.max-panes'], { maxWorkspacePanes: 8 }), 6)).toBe(6);
+    expect(effectiveMaxPanes(createCapabilitySet('web', [], { maxWorkspacePanes: 4 }), 4)).toBe(1);
   });
 });

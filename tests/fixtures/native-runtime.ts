@@ -159,6 +159,8 @@ const NATIVE_CAPABILITIES: readonly Capability[] = [
   'workspace.persistence',
   'workspace.templates',
   'workspace.multi-pane',
+  'workspace.max-panes',
+  'terminal.broadcast',
   'vault.bundle',
   'vault.identities',
   'ssh.shell',

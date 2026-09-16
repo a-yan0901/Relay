@@ -248,6 +248,23 @@ describe('web adapters', () => {
     expect(runtime.capabilities.supports('workspace.multi-pane')).toBe(false);
   });
 
+  it('intersects a server pane limit with the Web platform upper bound', async () => {
+    const runtime = createWebAdapters({
+      api: {
+        getCapabilities: async () => ({
+          client: 'web' as const,
+          version: 1 as const,
+          capabilities: ['workspace.max-panes'] as const,
+          limits: { maxWorkspacePanes: 16 }
+        })
+      }
+    });
+
+    await runtime.refreshCapabilities();
+    expect(runtime.capabilities.limits.maxWorkspacePanes).toBe(4);
+    expect(runtime.capabilities.supports('workspace.max-panes')).toBe(true);
+  });
+
   it('keeps cross-product import/export behind the shared imports port', async () => {
     const externalPreview = {
       previewId: 'preview-1',

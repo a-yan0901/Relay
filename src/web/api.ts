@@ -12,6 +12,11 @@ export interface CapabilityResponse {
   client: ClientPlatform;
   version: 1;
   capabilities: Capability[];
+  limits?: {
+    maxWorkspacePanes?: number;
+    /** @deprecated Older servers called this limit maxPanes. */
+    maxPanes?: number;
+  };
 }
 
 export type GroupSummaryResponse = GroupNode;

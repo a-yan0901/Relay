@@ -39,7 +39,8 @@ describe('health and version endpoints', () => {
     expect(capabilities.json()).toEqual(expect.objectContaining({
       client: 'web',
       version: 1,
-      capabilities: expect.arrayContaining(['ssh.shell', 'sftp.transfer', 'automation.batch-exec'])
+      capabilities: expect.arrayContaining(['ssh.shell', 'sftp.transfer', 'automation.batch-exec', 'workspace.max-panes', 'terminal.broadcast']),
+      limits: { maxWorkspacePanes: 4 }
     }));
   });
 
