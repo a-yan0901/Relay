@@ -460,7 +460,7 @@ export interface TransferResumeRequest {
 
 ## Task U-01: Servers / Workspaces / Activity 信息架构与 Quick Switcher
 
-**Status:** Ready
+**Status:** Done（2026-09-16）
 **Priority:** P1
 **Milestone:** M2
 **Depends on:** R-03 的 Workspace/恢复语义；现有 Host、Group、Tag、Snippet 和 Activity API。
@@ -468,8 +468,8 @@ export interface TransferResumeRequest {
 **Files:**
 
 - Create: `src/web/components/QuickSwitcher.tsx`, `src/web/state/navigation-state.ts`
-- Modify: `src/web/App.tsx`, `src/web/components/GroupSidebar.tsx`, `src/web/components/HostWorkspace.tsx`, `src/web/components/HostList.tsx`, `src/web/components/HostCard.tsx`, `src/web/components/WorkspaceSwitcher.tsx`, `src/web/styles.css`
-- Test: `tests/unit/web/quick-switcher.dom.test.tsx`, `tests/unit/web/app.dom.test.tsx`, `tests/unit/web/host-workspace.dom.test.tsx`, `tests/unit/web/workspace-switcher.dom.test.tsx`
+- Modify: `src/web/App.tsx`, `src/web/components/GroupSidebar.tsx`, `src/web/components/HostWorkspace.tsx`, `src/web/components/HostList.tsx`, `src/web/components/HostCard.tsx`, `src/web/components/HostTargetPicker.tsx`, `src/web/components/WorkspaceSwitcher.tsx`, `src/web/styles.css`
+- Test: `tests/unit/web/quick-switcher.dom.test.tsx`, `tests/unit/web/navigation-state.test.ts`, `tests/unit/web/app.dom.test.tsx`, `tests/unit/web/app-terminal-lifecycle.dom.test.tsx`, `tests/unit/web/host-target-picker.dom.test.tsx`, `tests/unit/web/host-workspace.dom.test.tsx`, `tests/unit/web/workspace-switcher.dom.test.tsx`
 
 **Interfaces:**
 
@@ -486,39 +486,46 @@ export type QuickSwitcherItem =
 - `Ctrl/Cmd+K` 统一打开 Quick Switcher；在终端输入焦点下不得截断 shell 的文本输入语义，使用现有焦点规则决定是否拦截。
 - Quick Switcher 只调用已存在的 runtime/store，不在 UI 复制一套 Host 筛选规则。
 
-- [ ] **Step 1: 写发现路径和键盘测试。**
+- [x] **Step 1: 写发现路径和键盘测试。**
 
   覆盖 Host/Tag/Group/Identity/打开 tab/Workspace/Snippet 的模糊匹配、上下键、Enter、Escape、空结果、长标签、重复名称和焦点恢复。
 
-- [ ] **Step 2: 运行 DOM 测试确认失败。**
+- [x] **Step 2: 运行 DOM 测试确认失败。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   npm test -- --run tests/unit/web/quick-switcher.dom.test.tsx tests/unit/web/app.dom.test.tsx tests/unit/web/host-workspace.dom.test.tsx
   ```
 
-- [ ] **Step 3: 收敛一级入口。**
+- [x] **Step 3: 收敛一级入口。**
 
   将顶部平铺入口整理为 Servers、Workspaces、Activity；Identity、Snippet、导入导出和偏好设置保留在上下文面板或设置入口；不改变已存在的业务 API。
 
-- [ ] **Step 4: 实现 Quick Switcher 和 Recent/Tags。**
+- [x] **Step 4: 实现 Quick Switcher 和 Recent/Tags。**
 
   GroupSidebar 增加 Recent、Favorites、Tags、Groups；HostWorkspace 显示当前筛选和清除入口；目标选择器复用相同过滤语义；搜索结果展示环境、用户名、协议和连接状态。
 
-- [ ] **Step 5: 运行浏览器可用性验证并提交。**
+- [x] **Step 5: 运行浏览器可用性验证并提交。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   npm test -- --run tests/unit/web/quick-switcher.dom.test.tsx tests/unit/web/host-target-picker.dom.test.tsx tests/unit/web/host-workspace.dom.test.tsx
   npm run test:e2e -- --project=chromium tests/e2e/host-to-terminal.spec.ts
-  git add src/web/components/QuickSwitcher.tsx src/web/state/navigation-state.ts src/web/App.tsx src/web/components/GroupSidebar.tsx src/web/components/HostWorkspace.tsx src/web/components/HostList.tsx src/web/components/HostCard.tsx src/web/components/WorkspaceSwitcher.tsx src/web/styles.css tests/unit/web/quick-switcher.dom.test.tsx tests/unit/web/app.dom.test.tsx tests/unit/web/host-workspace.dom.test.tsx tests/unit/web/workspace-switcher.dom.test.tsx
+  git add src/web/components/QuickSwitcher.tsx src/web/state/navigation-state.ts src/web/App.tsx src/web/components/GroupSidebar.tsx src/web/components/HostWorkspace.tsx src/web/components/HostList.tsx src/web/components/HostCard.tsx src/web/components/HostTargetPicker.tsx src/web/components/WorkspaceSwitcher.tsx src/web/styles.css tests/unit/web/quick-switcher.dom.test.tsx tests/unit/web/navigation-state.test.ts tests/unit/web/app.dom.test.tsx tests/unit/web/app-terminal-lifecycle.dom.test.tsx tests/unit/web/host-target-picker.dom.test.tsx tests/unit/web/host-workspace.dom.test.tsx tests/unit/web/workspace-switcher.dom.test.tsx tests/e2e/host-to-terminal.spec.ts
   git diff --cached --check
   git commit -m "feat: add task-oriented server navigation"
   ```
 
 **Acceptance:** 常用 Host 在两次操作内可打开；打开的 tab、Workspace、Snippet 和标签可从同一 Quick Switcher 找到；不再用顶部按钮数量表达产品信息架构。
 
-**Verification:** Quick Switcher、Host Workspace、目标选择器和 Workspace DOM tests，Chromium 主机发现路径，以及键盘焦点和空结果人工走查。
+**Verification:**
+
+- RED：先加入导航索引、Quick Switcher、快捷键和 Recent/Tags 测试，确认缺失模块、旧快捷键断言和未实现行为按预期失败；随后以最小实现收敛到现有 runtime/store。
+- Focused：Quick Switcher、导航索引、Host Workspace、Host Target Picker、App 和生命周期回归共 6 个重点文件、26 个测试通过；覆盖模糊匹配、重复名称、长结果/空结果、上下键、Enter、Escape、焦点恢复、Recent/Tags 和清除筛选。
+- `npm run typecheck`、`npm run lint`、`npm run build` 通过；构建仅有既有前端 chunk 体积提示。
+- Full regression：`npm test`，85 个测试文件、329 个测试全部通过。
+- Browser：`npm run test:e2e -- --project=chromium tests/e2e/host-to-terminal.spec.ts`，1/1 通过；覆盖页面级 Quick Switcher、终端内顶栏打开、终端输入框 Ctrl+K 不抢占、真实 SSH 建连、刷新恢复、锁定/解锁和窄屏路径。
+- `git diff --check` 通过；feature commit：`b978ea7`（`feat: add task-oriented server navigation`）。
 
 ---
 
