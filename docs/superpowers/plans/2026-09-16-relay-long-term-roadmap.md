@@ -531,7 +531,7 @@ export type QuickSwitcherItem =
 
 ## Task U-02: Focus / Split / Broadcast 任务工作区
 
-**Status:** Ready
+**Status:** Done（2026-09-16）
 **Priority:** P1
 **Milestone:** M2
 **Depends on:** U-01 的任务入口；R-01 的状态语义；`CapabilitySet`。
@@ -539,8 +539,8 @@ export type QuickSwitcherItem =
 **Files:**
 
 - Create: `src/web/components/BroadcastPreview.tsx`
-- Modify: `src/shared/core/models.ts`, `src/shared/core/capabilities.ts`, `src/shared/core/target-selection.ts`, `src/web/state/workspace-state.ts`, `src/web/components/TerminalWorkspace.tsx`, `src/web/components/TerminalPanel.tsx`, `src/web/components/TerminalToolbar.tsx`, `src/web/App.tsx`, `src/web/styles.css`
-- Test: `tests/unit/shared/core-models.test.ts`, `tests/unit/shared/target-selection.test.ts`, `tests/unit/web/terminal-workspace-grid.test.tsx`, `tests/unit/web/terminal-workspace.dom.test.tsx`, `tests/unit/web/app-terminal-lifecycle.dom.test.tsx`, `tests/e2e/ssh-productivity.spec.ts`
+- Modify: `src/shared/core/models.ts`, `src/shared/core/capabilities.ts`, `src/shared/core/target-selection.ts`, `src/shared/validation.ts`, `src/server/app.ts`, `src/web/api.ts`, `src/web/platform/web-adapters.ts`, `src/web/state/workspace-state.ts`, `src/web/components/TerminalWorkspace.tsx`, `src/web/App.tsx`, `src/web/styles.css`
+- Test: `tests/unit/shared/core-models.test.ts`, `tests/unit/shared/target-selection.test.ts`, `tests/unit/web/app-state.test.ts`, `tests/unit/web/broadcast-preview.dom.test.tsx`, `tests/unit/web/terminal-workspace-grid.test.tsx`, `tests/unit/web/terminal-workspace.dom.test.tsx`, `tests/unit/web/web-adapters.test.ts`, `tests/integration/server/health.test.ts`, `tests/e2e/ssh-productivity.spec.ts`
 
 **Interfaces:**
 
@@ -558,26 +558,26 @@ export interface BroadcastTargetSnapshot {
 - `BroadcastTargetSnapshot` 在确认时冻结；执行中新增/关闭 tab 不改变已提交目标。
 - Focus 是默认视角，Split 是同一 Workspace 的视角切换；后台 pane 可显示未读完成/错误状态。
 
-- [ ] **Step 1: 写 pane、焦点和 Broadcast 安全测试。**
+- [x] **Step 1: 写 pane、焦点和 Broadcast 安全测试。**
 
   覆盖 single/vertical/horizontal/grid、窄屏上限、键盘方向键调整、活动 pane、目标快照、部分失败、停止和状态恢复；断言目标列表变更不会修改已提交任务。
 
-- [ ] **Step 2: 运行 shared/Web 聚焦测试确认失败。**
+- [x] **Step 2: 运行 shared/Web 聚焦测试确认失败。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   npm test -- --run tests/unit/shared/core-models.test.ts tests/unit/shared/target-selection.test.ts tests/unit/web/terminal-workspace-grid.test.tsx tests/unit/web/terminal-workspace.dom.test.tsx
   ```
 
-- [ ] **Step 3: 将 pane 模型改为 capability-limited。**
+- [x] **Step 3: 将 pane 模型改为 capability-limited。**
 
   旧 Workspace 快照按兼容规则补全 `paneTabIds`；超过当前上限的 tab 保留在后台 tab 列表，不删除、不静默合并。
 
-- [ ] **Step 4: 实现 Focus/Split 视图和 BroadcastPreview。**
+- [x] **Step 4: 实现 Focus/Split 视图和 BroadcastPreview。**
 
   Broadcast 只在至少两个可写 session 且 capability 可用时显示；预览显示 Host、环境、用户、命令范围、风险、并发和停止方式；确认后复用 command target snapshot 和逐主机结果。
 
-- [ ] **Step 5: 运行 DOM/E2E 和提交。**
+- [x] **Step 5: 运行 DOM/E2E 和提交。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -590,7 +590,13 @@ export interface BroadcastTargetSnapshot {
 
 **Acceptance:** 用户可以在 Focus 与 Split 间切换而不丢上下文；Broadcast 目标、风险和结果清晰；不同平台/服务端 pane 上限通过 capability 生效；不误发到错误 Host。
 
-**Verification:** shared target-selection/model、Web workspace DOM/grid tests 和 Chromium Broadcast 路径；对高风险目标执行人工确认走查，并在 M2 退出时运行 Release gate。
+**Verification:**
+
+- [x] Shared/Web focused：pane 上限、旧布局兼容、目标快照冻结、Broadcast 预览、Focus/Split/grid、后台完成/错误未读状态和 Web capability 交集测试通过；共 8 个重点文件、47 个测试通过。
+- [x] Full regression：`npm test`，86 个测试文件、340 个测试全部通过。
+- [x] `npm run typecheck`、`npm run lint`、`npm run build` 通过；构建仅有既有前端 chunk 体积提示。
+- [x] Browser：`npm run test:e2e -- --project=chromium tests/e2e/ssh-productivity.spec.ts`，2/2 通过；覆盖 Broadcast 预览、两个 Host 上下文、命令结果/取消/审计、SFTP 和恢复路径。
+- [x] `git diff --check` 通过；feature commit：`97d459c`（`feat: add capability-aware focus split workspace`）。
 
 ---
 
