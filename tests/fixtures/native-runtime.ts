@@ -1,6 +1,7 @@
 import { createCapabilitySet } from '../../src/shared/core/capabilities.js';
 import type {
   AccountSession,
+  AccountDeletionState,
   Capability,
   ClientPlatform,
   CommandRun,
@@ -11,6 +12,7 @@ import type {
   RecoveryKeyState,
   SftpEntry,
   SyncConflictExport,
+  SyncDeletionState,
   SyncDescriptor,
   SyncEnvelope,
   SyncHead,
@@ -237,6 +239,8 @@ const createOpaqueConflictExport = (): SyncConflictExport => ({
 
 export const createInMemoryAccountSyncPorts = (): InMemoryAccountSyncPorts => {
   let account: AccountSession | null = null;
+  let accountDeletion: AccountDeletionState | null = null;
+  let cloudDeletion: SyncDeletionState | undefined;
   let descriptor: SyncDescriptor | null = null;
   let envelope: SyncEnvelope | null = null;
   let syncState: SyncState = { sync: 'local-only', head: null, pendingCount: 0 };
@@ -300,7 +304,15 @@ export const createInMemoryAccountSyncPorts = (): InMemoryAccountSyncPorts => {
       account = sessionFor(CONTRACT_DEVICE_ID);
       return account;
     },
-    async signOut() { account = null; }
+    async signOut() { account = null; },
+    async reauthenticate() {},
+    async getDeletion() { return accountDeletion; },
+    async requestDeletion() {
+      accountDeletion = { kind: 'account', requestedAt: CONTRACT_TIMESTAMP, deleteAfter: '2026-10-17T00:00:00.000Z', remainingMs: 2_592_000_000 };
+      account = null;
+      return accountDeletion;
+    },
+    async restoreDeletion() { accountDeletion = null; }
   };
   const devicesPort: DeviceTrustPort = {
     async listDevices() {
@@ -317,7 +329,7 @@ export const createInMemoryAccountSyncPorts = (): InMemoryAccountSyncPorts => {
     }
   };
   const syncPort: SyncPort = {
-    async status() { return { ...syncState, recovery: recoveryState }; },
+    async status() { return { ...syncState, recovery: recoveryState, ...(cloudDeletion === undefined ? {} : { deletion: cloudDeletion }) }; },
     async descriptor() { return descriptor; },
     async pull() { return envelope ? { ...envelope } : null; },
     async push(nextEnvelope) {
@@ -359,7 +371,13 @@ export const createInMemoryAccountSyncPorts = (): InMemoryAccountSyncPorts => {
     },
     async retry() {
       syncState = { ...syncState, sync: 'synced', pendingCount: 0 };
-    }
+    },
+    async requestCloudDeletion() {
+      cloudDeletion = { kind: 'cloud-sync', requestedAt: CONTRACT_TIMESTAMP, deleteAfter: '2026-10-17T00:00:00.000Z', remainingMs: 2_592_000_000 };
+      syncState = { ...syncState, sync: 'local-only', head: null };
+      return cloudDeletion;
+    },
+    async restoreCloudDeletion() { cloudDeletion = undefined; }
   };
   return { account: accountPort, devices: devicesPort, sync: syncPort };
 };

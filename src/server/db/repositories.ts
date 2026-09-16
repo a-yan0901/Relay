@@ -16,6 +16,7 @@ import {
   type AccountCreateRow,
   type AccountDeviceCreateRow,
   type AccountDeviceRow,
+  type AccountDeletionRequestRow,
   type AccountRow,
   type AuditEventInput,
   type AuditEventRow,
@@ -68,6 +69,12 @@ interface AccountDeviceSqlRow {
   created_at: string;
   last_seen_at: string | null;
   revoked_at: string | null;
+}
+
+interface AccountDeletionRequestSqlRow {
+  account_id: string;
+  delete_after: string;
+  requested_at: string;
 }
 
 interface GroupSqlRow {
@@ -780,6 +787,97 @@ export class AccountRepository {
       WHERE account_id = @accountId AND id = @deviceId
     `).run({ accountId, deviceId, revokedAt });
     return result.changes > 0;
+  }
+
+  requestAccountDeletion(accountId: string, deleteAfter: string, requestedAt = now()): AccountDeletionRequestRow {
+    assertAccountId(accountId);
+    const normalizedDeleteAfter = this.normalizeAccountDeletionTimestamp(deleteAfter);
+    const normalizedRequestedAt = this.normalizeAccountDeletionTimestamp(requestedAt);
+    const operation = this.database.transaction(() => {
+      const account = this.database.prepare('SELECT id FROM accounts WHERE id = @accountId').get({ accountId });
+      if (!account) throw new AppError('ACCOUNT_SESSION_INVALID');
+      this.database.prepare(`
+        INSERT INTO account_delete_requests (account_id, delete_after, requested_at, restored_at)
+        VALUES (@accountId, @deleteAfter, @requestedAt, NULL)
+        ON CONFLICT(account_id) DO UPDATE SET
+          delete_after = excluded.delete_after,
+          requested_at = excluded.requested_at,
+          restored_at = NULL
+      `).run({ accountId, deleteAfter: normalizedDeleteAfter, requestedAt: normalizedRequestedAt });
+      this.database.prepare(`
+        UPDATE account_devices
+        SET revoked_at = COALESCE(revoked_at, @revokedAt)
+        WHERE account_id = @accountId
+      `).run({ accountId, revokedAt: normalizedRequestedAt });
+      const created = this.getAccountDeletionRequest(accountId);
+      if (!created) throw new AppError('INTERNAL_ERROR');
+      return created;
+    });
+    return operation();
+  }
+
+  getAccountDeletionRequest(accountId: string): AccountDeletionRequestRow | null {
+    assertAccountId(accountId);
+    const row = this.database.prepare(`
+      SELECT account_id, delete_after, requested_at
+      FROM account_delete_requests
+      WHERE account_id = @accountId AND restored_at IS NULL
+    `).get({ accountId }) as AccountDeletionRequestSqlRow | undefined;
+    if (!row) return null;
+    return {
+      accountId: row.account_id,
+      deleteAfter: this.normalizeAccountDeletionTimestamp(row.delete_after),
+      requestedAt: this.normalizeAccountDeletionTimestamp(row.requested_at)
+    };
+  }
+
+  restoreAccountDeletion(accountId: string, restoredAt = now()): void {
+    assertAccountId(accountId);
+    const result = this.database.prepare(`
+      UPDATE account_delete_requests
+      SET restored_at = @restoredAt
+      WHERE account_id = @accountId AND restored_at IS NULL
+    `).run({ accountId, restoredAt: this.normalizeAccountDeletionTimestamp(restoredAt) });
+    if (result.changes === 0) throw new AppError('ACCOUNT_DELETION_NOT_PENDING');
+  }
+
+  purgeExpiredAccountDeletion(accountId: string, at = now()): boolean {
+    assertAccountId(accountId);
+    const normalizedAt = this.normalizeAccountDeletionTimestamp(at);
+    const operation = this.database.transaction(() => {
+      const request = this.database.prepare(`
+        SELECT account_id
+        FROM account_delete_requests
+        WHERE account_id = @accountId AND restored_at IS NULL AND delete_after <= @at
+      `).get({ accountId, at: normalizedAt });
+      if (!request) return false;
+
+      // The envelope device FK is RESTRICT, so cloud rows and server sessions
+      // must be removed before devices; local Vault/host owner rows are not in
+      // this account-scoped purge list by design.
+      for (const table of [
+        'sync_client_state',
+        'sync_conflicts',
+        'sync_envelopes',
+        'sync_vaults',
+        'sync_delete_requests',
+        'account_sessions',
+        'account_delete_requests',
+        'account_devices'
+      ]) {
+        this.database.prepare(`DELETE FROM ${table} WHERE account_id = @accountId`).run({ accountId });
+      }
+      this.database.prepare('DELETE FROM accounts WHERE id = @accountId').run({ accountId });
+      return true;
+    });
+    return operation();
+  }
+
+  private normalizeAccountDeletionTimestamp(value: string): string {
+    if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) {
+      throw new AppError('ACCOUNT_SESSION_INVALID');
+    }
+    return new Date(Date.parse(value)).toISOString();
   }
 }
 

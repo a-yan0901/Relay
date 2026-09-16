@@ -5,6 +5,7 @@ import { AppError } from '../../shared/errors.js';
 import {
   ACCOUNT_PASSWORD_MAX_LENGTH,
   hashAccountPassword,
+  verifyAccountPassword,
   verifyAccountPasswordOrDummy
 } from './account-crypto.js';
 import { AccountSessionStore, type AccountSessionRecord } from './account-session-store.js';
@@ -172,6 +173,23 @@ export class AccountService {
 
   async signOut(sessionId: string): Promise<void> {
     this.sessionStore.revoke(sessionId);
+  }
+
+  async reauthenticate(sessionId: string, password: string): Promise<void> {
+    const session = this.requireSession(sessionId);
+    const account = this.accountRepository.getAccount(session.accountId);
+    const valid = await verifyAccountPassword(password, account?.passwordHash ?? '');
+    if (!account || !valid || !this.sessionStore.markReauthenticated(sessionId)) {
+      throw new AppError('ACCOUNT_REAUTH_FAILED');
+    }
+  }
+
+  assertReauthenticated(sessionId: string): AccountSessionRecord {
+    const session = this.requireSession(sessionId);
+    if (!this.sessionStore.isReauthenticated(sessionId)) {
+      throw new AppError('ACCOUNT_REAUTH_REQUIRED');
+    }
+    return session;
   }
 
   async listDevices(sessionId: string): Promise<readonly DeviceDescriptor[]> {

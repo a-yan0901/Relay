@@ -1,5 +1,11 @@
 import type { AccountState, Capability, SyncEnvelope, SyncStatus } from './models.js';
 
+export const ACCOUNT_DELETION_CONFIRMATION = 'DELETE MY ACCOUNT' as const;
+export const CLOUD_SYNC_DELETION_CONFIRMATION = 'DELETE MY CLOUD VAULT' as const;
+
+export type AccountDeletionConfirmation = typeof ACCOUNT_DELETION_CONFIRMATION;
+export type CloudSyncDeletionConfirmation = typeof CLOUD_SYNC_DELETION_CONFIRMATION;
+
 export type AccountSyncNextAction = 'sign-in' | 'unlock-vault' | 'retry' | 'resolve-conflict' | 'use-local' | 'none';
 
 export interface AccountSyncStateDescription {

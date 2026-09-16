@@ -106,6 +106,40 @@ describe('SQLite repositories', () => {
     expect(accounts.getDevice(account.id, device.id)?.revokedAt).not.toBeNull();
   });
 
+  it('creates, restores, and expires account deletion requests without touching local owner data', () => {
+    const database = createTestDatabase();
+    const accounts = new AccountRepository(database);
+    const account = accounts.createAccount({
+      id: 'account-delete-a',
+      email: 'delete-a@example.com',
+      passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$hash'
+    });
+    const device = accounts.createDevice({ id: 'device-delete-a', accountId: account.id, label: 'Browser', platform: 'web' });
+    database.prepare(`
+      INSERT INTO hosts (id, owner_id, name, address, port, username, auth_type, credential_ciphertext, credential_version, created_at, updated_at)
+      VALUES ('local-host', 'default', 'Local host', '10.0.0.8', 22, 'deploy', 'password', 'local-ciphertext', 1, '2026-01-01', '2026-01-01')
+    `).run();
+    database.prepare('INSERT INTO account_sessions (id, account_id, device_id, expires_at, last_used_at, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('db-session', account.id, device.id, '2026-12-01', '2026-01-01', '2026-01-01');
+
+    const requested = accounts.requestAccountDeletion(account.id, '2026-02-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+    expect(requested).toEqual({ accountId: account.id, deleteAfter: '2026-02-01T00:00:00.000Z', requestedAt: '2026-01-01T00:00:00.000Z' });
+    expect(accounts.getAccountDeletionRequest(account.id)).toEqual(requested);
+    expect(accounts.getDevice(account.id, device.id)?.revokedAt).toBe('2026-01-01T00:00:00.000Z');
+
+    accounts.restoreAccountDeletion(account.id, '2026-01-02T00:00:00.000Z');
+    expect(accounts.getAccountDeletionRequest(account.id)).toBeNull();
+    expect(accounts.getAccount(account.id)).not.toBeNull();
+
+    accounts.requestAccountDeletion(account.id, '2026-02-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+    expect(accounts.purgeExpiredAccountDeletion(account.id, '2026-02-01T00:00:00.000Z')).toBe(true);
+    expect(accounts.getAccount(account.id)).toBeNull();
+    expect(database.prepare('SELECT id FROM account_devices WHERE account_id = ?').all(account.id)).toEqual([]);
+    expect(database.prepare('SELECT id FROM account_sessions WHERE account_id = ?').all(account.id)).toEqual([]);
+    expect(database.prepare('SELECT id, name FROM hosts WHERE id = ?').get('local-host')).toEqual({ id: 'local-host', name: 'Local host' });
+    expect(accounts.purgeExpiredAccountDeletion(account.id, '2026-02-02T00:00:00.000Z')).toBe(false);
+  });
+
   it('stores app configuration as one retrievable vault config', () => {
     const database = createTestDatabase();
     const repository = new AppConfigRepository(database);

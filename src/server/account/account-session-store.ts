@@ -19,12 +19,14 @@ export interface AccountSessionStoreOptions {
 interface StoredAccountSession {
   record: AccountSessionRecord;
   createdAt: number;
+  reauthenticatedAt: number | null;
 }
 
 const DEFAULT_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ABSOLUTE_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_TOKEN_BYTES = 32;
 const MAX_SESSION_ID_LENGTH = 128;
+export const ACCOUNT_REAUTH_TTL_MS = 10 * 60 * 1000;
 
 const assertReference = (value: string): void => {
   if (
@@ -87,7 +89,8 @@ export class AccountSessionStore {
         expiresAt: at + this.absoluteTimeoutMs,
         lastUsedAt: at
       },
-      createdAt: at
+      createdAt: at,
+      reauthenticatedAt: null
     });
     return token;
   }
@@ -98,10 +101,7 @@ export class AccountSessionStore {
     const stored = this.sessions.get(tokenHash);
     if (!stored) return null;
 
-    if (
-      at >= stored.record.expiresAt ||
-      at - stored.record.lastUsedAt >= this.idleTimeoutMs
-    ) {
+    if (this.isExpired(stored, at)) {
       this.sessions.delete(tokenHash);
       return null;
     }
@@ -128,11 +128,51 @@ export class AccountSessionStore {
     return revoked;
   }
 
+  revokeAccount(accountId: string): number {
+    assertReference(accountId);
+    let revoked = 0;
+    for (const [tokenHash, stored] of this.sessions) {
+      if (stored.record.accountId === accountId) {
+        this.sessions.delete(tokenHash);
+        revoked += 1;
+      }
+    }
+    return revoked;
+  }
+
+  markReauthenticated(token: string, at = this.clock()): boolean {
+    const tokenHash = hashToken(token);
+    if (!tokenHash || !Number.isSafeInteger(at)) return false;
+    const stored = this.sessions.get(tokenHash);
+    if (!stored || this.isExpired(stored, at)) {
+      if (stored) this.sessions.delete(tokenHash);
+      return false;
+    }
+    stored.record.lastUsedAt = at;
+    stored.reauthenticatedAt = at;
+    return true;
+  }
+
+  isReauthenticated(token: string, at = this.clock()): boolean {
+    const tokenHash = hashToken(token);
+    if (!tokenHash || !Number.isSafeInteger(at)) return false;
+    const stored = this.sessions.get(tokenHash);
+    if (!stored || this.isExpired(stored, at)) {
+      if (stored) this.sessions.delete(tokenHash);
+      return false;
+    }
+    if (stored.reauthenticatedAt === null || at - stored.reauthenticatedAt >= ACCOUNT_REAUTH_TTL_MS) {
+      stored.reauthenticatedAt = null;
+      return false;
+    }
+    return true;
+  }
+
   sweep(at = this.clock()): number {
     if (!Number.isSafeInteger(at)) return 0;
     let swept = 0;
     for (const [tokenHash, stored] of this.sessions) {
-      if (at >= stored.record.expiresAt || at - stored.record.lastUsedAt >= this.idleTimeoutMs) {
+      if (this.isExpired(stored, at)) {
         this.sessions.delete(tokenHash);
         swept += 1;
       }
@@ -147,5 +187,9 @@ export class AccountSessionStore {
 
   get size(): number {
     return this.sessions.size;
+  }
+
+  private isExpired(stored: StoredAccountSession, at: number): boolean {
+    return at >= stored.record.expiresAt || at - stored.record.lastUsedAt >= this.idleTimeoutMs;
   }
 }

@@ -15,14 +15,17 @@ afterEach(() => {
   for (const database of databases.splice(0)) database.close();
 });
 
-const createService = (now: { value: number } = { value: Date.now() }) => {
+const createService = (
+  now: { value: number } = { value: Date.now() },
+  timeouts: { idleTimeoutMs?: number; absoluteTimeoutMs?: number } = {}
+) => {
   const database = openDatabase(':memory:');
   migrate(database);
   databases.push(database);
   const repository = new AccountRepository(database);
   const sessionStore = new AccountSessionStore({
-    idleTimeoutMs: 60_000,
-    absoluteTimeoutMs: 180_000,
+    idleTimeoutMs: timeouts.idleTimeoutMs ?? 60_000,
+    absoluteTimeoutMs: timeouts.absoluteTimeoutMs ?? 180_000,
     now: () => now.value
   });
   return {
@@ -86,6 +89,35 @@ describe('account service', () => {
     const freshToken = sessionStore.create(session.accountId, session.deviceId);
     clock.value += 180_001;
     expect(sessionStore.get(freshToken)).toBeNull();
+  });
+
+  it('requires the current account session to re-authenticate and expires that proof after ten minutes', async () => {
+    const clock = { value: 1_000_000 };
+    const { service } = createService(clock, { idleTimeoutMs: 15 * 60 * 1000, absoluteTimeoutMs: 30 * 60 * 1000 });
+    const session = await service.register('reauth@example.com', 'long enough password', device);
+    const token = service.issueSessionToken(session);
+
+    expect(() => service.assertReauthenticated(token)).toThrowError(new AppError('ACCOUNT_REAUTH_REQUIRED'));
+    await expect(service.reauthenticate(token, 'wrong password'))
+      .rejects.toMatchObject({ code: 'ACCOUNT_REAUTH_FAILED' });
+    expect(() => service.assertReauthenticated(token)).toThrowError(new AppError('ACCOUNT_REAUTH_REQUIRED'));
+
+    await service.reauthenticate(token, 'long enough password');
+    expect(() => service.assertReauthenticated(token)).not.toThrow();
+
+    clock.value += 10 * 60 * 1000 + 1;
+    expect(service.status(token)).not.toBeNull();
+    expect(() => service.assertReauthenticated(token)).toThrowError(new AppError('ACCOUNT_REAUTH_REQUIRED'));
+  });
+
+  it('invalidates re-authentication when the current session is signed out', async () => {
+    const { service } = createService();
+    const session = await service.register('reauth-signout@example.com', 'long enough password', device);
+    const token = service.issueSessionToken(session);
+    await service.reauthenticate(token, 'long enough password');
+    await service.signOut(token);
+
+    expect(() => service.assertReauthenticated(token)).toThrowError(new AppError('ACCOUNT_SESSION_INVALID'));
   });
 
   it('marks the current device, signs out, and revokes all sessions for a device', async () => {

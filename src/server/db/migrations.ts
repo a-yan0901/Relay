@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from './database.js';
 
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 export const migrate = (database: SqliteDatabase): void => {
   const applyMigration = database.transaction(() => {
@@ -44,6 +44,13 @@ export const migrate = (database: SqliteDatabase): void => {
         expires_at TEXT NOT NULL,
         last_used_at TEXT NOT NULL,
         created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS account_delete_requests (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        delete_after TEXT NOT NULL,
+        requested_at TEXT NOT NULL,
+        restored_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS sync_vaults (
@@ -234,6 +241,8 @@ export const migrate = (database: SqliteDatabase): void => {
         ON account_sessions (account_id, last_used_at DESC);
       CREATE INDEX IF NOT EXISTS idx_account_sessions_device
         ON account_sessions (device_id);
+      CREATE INDEX IF NOT EXISTS idx_account_delete_requests_expiry
+        ON account_delete_requests (delete_after, restored_at);
       CREATE INDEX IF NOT EXISTS idx_sync_envelopes_account_revision
         ON sync_envelopes (account_id, revision DESC);
       CREATE INDEX IF NOT EXISTS idx_sync_envelopes_device

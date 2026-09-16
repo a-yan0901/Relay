@@ -48,6 +48,8 @@ import type {
   VaultBundleResolution
 } from '../import/types.js';
 import type { RecoveryKeyState, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate, WorkspaceTemplateInput, VaultStatus } from './models.js';
+import type { AccountDeletionState, SyncDeletionState } from './models.js';
+import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from './account-sync.js';
 
 export type SecretRef =
   | { kind: 'host'; id: string }
@@ -160,6 +162,11 @@ export interface AccountSessionPort {
   register(email: string, password: string, label?: string): Promise<AccountSession>;
   signIn(email: string, password: string, label?: string): Promise<AccountSession>;
   signOut(): Promise<void>;
+  /** Optional until all platform adapters expose the account-deletion lifecycle. */
+  reauthenticate?(password: string): Promise<void>;
+  getDeletion?(): Promise<AccountDeletionState | null>;
+  requestDeletion?(confirmDelete: AccountDeletionConfirmation): Promise<AccountDeletionState>;
+  restoreDeletion?(): Promise<void>;
 }
 
 export interface DeviceTrustPort {
@@ -174,7 +181,7 @@ export interface DeviceTrustPort {
 export type RecoveryKeyReveal = (recoveryKey: string, keyVersion: number) => void;
 
 export interface SyncPort {
-  status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string; recovery?: RecoveryKeyState }>;
+  status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string; recovery?: RecoveryKeyState; deletion?: SyncDeletionState }>;
   descriptor(): Promise<SyncDescriptor | null>;
   pull(): Promise<SyncEnvelope | null>;
   push(envelope: SyncEnvelope, idempotencyKey: string): Promise<SyncHead>;
@@ -185,6 +192,9 @@ export interface SyncPort {
   issueRecoveryKey(reveal: RecoveryKeyReveal): Promise<RecoveryKeyState>;
   confirmRecoveryKey(recoveryKey: string): Promise<RecoveryKeyState>;
   retry(): Promise<void>;
+  /** Optional until all platform adapters expose cloud deletion lifecycle controls. */
+  requestCloudDeletion?(confirmDelete: CloudSyncDeletionConfirmation): Promise<SyncDeletionState>;
+  restoreCloudDeletion?(): Promise<void>;
 }
 
 export interface ConnectionProbe {

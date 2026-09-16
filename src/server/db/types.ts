@@ -44,6 +44,12 @@ export interface AccountDeviceCreateRow {
   createdAt?: string;
 }
 
+export interface AccountDeletionRequestRow {
+  accountId: string;
+  deleteAfter: string;
+  requestedAt: string;
+}
+
 export interface HostRow extends HostMetadata {
   ownerId: string;
   credentialCiphertext: string | null;

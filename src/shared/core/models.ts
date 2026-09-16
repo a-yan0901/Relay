@@ -28,6 +28,20 @@ export interface AccountSession {
   expiresAt: string;
 }
 
+export interface AccountDeletionState {
+  kind: 'account';
+  requestedAt: string;
+  deleteAfter: string;
+  remainingMs: number;
+}
+
+export interface SyncDeletionState {
+  kind: 'cloud-sync';
+  requestedAt: string;
+  deleteAfter: string;
+  remainingMs: number;
+}
+
 export type RecoveryKeyStatus = 'not-configured' | 'pending-confirmation' | 'configured';
 
 export interface RecoveryKeyState {
