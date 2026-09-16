@@ -1,6 +1,13 @@
 export type ClientPlatform = 'web' | 'desktop' | 'android';
 
 export type AuthType = 'password' | 'private_key';
+export type IdentityType = AuthType;
+
+export type VaultPhase = 'uninitialized' | 'locked' | 'unlocked';
+
+export interface VaultStatus {
+  phase: VaultPhase;
+}
 
 export interface ReconnectPolicy {
   enabled: boolean;
@@ -23,7 +30,59 @@ export interface ConnectionProfile {
   hostKeyFingerprint: string | null;
 }
 
-export type WorkspaceLayoutMode = 'single' | 'vertical' | 'horizontal';
+export interface ConnectionTestResult {
+  ok: boolean;
+  hostKey?: {
+    algorithm: string;
+    fingerprint: string;
+    address: string;
+    port: number;
+  };
+}
+
+export interface HostListFilter {
+  query?: string;
+  groupId?: string | null;
+  favorite?: boolean;
+  tags?: readonly string[];
+}
+
+export type IdentitySource = 'host' | 'group' | 'none';
+
+export interface TargetSelection {
+  hostIds: readonly string[];
+  groupIds: readonly string[];
+  favoriteOnly: boolean;
+  query: string;
+}
+
+export interface IdentityMetadata {
+  id: string;
+  name: string;
+  type: IdentityType;
+  username: string;
+  keyFingerprint: string | null;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConnectionProfileOverrides {
+  keepaliveIntervalMs?: number;
+  keepaliveCountMax?: number;
+  reconnect?: Partial<ReconnectPolicy>;
+}
+
+export interface GroupNode {
+  id: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  defaultIdentityId: string | null;
+  connectionProfile: ConnectionProfileOverrides | null;
+}
+
+export type WorkspaceLayoutMode = 'single' | 'vertical' | 'horizontal' | 'grid';
 
 export interface WorkspaceTab {
   id: string;
@@ -34,6 +93,7 @@ export interface WorkspaceTab {
 export interface WorkspaceLayout {
   mode: WorkspaceLayoutMode;
   ratio: number;
+  paneTabIds?: readonly string[];
 }
 
 export interface WorkspaceFilters {
@@ -50,6 +110,19 @@ export interface WorkspaceState {
   filters: WorkspaceFilters;
 }
 
+export interface WorkspaceTemplate {
+  id: string;
+  name: string;
+  state: WorkspaceState;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceTemplateInput {
+  name: string;
+  state: WorkspaceState;
+}
+
 export type SftpEntryType = 'file' | 'directory' | 'symlink' | 'other';
 
 export interface SftpEntry {
@@ -62,7 +135,7 @@ export interface SftpEntry {
 }
 
 export type TransferKind = 'upload' | 'download';
-export type TransferStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type TransferStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
 export interface TransferJob {
  id: string;
@@ -110,7 +183,7 @@ export interface CommandRunRequest {
   confirmed?: boolean;
 }
 
-export type CommandTargetStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type CommandTargetStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
 export interface CommandTargetResult {
  hostId: string;
@@ -129,7 +202,7 @@ export interface CommandRun {
   command: string;
   hostIds: readonly string[];
   persistOutput: boolean;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   targets: readonly CommandTargetResult[];
   createdAt: string;
   finishedAt?: string;
@@ -144,6 +217,13 @@ export interface AuditEvent {
   remoteAddress: string | null;
   metadata: Readonly<Record<string, string | number | boolean | null>>;
   createdAt: string;
+}
+
+export interface ActivityFilter {
+  cursor?: string;
+  limit?: number;
+  eventType?: string;
+  hostId?: string;
 }
 
 export type ConnectionStage = 'resolve' | 'tcp' | 'jump' | 'host-key' | 'authentication' | 'channel';
@@ -162,15 +242,22 @@ export interface ConnectionDiagnostic {
 
 export type Capability =
   | 'workspace.persistence'
+  | 'workspace.templates'
+  | 'workspace.multi-pane'
   | 'vault.bundle'
+  | 'vault.identities'
   | 'ssh.shell'
   | 'ssh.reconnect'
   | 'ssh.proxy-jump'
   | 'sftp.browse'
   | 'sftp.transfer'
+  | 'sftp.entry-mutations'
   | 'automation.snippets'
+  | 'automation.snippet-manager'
   | 'automation.batch-exec'
-  | 'audit.activity';
+  | 'automation.target-picker'
+  | 'audit.activity'
+  | 'session.lifecycle-status';
 
 export const normalizeWorkspaceState = (state: WorkspaceState): WorkspaceState => ({
   ...state,

@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 
 import type { HostMetadataState, GroupSummary } from '../state/app-state';
-import { ConnectionStatus } from './ConnectionStatus';
 import { GroupSidebar } from './GroupSidebar';
 import { HostList } from './HostList';
+import { descendantGroupIds } from '../../shared/core/group-tree';
 
 export interface HostWorkspaceProps {
   hosts: HostMetadataState[];
@@ -17,6 +17,9 @@ export interface HostWorkspaceProps {
   onFavoriteToggle: (host: HostMetadataState) => void;
   onConnect: (host: HostMetadataState) => void;
   onAddHost: () => void;
+  onBatchCommand?: (hostIds: readonly string[]) => void;
+  onImport?: () => void;
+  onExport?: () => void;
   onEdit?: (host: HostMetadataState) => void;
   onDelete?: (host: HostMetadataState) => void;
   onTestConnection?: (host: HostMetadataState) => void;
@@ -34,16 +37,20 @@ export const HostWorkspace = ({
   onFavoriteToggle,
   onConnect,
   onAddHost,
+  onBatchCommand,
+  onImport,
+  onExport,
   onEdit,
   onDelete,
   onTestConnection
 }: HostWorkspaceProps) => {
   const visibleHosts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const groupScope = selectedGroupId === null ? null : new Set(descendantGroupIds(selectedGroupId, groups));
     return hosts.filter((host) => {
       const searchable = [host.name, host.address, host.username, ...host.tags].join(' ').toLowerCase();
       return (!normalizedQuery || searchable.includes(normalizedQuery)) &&
-        (selectedGroupId === null || host.groupId === selectedGroupId) &&
+        (groupScope === null || (host.groupId !== null && groupScope.has(host.groupId))) &&
         (!favoriteOnly || host.isFavorite);
     }).sort((left, right) => {
       if (left.isFavorite !== right.isFavorite) return left.isFavorite ? -1 : 1;
@@ -52,7 +59,7 @@ export const HostWorkspace = ({
       if (leftTime !== rightTime) return rightTime - leftTime;
       return left.name.localeCompare(right.name);
     });
-  }, [favoriteOnly, hosts, query, selectedGroupId]);
+  }, [favoriteOnly, groups, hosts, query, selectedGroupId]);
 
   const isFilteredEmpty = hosts.length > 0 && visibleHosts.length === 0;
 
@@ -72,7 +79,9 @@ export const HostWorkspace = ({
             <h1 id="workspace-title">Server</h1>
           </div>
           <div className="header-actions">
-            <ConnectionStatus label="Vault 已解锁" tone="success" />
+            {onImport && <button className="button button-ghost" type="button" onClick={onImport}>导入</button>}
+            {onExport && <button className="button button-ghost" type="button" onClick={onExport}>导出</button>}
+            {onBatchCommand && <button className="button button-ghost" type="button" onClick={() => onBatchCommand(visibleHosts.map((host) => host.id))}>批量执行</button>}
             <button className="button button-primary" type="button" onClick={onAddHost}><span aria-hidden="true">＋</span> 添加 Server</button>
           </div>
         </header>

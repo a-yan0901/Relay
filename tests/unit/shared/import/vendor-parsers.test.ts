@@ -25,6 +25,18 @@ describe('vendor SSH parsers', () => {
     expect(document.warnings).toEqual(['mobaxterm.mxtsessions:rdp 不是 SSH/SFTP 会话，已跳过']);
   });
 
+  it('skips MobaXterm sessions without a username so the remaining batch can be imported', () => {
+    const document = parseMobaXterm([
+      '[Bookmarks]',
+      'SubRep=',
+      'valid=#109#0%valid.example.com%22%ops%%',
+      'missing-user=#109#0%missing.example.com%22%%'
+    ].join('\n'), 'm.mxtsessions');
+
+    expect(document.connections.map((connection) => connection.name)).toEqual(['valid']);
+    expect(document.warnings).toContain('m.mxtsessions:missing-user 缺少远程主机或用户名，已跳过');
+  });
+
   it('marks Xshell password fields as unreadable and keeps key references', () => {
     const document = parseXshell(read('session.xsh'), 'session.xsh');
     expect(document.connections[0]).toMatchObject({

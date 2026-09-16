@@ -104,4 +104,98 @@ describe('group routes', () => {
     const hostAfterDelete = await app.inject({ method: 'GET', url: `/api/hosts/${hostId}`, headers: { cookie } });
     expect(json<{ groupId: string | null }>(hostAfterDelete).groupId).toBeNull();
   });
+
+  it('supports bounded nesting, inherited defaults, cycle rejection, and safe reparenting', async () => {
+    const app = await makeApp();
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const cookie = cookieFrom(setup);
+
+    const identity = await app.inject({
+      method: 'POST',
+      url: '/api/identities',
+      headers: { cookie },
+      payload: {
+        name: 'Operations',
+        type: 'password',
+        username: 'ops',
+        auth: { type: 'password', password: 'identity-password' }
+      }
+    });
+    const identityId = json<{ id: string }>(identity).id;
+    const root = await app.inject({
+      method: 'POST',
+      url: '/api/groups',
+      headers: { cookie },
+      payload: {
+        name: 'Production',
+        defaultIdentityId: identityId,
+        connectionProfile: { keepaliveIntervalMs: 4_000 }
+      }
+    });
+    const rootNode = json<{ id: string }>(root);
+    const child = await app.inject({
+      method: 'POST',
+      url: '/api/groups',
+      headers: { cookie },
+      payload: { name: 'API', parentId: rootNode.id }
+    });
+    const childNode = json<{ id: string; parentId: string | null; defaultIdentityId: string | null; connectionProfile: unknown }>(child);
+    expect(childNode).toEqual(expect.objectContaining({
+      parentId: rootNode.id,
+      defaultIdentityId: null,
+      connectionProfile: null
+    }));
+
+    const groupedHost = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: {
+        name: 'Inherited API',
+        address: '10.0.0.10',
+        username: 'ops',
+        groupId: childNode.id,
+        credentialSource: { type: 'group' }
+      }
+    });
+    expect(groupedHost.statusCode).toBe(201);
+    expect(json<{ authType: string; identityName: string | null; identitySource: string; resolvedConnectionProfile: { keepaliveIntervalMs: number } }>(groupedHost)).toEqual(expect.objectContaining({
+      authType: 'password',
+      identityName: 'Operations',
+      identitySource: 'group',
+      resolvedConnectionProfile: expect.objectContaining({ keepaliveIntervalMs: 4_000 })
+    }));
+
+    const patchedHost = await app.inject({
+      method: 'PATCH',
+      url: `/api/hosts/${json<{ id: string }>(groupedHost).id}`,
+      headers: { cookie },
+      payload: { connectionProfile: { keepaliveCountMax: 7 } }
+    });
+    expect(patchedHost.statusCode).toBe(200);
+    expect(json<{ connectionProfileOverrides: unknown; resolvedConnectionProfile: { keepaliveIntervalMs: number; keepaliveCountMax: number } }>(patchedHost)).toEqual(expect.objectContaining({
+      connectionProfileOverrides: { keepaliveCountMax: 7 },
+      resolvedConnectionProfile: expect.objectContaining({ keepaliveIntervalMs: 4_000, keepaliveCountMax: 7 })
+    }));
+
+    const cycle = await app.inject({
+      method: 'PATCH',
+      url: `/api/groups/${rootNode.id}`,
+      headers: { cookie },
+      payload: { parentId: childNode.id }
+    });
+    expect(cycle.statusCode).toBe(409);
+    expect(json<{ error: { code: string } }>(cycle).error.code).toBe('GROUP_CYCLE');
+
+    const deleted = await app.inject({ method: 'DELETE', url: `/api/groups/${rootNode.id}`, headers: { cookie } });
+    expect(deleted.statusCode).toBe(204);
+    const childAfterDelete = await app.inject({ method: 'GET', url: `/api/groups/${childNode.id}`, headers: { cookie } });
+    expect(json<{ parentId: string | null }>(childAfterDelete).parentId).toBeNull();
+
+    const blocked = await app.inject({ method: 'DELETE', url: `/api/groups/${childNode.id}`, headers: { cookie } });
+    expect(blocked.statusCode).toBe(409);
+    expect(json<{ error: { code: string } }>(blocked).error.code).toBe('GROUP_IN_USE');
+    const groupedHostAfterBlockedDelete = await app.inject({ method: 'GET', url: '/api/hosts', headers: { cookie } });
+    expect(json<Array<{ groupId: string | null }>>(groupedHostAfterBlockedDelete)[0]?.groupId).toBe(childNode.id);
+  });
 });

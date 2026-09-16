@@ -213,4 +213,39 @@ describe('host routes', () => {
     expect(cycle.statusCode).toBe(400);
     expect(json<{ error: { code: string } }>(cycle).error.code).toBe('HOST_VALIDATION_FAILED');
   });
+
+  it('can switch a group-inherited credential back to an inline credential', async () => {
+    const app = await makeApp();
+    const cookie = await setup(app);
+    const identity = await app.inject({
+      method: 'POST',
+      url: '/api/identities',
+      headers: { cookie },
+      payload: { name: 'Operations', type: 'password', username: 'ops', auth: { type: 'password', password: 'identity-password' } }
+    });
+    const identityId = json<{ id: string }>(identity).id;
+    const group = await app.inject({
+      method: 'POST',
+      url: '/api/groups',
+      headers: { cookie },
+      payload: { name: 'Production', defaultIdentityId: identityId }
+    });
+    const groupId = json<{ id: string }>(group).id;
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: { name: 'Inherited', address: '10.0.0.12', username: 'ops', groupId, credentialSource: { type: 'group' } }
+    });
+    const hostId = json<{ id: string }>(created).id;
+
+    const inline = await app.inject({
+      method: 'PATCH',
+      url: `/api/hosts/${hostId}`,
+      headers: { cookie },
+      payload: { auth: { type: 'password', password: 'host-password' } }
+    });
+    expect(inline.statusCode).toBe(200);
+    expect(json<{ credentialSource: { type: string } }>(inline).credentialSource.type).toBe('inline');
+  });
 });

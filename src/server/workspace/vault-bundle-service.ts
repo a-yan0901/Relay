@@ -1,14 +1,19 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import { AppError } from '../../shared/errors.js';
-import { validateJumpChain } from '../../shared/core/models.js';
+import { validateJumpChain, type ConnectionProfileOverrides } from '../../shared/core/models.js';
+import { resolveConnectionConfiguration } from '../../shared/core/connection-resolution.js';
 import {
-  hostCreateSchema,
+  connectionProfileSettingsPatchSchema,
+  groupMutationSchema,
+  hostMetadataInputSchema,
+  identityCreateSchema,
   mergeConnectionProfileSettings,
   type ConnectionProfileSettings,
-  type HostCredentialInput
+  storedHostCredentialSchema,
+  type StoredHostCredential
 } from '../../shared/validation.js';
-import { GroupRepository, HostRepository } from '../db/repositories.js';
+import { GroupRepository, HostRepository, IdentityRepository } from '../db/repositories.js';
 import type { SqliteDatabase } from '../db/database.js';
 import {
   ARGON2ID_PARAMS,
@@ -18,6 +23,7 @@ import {
 } from '../vault/types.js';
 import { decodeSalt, decryptBytes, deriveVaultKeyEncryptionKey, encryptBytes } from '../vault/crypto.js';
 import { VaultService } from '../vault/vault-service.js';
+import type { IdentityService } from '../identity/identity-service.js';
 
 const BUNDLE_FORMAT = 'webssh-vault';
 const BUNDLE_VERSION = 1 as const;
@@ -31,6 +37,18 @@ interface BundleGroup {
   id: string;
   name: string;
   sortOrder: number;
+  parentId?: string | null;
+  defaultIdentityId?: string | null;
+  connectionProfile?: ConnectionProfileOverrides | null;
+}
+
+interface BundleIdentity {
+  id: string;
+  name: string;
+  type: 'password' | 'private_key';
+  username: string;
+  keyFingerprint: string | null;
+  auth: StoredHostCredential;
 }
 
 interface BundleHost {
@@ -39,7 +57,7 @@ interface BundleHost {
   address: string;
   port: number;
   username: string;
-  auth: HostCredentialInput;
+  auth: StoredHostCredential;
   groupId: string | null;
   jumpHostIds: string[];
   connectionProfile: ConnectionProfileSettings;
@@ -47,11 +65,15 @@ interface BundleHost {
   isFavorite: boolean;
   hostKeyAlgorithm: string | null;
   hostKeyFingerprint: string | null;
+  credentialSource?: 'inline' | 'identity' | 'group';
+  identityId?: string | null;
+  connectionProfileOverrides?: ConnectionProfileOverrides | null;
 }
 
 interface BundlePayload {
   groups: BundleGroup[];
   hosts: BundleHost[];
+  identities?: BundleIdentity[];
 }
 
 interface VaultBundleEnvelope {
@@ -70,7 +92,7 @@ interface VaultBundleEnvelope {
 }
 
 export interface ImportConflict {
-  type: 'host' | 'group';
+  type: 'host' | 'group' | 'identity';
   id: string;
   name: string;
 }
@@ -79,6 +101,7 @@ export interface ImportPreview {
   previewId: string;
   hostCount: number;
   groupCount: number;
+  identityCount: number;
   conflicts: ImportConflict[];
   expiresAt: string;
 }
@@ -86,6 +109,7 @@ export interface ImportPreview {
 export interface ImportResolution {
   hostConflicts: 'skip' | 'replace';
   groupConflicts: 'reuse' | 'replace';
+  identityConflicts?: 'reuse' | 'replace';
 }
 
 export interface ImportResult {
@@ -93,6 +117,8 @@ export interface ImportResult {
   importedGroups: number;
   skippedHosts: number;
   skippedGroups: number;
+  importedIdentities: number;
+  skippedIdentities: number;
 }
 
 interface PendingPreview {
@@ -148,39 +174,123 @@ const parseJson = (value: string): unknown => {
   }
 };
 
+const bundleIdentifier = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+
 const parsePayload = (value: unknown): BundlePayload => {
   if (typeof value !== 'object' || value === null) throw new AppError('VAULT_BUNDLE_INVALID');
   const candidate = value as Record<string, unknown>;
   if (!Array.isArray(candidate.groups) || !Array.isArray(candidate.hosts)) throw new AppError('VAULT_BUNDLE_INVALID');
-  if (candidate.groups.length > 10_000 || candidate.hosts.length > 10_000) throw new AppError('VAULT_BUNDLE_INVALID');
+  if (candidate.groups.length > 10_000 || candidate.hosts.length > 10_000 || (candidate.identities !== undefined && (!Array.isArray(candidate.identities) || candidate.identities.length > 10_000))) throw new AppError('VAULT_BUNDLE_INVALID');
+  const identities: BundleIdentity[] = [];
+  for (const value of candidate.identities ?? []) {
+    if (typeof value !== 'object' || value === null) throw new AppError('VAULT_BUNDLE_INVALID');
+    const identity = value as Record<string, unknown>;
+    const parsed = identityCreateSchema.safeParse({ name: identity.name, type: identity.type, username: identity.username, auth: identity.auth });
+    if (!parsed.success || typeof identity.id !== 'string' || !bundleIdentifier.test(identity.id) || (identity.keyFingerprint !== null && typeof identity.keyFingerprint !== 'string')) {
+      throw new AppError('VAULT_BUNDLE_INVALID');
+    }
+    identities.push({
+      id: identity.id,
+      name: parsed.data.name,
+      type: parsed.data.type,
+      username: parsed.data.username,
+      keyFingerprint: typeof identity.keyFingerprint === 'string' ? identity.keyFingerprint : null,
+      auth: parsed.data.auth
+    });
+  }
+  if (new Set(identities.map((identity) => identity.id)).size !== identities.length) throw new AppError('VAULT_BUNDLE_INVALID');
+
   const groups: BundleGroup[] = [];
   for (const value of candidate.groups) {
     if (typeof value !== 'object' || value === null) throw new AppError('VAULT_BUNDLE_INVALID');
     const group = value as Record<string, unknown>;
-    if (typeof group.id !== 'string' || typeof group.name !== 'string' || typeof group.sortOrder !== 'number') throw new AppError('VAULT_BUNDLE_INVALID');
-    groups.push({ id: group.id, name: group.name, sortOrder: group.sortOrder });
+    const parsed = groupMutationSchema.safeParse({
+      name: group.name,
+      parentId: group.parentId,
+      sortOrder: group.sortOrder,
+      defaultIdentityId: group.defaultIdentityId,
+      connectionProfile: group.connectionProfile
+    });
+    if (!parsed.success || typeof group.id !== 'string' || !bundleIdentifier.test(group.id)) throw new AppError('VAULT_BUNDLE_INVALID');
+    groups.push({
+      id: group.id,
+      name: parsed.data.name,
+      sortOrder: parsed.data.sortOrder,
+      parentId: parsed.data.parentId ?? null,
+      defaultIdentityId: parsed.data.defaultIdentityId ?? null,
+      connectionProfile: parsed.data.connectionProfile ?? null
+    });
   }
+  if (new Set(groups.map((group) => group.id)).size !== groups.length) throw new AppError('VAULT_BUNDLE_INVALID');
+
   const hosts: BundleHost[] = [];
   for (const value of candidate.hosts) {
     if (typeof value !== 'object' || value === null) throw new AppError('VAULT_BUNDLE_INVALID');
     const host = value as Record<string, unknown>;
-    const parsed = hostCreateSchema.safeParse({
-      name: host.name, address: host.address, port: host.port, username: host.username, auth: host.auth,
+    const parsed = hostMetadataInputSchema.safeParse({
+      name: host.name, address: host.address, port: host.port, username: host.username,
       groupId: host.groupId, jumpHostIds: host.jumpHostIds, connectionProfile: host.connectionProfile,
       tags: host.tags, isFavorite: host.isFavorite
     });
-    if (!parsed.success || typeof host.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(host.id)) {
+    const parsedAuth = storedHostCredentialSchema.safeParse(host.auth);
+    let connectionProfileOverrides: ConnectionProfileOverrides | null | undefined;
+    if (host.connectionProfileOverrides !== undefined) {
+      const parsedOverrides = connectionProfileSettingsPatchSchema.nullable().safeParse(host.connectionProfileOverrides);
+      if (!parsedOverrides.success) throw new AppError('VAULT_BUNDLE_INVALID');
+      connectionProfileOverrides = parsedOverrides.data;
+    }
+    const credentialSource = host.credentialSource;
+    const identityId = host.identityId === undefined || host.identityId === null
+      ? host.identityId as null | undefined
+      : typeof host.identityId === 'string' && bundleIdentifier.test(host.identityId) ? host.identityId : '__invalid__';
+    if (
+      !parsed.success || !parsedAuth.success || typeof host.id !== 'string' || !bundleIdentifier.test(host.id) ||
+      (credentialSource !== undefined && credentialSource !== 'inline' && credentialSource !== 'identity' && credentialSource !== 'group') ||
+      (credentialSource === 'identity' && typeof identityId !== 'string') ||
+      (credentialSource !== 'identity' && identityId !== undefined && identityId !== null) ||
+      identityId === '__invalid__'
+    ) {
       throw new AppError('VAULT_BUNDLE_INVALID');
     }
-    hosts.push({
+    const parsedHost: BundleHost = {
       id: host.id, name: parsed.data.name, address: parsed.data.address, port: parsed.data.port, username: parsed.data.username,
-      auth: parsed.data.auth, groupId: parsed.data.groupId ?? null, jumpHostIds: parsed.data.jumpHostIds ?? [],
+      auth: parsedAuth.data, groupId: parsed.data.groupId ?? null, jumpHostIds: parsed.data.jumpHostIds ?? [],
       connectionProfile: mergeConnectionProfileSettings(parsed.data.connectionProfile), tags: parsed.data.tags, isFavorite: parsed.data.isFavorite,
       hostKeyAlgorithm: typeof host.hostKeyAlgorithm === 'string' ? host.hostKeyAlgorithm : null,
-      hostKeyFingerprint: typeof host.hostKeyFingerprint === 'string' ? host.hostKeyFingerprint : null
-    });
+      hostKeyFingerprint: typeof host.hostKeyFingerprint === 'string' ? host.hostKeyFingerprint : null,
+      ...(credentialSource === undefined ? {} : { credentialSource }),
+      ...(identityId === undefined ? {} : { identityId }),
+      ...(connectionProfileOverrides === undefined ? {} : { connectionProfileOverrides })
+    };
+    hosts.push(parsedHost);
   }
-  return { groups, hosts };
+  if (new Set(hosts.map((host) => host.id)).size !== hosts.length) throw new AppError('VAULT_BUNDLE_INVALID');
+  const identityIds = new Set(identities.map((identity) => identity.id));
+  for (const group of groups) if (group.defaultIdentityId && !identityIds.has(group.defaultIdentityId)) throw new AppError('VAULT_BUNDLE_INVALID');
+  for (const host of hosts) if (host.credentialSource === 'identity' && (!host.identityId || !identityIds.has(host.identityId))) throw new AppError('VAULT_BUNDLE_INVALID');
+  return { groups, hosts, identities };
+};
+
+const orderBundleGroups = (groups: readonly BundleGroup[]): BundleGroup[] => {
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const depths = new Map<string, number>();
+  const depthOf = (id: string, active: Set<string>): number => {
+    const cached = depths.get(id);
+    if (cached !== undefined) return cached;
+    if (active.has(id)) throw new AppError('VAULT_BUNDLE_INVALID');
+    const group = byId.get(id);
+    if (!group) throw new AppError('VAULT_BUNDLE_INVALID');
+    if (group.parentId === null || group.parentId === undefined) {
+      depths.set(id, 1);
+      return 1;
+    }
+    const next = depthOf(group.parentId, new Set([...active, id])) + 1;
+    if (next > 8) throw new AppError('VAULT_BUNDLE_INVALID');
+    depths.set(id, next);
+    return next;
+  };
+  for (const group of groups) depthOf(group.id, new Set());
+  return [...groups].sort((left, right) => (depths.get(left.id) ?? 0) - (depths.get(right.id) ?? 0));
 };
 
 const parseEnvelope = (value: string): VaultBundleEnvelope => {
@@ -212,6 +322,7 @@ export interface VaultBundleServiceOptions {
   hostRepository: HostRepository;
   groupRepository: GroupRepository;
   vaultService: VaultService;
+  identityService?: IdentityService;
 }
 
 export class VaultBundleService {
@@ -222,13 +333,63 @@ export class VaultBundleService {
   async export(sessionKey: Buffer, exportPassword: string): Promise<string> {
     assertSessionKey(sessionKey);
     assertPassword(exportPassword);
-    const groups = this.options.groupRepository.list().map((group) => ({ id: group.id, name: group.name, sortOrder: group.sortOrder }));
-    const hosts: BundleHost[] = [];
-    for (const row of this.options.hostRepository.listForBundle()) {
-      const auth = await this.options.vaultService.decryptJson<HostCredentialInput>(sessionKey, hostCredentialAad(row.id), parseStoredCredential(row.credentialCiphertext));
-      hosts.push({ id: row.id, name: row.name, address: row.address, port: row.port, username: row.username, auth, groupId: row.groupId, jumpHostIds: [...(row.jumpHostIds ?? [])], connectionProfile: row.connectionProfile ?? mergeConnectionProfileSettings(undefined), tags: [...row.tags], isFavorite: row.isFavorite, hostKeyAlgorithm: row.hostKeyAlgorithm, hostKeyFingerprint: row.hostKeyFingerprint });
+    const groupNodes = this.options.groupRepository.list();
+    const groups: BundleGroup[] = groupNodes.map((group) => ({
+      id: group.id,
+      name: group.name,
+      sortOrder: group.sortOrder,
+      parentId: group.parentId,
+      defaultIdentityId: group.defaultIdentityId,
+      connectionProfile: group.connectionProfile
+    }));
+    const identityMetadata = this.options.identityService ? await this.options.identityService.list(this.options.ownerId) : [];
+    if (!this.options.identityService && groupNodes.some((group) => group.defaultIdentityId !== null)) throw new AppError('IDENTITY_NOT_FOUND');
+    const identityCredentials = new Map<string, StoredHostCredential>();
+    const identities: BundleIdentity[] = [];
+    for (const identity of identityMetadata) {
+      const auth = await this.options.identityService!.getCredential(this.options.ownerId, identity.id, sessionKey);
+      identityCredentials.set(identity.id, auth);
+      identities.push({ id: identity.id, name: identity.name, type: identity.type, username: identity.username, keyFingerprint: identity.keyFingerprint, auth });
     }
-    const payload = Buffer.from(JSON.stringify({ groups, hosts } satisfies BundlePayload), 'utf8');
+    const hostRows = this.options.hostRepository.listForBundle();
+    if (!this.options.identityService && hostRows.some((row) => row.credentialSource?.type !== 'inline')) throw new AppError('IDENTITY_NOT_FOUND');
+    const hosts: BundleHost[] = [];
+    for (const row of hostRows) {
+      let auth: StoredHostCredential;
+      const resolved = resolveConnectionConfiguration(row, groupNodes);
+      const identityId = row.credentialSource?.type === 'identity'
+        ? row.identityId
+        : row.credentialSource?.type === 'group' ? resolved.identityId : null;
+      if (identityId) {
+        if (!this.options.identityService) throw new AppError('IDENTITY_NOT_FOUND');
+        auth = identityCredentials.get(identityId) ?? await this.options.identityService.getCredential(this.options.ownerId, identityId, sessionKey);
+      } else {
+        if (row.credentialSource?.type === 'group') throw new AppError('IDENTITY_NOT_FOUND');
+        if (row.credentialCiphertext === null) throw new AppError('VAULT_BUNDLE_INVALID');
+        auth = await this.options.vaultService.decryptJson<StoredHostCredential>(sessionKey, hostCredentialAad(row.id), parseStoredCredential(row.credentialCiphertext));
+      }
+      if (!storedHostCredentialSchema.safeParse(auth).success) throw new AppError('VAULT_BUNDLE_INVALID');
+      const credentialSource = row.credentialSource?.type ?? 'inline';
+      hosts.push({
+        id: row.id,
+        name: row.name,
+        address: row.address,
+        port: row.port,
+        username: row.username,
+        auth,
+        groupId: row.groupId,
+        jumpHostIds: [...(row.jumpHostIds ?? [])],
+        connectionProfile: row.connectionProfile ?? mergeConnectionProfileSettings(undefined),
+        connectionProfileOverrides: row.connectionProfileOverrides ?? null,
+        tags: [...row.tags],
+        isFavorite: row.isFavorite,
+        hostKeyAlgorithm: row.hostKeyAlgorithm,
+        hostKeyFingerprint: row.hostKeyFingerprint,
+        credentialSource,
+        ...(credentialSource === 'identity' ? { identityId: row.identityId } : {})
+      });
+    }
+    const payload = Buffer.from(JSON.stringify({ groups, hosts, identities } satisfies BundlePayload), 'utf8');
     const bundleKey = randomBytes(VAULT_KEY_LENGTH);
     const salt = randomBytes(VAULT_SALT_LENGTH);
     let exportKey: Buffer | undefined;
@@ -258,6 +419,10 @@ export class VaultBundleService {
     this.prunePreviews();
     const payload = await this.decryptBundle(exportPassword, bundle);
     const conflicts: ImportConflict[] = [];
+    const identityRepository = new IdentityRepository(this.options.database, this.options.ownerId);
+    for (const identity of payload.identities ?? []) {
+      if (identityRepository.get(identity.id)) conflicts.push({ type: 'identity', id: identity.id, name: identity.name });
+    }
     for (const group of payload.groups) {
       if (this.options.groupRepository.get(group.id)) conflicts.push({ type: 'group', id: group.id, name: group.name });
     }
@@ -267,7 +432,7 @@ export class VaultBundleService {
     const previewId = randomUUID();
     const expiresAt = Date.now() + PREVIEW_TTL_MS;
     this.previews.set(previewId, { expiresAt, payload });
-    return { previewId, hostCount: payload.hosts.length, groupCount: payload.groups.length, conflicts, expiresAt: new Date(expiresAt).toISOString() };
+    return { previewId, hostCount: payload.hosts.length, groupCount: payload.groups.length, identityCount: payload.identities?.length ?? 0, conflicts, expiresAt: new Date(expiresAt).toISOString() };
   }
 
   async applyImport(sessionKey: Buffer, previewId: string, resolution: ImportResolution): Promise<ImportResult> {
@@ -275,33 +440,86 @@ export class VaultBundleService {
     this.prunePreviews();
     const pending = this.previews.get(previewId);
     if (!pending) throw new AppError('VAULT_BUNDLE_PREVIEW_EXPIRED');
-    if (!['skip', 'replace'].includes(resolution.hostConflicts) || !['reuse', 'replace'].includes(resolution.groupConflicts)) throw new AppError('VAULT_BUNDLE_INVALID');
+    if (!['skip', 'replace'].includes(resolution.hostConflicts) || !['reuse', 'replace'].includes(resolution.groupConflicts) || (resolution.identityConflicts !== undefined && !['reuse', 'replace'].includes(resolution.identityConflicts))) throw new AppError('VAULT_BUNDLE_INVALID');
     validateImportedJumpGraph(pending.payload.hosts, this.options.hostRepository.listMetadata(), resolution.hostConflicts);
+    const identityConflicts = resolution.identityConflicts ?? 'reuse';
+    const identityRepository = new IdentityRepository(this.options.database, this.options.ownerId);
+    const identities: Array<BundleIdentity & { existing: ReturnType<IdentityRepository['get']>; credentialCiphertext: string }> = [];
+    for (const identity of pending.payload.identities ?? []) {
+      const encrypted = await this.options.vaultService.encryptJson(sessionKey, `identity:${identity.id}:credentials:v1`, identity.auth);
+      identities.push({ ...identity, existing: identityRepository.get(identity.id), credentialCiphertext: JSON.stringify(encrypted) });
+    }
     const groups: Array<BundleGroup & { existing: ReturnType<GroupRepository['get']> }> = [];
-    for (const group of pending.payload.groups) {
+    for (const group of orderBundleGroups(pending.payload.groups)) {
       groups.push({ ...group, existing: this.options.groupRepository.get(group.id) });
     }
-    const hosts: Array<BundleHost & { existing: ReturnType<HostRepository['getForConnection']>; credentialCiphertext: string }> = [];
+    const hosts: Array<BundleHost & { existing: ReturnType<HostRepository['getForConnection']>; credentialCiphertext: string | null }> = [];
     for (const host of pending.payload.hosts) {
-      const encrypted = await this.options.vaultService.encryptJson(sessionKey, hostCredentialAad(host.id), host.auth);
+      const source = host.credentialSource ?? 'inline';
+      const encrypted = source === 'inline'
+        ? await this.options.vaultService.encryptJson(sessionKey, hostCredentialAad(host.id), host.auth)
+        : null;
       hosts.push({
         ...host,
         existing: this.options.hostRepository.getForConnection(host.id),
-        credentialCiphertext: JSON.stringify(encrypted)
+        credentialCiphertext: encrypted ? JSON.stringify(encrypted) : null
       });
     }
     const operation = this.options.database.transaction((): ImportResult => {
+      let importedIdentities = 0;
+      let skippedIdentities = 0;
       let importedGroups = 0;
       let skippedGroups = 0;
       let importedHosts = 0;
       let skippedHosts = 0;
+      for (const identity of identities) {
+        if (identity.existing) {
+          if (identityConflicts === 'reuse') { skippedIdentities += 1; continue; }
+          identityRepository.update(identity.id, {
+            name: identity.name,
+            type: identity.type,
+            username: identity.username,
+            keyFingerprint: identity.keyFingerprint,
+            credentialCiphertext: identity.credentialCiphertext,
+            credentialVersion: 1
+          });
+          importedIdentities += 1;
+        } else {
+          identityRepository.create({
+            id: identity.id,
+            ownerId: this.options.ownerId,
+            name: identity.name,
+            type: identity.type,
+            username: identity.username,
+            keyFingerprint: identity.keyFingerprint,
+            credentialCiphertext: identity.credentialCiphertext,
+            credentialVersion: 1,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+          importedIdentities += 1;
+        }
+      }
       for (const group of groups) {
         if (group.existing) {
           if (resolution.groupConflicts === 'reuse') { skippedGroups += 1; continue; }
-          this.options.groupRepository.update(group.id, { name: group.name, sortOrder: group.sortOrder });
+          this.options.groupRepository.update(group.id, {
+            name: group.name,
+            parentId: group.parentId ?? null,
+            sortOrder: group.sortOrder,
+            defaultIdentityId: group.defaultIdentityId ?? null,
+            connectionProfile: group.connectionProfile ?? null
+          });
           importedGroups += 1;
         } else {
-          this.options.groupRepository.create({ id: group.id, name: group.name, sortOrder: group.sortOrder });
+          this.options.groupRepository.create({
+            id: group.id,
+            name: group.name,
+            parentId: group.parentId ?? null,
+            sortOrder: group.sortOrder,
+            defaultIdentityId: group.defaultIdentityId ?? null,
+            connectionProfile: group.connectionProfile ?? null
+          });
           importedGroups += 1;
         }
       }
@@ -310,15 +528,28 @@ export class VaultBundleService {
           if (resolution.hostConflicts === 'skip') { skippedHosts += 1; continue; }
           this.options.hostRepository.deleteHost(host.id);
         }
+        const source = host.credentialSource ?? 'inline';
+        const identityId = source === 'identity' ? host.identityId ?? null : null;
+        if (source === 'identity') {
+          if (!identityId || !identityRepository.get(identityId)) throw new AppError('IDENTITY_NOT_FOUND');
+        }
+        if (source === 'group') {
+          const resolved = resolveConnectionConfiguration({ groupId: host.groupId, credentialSource: { type: 'group' } }, this.options.groupRepository.list());
+          if (!resolved.identityId) throw new AppError('IDENTITY_NOT_FOUND');
+        }
+        const connectionProfileOverrides = host.connectionProfileOverrides === undefined ? host.connectionProfile : host.connectionProfileOverrides;
         this.options.hostRepository.createHost({
           id: host.id, ownerId: this.options.ownerId, name: host.name, address: host.address, port: host.port, username: host.username,
-          authType: host.auth.type, credentialCiphertext: host.credentialCiphertext, credentialVersion: 1,
+          authType: host.auth.type === 'pending' ? host.auth.authType : host.auth.type, credentialCiphertext: host.credentialCiphertext, credentialVersion: 1,
+          credentialSource: source, identityId,
           hostKeyAlgorithm: host.hostKeyAlgorithm, hostKeyFingerprint: host.hostKeyFingerprint, groupId: host.groupId, jumpHostIds: host.jumpHostIds, tags: host.tags,
-          connectionProfile: host.connectionProfile, isFavorite: host.isFavorite, lastConnectedAt: null
+          connectionProfile: mergeConnectionProfileSettings(connectionProfileOverrides ?? undefined),
+          connectionProfileOverrides: connectionProfileOverrides ?? null,
+          isFavorite: host.isFavorite, lastConnectedAt: null
         });
         importedHosts += 1;
       }
-      return { importedHosts, importedGroups, skippedHosts, skippedGroups };
+      return { importedHosts, importedGroups, skippedHosts, skippedGroups, importedIdentities, skippedIdentities };
     });
     const result = operation();
     this.previews.delete(previewId);

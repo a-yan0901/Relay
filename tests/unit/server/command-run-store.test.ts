@@ -14,6 +14,31 @@ afterEach(() => {
 });
 
 describe('CommandRunStore', () => {
+  it('marks persisted queued work as failed after a service restart and restores it after unlock', async () => {
+    const database = openDatabase(':memory:');
+    migrate(database);
+    databases.push(database);
+    const vault = await VaultService.create('correct horse battery staple');
+    const repository = new CommandRunRepository(database, 'owner-a');
+    const run: CommandRun = {
+      id: 'run-restart',
+      command: 'uname -a',
+      hostIds: ['host-1'],
+      persistOutput: false,
+      status: 'queued',
+      targets: [{ hostId: 'host-1', status: 'queued', exitCode: null, output: '', outputBytes: 0 }],
+      createdAt: new Date(0).toISOString()
+    };
+    const firstStore = new CommandRunStore({ ownerId: 'owner-a', repository, vaultService: new VaultService(), now: () => 0 });
+    await firstStore.create(run, vault.vaultKey);
+
+    const restartedStore = new CommandRunStore({ ownerId: 'owner-a', repository, vaultService: new VaultService(), now: () => 1_000 });
+    const restored = await restartedStore.get(run.id, vault.vaultKey);
+
+    expect(restored).toMatchObject({ id: run.id, status: 'failed', finishedAt: new Date(1_000).toISOString() });
+    expect(restored?.targets).toEqual([expect.objectContaining({ hostId: 'host-1', status: 'failed', errorCode: 'SERVER_RESTARTED' })]);
+  });
+
   it('removes expired persisted results as well as the in-memory snapshot', async () => {
     const database = openDatabase(':memory:');
     migrate(database);

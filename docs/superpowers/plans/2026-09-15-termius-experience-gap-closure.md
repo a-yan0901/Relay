@@ -10,6 +10,8 @@
 
 **Spec:** docs/superpowers/specs/2026-09-15-termius-experience-gap-closure-design.md
 
+**当前执行状态（2026-09-16）：** Web-first 主路径、统一 `CoreRuntime`/ports、Identity/Group 继承、目标快照、SFTP 工作流、Snippet、Workspace 模板/四 pane 和重启终态已落地；`App.tsx` 接收注入的 `CoreRuntime`，Web 入口只在 `main.tsx` 注入 Web adapter；原生客户端、云同步、团队能力和更多协议仍按非目标保留。
+
 ## Global Constraints
 
 - 当前分支的导入/导出改造是前置基线；先修复其 UI/测试契约，再开始新增体验能力；不重新实现现有解析器。
@@ -227,6 +229,7 @@ export interface WorkspaceStore {
 export interface CoreRuntime {
   platform: ClientPlatform;
   capabilities: CapabilitySet;
+  negotiateCapabilities(): Promise<CapabilitySet>;
   vault: VaultSessionPort;
   hosts: HostStore;
   connection: ConnectionProbe;
@@ -553,7 +556,8 @@ export interface IdentityMetadata {
 
 export type HostCredentialSource =
   | { type: 'inline'; authType: IdentityType }
-  | { type: 'identity'; identityId: string };
+  | { type: 'identity'; identityId: string }
+  | { type: 'group' };
 ~~~
 
 Server service methods：
@@ -568,7 +572,7 @@ class IdentityService {
 }
 ~~~
 
-Host create/patch 接受 legacy auth 或新的 credentialSource，但经过 validation 后必须归一为 inline 或 identity 二选一。Web API 新增：
+Host create/patch 接受 legacy auth 或新的 credentialSource；经过 validation 后归一为 inline、identity 或 group 三种互斥来源。group source 必须绑定一个可向上解析到默认 Identity 的分组。Web API 新增：
 
 ~~~ts
 getIdentities(): Promise<IdentityMetadata[]>;
@@ -787,7 +791,7 @@ CommandRunDialog 接受所有可选 Host 和 Group，而不是只接收当前 te
 />
 ~~~
 
-GroupSidebar、HostWorkspace 和 HostForm 通过 `runtime.groups`/`runtime.hosts` 获取数据；`identityName` 只作为展示 metadata，Host 的 canonical credential source 仍只保存 `identityId`。
+GroupSidebar、HostWorkspace 和 HostForm 通过 `runtime.groups`/`runtime.hosts` 获取数据；`identityName`/`identitySource` 只作为展示 metadata，Host 的 canonical credential source 可为 inline、identity 或 group，秘密仍不进入 metadata。
 
 - [ ] **Step 1: 写目标展开和去重测试**
 

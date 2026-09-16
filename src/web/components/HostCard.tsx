@@ -27,6 +27,7 @@ export const HostCard = ({ host, onConnect, onFavoriteToggle, onEdit, onDelete, 
       <div className="host-meta">
         <span>{host.authType === 'password' ? '密码认证' : '私钥认证'}</span>
         <span>{host.hostKeyFingerprint ? '指纹已验证' : '等待首次验证'}</span>
+        {host.identityName && <span>{host.identitySource === 'group' ? `继承身份：${host.identityName}` : `身份：${host.identityName}`}</span>}
       </div>
       <p className="host-last-connected">{formatLastConnected(host.lastConnectedAt)}</p>
       {host.tags.length > 0 && <div className="tag-list">{host.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>)}</div>}

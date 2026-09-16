@@ -2,7 +2,7 @@
 
 **日期：** 2026-09-15
 
-**状态：** Proposed
+**状态：** Implemented (Web-first; native clients/cloud sync deferred)
 
 **前置基线：** 当前分支正在收口导入/导出改造。本方案不重新设计 OpenSSH、Termius CSV、MobaXterm、Xshell、SecureCRT 解析器；导入/导出通过聚焦测试后作为本方案的回归基线。
 
@@ -21,7 +21,7 @@ Relay 继续保持 Web-first、local-first、单实例、单用户和单 Vault �
 - SFTP 服务端已有目录操作，Web UI 仍偏向列表查看。
 - 浏览器路由切换、服务重启和实时任务失联时，用户缺少准确的状态解释。
 - 弹窗、移动端、图标语义和键盘焦点还没有形成统一 UI 规范。
-- shared core 目前已有模型、状态机和部分 transport port，但应用编排、Identity/Group/Workspace 等 store port 以及 Web adapter 边界还不完整；如果直接继续堆 Web 功能，未来桌面/Android 会重复实现业务规则。
+- shared core 已补齐 `CoreRuntime`、Identity/Group/Workspace/Snippet/Activity store port、File/Session/Command transport、版本化 wire/capability 和 Web adapter contract；未来桌面/Android 只需替换 adapter，不复制业务规则。
 
 ## 2. Benchmark 与证据
 
@@ -34,10 +34,10 @@ Relay 当前的事实基线：
 
 - 主机、分组、标签、收藏、最近连接和 ProxyJump：HostWorkspace、HostForm 和 shared core 已覆盖。
 - SSH 终端、SFTP、批量执行、Snippet 服务、活动面板和加密 Vault：见 README、shared core models、server routes 和 web adapters。
-- Workspace 模板 API 和 SQLite 表已经存在，但还没有 Web 端任务流。
+- Workspace 模板 API、Web switcher 和最多四 pane 的布局任务流已经接通；模板只保存非敏感 WorkspaceState。
 - 现有 Workspace 只保存非敏感 Tab、布局和筛选；live session 仍由进程内 session manager 管理。
 - 当前导入/导出改造已将 Vault 数据包和跨产品迁移拆为独立入口，剩余工作以文案、测试契约和发布回归为主。
-- 当前 `src/web/platform/web-adapters.ts` 已经隔离了部分 HTTP/WSS 和 transport，但 `App.tsx` 仍有直接 API wiring，导入/导出边界仍暴露浏览器 `File`/`Blob`；这属于本轮必须收口的跨端架构 gap。
+- 当前 `src/web/platform/web-adapters.ts` 是 Web 的 `CoreRuntime` 实现入口，`src/web/main.tsx` 将 runtime 注入 Web/React `App.tsx`，App 的业务调用已通过注入的 runtime 收口；导入/导出通过 shared `ImportExportPort`，浏览器 `File`/`Blob`/`FormData` 只在 Web UI/adapter 边界转换。原生客户端复用 shared core、ports、状态语义和 contract tests，但按平台重写 UI/生命周期编排，不直接复用 Web DOM 组件。
 
 本设计只把官方 Termius 页面当作体验和能力 benchmark，不把营销页面当作独立的可用性实验结论。
 
@@ -197,7 +197,8 @@ export interface IdentityMetadata {
 
 export type HostCredentialSource =
   | { type: 'inline'; authType: IdentityType }
-  | { type: 'identity'; identityId: string; identityName: string };
+  | { type: 'identity'; identityId: string }
+  | { type: 'group' };
 ~~~
 
 Identity 的 password、privateKey 和 passphrase 只保存在服务端 Vault 加密载荷中。Identity metadata 可以返回给 Web，但不能返回 credentialCiphertext 或明文。
@@ -292,15 +293,11 @@ SFTP 面板采用“路径上下文 + 文件列表 + 操作反馈”结构：
 
 ## 7. 统一核心与跨端/跨平台扩展
 
-### 7.1 Review 结论：当前 shared core 还不是完整应用边界
+### 7.1 Review 结论：统一核心已成为实现边界
 
-当前 `src/shared` 已经承载 Host、Workspace、SFTP、批量任务、状态机、错误码和部分 transport ports，这是正确方向；但还存在三个会阻碍跨端扩展的缺口：
+本轮已将 `src/shared/core` 收口为平台无关的模型、validation、error/state、capability、分组/连接继承、目标快照、runtime 和 ports；Web 通过 `src/web/platform/web-adapters.ts` 实现第一套 adapter，并由 `src/web/main.tsx` 注入 Web/React `App.tsx`。App 不直接调用 `api.ts`，导入/导出使用 `ImportSourceFile`/`Uint8Array`，浏览器对象只在 Web UI/adapter 边界转换。统一的是领域/应用契约，不承诺原生客户端直接复用 Web DOM 组件；原生端应复用 shared contract tests 并自行处理 UI 与生命周期。
 
-- `src/shared/core/ports.ts` 目前主要覆盖 Host 读取、Session、File 和 Command，Identity、Group、Workspace template、Snippet、Activity 仍可能由各端自行拼接。
-- `src/web/App.tsx` 仍直接调用 `src/web/api.ts` 的部分 Host CRUD、轮询和生命周期方法。未来桌面/Android 如果复制这些调用，业务流程会和 HTTP API 绑定。
-- Web adapter 的导入/导出接口使用浏览器 `File`/`Blob`。这些对象可以存在 Web UI 边界，但不能成为 shared core 或跨端用例的类型。
-
-本方案因此把“统一核心”设为硬门槛：每个新增能力先定义 shared model、validation、error/state、capability 和 port，再由 Web adapter 接入；桌面/Android 本轮不做原生 UI，但未来可以替换 adapter 而不复制领域规则、确认步骤和状态语义。
+后续桌面/Android 可以选择本地 SSH + OS keychain/Keystore，或继续使用服务端 transport，但必须复用相同的 Host Key、SFTP 路径、批量目标、任务终态和重启语义。云同步、团队 Vault、多协议和原生 UI 仍是后续独立 spec，不进入当前核心的隐式依赖。
 
 ### 7.2 依赖方向和 CoreRuntime
 
@@ -342,6 +339,7 @@ export interface WorkspaceStore {
 export interface CoreRuntime {
   platform: ClientPlatform;
   capabilities: CapabilitySet;
+  negotiateCapabilities(): Promise<CapabilitySet>;
   vault: VaultSessionPort;
   hosts: HostStore;
   connection: ConnectionProbe;
@@ -418,12 +416,13 @@ export interface VaultBundlePreview {
   previewId: string;
   hostCount: number;
   groupCount: number;
+  identityCount?: number;
   conflicts: readonly VaultBundleConflict[];
   expiresAt: string;
 }
 
 export interface VaultBundleConflict {
-  type: 'host' | 'group';
+  type: 'host' | 'group' | 'identity';
   id: string;
   name: string;
 }
@@ -431,6 +430,7 @@ export interface VaultBundleConflict {
 export interface VaultBundleResolution {
   hostConflicts: 'skip' | 'replace';
   groupConflicts: 'reuse' | 'replace';
+  identityConflicts?: 'reuse' | 'replace';
 }
 
 export interface VaultBundleApplyResult {
@@ -438,6 +438,8 @@ export interface VaultBundleApplyResult {
   importedGroups: number;
   skippedHosts: number;
   skippedGroups: number;
+  importedIdentities?: number;
+  skippedIdentities?: number;
 }
 
 export interface ImportExportPort {
@@ -525,7 +527,8 @@ CREATE TABLE identities (
   UNIQUE (owner_id, name)
 );
 
-ALTER TABLE hosts ADD COLUMN credential_source TEXT NOT NULL DEFAULT 'inline';
+ALTER TABLE hosts ADD COLUMN credential_source TEXT NOT NULL DEFAULT 'inline'
+  CHECK (credential_source IN ('inline', 'identity', 'group'));
 ALTER TABLE hosts ADD COLUMN identity_id TEXT REFERENCES identities(id) ON DELETE RESTRICT;
 ~~~
 

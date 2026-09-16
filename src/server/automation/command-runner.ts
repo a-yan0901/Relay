@@ -123,8 +123,8 @@ export class CommandRunner {
     return run;
   }
 
-  async get(runId: string): Promise<CommandRun | null> {
-    return this.store.get(runId);
+  async get(runId: string, sessionKey?: Buffer): Promise<CommandRun | null> {
+    return this.store.get(runId, sessionKey);
   }
 
   async cancel(runId: string): Promise<void> {

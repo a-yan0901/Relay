@@ -26,7 +26,10 @@ export interface TerminalWorkspaceProps {
   onClose: (terminalId: string) => void;
   onConnectHost?: (host: HostMetadataState) => void;
   onOpenBatchCommand?: () => void;
+  onOpenSnippetPalette?: () => void;
   onListSftp?: (hostId: string, path: string) => Promise<readonly SftpEntry[]>;
+  onCreateDirectorySftp?: (hostId: string, path: string) => Promise<void>;
+  onRenameSftp?: (hostId: string, from: string, to: string) => Promise<void>;
   onDeleteSftp?: (hostId: string, path: string) => Promise<void>;
   onUploadSftp?: (hostId: string, file: File, path: string) => Promise<void>;
   onDownloadSftp?: (hostId: string, path: string, name: string) => Promise<void>;
@@ -36,9 +39,12 @@ export interface TerminalWorkspaceProps {
   onStatusChange?: (terminalId: string, snapshot: TerminalSessionSnapshot) => void;
   preferences?: UiPreferences;
   onBackToHosts?: () => void;
+  visible?: boolean;
   workspaceHeader?: ReactNode;
   workspaceLayout?: WorkspaceLayout;
+  workspaceTabIdByTerminalId?: Readonly<Record<string, string>>;
   onLayoutChange?: (layout: WorkspaceLayout) => void;
+  allowMultiPane?: boolean;
 }
 
 const clampSplitRatio = (ratio: number): number => Math.round(Math.min(0.8, Math.max(0.2, ratio)) * 100) / 100;
@@ -52,10 +58,20 @@ const paneLabel = (pane: PaneKey): string => pane === 'primary' ? '左侧 Consol
 const splitLayoutFromWorkspace = (layout: WorkspaceLayout | undefined, terminalIds: readonly string[]): SplitLayout | null => {
   if (!layout || layout.mode === 'single') return null;
   return {
-    orientation: layout.mode,
+    orientation: layout.mode === 'grid' ? 'vertical' : layout.mode,
     primaryId: terminalIds[0] ?? null,
     secondaryId: terminalIds[1] ?? null
   };
+};
+
+const gridTerminalIdsFromWorkspace = (
+  layout: WorkspaceLayout | undefined,
+  terminals: readonly TerminalTabState[],
+  workspaceTabIdByTerminalId: Readonly<Record<string, string>> | undefined
+): string[] => {
+  const terminalIdByWorkspaceTabId = new Map(Object.entries(workspaceTabIdByTerminalId ?? {}).map(([terminalId, tabId]) => [tabId, terminalId]));
+  const requested = layout?.paneTabIds?.map((tabId) => terminalIdByWorkspaceTabId.get(tabId)).filter((id): id is string => id !== undefined) ?? [];
+  return [...new Set([...requested, ...terminals.map((terminal) => terminal.terminalId)])].slice(0, 4);
 };
 
 export const TerminalWorkspace = ({
@@ -66,7 +82,10 @@ export const TerminalWorkspace = ({
   onClose,
   onConnectHost,
   onOpenBatchCommand,
+  onOpenSnippetPalette,
   onListSftp,
+  onCreateDirectorySftp,
+  onRenameSftp,
   onDeleteSftp,
   onUploadSftp,
   onDownloadSftp,
@@ -76,13 +95,19 @@ export const TerminalWorkspace = ({
   onStatusChange,
   preferences = DEFAULT_PREFERENCES,
   onBackToHosts,
+  visible: workspaceVisible = true,
   workspaceHeader,
   workspaceLayout,
-  onLayoutChange
+  workspaceTabIdByTerminalId,
+  onLayoutChange,
+  allowMultiPane = true
 }: TerminalWorkspaceProps) => {
   const [hostQuery, setHostQuery] = useState('');
   const [hostPickerOpen, setHostPickerOpen] = useState(false);
   const [splitLayout, setSplitLayout] = useState<SplitLayout | null>(() => splitLayoutFromWorkspace(workspaceLayout, terminals.map((terminal) => terminal.terminalId)));
+  const [gridLayout, setGridLayout] = useState(() => workspaceLayout?.mode === 'grid');
+  const [gridTerminalIds, setGridTerminalIds] = useState(() => gridTerminalIdsFromWorkspace(workspaceLayout, terminals, workspaceTabIdByTerminalId));
+  const [focusedGridIndex, setFocusedGridIndex] = useState(0);
   const [focusedPane, setFocusedPane] = useState<PaneKey>('primary');
   const [splitRatio, setSplitRatio] = useState(() => clampSplitRatio(workspaceLayout?.ratio ?? 0.5));
   const [isDraggingDivider, setIsDraggingDivider] = useState(false);
@@ -93,10 +118,23 @@ export const TerminalWorkspace = ({
   const previousTerminalIdsRef = useRef(new Set(terminals.map((terminal) => terminal.terminalId)));
 
   useEffect(() => {
+    if (!allowMultiPane) {
+      setGridLayout(false);
+      setGridTerminalIds([]);
+      setSplitLayout(null);
+      return;
+    }
     if (!workspaceLayout) return;
     setSplitRatio(clampSplitRatio(workspaceLayout.ratio));
-    setSplitLayout(splitLayoutFromWorkspace(workspaceLayout, terminals.map((terminal) => terminal.terminalId)));
-  }, [terminals, workspaceLayout?.mode, workspaceLayout?.ratio]);
+    setGridLayout(workspaceLayout.mode === 'grid');
+    if (workspaceLayout.mode === 'grid') {
+      setSplitLayout(null);
+      setGridTerminalIds(gridTerminalIdsFromWorkspace(workspaceLayout, terminals, workspaceTabIdByTerminalId));
+    } else {
+      setGridTerminalIds([]);
+      setSplitLayout(splitLayoutFromWorkspace(workspaceLayout, terminals.map((terminal) => terminal.terminalId)));
+    }
+  }, [allowMultiPane, terminals, workspaceLayout?.mode, workspaceLayout?.ratio, workspaceLayout?.paneTabIds, workspaceTabIdByTerminalId]);
 
   const handleToolbarChange = useCallback((terminalId: string, toolbar: TerminalPanelToolbarState | null): void => {
     setToolbarByTerminalId((current) => current[terminalId] === toolbar ? current : { ...current, [terminalId]: toolbar });
@@ -127,11 +165,16 @@ export const TerminalWorkspace = ({
     const addedTerminal = terminals.find((terminal) => !previousTerminalIdsRef.current.has(terminal.terminalId));
     previousTerminalIdsRef.current = currentIds;
     const pendingPane = pendingPaneRef.current;
-    if (!addedTerminal || !pendingPane) return;
+    if (!addedTerminal) return;
+    if (gridLayout) {
+      setGridTerminalIds((current) => current.includes(addedTerminal.terminalId) || current.length >= 4 ? current : [...current, addedTerminal.terminalId]);
+      return;
+    }
+    if (!pendingPane) return;
     setSplitLayout((layout) => layout ? replacePane(layout, pendingPane, addedTerminal.terminalId) : layout);
     setFocusedPane(pendingPane);
     pendingPaneRef.current = null;
-  }, [terminals]);
+  }, [gridLayout, terminals]);
 
   const fallbackTerminalId = activeTerminalId && terminalById.has(activeTerminalId)
     ? activeTerminalId
@@ -145,6 +188,7 @@ export const TerminalWorkspace = ({
       ? splitLayout.secondaryId
       : secondaryCandidate
     : null;
+  const visibleGridTerminalIds = gridTerminalIds.filter((terminalId) => terminalById.has(terminalId)).slice(0, 4);
   const activeToolbar = activeTerminalId ? toolbarByTerminalId[activeTerminalId] : null;
   const activeHostId = activeTerminalId ? terminalById.get(activeTerminalId)?.hostId ?? null : null;
 
@@ -182,7 +226,25 @@ export const TerminalWorkspace = ({
     onActivate(terminalId);
   };
 
+  const selectGridTerminal = (index: number, terminalId: string): void => {
+    if (!gridLayout || !terminalById.has(terminalId) || visibleGridTerminalIds.some((id, candidateIndex) => candidateIndex !== index && id === terminalId)) return;
+    setGridTerminalIds((current) => current.map((id, candidateIndex) => candidateIndex === index ? terminalId : id));
+    setFocusedGridIndex(index);
+    onActivate(terminalId);
+  };
+
   const activateTerminal = (terminalId: string): void => {
+    if (gridLayout) {
+      const existingIndex = visibleGridTerminalIds.indexOf(terminalId);
+      if (existingIndex >= 0) setFocusedGridIndex(existingIndex);
+      else if (visibleGridTerminalIds.length > 0) {
+        const replacementIndex = Math.min(focusedGridIndex, visibleGridTerminalIds.length - 1);
+        setGridTerminalIds((current) => current.map((id, index) => index === replacementIndex ? terminalId : id));
+        setFocusedGridIndex(replacementIndex);
+      }
+      onActivate(terminalId);
+      return;
+    }
     if (splitLayout) {
       const pane = terminalId === primaryTerminalId ? 'primary' : terminalId === secondaryTerminalId ? 'secondary' : focusedPane;
       if (terminalId !== primaryTerminalId && terminalId !== secondaryTerminalId) {
@@ -194,6 +256,13 @@ export const TerminalWorkspace = ({
   };
 
   const toggleSplit = (orientation: SplitOrientation): void => {
+    if (gridLayout) {
+      setGridLayout(false);
+      setGridTerminalIds([]);
+      setFocusedPane('primary');
+      onLayoutChange?.({ mode: orientation, ratio: splitRatio });
+      return;
+    }
     if (splitLayout?.orientation === orientation) {
       setSplitLayout(null);
       setFocusedPane('primary');
@@ -211,6 +280,26 @@ export const TerminalWorkspace = ({
     if (!secondaryId && onConnectHost) setHostPickerOpen(true);
   };
 
+  const gridPaneTabIds = (): string[] => visibleGridTerminalIds
+    .map((terminalId) => workspaceTabIdByTerminalId?.[terminalId])
+    .filter((tabId): tabId is string => tabId !== undefined);
+
+  const toggleGrid = (): void => {
+    if (gridLayout) {
+      setGridLayout(false);
+      setGridTerminalIds([]);
+      setFocusedPane('primary');
+      onLayoutChange?.({ mode: 'single', ratio: splitRatio });
+      return;
+    }
+    setSplitLayout(null);
+    setGridLayout(true);
+    const ids = [...new Set([...visibleGridTerminalIds, ...terminals.map((terminal) => terminal.terminalId)])].slice(0, 4);
+    setGridTerminalIds(ids);
+    setFocusedGridIndex(0);
+    onLayoutChange?.({ mode: 'grid', ratio: splitRatio, paneTabIds: ids.map((terminalId) => workspaceTabIdByTerminalId?.[terminalId]).filter((tabId): tabId is string => tabId !== undefined) });
+  };
+
   const openHostPicker = (): void => {
     setHostPickerOpen((open) => !open);
     setHostQuery('');
@@ -224,11 +313,23 @@ export const TerminalWorkspace = ({
       : (event.clientY - bounds.top) / bounds.height;
     const nextRatio = clampSplitRatio(ratio);
     setSplitRatio(nextRatio);
-    onLayoutChange?.({ mode: splitLayout?.orientation ?? 'single', ratio: nextRatio });
+    onLayoutChange?.(gridLayout
+      ? { mode: 'grid', ratio: nextRatio, paneTabIds: gridPaneTabIds() }
+      : { mode: splitLayout?.orientation ?? 'single', ratio: nextRatio });
   };
 
   const stopDraggingDivider = (): void => setIsDraggingDivider(false);
   const updateSplitRatioFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (!splitLayout && !gridLayout) return;
+    if (gridLayout && !splitLayout) {
+      if (event.key === 'Home' || event.key === 'End' || event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        const nextRatio = event.key === 'Home' ? 0.2 : event.key === 'End' ? 0.8 : clampSplitRatio(splitRatio + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 0.05 : -0.05));
+        setSplitRatio(nextRatio);
+        onLayoutChange?.({ mode: 'grid', ratio: nextRatio, paneTabIds: gridPaneTabIds() });
+      }
+      return;
+    }
     if (!splitLayout) return;
     const isHorizontal = splitLayout.orientation === 'horizontal';
     const positiveKey = isHorizontal ? 'ArrowRight' : 'ArrowDown';
@@ -248,7 +349,7 @@ export const TerminalWorkspace = ({
       onLayoutChange?.({ mode: splitLayout.orientation, ratio: nextRatio });
     }
   };
-  const layoutStyle: CSSProperties | undefined = splitLayout ? { '--split-ratio': `${splitRatio * 100}%` } as CSSProperties : undefined;
+  const layoutStyle: CSSProperties | undefined = splitLayout || gridLayout ? { '--split-ratio': `${splitRatio * 100}%` } as CSSProperties : undefined;
 
   return (
     <div className="terminal-workspace-shell">
@@ -302,14 +403,18 @@ export const TerminalWorkspace = ({
               </div>
             )}
             {onOpenBatchCommand && <button className="terminal-topbar-button" type="button" aria-label="批量执行" onClick={onOpenBatchCommand}>⌘<span>批量</span></button>}
+            {onOpenSnippetPalette && <button className="terminal-topbar-button" type="button" aria-label="命令片段" onClick={onOpenSnippetPalette}>✦<span>片段</span></button>}
             {onListSftp && <button className="terminal-topbar-button" type="button" aria-label="远程文件" aria-pressed={filePanelOpen} onClick={() => setFilePanelOpen((open) => !open)}>▤<span>文件</span></button>}
-            <button className="terminal-topbar-button" type="button" aria-label="左右分屏" aria-pressed={splitLayout?.orientation === 'horizontal'} onClick={() => toggleSplit('horizontal')} title="左右分屏">◫</button>
-            <button className="terminal-topbar-button" type="button" aria-label="上下分屏" aria-pressed={splitLayout?.orientation === 'vertical'} onClick={() => toggleSplit('vertical')} title="上下分屏">▤</button>
-            {splitLayout && <button className="terminal-topbar-button terminal-exit-split-button" type="button" aria-label="退出分屏" onClick={() => { setSplitLayout(null); setFocusedPane('primary'); onLayoutChange?.({ mode: 'single', ratio: splitRatio }); }}>×<span>退出分屏</span></button>}
+            {allowMultiPane && <>
+              <button className="terminal-topbar-button" type="button" aria-label="左右分屏" aria-pressed={splitLayout?.orientation === 'horizontal'} onClick={() => toggleSplit('horizontal')} title="左右分屏">◫</button>
+              <button className="terminal-topbar-button" type="button" aria-label="上下分屏" aria-pressed={splitLayout?.orientation === 'vertical'} onClick={() => toggleSplit('vertical')} title="上下分屏">▤</button>
+              <button className="terminal-topbar-button" type="button" aria-label="四格布局" aria-pressed={gridLayout} onClick={toggleGrid} title="最多四格布局">⊞<span>四格</span></button>
+              {(splitLayout || gridLayout) && <button className="terminal-topbar-button terminal-exit-split-button" type="button" aria-label="退出分屏" onClick={() => { setSplitLayout(null); setGridLayout(false); setGridTerminalIds([]); setFocusedPane('primary'); onLayoutChange?.({ mode: 'single', ratio: splitRatio }); }}>×<span>退出分屏</span></button>}
+            </>}
           </div>
         </div>
         <div
-          className={`terminal-layout ${splitLayout ? `is-split-${splitLayout.orientation}` : 'is-single'} ${isDraggingDivider ? 'is-dragging' : ''}`}
+          className={`terminal-layout ${gridLayout ? 'is-grid' : splitLayout ? `is-split-${splitLayout.orientation}` : 'is-single'} ${isDraggingDivider ? 'is-dragging' : ''}`}
           ref={layoutRef}
           style={layoutStyle}
         >
@@ -319,33 +424,40 @@ export const TerminalWorkspace = ({
             const pane: PaneKey | null = terminal.terminalId === primaryTerminalId
               ? 'primary'
               : terminal.terminalId === secondaryTerminalId ? 'secondary' : null;
-            const visible = pane !== null;
+            const gridIndex = gridLayout ? visibleGridTerminalIds.indexOf(terminal.terminalId) : -1;
+            const paneVisible = gridLayout ? gridIndex >= 0 : pane !== null;
             const otherId = pane === 'primary' ? secondaryTerminalId : primaryTerminalId;
             const options = terminals.filter((option) => option.terminalId === terminal.terminalId || option.terminalId !== otherId);
+            const visiblePaneLabel = gridLayout ? `第${gridIndex + 1}个 Console` : pane ? paneLabel(pane) : undefined;
             return (
               <div
-                className={`terminal-pane ${pane ? `terminal-pane-${pane}` : 'terminal-pane-background'} ${visible ? 'is-visible' : 'is-background'} ${focusedPane === pane ? 'is-focused' : ''}`}
+                className={`terminal-pane ${gridLayout ? `terminal-pane-grid terminal-pane-grid-${gridIndex + 1}` : pane ? `terminal-pane-${pane}` : 'terminal-pane-background'} ${paneVisible ? 'is-visible' : 'is-background'} ${focusedPane === pane || (gridLayout && focusedGridIndex === gridIndex) ? 'is-focused' : ''}`}
                 key={terminal.terminalId}
-                role={visible ? 'region' : undefined}
-                aria-label={visible ? paneLabel(pane) : undefined}
+                role={paneVisible ? 'region' : undefined}
+                aria-label={visiblePaneLabel}
                 onMouseDown={() => {
+                  if (gridLayout && gridIndex >= 0) {
+                    setFocusedGridIndex(gridIndex);
+                    if (terminal.terminalId !== activeTerminalId) onActivate(terminal.terminalId);
+                    return;
+                  }
                   if (!pane) return;
                   setFocusedPane(pane);
                   if (terminal.terminalId !== activeTerminalId) onActivate(terminal.terminalId);
                 }}
               >
-                {visible && splitLayout && (
+                {paneVisible && (splitLayout || gridLayout) && (
                   <div className="terminal-pane-toolbar">
-                    <span>{paneLabel(pane)}</span>
+                    <span>{visiblePaneLabel}</span>
                     <label>
-                      <span className="visually-hidden">{paneLabel(pane)}</span>
-                      <select aria-label={paneLabel(pane)} value={terminal.terminalId} onChange={(event) => selectPaneTerminal(pane, event.target.value)}>
-                        {options.map((option) => <option value={option.terminalId} key={option.terminalId}>{labelForTerminal(option.terminalId)}</option>)}
+                      <span className="visually-hidden">{visiblePaneLabel}</span>
+                      <select aria-label={visiblePaneLabel} value={terminal.terminalId} onChange={(event) => gridLayout ? selectGridTerminal(gridIndex, event.target.value) : pane ? selectPaneTerminal(pane, event.target.value) : undefined}>
+                        {(gridLayout ? terminals.filter((option) => option.terminalId === terminal.terminalId || !visibleGridTerminalIds.includes(option.terminalId)) : options).map((option) => <option value={option.terminalId} key={option.terminalId}>{labelForTerminal(option.terminalId)}</option>)}
                       </select>
                     </label>
                   </div>
                 )}
-                <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={visible} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} />
+                <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} />
               </div>
             );
           })}
@@ -364,13 +476,13 @@ export const TerminalWorkspace = ({
               <div className="terminal-pane-empty-content"><span>等待第二个 Console</span>{onConnectHost && <button className="button button-ghost button-small" type="button" onClick={() => setHostPickerOpen(true)}>选择 Server</button>}</div>
             </div>
           )}
-          {splitLayout && (
+          {allowMultiPane && (splitLayout || gridLayout) && (
             <div
               className="terminal-divider"
               role="separator"
               tabIndex={0}
-              aria-label={splitLayout.orientation === 'horizontal' ? '调整左右分屏大小' : '调整上下分屏大小'}
-              aria-orientation={splitLayout.orientation === 'horizontal' ? 'vertical' : 'horizontal'}
+              aria-label={gridLayout ? '调整四格布局大小' : splitLayout?.orientation === 'horizontal' ? '调整左右分屏大小' : '调整上下分屏大小'}
+              aria-orientation={gridLayout || splitLayout?.orientation !== 'horizontal' ? 'horizontal' : 'vertical'}
               aria-valuemin={20}
               aria-valuemax={80}
               aria-valuenow={Math.round(splitRatio * 100)}
@@ -384,7 +496,7 @@ export const TerminalWorkspace = ({
           )}
         </div>
       </section>
-      {filePanelOpen && onListSftp && activeHostId && <aside className="terminal-file-panel" aria-label="远程文件面板"><SftpPanel hostId={activeHostId} onList={onListSftp} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} /><TransferQueue jobs={transferJobs} onCancel={onCancelTransfer} onRetry={onRetryTransfer} /></aside>}
+      {filePanelOpen && onListSftp && activeHostId && <aside className="terminal-file-panel" aria-label="远程文件面板"><SftpPanel hostId={activeHostId} onList={onListSftp} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} /><TransferQueue jobs={transferJobs} onCancel={onCancelTransfer} onRetry={onRetryTransfer} /></aside>}
     </div>
   );
 };

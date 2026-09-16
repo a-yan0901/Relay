@@ -4,11 +4,17 @@ import { AppError } from '../../shared/errors.js';
 import { transitionTransfer } from '../../shared/core/state-machines.js';
 import type { TransferJob, TransferRequest } from '../../shared/core/models.js';
 import { parseTransferRequest } from '../../shared/validation.js';
+import { TransferRepository } from '../db/repositories.js';
+import type { SqliteDatabase } from '../db/database.js';
+import type { TransferJobRow } from '../db/types.js';
 import type { SftpResourceProvider } from './sftp-service.js';
 import { mapSftpError } from './error-mapping.js';
 
 export interface TransferManagerOptions {
   resourceProvider: SftpResourceProvider;
+  ownerId?: string;
+  database?: SqliteDatabase;
+  repository?: TransferRepository;
   maxConcurrentPerHost?: number;
   maxBytes?: number;
   ttlMs?: number;
@@ -27,22 +33,45 @@ const DEFAULT_TTL_MS = 15 * 60 * 1000;
 
 const timestamp = (now: () => number): string => new Date(now()).toISOString();
 
+const sharedJobFromRow = (row: TransferJobRow): TransferJob => ({
+  id: row.id,
+  kind: row.kind,
+  hostId: row.hostId,
+  sourcePath: row.sourcePath,
+  targetPath: row.targetPath,
+  status: row.status,
+  completedBytes: row.completedBytes,
+  totalBytes: row.totalBytes,
+  ...(row.errorCode === undefined ? {} : { errorCode: row.errorCode }),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt
+});
+
 export class TransferManager {
-  private readonly options: Required<Pick<TransferManagerOptions, 'maxConcurrentPerHost' | 'maxBytes' | 'ttlMs' | 'now'>> & Pick<TransferManagerOptions, 'resourceProvider'>;
+  private readonly options: Required<Pick<TransferManagerOptions, 'maxConcurrentPerHost' | 'maxBytes' | 'ttlMs' | 'now'>> & Pick<TransferManagerOptions, 'resourceProvider' | 'ownerId'>;
   private readonly jobs = new Map<string, ManagedTransfer>();
   private readonly activeByHost = new Map<string, number>();
   private readonly waitersByHost = new Map<string, Array<() => void>>();
+  private readonly repository?: TransferRepository;
 
   constructor(options: TransferManagerOptions) {
     const maxConcurrentPerHost = options.maxConcurrentPerHost ?? 2;
     if (!Number.isInteger(maxConcurrentPerHost) || maxConcurrentPerHost < 1 || maxConcurrentPerHost > 8) throw new AppError('SFTP_TRANSFER_FAILED');
     this.options = {
       resourceProvider: options.resourceProvider,
+      ownerId: options.ownerId,
       maxConcurrentPerHost,
       maxBytes: options.maxBytes ?? DEFAULT_MAX_BYTES,
       ttlMs: options.ttlMs ?? DEFAULT_TTL_MS,
       now: options.now ?? Date.now
     };
+    this.repository = options.repository ?? (options.database && options.ownerId ? new TransferRepository(options.database, options.ownerId) : undefined);
+    this.repository?.markActiveInterrupted('SERVER_RESTARTED', timestamp(this.options.now));
+    this.repository?.deleteExpired(new Date(this.options.now() - this.options.ttlMs).toISOString());
+    for (const job of this.repository?.list() ?? []) {
+      const sharedJob = sharedJobFromRow(job);
+      this.jobs.set(sharedJob.id, { job: sharedJob, controller: new AbortController(), running: false, cancelRequested: false });
+    }
   }
 
   async create(input: TransferRequest): Promise<TransferJob> {
@@ -62,6 +91,7 @@ export class TransferManager {
       createdAt: now,
       updatedAt: now
     };
+    this.repository?.create({ ownerId: this.options.ownerId ?? 'default', ...job });
     this.jobs.set(id, { job, controller: new AbortController(), running: false, cancelRequested: false });
     return { ...job };
   }
@@ -123,7 +153,7 @@ export class TransferManager {
 
   async cancel(transferId: string): Promise<void> {
     const managed = this.require(transferId);
-    if (managed.job.status === 'completed' || managed.job.status === 'failed' || managed.job.status === 'cancelled') return;
+    if (managed.job.status === 'completed' || managed.job.status === 'failed' || managed.job.status === 'cancelled' || managed.job.status === 'interrupted') return;
     managed.cancelRequested = true;
     managed.controller.abort();
     if (managed.job.status === 'queued') this.update(managed, 'cancelled');
@@ -131,10 +161,11 @@ export class TransferManager {
 
   async retry(transferId: string): Promise<TransferJob> {
     const managed = this.require(transferId);
-    if (managed.job.status !== 'failed') throw new AppError('TRANSFER_CANCELLED');
+    if (managed.job.status !== 'failed' && managed.job.status !== 'interrupted') throw new AppError('TRANSFER_CANCELLED');
     managed.controller = new AbortController();
     managed.cancelRequested = false;
     managed.job = { ...managed.job, status: 'queued', completedBytes: 0, errorCode: undefined, updatedAt: timestamp(this.options.now) };
+    this.repository?.update(transferId, { status: 'queued', completedBytes: 0, errorCode: null, updatedAt: managed.job.updatedAt });
     return { ...managed.job };
   }
 
@@ -142,6 +173,11 @@ export class TransferManager {
     this.prune();
     const managed = this.jobs.get(transferId);
     return managed ? { ...managed.job } : null;
+  }
+
+  async list(): Promise<readonly TransferJob[]> {
+    this.prune();
+    return [...this.jobs.values()].map(({ job }) => ({ ...job }));
   }
 
   private async *downloadGenerator(managed: ManagedTransfer, sessionKey?: Buffer, onUpdate?: (job: TransferJob) => void): AsyncGenerator<Uint8Array> {
@@ -256,6 +292,7 @@ export class TransferManager {
   private progress(managed: ManagedTransfer, completedBytes: number, onUpdate?: (job: TransferJob) => void): void {
     const state = transitionTransfer({ id: managed.job.id, status: managed.job.status, completedBytes: managed.job.completedBytes, totalBytes: managed.job.totalBytes, errorCode: managed.job.errorCode }, { type: 'progress', completedBytes });
     managed.job = { ...managed.job, completedBytes: state.completedBytes, updatedAt: timestamp(this.options.now) };
+    this.repository?.update(managed.job.id, { completedBytes: managed.job.completedBytes, updatedAt: managed.job.updatedAt });
     onUpdate?.(managed.job);
   }
 
@@ -263,11 +300,13 @@ export class TransferManager {
     const event = status === 'running' ? { type: 'start' as const, totalBytes: managed.job.totalBytes } : status === 'completed' ? { type: 'completed' as const } : { type: 'cancelled' as const };
     const state = transitionTransfer({ id: managed.job.id, status: managed.job.status, completedBytes: managed.job.completedBytes, totalBytes: managed.job.totalBytes, errorCode: managed.job.errorCode }, event);
     managed.job = { ...managed.job, status: state.status, completedBytes: state.completedBytes, totalBytes: state.totalBytes, errorCode: state.errorCode, updatedAt: timestamp(this.options.now) };
+    this.repository?.update(managed.job.id, { status: managed.job.status, completedBytes: managed.job.completedBytes, totalBytes: managed.job.totalBytes, errorCode: managed.job.errorCode ?? null, updatedAt: managed.job.updatedAt });
   }
 
   private fail(managed: ManagedTransfer, code: string): void {
     if (managed.job.status !== 'queued' && managed.job.status !== 'running') return;
     managed.job = { ...managed.job, status: 'failed', errorCode: code, updatedAt: timestamp(this.options.now) };
+    this.repository?.update(managed.job.id, { status: managed.job.status, errorCode: code, updatedAt: managed.job.updatedAt });
   }
 
   private require(transferId: string): ManagedTransfer {
@@ -282,5 +321,6 @@ export class TransferManager {
     for (const [id, managed] of this.jobs) {
       if (!managed.running && Date.parse(managed.job.updatedAt) <= cutoff) this.jobs.delete(id);
     }
+    this.repository?.deleteExpired(new Date(cutoff).toISOString());
   }
 }

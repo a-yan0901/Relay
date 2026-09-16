@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { AppError } from './errors.js';
+import type { ConnectionProfileOverrides, IdentitySource } from './core/models.js';
 
 const MAX_HOST_NAME_LENGTH = 120;
 const MAX_USERNAME_LENGTH = 255;
@@ -176,12 +177,32 @@ export const hostCredentialSchema = z.discriminatedUnion('type', [
 
 export type HostCredentialInput = z.infer<typeof hostCredentialSchema>;
 
-export const hostCreateSchema = z.object({
+export const pendingHostCredentialSchema = z.object({
+  type: z.literal('pending'),
+  authType: z.enum(['password', 'private_key'])
+}).strict();
+
+export type PendingHostCredential = z.infer<typeof pendingHostCredentialSchema>;
+export type StoredHostCredential = HostCredentialInput | PendingHostCredential;
+export const storedHostCredentialSchema = z.union([hostCredentialSchema, pendingHostCredentialSchema]);
+
+const scopedIdentifierSchema = z.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9._:-]*$/iu);
+
+export const hostCredentialSourceSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('inline'), authType: z.enum(['password', 'private_key']) }).strict(),
+  z.object({ type: z.literal('identity'), identityId: scopedIdentifierSchema }).strict(),
+  z.object({ type: z.literal('group') }).strict()
+]);
+
+export type HostCredentialSource = z.infer<typeof hostCredentialSourceSchema>;
+
+const hostBaseSchema = z.object({
   name: nameSchema,
   address: z.string().refine(isHostAddress),
   port: z.number().int().min(1).max(65535).default(22),
   username: usernameSchema,
-  auth: hostCredentialSchema,
+  auth: hostCredentialSchema.optional(),
+  credentialSource: hostCredentialSourceSchema.optional(),
   groupId: z.string().min(1).max(MAX_GROUP_ID_LENGTH).optional().nullable(),
   jumpHostIds: z.array(z.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9._:-]*$/iu)).max(4).refine((ids) => new Set(ids).size === ids.length).default([]),
   connectionProfile: connectionProfileSettingsPatchSchema.optional(),
@@ -189,9 +210,29 @@ export const hostCreateSchema = z.object({
   isFavorite: z.boolean().default(false)
 }).strict();
 
+export const hostMetadataInputSchema = hostBaseSchema.omit({ auth: true, credentialSource: true });
+
+const validateCredentialSource = (
+  input: { auth?: HostCredentialInput; credentialSource?: HostCredentialSource },
+  context: z.RefinementCtx,
+  required: boolean
+): void => {
+  if (required && !input.auth && !input.credentialSource) {
+    context.addIssue({ code: 'custom', path: ['credentialSource'], message: 'credential source is required' });
+  }
+  if (input.auth && input.credentialSource && input.credentialSource.type !== 'inline') {
+    context.addIssue({ code: 'custom', path: ['credentialSource'], message: 'inline and reusable credentials are mutually exclusive' });
+  }
+  if (input.credentialSource?.type === 'inline' && (!input.auth || input.auth.type !== input.credentialSource.authType)) {
+    context.addIssue({ code: 'custom', path: ['credentialSource'], message: 'inline credential source must match auth' });
+  }
+};
+
+export const hostCreateSchema = hostBaseSchema.superRefine((input, context) => validateCredentialSource(input, context, true));
+
 export type HostCreateInput = z.infer<typeof hostCreateSchema>;
 
-export const hostPatchSchema = hostCreateSchema.partial();
+export const hostPatchSchema = hostBaseSchema.partial().superRefine((input, context) => validateCredentialSource(input, context, false));
 
 export type HostPatchInput = z.infer<typeof hostPatchSchema>;
 
@@ -212,6 +253,13 @@ export interface HostMetadata {
   updatedAt: string;
   jumpHostIds?: string[];
   connectionProfile?: ConnectionProfileSettings;
+  connectionProfileOverrides?: ConnectionProfileOverrides | null;
+  /** The profile after applying group inheritance; explicit host values stay in connectionProfileOverrides. */
+  resolvedConnectionProfile?: ConnectionProfileSettings;
+  credentialSource?: HostCredentialSource;
+  identityId?: string | null;
+  identityName?: string | null;
+  identitySource?: IdentitySource;
 }
 
 export const groupSchema = z.object({
@@ -220,6 +268,37 @@ export const groupSchema = z.object({
 }).strict();
 
 export type GroupInput = z.infer<typeof groupSchema>;
+
+export const identityCreateSchema = z.object({
+  name: nameSchema,
+  type: z.enum(['password', 'private_key']),
+  username: usernameSchema,
+  auth: hostCredentialSchema
+}).strict();
+
+export type IdentityCreateInput = z.infer<typeof identityCreateSchema>;
+export const identityUpdateSchema = identityCreateSchema.partial().strict();
+export type IdentityUpdateInput = z.infer<typeof identityUpdateSchema>;
+
+export const groupMutationSchema = z.object({
+  name: nameSchema,
+  parentId: z.string().min(1).max(MAX_GROUP_ID_LENGTH).nullable().optional(),
+  sortOrder: z.number().int().min(0).max(1_000_000).default(0),
+  defaultIdentityId: z.string().min(1).max(128).nullable().optional(),
+  connectionProfile: connectionProfileSettingsPatchSchema.nullable().optional()
+}).strict();
+
+export type GroupMutationInput = z.infer<typeof groupMutationSchema>;
+export const groupPatchSchema = groupMutationSchema.partial();
+export type GroupPatchInput = z.infer<typeof groupPatchSchema>;
+
+export const parseGroupMutationInput = (input: unknown): GroupMutationInput => (
+  parseWith(groupMutationSchema, input, 'HOST_VALIDATION_FAILED')
+);
+
+export const parseGroupPatchInput = (input: unknown): GroupPatchInput => (
+  parseWith(groupPatchSchema, input, 'HOST_VALIDATION_FAILED')
+);
 
 export const parseHostCreateInput = (input: unknown): HostCreateInput => {
   try {
@@ -267,8 +346,9 @@ export const workspaceStateSchema = z.object({
   tabs: z.array(workspaceTabSchema).max(64),
   activeTabId: identifierSchema.nullable(),
   layout: z.object({
-    mode: z.enum(['single', 'vertical', 'horizontal']),
-    ratio: z.number().min(0.2).max(0.8)
+    mode: z.enum(['single', 'vertical', 'horizontal', 'grid']),
+    ratio: z.number().min(0.2).max(0.8),
+    paneTabIds: z.array(identifierSchema).max(4).optional()
   }).strict(),
   filters: z.object({
     query: z.string().max(255).refine((value) => !hasControlCharacter(value)),

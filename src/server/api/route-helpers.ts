@@ -40,7 +40,25 @@ export const toHostMetadataDto = (row: HostRow | HostMetadata): HostMetadata => 
       reconnect: { ...row.connectionProfile.reconnect }
     }
   }),
+  ...(row.connectionProfileOverrides === undefined ? {} : {
+    connectionProfileOverrides: row.connectionProfileOverrides === null ? null : {
+      ...row.connectionProfileOverrides,
+      ...(row.connectionProfileOverrides.reconnect === undefined ? {} : { reconnect: { ...row.connectionProfileOverrides.reconnect } })
+    }
+  }),
+  ...(row.resolvedConnectionProfile === undefined ? {} : {
+    resolvedConnectionProfile: {
+      ...row.resolvedConnectionProfile,
+      reconnect: { ...row.resolvedConnectionProfile.reconnect }
+    }
+  }),
+  ...(row.credentialSource === undefined ? {} : {
+    credentialSource: row.credentialSource,
+    ...(row.identityId === undefined ? {} : { identityId: row.identityId })
+  }),
   lastConnectedAt: row.lastConnectedAt,
   createdAt: row.createdAt,
-  updatedAt: row.updatedAt
+  updatedAt: row.updatedAt,
+  ...(row.identityName === undefined ? {} : { identityName: row.identityName }),
+  ...(row.identitySource === undefined ? {} : { identitySource: row.identitySource })
 });

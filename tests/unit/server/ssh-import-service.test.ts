@@ -75,7 +75,7 @@ describe('SshImportService', () => {
     fixture.database.close();
   });
 
-  it('expires previews and never partially applies invalid selected records', async () => {
+  it('expires previews and imports records without credentials for later connection', async () => {
     let clock = 1000;
     const fixture = await createFixture(() => clock);
     const preview = await fixture.service.preview([csv]);
@@ -83,11 +83,12 @@ describe('SshImportService', () => {
     await expect(fixture.service.apply(fixture.sessionKey, preview.previewId, { selectedSourceIds: [], conflictPolicy: 'create' })).rejects.toMatchObject({ code: 'IMPORT_PREVIEW_EXPIRED' });
 
     const second = await fixture.service.preview([{ filename: 'two.csv', content: 'name,host,user,password\none,one.example.com,ops,ok\ntwo,two.example.com,ops,\n' }]);
-    await expect(fixture.service.apply(fixture.sessionKey, second.previewId, {
+    const result = await fixture.service.apply(fixture.sessionKey, second.previewId, {
       selectedSourceIds: second.connections.map((connection) => connection.sourceId),
       conflictPolicy: 'create'
-    })).rejects.toMatchObject({ code: 'IMPORT_RECORD_INVALID' });
-    expect(fixture.hosts.listMetadata()).toHaveLength(0);
+    });
+    expect(result.importedHosts).toBe(2);
+    expect(fixture.hosts.listMetadata()).toHaveLength(2);
     fixture.database.close();
   });
 

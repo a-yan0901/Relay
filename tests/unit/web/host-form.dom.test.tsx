@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HostForm } from '../../../src/web/components/HostForm';
 import type { HostMetadataState } from '../../../src/web/state/app-state';
+import type { IdentityMetadata } from '../../../src/shared/core/models';
 
 describe('HostForm', () => {
   afterEach(() => cleanup());
@@ -98,7 +99,57 @@ describe('HostForm', () => {
     expect(onEditSubmit.mock.calls[0][0]).not.toHaveProperty('auth');
   });
 
-  it('lets users remove a selected jump host with an explicit action', async () => {
+  it('submits only changed profile fields when editing a group-inherited host', async () => {
+    const user = userEvent.setup();
+    const onEditSubmit = vi.fn().mockResolvedValue(undefined);
+    const initialHost: HostMetadataState = {
+      id: 'host-2',
+      name: 'Inherited API',
+      address: '10.0.0.10',
+      port: 22,
+      username: 'ops',
+      authType: 'password',
+      groupId: 'group-1',
+      tags: [],
+      isFavorite: false,
+      hostKeyAlgorithm: null,
+      hostKeyFingerprint: null,
+      lastConnectedAt: null,
+      createdAt: '2026-09-14T00:00:00.000Z',
+      updatedAt: '2026-09-14T00:00:00.000Z',
+      credentialSource: { type: 'group' },
+      connectionProfile: {
+        keepaliveIntervalMs: 10_000,
+        keepaliveCountMax: 3,
+        reconnect: { enabled: true, maxAttempts: 5, baseDelayMs: 250, maxDelayMs: 5_000 }
+      },
+      connectionProfileOverrides: null,
+      resolvedConnectionProfile: {
+        keepaliveIntervalMs: 4_000,
+        keepaliveCountMax: 3,
+        reconnect: { enabled: true, maxAttempts: 5, baseDelayMs: 250, maxDelayMs: 5_000 }
+      }
+    };
+    render(
+      <HostForm
+        mode="edit"
+        initialHost={initialHost}
+        groups={[{ id: 'group-1', name: 'Production', sortOrder: 0 }]}
+        onEditSubmit={onEditSubmit}
+        onCancel={vi.fn()}
+      />
+    );
+
+    await user.clear(screen.getByLabelText('Keepalive 次数'));
+    await user.type(screen.getByLabelText('Keepalive 次数'), '7');
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    expect(onEditSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      connectionProfile: { keepaliveCountMax: 7 }
+    }));
+  });
+
+  it('uses unchecked jump-host checkboxes for new servers and updates selection', async () => {
     const user = userEvent.setup();
     const jumpHosts: HostMetadataState[] = [
       {
@@ -137,15 +188,54 @@ describe('HostForm', () => {
 
     render(<HostForm hosts={jumpHosts} onSubmit={vi.fn()} onCancel={vi.fn()} />);
 
-    await user.selectOptions(screen.getByLabelText('跳板机（可选，按连接顺序）'), ['jump-1', 'jump-2']);
-    await user.click(screen.getByRole('button', { name: '移除跳板机 Bastion A' }));
+    const bastionA = screen.getByRole('checkbox', { name: '选择跳板机 Bastion A' });
+    const bastionB = screen.getByRole('checkbox', { name: '选择跳板机 Bastion B' });
+    const reconnect = screen.getByLabelText('断线后自动重连');
+    const favorite = screen.getByLabelText('加入收藏');
+    expect(bastionA).toHaveClass('checkbox-input');
+    expect(bastionB).toHaveClass('checkbox-input');
+    expect(reconnect).toHaveClass('checkbox-input');
+    expect(favorite).toHaveClass('checkbox-input');
+    expect(bastionA.parentElement).toHaveClass('checkbox-field');
+    expect(bastionA.parentElement).not.toHaveClass('jump-host-option');
+    expect(bastionB.parentElement).toHaveClass('checkbox-field');
+    expect(bastionB.parentElement).not.toHaveClass('jump-host-option');
+    expect(bastionA).not.toBeChecked();
+    expect(bastionB).not.toBeChecked();
 
-    expect(screen.getByRole('button', { name: '移除跳板机 Bastion B' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '移除跳板机 Bastion A' })).not.toBeInTheDocument();
-    expect(Array.from((screen.getByLabelText('跳板机（可选，按连接顺序）') as HTMLSelectElement).selectedOptions).map((option) => option.value)).toEqual(['jump-2']);
+    await user.click(bastionA);
+    expect(bastionA).toBeChecked();
+    expect(bastionB).not.toBeChecked();
 
-    await user.click(screen.getByRole('button', { name: '清除全部' }));
-    expect(screen.queryByRole('button', { name: '移除跳板机 Bastion B' })).not.toBeInTheDocument();
-    expect(Array.from((screen.getByLabelText('跳板机（可选，按连接顺序）') as HTMLSelectElement).selectedOptions)).toHaveLength(0);
+    await user.click(bastionB);
+    expect(bastionA).toBeChecked();
+    expect(bastionB).toBeChecked();
+
+    await user.click(bastionA);
+    expect(bastionA).not.toBeChecked();
+    expect(bastionB).toBeChecked();
+  });
+
+  it('selects a reusable identity and omits inline credential fields', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const identities: IdentityMetadata[] = [{
+      id: 'identity-1', name: 'Production deploy', type: 'password', username: 'deploy',
+      keyFingerprint: null, usageCount: 2, createdAt: '', updatedAt: ''
+    }];
+    render(<HostForm identities={identities} onSubmit={onSubmit} onCancel={vi.fn()} />);
+
+    await user.type(screen.getByLabelText('服务器名称'), 'Production');
+    await user.type(screen.getByLabelText('IP / 域名'), '10.0.0.8');
+    await user.type(screen.getByLabelText('用户名'), 'deploy');
+    await user.selectOptions(screen.getByLabelText('凭据来源'), 'identity');
+    expect(screen.queryByLabelText('密码')).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('SSH 身份'), 'identity-1');
+    await user.click(screen.getByRole('button', { name: '保存 Server' }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      credentialSource: { type: 'identity', identityId: 'identity-1' }
+    }));
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('auth');
   });
 });

@@ -1,6 +1,6 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
-import type { AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, SftpEntry, Snippet, SnippetMetadata, TransferJob, WorkspaceState } from '@shared/core/models';
-import type { HostCreateInput, HostMetadata, HostPatchInput } from '@shared/validation';
+import type { ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, GroupNode, HostListFilter, IdentityMetadata, SftpEntry, Snippet, SnippetMetadata, TransferJob, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
+import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
 
 export interface SetupStatus {
@@ -14,21 +14,8 @@ export interface CapabilityResponse {
   capabilities: Capability[];
 }
 
-export interface GroupSummaryResponse {
-  id: string;
-  name: string;
-  sortOrder: number;
-}
-
-export interface ConnectionTestResult {
-  ok: boolean;
-  hostKey?: {
-    algorithm: string;
-    fingerprint: string;
-    address: string;
-    port: number;
-  };
-}
+export type GroupSummaryResponse = GroupNode;
+export type ConnectionTestResult = SharedConnectionTestResult;
 
 export interface WorkspaceResponse extends WorkspaceState {}
 
@@ -36,7 +23,8 @@ export interface ImportPreviewResponse {
   previewId: string;
   hostCount: number;
   groupCount: number;
-  conflicts: Array<{ type: 'host' | 'group'; id: string; name: string }>;
+  identityCount?: number;
+  conflicts: Array<{ type: 'host' | 'group' | 'identity'; id: string; name: string }>;
   expiresAt: string;
 }
 
@@ -45,6 +33,8 @@ export interface ImportResultResponse {
   importedGroups: number;
   skippedHosts: number;
   skippedGroups: number;
+  importedIdentities?: number;
+  skippedIdentities?: number;
 }
 
 export type ExternalImportPreviewResponse = ImportPreview;
@@ -64,6 +54,9 @@ export interface AuditEventsResponse {
   items: AuditEvent[];
   nextCursor?: string;
 }
+
+export type WorkspaceTemplateResponse = WorkspaceTemplate;
+export type IdentityResponse = IdentityMetadata;
 
 interface ApiErrorBody {
   error?: {
@@ -151,7 +144,7 @@ export const unlockVault = (masterPassword: string): Promise<SetupStatus> => req
 
 export const lockVault = (): Promise<void> => request<void>('/api/session/lock', { method: 'POST' });
 
-export const listHosts = (filter: { query?: string; groupId?: string | null; favorite?: boolean } = {}): Promise<HostMetadata[]> => {
+export const listHosts = (filter: HostListFilter = {}): Promise<HostMetadata[]> => {
   const params = new URLSearchParams();
   if (filter.query) params.set('query', filter.query);
   if (filter.groupId) params.set('groupId', filter.groupId);
@@ -176,7 +169,37 @@ export const deleteHost = (id: string): Promise<void> => request<void>(`/api/hos
   method: 'DELETE'
 });
 
+export const listIdentities = (): Promise<IdentityMetadata[]> => request<IdentityMetadata[]>('/api/identities');
+
+export const getIdentity = (id: string): Promise<IdentityMetadata> => request<IdentityMetadata>(`/api/identities/${encodeURIComponent(id)}`);
+
+export const createIdentity = (input: IdentityCreateInput): Promise<IdentityMetadata> => request<IdentityMetadata>('/api/identities', {
+  method: 'POST',
+  ...json(input)
+});
+
+export const updateIdentity = (id: string, input: IdentityUpdateInput): Promise<IdentityMetadata> => request<IdentityMetadata>(`/api/identities/${encodeURIComponent(id)}`, {
+  method: 'PATCH',
+  ...json(input)
+});
+
+export const deleteIdentity = (id: string): Promise<void> => request<void>(`/api/identities/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
 export const listGroups = (): Promise<GroupSummaryResponse[]> => request<GroupSummaryResponse[]>('/api/groups');
+
+export const getGroup = (id: string): Promise<GroupSummaryResponse> => request<GroupSummaryResponse>(`/api/groups/${encodeURIComponent(id)}`);
+
+export const createGroup = (input: GroupMutationInput): Promise<GroupSummaryResponse> => request<GroupSummaryResponse>('/api/groups', {
+  method: 'POST',
+  ...json(input)
+});
+
+export const updateGroup = (id: string, input: GroupPatchInput): Promise<GroupSummaryResponse> => request<GroupSummaryResponse>(`/api/groups/${encodeURIComponent(id)}`, {
+  method: 'PATCH',
+  ...json(input)
+});
+
+export const deleteGroup = (id: string): Promise<void> => request<void>(`/api/groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 export const testConnection = (id: string): Promise<ConnectionTestResult> => request<ConnectionTestResult>(`/api/hosts/${encodeURIComponent(id)}/test-connection`, {
   method: 'POST',
@@ -190,6 +213,15 @@ export const saveWorkspace = (expectedVersion: number, state: WorkspaceState): P
   ...json({ expectedVersion, state })
 });
 
+export const listWorkspaceTemplates = (): Promise<WorkspaceTemplateResponse[]> => request<WorkspaceTemplateResponse[]>('/api/workspace/templates');
+
+export const createWorkspaceTemplate = (input: { name: string; state: WorkspaceState }): Promise<WorkspaceTemplateResponse> => request<WorkspaceTemplateResponse>('/api/workspace/templates', {
+  method: 'POST',
+  ...json(input)
+});
+
+export const deleteWorkspaceTemplate = (id: string): Promise<void> => request<void>(`/api/workspace/templates/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
 export const exportVaultBundle = (exportPassword: string): Promise<{ bundle: string }> => request<{ bundle: string }>('/api/vault/export', {
   method: 'POST',
   ...json({ exportPassword })
@@ -202,7 +234,7 @@ export const previewVaultImport = (exportPassword: string, bundle: string): Prom
 
 export const applyVaultImport = (
   previewId: string,
-  resolution: { hostConflicts: 'skip' | 'replace'; groupConflicts: 'reuse' | 'replace' }
+  resolution: { hostConflicts: 'skip' | 'replace'; groupConflicts: 'reuse' | 'replace'; identityConflicts?: 'reuse' | 'replace' }
 ): Promise<ImportResultResponse> => request<ImportResultResponse>('/api/vault/import/apply', {
   method: 'POST',
   ...json({ previewId, resolution })
@@ -269,6 +301,8 @@ export const createTransfer = (input: { kind: 'upload' | 'download'; hostId: str
   ...json(input)
 });
 
+export const listTransfers = (): Promise<TransferJob[]> => request<TransferJob[]>('/api/transfers');
+
 export const getTransfer = (id: string): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}`);
 
 export const uploadTransferContent = (id: string, file: Blob): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}/content`, {
@@ -289,7 +323,7 @@ export const cancelTransfer = (id: string): Promise<void> => request<void>(`/api
 
 export const retryTransfer = (id: string): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}/retry`, { method: 'POST' });
 
-export const listAuditEvents = (filter: { cursor?: string; limit?: number; eventType?: string; hostId?: string } = {}): Promise<AuditEventsResponse> => {
+export const listAuditEvents = (filter: ActivityFilter = {}): Promise<AuditEventsResponse> => {
   const params = new URLSearchParams();
   if (filter.cursor) params.set('cursor', filter.cursor);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));

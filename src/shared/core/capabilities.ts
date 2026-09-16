@@ -22,15 +22,22 @@ export const createCapabilitySet = (
 
 export const WEB_CAPABILITIES: readonly Capability[] = [
   'workspace.persistence',
+  'workspace.templates',
+  'workspace.multi-pane',
   'vault.bundle',
+  'vault.identities',
   'ssh.shell',
   'ssh.reconnect',
   'ssh.proxy-jump',
   'sftp.browse',
   'sftp.transfer',
+  'sftp.entry-mutations',
   'automation.snippets',
+  'automation.snippet-manager',
   'automation.batch-exec',
-  'audit.activity'
+  'automation.target-picker',
+  'audit.activity',
+  'session.lifecycle-status'
 ];
 
 export const createWebCapabilitySet = (): CapabilitySet => createCapabilitySet('web', WEB_CAPABILITIES);

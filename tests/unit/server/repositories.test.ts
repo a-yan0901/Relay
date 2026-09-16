@@ -6,6 +6,7 @@ import {
   AuditRepository,
   GroupRepository,
   HostRepository,
+  IdentityRepository,
   type HostCreateRow
 } from '../../../src/server/db/repositories.js';
 import { openDatabase } from '../../../src/server/db/database.js';
@@ -144,6 +145,31 @@ describe('SQLite repositories', () => {
     hosts.deleteHost('host-1');
     expect(hosts.getForConnection('host-1')).toBeNull();
     expect(database.prepare('SELECT * FROM hosts WHERE id = ?').get('host-1')).toBeUndefined();
+  });
+
+  it('enforces exactly one host credential source at the repository boundary', () => {
+    const database = createTestDatabase();
+    const groups = new GroupRepository(database, 'owner-a');
+    const group = groups.create({ name: 'Production' });
+    const identities = new IdentityRepository(database, 'owner-a');
+    identities.create({
+      ownerId: 'owner-a', id: 'identity-1', name: 'Operations', type: 'password', username: 'deploy',
+      keyFingerprint: null, credentialCiphertext: 'encrypted', credentialVersion: 1, createdAt: '', updatedAt: ''
+    });
+    const hosts = new HostRepository(database, 'owner-a');
+
+    expect(() => hosts.createHost(hostInput({ credentialSource: 'group', groupId: group.id, identityId: 'identity-1', credentialCiphertext: null }))).toThrowError();
+    const created = hosts.createHost(hostInput());
+    expect(() => hosts.updateHost(created.id, {
+      credentialSource: 'identity',
+      identityId: 'identity-1'
+    })).toThrowError();
+    expect(() => hosts.updateHost(created.id, {
+      credentialSource: 'group',
+      groupId: group.id,
+      identityId: 'identity-1',
+      credentialCiphertext: null
+    })).toThrowError();
   });
 
   it('persists non-secret connection profile settings with defaults for legacy rows', () => {

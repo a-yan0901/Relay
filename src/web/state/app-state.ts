@@ -8,6 +8,9 @@ export interface GroupSummary {
   id: string;
   name: string;
   sortOrder: number;
+  parentId?: string | null;
+  defaultIdentityId?: string | null;
+  connectionProfile?: import('../../shared/core/models').ConnectionProfileOverrides | null;
 }
 
 export interface TerminalTabState {
@@ -170,7 +173,31 @@ const safeHostMetadata = (host: HostMetadataState): HostMetadataState => ({
   lastConnectedAt: host.lastConnectedAt,
   createdAt: host.createdAt,
   updatedAt: host.updatedAt,
-  ...(host.jumpHostIds === undefined ? {} : { jumpHostIds: [...host.jumpHostIds] })
+  ...(host.jumpHostIds === undefined ? {} : { jumpHostIds: [...host.jumpHostIds] }),
+  ...(host.connectionProfile === undefined ? {} : {
+    connectionProfile: {
+      ...host.connectionProfile,
+      reconnect: { ...host.connectionProfile.reconnect }
+    }
+  }),
+  ...(host.resolvedConnectionProfile === undefined ? {} : {
+    resolvedConnectionProfile: {
+      ...host.resolvedConnectionProfile,
+      reconnect: { ...host.resolvedConnectionProfile.reconnect }
+    }
+  }),
+  ...(host.connectionProfileOverrides === undefined ? {} : {
+    connectionProfileOverrides: host.connectionProfileOverrides === null
+      ? null
+      : {
+        ...host.connectionProfileOverrides,
+        ...(host.connectionProfileOverrides.reconnect === undefined ? {} : { reconnect: { ...host.connectionProfileOverrides.reconnect } })
+      }
+  }),
+  ...(host.credentialSource === undefined ? {} : { credentialSource: { ...host.credentialSource } }),
+  ...(host.identityId === undefined ? {} : { identityId: host.identityId }),
+  ...(host.identityName === undefined ? {} : { identityName: host.identityName }),
+  ...(host.identitySource === undefined ? {} : { identitySource: host.identitySource })
 });
 
 const replaceHost = (hosts: HostMetadataState[], nextHost: HostMetadataState): HostMetadataState[] => {
@@ -181,6 +208,19 @@ const replaceHost = (hosts: HostMetadataState[], nextHost: HostMetadataState): H
   }
   return hosts.map((host, hostIndex) => hostIndex === index ? next : host);
 };
+
+const safeGroupSummary = (group: GroupSummary): GroupSummary => ({
+  id: group.id,
+  name: group.name,
+  sortOrder: group.sortOrder,
+  ...(group.parentId === undefined ? {} : { parentId: group.parentId }),
+  ...(group.defaultIdentityId === undefined ? {} : { defaultIdentityId: group.defaultIdentityId }),
+  ...(group.connectionProfile === undefined ? {} : {
+    connectionProfile: group.connectionProfile === null
+      ? null
+      : { ...group.connectionProfile, reconnect: group.connectionProfile.reconnect ? { ...group.connectionProfile.reconnect } : undefined }
+  })
+});
 
 const safeWorkspace = (workspace: WorkspaceState): WorkspaceState => ({
   version: workspace.version,
@@ -238,7 +278,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     case 'groupsLoaded':
       return {
         ...state,
-        groups: action.groups.map((group) => ({ id: group.id, name: group.name, sortOrder: group.sortOrder })),
+        groups: action.groups.map(safeGroupSummary),
         errorMessage: null
       };
     case 'workspaceLoaded': {

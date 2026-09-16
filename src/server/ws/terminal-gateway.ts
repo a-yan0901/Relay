@@ -7,13 +7,17 @@ import {
   type TerminalClientMessage,
   type TerminalServerEvent
 } from '../../shared/protocol.js';
-import type { HostCredentialInput } from '../../shared/validation.js';
+import { storedHostCredentialSchema, type HostCredentialInput, type StoredHostCredential } from '../../shared/validation.js';
+import { resolveConnectionConfiguration } from '../../shared/core/connection-resolution.js';
+import type { GroupNode } from '../../shared/core/models.js';
 import { getSessionId } from '../auth/session-cookie.js';
 import { SessionStore } from '../auth/session-store.js';
 import { AuditRepository, HostRepository } from '../db/repositories.js';
+import type { GroupRepository } from '../db/repositories.js';
 import { VaultService, type EncryptedJson } from '../vault/vault-service.js';
 import { HostKeyPolicy } from '../ssh/host-key-policy.js';
 import { ConnectionPathResolver } from '../ssh/connection-path.js';
+import type { IdentityService } from '../identity/identity-service.js';
 import type {
   SshChannel,
   SshConnectCallbacks,
@@ -122,8 +126,10 @@ export interface TerminalGatewayDependencies {
   config: Pick<AppRuntimeConfig, 'trustedOrigins'>;
   sessionStore: SessionStore;
   hostRepository: HostRepository;
+  groupRepository?: GroupRepository;
   auditRepository: AuditRepository;
   vaultService: VaultService;
+  identityService?: IdentityService;
   sessionManager: SshSessionManagerPort;
   connectionPathResolver?: ConnectionPathResolver;
 }
@@ -173,6 +179,8 @@ const parseCredentialBlob = (value: string): EncryptedJson => {
   }
 };
 
+const credentialAad = (hostId: string): string => `host:${hostId}:credentials:v1`;
+
 const safeError = (error: unknown): { code: AppErrorCode; message: string } => {
   if (error instanceof AppError) {
     return { code: error.code, message: error.message };
@@ -206,6 +214,23 @@ export const registerTerminalGateway = async (
     let cleanupStarted = false;
     let lastStatus: Extract<TerminalServerEvent, { type: 'status' }>['state'] | undefined;
     let hostMarkedConnected = false;
+    let pendingOpen: Extract<TerminalClientMessage, { type: 'open' }> | undefined;
+    let pendingCredentialHostId: string | undefined;
+    let pendingCredentialAuthType: 'password' | 'private_key' | undefined;
+    const sessionCredentials = new Map<string, HostCredentialInput>();
+
+    const persistSessionCredentials = async (sessionKey: Buffer): Promise<void> => {
+      for (const [hostId, credential] of sessionCredentials) {
+        const encrypted = await dependencies.vaultService.encryptJson(sessionKey, credentialAad(hostId), credential);
+        dependencies.hostRepository.updateHost(hostId, {
+          authType: credential.type,
+          credentialCiphertext: JSON.stringify(encrypted),
+          credentialVersion: 1,
+          credentialSource: 'inline',
+          identityId: null
+        });
+      }
+    };
 
     const send = (event: TerminalServerEvent): void => {
       if (active && socket.readyState === 1) {
@@ -239,6 +264,10 @@ export const registerTerminalGateway = async (
       }
       cleanupStarted = true;
       active = false;
+      pendingOpen = undefined;
+      pendingCredentialHostId = undefined;
+      pendingCredentialAuthType = undefined;
+      sessionCredentials.clear();
       if (managerSessionId) {
         if (reason === 'socket') {
           dependencies.sessionManager.detach(managerSessionId);
@@ -299,9 +328,12 @@ export const registerTerminalGateway = async (
       const path = dependencies.connectionPathResolver?.resolve(row.id, dependencies.ownerId) ?? { targetHostId: row.id, hopCount: 0, hops: [row] };
       const pathRows = path.hops.map((hop) => dependencies.hostRepository.getForConnection(hop.id)).filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
       if (pathRows.length !== path.hops.length) throw new AppError('HOST_NOT_FOUND');
+      const groups: readonly GroupNode[] = dependencies.groupRepository?.list() ?? [];
       const session = dependencies.sessionStore.get(authenticatedSessionId);
       if (!session) throw new AppError('SESSION_INVALID');
 
+      hostKeyPolicies.clear();
+      hostKeyPolicy = undefined;
       const pathConfigs: SshConnectConfig[] = [];
       for (const [hopIndex, pathRow] of pathRows.entries()) {
         const knownHostKey = pathRow.hostKeyAlgorithm && pathRow.hostKeyFingerprint
@@ -316,11 +348,46 @@ export const registerTerminalGateway = async (
           saveHostKey: (hostId, algorithm, fingerprint) => dependencies.hostRepository.setHostKey(hostId, algorithm, fingerprint)
         });
         hostKeyPolicies.set(pathRow.id, policy);
-        const credential = await dependencies.vaultService.decryptJson<HostCredentialInput>(
-          session.vaultKey,
-          `host:${pathRow.id}:credentials:v1`,
-          parseCredentialBlob(pathRow.credentialCiphertext)
-        );
+        const resolved = resolveConnectionConfiguration(pathRow, groups);
+        const identityId = pathRow.credentialSource?.type === 'identity'
+          ? pathRow.identityId
+          : pathRow.credentialSource?.type === 'group' ? resolved.identityId : null;
+        let parsedCredential: { success: true; data: StoredHostCredential };
+        if (identityId) {
+          if (!dependencies.identityService) throw new AppError('IDENTITY_NOT_FOUND');
+          const identityCredential = await dependencies.identityService.getCredential(dependencies.ownerId, identityId, session.vaultKey);
+          parsedCredential = { success: true, data: identityCredential };
+        } else {
+          if (pathRow.credentialSource?.type === 'group') throw new AppError('IDENTITY_NOT_FOUND');
+          if (pathRow.credentialCiphertext === null) throw new AppError('IMPORT_RECORD_INVALID', '请先在连接时补录凭据');
+          const storedCredential = await dependencies.vaultService.decryptJson<StoredHostCredential>(
+            session.vaultKey,
+            credentialAad(pathRow.id),
+            parseCredentialBlob(pathRow.credentialCiphertext)
+          );
+          const parsed = storedHostCredentialSchema.safeParse(storedCredential);
+          if (!parsed.success) throw new AppError('VAULT_CRYPTO_FAILED');
+          parsedCredential = parsed;
+        }
+        const credential = parsedCredential.data.type === 'pending'
+          ? sessionCredentials.get(pathRow.id)
+          : parsedCredential.data;
+        if (!credential) {
+          pendingOpen = message;
+          pendingCredentialHostId = pathRow.id;
+          pendingCredentialAuthType = parsedCredential.data.type === 'pending' ? parsedCredential.data.authType : pathRow.authType;
+          sendStatus('awaiting-credential');
+          send({
+            type: 'credential-required',
+            hostId: pathRow.id,
+            authType: pendingCredentialAuthType,
+            name: pathRow.name,
+            address: pathRow.address,
+            port: pathRow.port,
+            username: pathRow.username
+          });
+          return;
+        }
         pathConfigs.push({
           hostId: pathRow.id,
           address: pathRow.address,
@@ -329,11 +396,14 @@ export const registerTerminalGateway = async (
           auth: credential,
           hostKeyAlgorithm: pathRow.hostKeyAlgorithm,
           hostKeyFingerprint: pathRow.hostKeyFingerprint,
-          keepaliveInterval: pathRow.connectionProfile?.keepaliveIntervalMs,
-          keepaliveCountMax: pathRow.connectionProfile?.keepaliveCountMax,
-          reconnect: pathRow.connectionProfile?.reconnect
+          keepaliveInterval: resolved.profile.keepaliveIntervalMs,
+          keepaliveCountMax: resolved.profile.keepaliveCountMax,
+          reconnect: resolved.profile.reconnect
         });
       }
+      pendingOpen = undefined;
+      pendingCredentialHostId = undefined;
+      pendingCredentialAuthType = undefined;
       hostKeyPolicy = hostKeyPolicies.get(row.id);
       const targetConfig = pathConfigs.at(-1);
       if (!targetConfig) throw new AppError('CONNECTION_STAGE_FAILED');
@@ -346,6 +416,7 @@ export const registerTerminalGateway = async (
       };
       const callbacks: SshConnectCallbacks = {
         onStatus: (state) => {
+          if (state === 'connected' && sessionCredentials.size > 0) return;
           if (state === 'connected') markHostConnected(row.id);
           sendStatus(state);
         },
@@ -370,6 +441,8 @@ export const registerTerminalGateway = async (
       sendStatus('connecting');
       try {
         attachChannel(await dependencies.sessionManager.open(managerSessionId, config, callbacks));
+        await persistSessionCredentials(session.vaultKey);
+        sessionCredentials.clear();
         sendStatus('connected');
         markHostConnected(row.id);
         dependencies.auditRepository.insert({ eventType: 'ssh_connected', hostId: row.id, requestId: message.requestId });
@@ -403,6 +476,18 @@ export const registerTerminalGateway = async (
           if (!hostKeyPolicy) throw new AppError('PROTOCOL_INVALID_MESSAGE');
           hostKeyPolicy.decide(message.decision, message.fingerprint);
           return;
+        case 'credential': {
+          if (!pendingOpen || message.hostId !== pendingCredentialHostId || message.credential.type !== pendingCredentialAuthType) {
+            throw new AppError('PROTOCOL_INVALID_MESSAGE');
+          }
+          sessionCredentials.set(message.hostId, message.credential);
+          const nextOpen = pendingOpen;
+          pendingOpen = undefined;
+          pendingCredentialHostId = undefined;
+          pendingCredentialAuthType = undefined;
+          await openTerminal(nextOpen);
+          return;
+        }
         case 'close':
           sendStatus('closed');
           return;

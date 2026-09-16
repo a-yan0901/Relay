@@ -21,6 +21,9 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock('../../../src/web/api', () => apiMocks);
 
 import { App } from '../../../src/web/App';
+import { createWebAdapters } from '../../../src/web/platform/web-adapters';
+
+const renderApp = () => render(<App runtime={createWebAdapters({ api: apiMocks })} />);
 
 describe('App boot recovery', () => {
   beforeEach(() => {
@@ -34,7 +37,7 @@ describe('App boot recovery', () => {
     apiMocks.getSetupStatus
       .mockRejectedValueOnce(new Error('network unavailable'))
       .mockResolvedValueOnce({ initialized: false, locked: true });
-    render(<App />);
+    renderApp();
 
     expect(await screen.findByRole('button', { name: '重试' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '重试' }));
@@ -48,7 +51,7 @@ describe('App boot recovery', () => {
     apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
     apiMocks.listHosts.mockResolvedValue([]);
     apiMocks.listGroups.mockResolvedValue([]);
-    render(<App />);
+    renderApp();
 
     await screen.findByRole('heading', { name: 'Server', exact: true });
     await user.click(screen.getByRole('button', { name: '偏好设置' }));
@@ -57,6 +60,22 @@ describe('App boot recovery', () => {
 
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
+  });
+
+  it('opens separate import and export flows from the Vault page', async () => {
+    const user = userEvent.setup();
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    renderApp();
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.click(screen.getByRole('button', { name: '导入' }));
+    expect(screen.getByRole('dialog', { name: '导入' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '关闭导入' }));
+    await user.click(screen.getByRole('button', { name: '导出' }));
+
+    expect(screen.getByRole('dialog', { name: '导出' })).toBeInTheDocument();
   });
 
   it('announces a successful connection test as positive feedback', async () => {
@@ -80,7 +99,7 @@ describe('App boot recovery', () => {
     }]);
     apiMocks.listGroups.mockResolvedValue([]);
     apiMocks.testConnection.mockResolvedValue({ ok: true });
-    render(<App />);
+    renderApp();
 
     await screen.findByRole('heading', { name: 'Server', exact: true });
     await user.click(screen.getByRole('button', { name: '测试连接 Production API' }));
@@ -94,7 +113,7 @@ describe('App boot recovery', () => {
     apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
     apiMocks.listHosts.mockResolvedValue([]);
     apiMocks.listGroups.mockResolvedValue([]);
-    render(<App />);
+    renderApp();
 
     await screen.findByRole('heading', { name: 'Server', exact: true });
     await user.keyboard('{Control>}k{/Control}');
@@ -107,7 +126,7 @@ describe('App boot recovery', () => {
     apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
     apiMocks.listHosts.mockResolvedValue([]);
     apiMocks.listGroups.mockResolvedValue([]);
-    render(<App />);
+    renderApp();
 
     await screen.findByRole('heading', { name: 'Server', exact: true });
     const addHost = screen.getByRole('button', { name: '添加第一台 Server' });
@@ -140,7 +159,7 @@ describe('App boot recovery', () => {
       createdAt: '2026-09-15T00:00:00.000Z'
     }] });
     apiMocks.getCommandRun.mockRejectedValue(new Error('expired'));
-    render(<App />);
+    renderApp();
 
     await screen.findByRole('heading', { name: 'Server', exact: true });
     await user.click(screen.getByRole('button', { name: '活动' }));

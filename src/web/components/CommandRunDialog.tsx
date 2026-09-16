@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react';
 
-import type { CommandRunRequest } from '../../shared/core/models';
+import type { CommandRunRequest, GroupNode, TargetSelection } from '../../shared/core/models';
 import { assessCommandRisk } from '../../shared/core/command-safety';
 import type { Snippet, SnippetMetadata } from '../../shared/core/models';
 import type { HostMetadata } from '../../shared/validation';
 import { expandCommandTemplate, extractCommandVariables } from '../../shared/validation';
 import { SnippetPicker } from './SnippetPicker';
+import { HostTargetPicker } from './HostTargetPicker';
+import { dedupeTargetHostIds, snapshotTargetSelection } from '../state/target-selection';
+import { Dialog } from './Dialog';
 
 export interface CommandRunDialogProps {
   hosts: readonly HostMetadata[];
   hostIds: readonly string[];
+  groups?: readonly GroupNode[];
   initialCommand?: string;
   initialVariables?: Readonly<Record<string, string>>;
   snippets?: readonly SnippetMetadata[];
@@ -23,6 +27,7 @@ const formatSeconds = (milliseconds: number): number => Math.round(milliseconds 
 export const CommandRunDialog = ({
   hosts,
   hostIds,
+  groups = [],
   initialCommand = '',
   initialVariables = {},
   snippets = [],
@@ -36,7 +41,9 @@ export const CommandRunDialog = ({
   const [timeoutMs, setTimeoutMs] = useState(60_000);
   const [persistOutput, setPersistOutput] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const uniqueHostIds = useMemo(() => [...new Set(hostIds)], [hostIds]);
+  const [selection, setSelection] = useState<TargetSelection>(() => ({ hostIds: dedupeTargetHostIds(hostIds), groupIds: [], favoriteOnly: false, query: '' }));
+  const targetSnapshot = useMemo(() => snapshotTargetSelection(selection, hosts, groups), [groups, hosts, selection]);
+  const uniqueHostIds = useMemo(() => dedupeTargetHostIds(targetSnapshot.hostIds), [targetSnapshot.hostIds]);
   const variableNames = useMemo(() => {
     try { return extractCommandVariables(command); } catch { return []; }
   }, [command]);
@@ -65,12 +72,8 @@ export const CommandRunDialog = ({
   };
 
   return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="command-run-dialog" role="dialog" aria-modal="true" aria-labelledby="command-run-title">
-        <div className="form-heading">
-          <div><p className="eyebrow">SAFE BATCH EXECUTION</p><h2 id="command-run-title">批量执行</h2></div>
-          <button className="icon-button" type="button" aria-label="关闭批量执行" onClick={onClose}>×</button>
-        </div>
+    <Dialog title="批量执行" onClose={onClose} initialFocusSelector="#command-run-input" closeOnBackdrop={false} className="command-run-dialog">
+        <HostTargetPicker hosts={hosts} groups={groups} selection={selection} onChange={setSelection} />
         <label className="command-field" htmlFor="command-run-input"><span>命令</span><textarea id="command-run-input" value={command} onChange={(event) => setCommand(event.target.value)} rows={3} /></label>
         {snippets.length > 0 && <SnippetPicker snippets={snippets} onSelect={(id) => void selectSnippet(id)} />}
         {variableNames.length > 0 && <div className="command-variable-fields"><p>参数</p>{variableNames.map((name) => <label key={name} htmlFor={`command-variable-${name}`}><span>{`{{${name}}}`}</span><input id={`command-variable-${name}`} value={variables[name] ?? ''} onChange={(event) => setVariables((current) => ({ ...current, [name]: event.target.value }))} /></label>)}</div>}
@@ -82,7 +85,6 @@ export const CommandRunDialog = ({
         </div>
         <div className="command-run-controls"><label htmlFor="command-concurrency">并发<select id="command-concurrency" value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))}>{[1, 2, 4, 8, 16].map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label htmlFor="command-timeout">超时<select id="command-timeout" value={timeoutMs} onChange={(event) => setTimeoutMs(Number(event.target.value))}>{[30_000, 60_000, 300_000, 600_000].map((value) => <option key={value} value={value}>{formatSeconds(value)} 秒</option>)}</select></label></div>
         <div className="dialog-actions"><button className="button button-ghost" type="button" onClick={onClose}>取消</button><button className="button button-primary" type="button" disabled={!canSubmit} onClick={() => void submit()}>{submitting ? '执行中…' : '确认执行'}</button></div>
-      </section>
-    </div>
+    </Dialog>
   );
 };

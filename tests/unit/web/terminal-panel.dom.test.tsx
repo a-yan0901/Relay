@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { HostMetadataState } from '../../../src/web/state/app-state';
@@ -10,7 +11,9 @@ const testState = vi.hoisted(() => ({
   terminalInstances: [] as Array<{ constructorOptions: Record<string, unknown> }>,
   terminalOutputs: [] as Array<string | Uint8Array>,
   onOutput: null as ((data: Uint8Array) => void) | null,
-  diagnostics: [] as Array<{ stage: string; status: string; retryable: boolean }>
+  diagnostics: [] as Array<{ stage: string; status: string; retryable: boolean }>,
+  credential: null as { hostId: string; authType: 'password' | 'private_key'; name: string; address: string; port: number; username: string } | null,
+  submitCredential: vi.fn()
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -78,10 +81,11 @@ vi.mock('../../../src/web/hooks/use-terminal-session', () => ({
   useTerminalSession: (options: { onOutput?: (data: Uint8Array) => void }) => {
     testState.onOutput = options.onOutput ?? null;
     return {
-      state: { state: 'connected', reconnectDelayMs: 0, error: null, hostKey: null, diagnostics: testState.diagnostics },
+      state: { state: testState.credential ? 'awaiting-credential' : 'connected', reconnectDelayMs: 0, error: null, hostKey: null, credential: testState.credential, diagnostics: testState.diagnostics },
       resize: () => {},
       sendInput: () => {},
       decideHostKey: () => {},
+      submitCredential: testState.submitCredential,
       reconnect: () => {}
     };
   }
@@ -110,6 +114,8 @@ describe('TerminalPanel mobile selection', () => {
     testState.terminalOutputs.length = 0;
     testState.onOutput = null;
     testState.diagnostics.length = 0;
+    testState.credential = null;
+    testState.submitCredential.mockReset();
     vi.stubGlobal('requestAnimationFrame', (callback: (timestamp: number) => void) => {
       callback(0);
       return 1;
@@ -164,11 +170,28 @@ describe('TerminalPanel mobile selection', () => {
     expect(output).toEqual([0xc2, 0xa0, 0xe7, 0xbb, 0x88]);
   });
 
-  it('shows a compact diagnostic stage and retry action for a failed connection stage', () => {
-    testState.diagnostics.push({ stage: 'authentication', status: 'failed', retryable: true });
+  it('does not render connection diagnostics over the console area', () => {
+    testState.diagnostics.push({ stage: 'channel', status: 'started', retryable: false });
     render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} />);
 
-    expect(screen.getByRole('status', { name: '连接诊断' })).toHaveTextContent('认证失败');
-    expect(screen.getByRole('button', { name: '重试连接' })).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: '连接诊断' })).not.toBeInTheDocument();
+    expect(screen.queryByText('打开会话通道中')).not.toBeInTheDocument();
+  });
+
+  it('submits a password with Enter from the credential dialog', async () => {
+    const user = userEvent.setup();
+    testState.credential = {
+      hostId: 'host-1',
+      authType: 'password',
+      name: 'Production',
+      address: 'prod.internal',
+      port: 22,
+      username: 'ops'
+    };
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} />);
+
+    await user.type(screen.getByLabelText('密码'), 'filled-at-connect{Enter}');
+
+    expect(testState.submitCredential).toHaveBeenCalledWith({ type: 'password', password: 'filled-at-connect' });
   });
 });

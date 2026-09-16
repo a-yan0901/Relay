@@ -13,7 +13,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'npm run build && PORT=4173 NODE_ENV=test TRUSTED_ORIGINS=http://127.0.0.1:4173 DATA_DIR=.tmp-e2e-data LOG_LEVEL=warn node tests/e2e/start-server.mjs',
+    command: 'npm run build && PORT=4173 NODE_ENV=test RATE_LIMIT_MAX=1000 TRUSTED_ORIGINS=http://127.0.0.1:4173 DATA_DIR=.tmp-e2e-data LOG_LEVEL=warn node tests/e2e/start-server.mjs',
     url: 'http://127.0.0.1:4173/healthz',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000

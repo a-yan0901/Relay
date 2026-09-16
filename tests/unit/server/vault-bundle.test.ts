@@ -4,6 +4,7 @@ import { migrate } from '../../../src/server/db/migrations.js';
 import { GroupRepository, HostRepository } from '../../../src/server/db/repositories.js';
 import { VaultService } from '../../../src/server/vault/vault-service.js';
 import { VaultBundleService } from '../../../src/server/workspace/vault-bundle-service.js';
+import { IdentityService } from '../../../src/server/identity/identity-service.js';
 import type { EncryptedJson } from '../../../src/server/vault/types.js';
 
 const EXPORT_PASSWORD = 'bundle-export-password';
@@ -13,6 +14,8 @@ interface Fixture {
   database: Database.Database;
   sessionKey: Buffer;
   hosts: HostRepository;
+  groups: GroupRepository;
+  identityService: IdentityService;
   service: VaultBundleService;
 }
 
@@ -23,6 +26,7 @@ const createFixture = async (withHost = true): Promise<Fixture> => {
   const created = await VaultService.create('correct horse battery staple');
   const hosts = new HostRepository(database, 'default');
   const groups = new GroupRepository(database, 'default');
+  const identityService = new IdentityService({ database, vaultService: new VaultService() });
   if (withHost) {
     const group = groups.create({ id: 'group-1', name: 'Production' });
     const encrypted = await VaultService.encryptJson(created.vaultKey, 'host:host-1:credentials:v1', { type: 'password', password: HOST_PASSWORD });
@@ -32,8 +36,8 @@ const createFixture = async (withHost = true): Promise<Fixture> => {
       hostKeyAlgorithm: null, hostKeyFingerprint: null, groupId: group.id, tags: ['prod'], isFavorite: true, lastConnectedAt: null
     });
   }
-  return { database, sessionKey: created.vaultKey, hosts, service: new VaultBundleService({
-    ownerId: 'default', database, hostRepository: hosts, groupRepository: groups, vaultService: new VaultService()
+  return { database, sessionKey: created.vaultKey, hosts, groups, identityService, service: new VaultBundleService({
+    ownerId: 'default', database, hostRepository: hosts, groupRepository: groups, vaultService: new VaultService(), identityService
   }) };
 };
 
@@ -87,6 +91,37 @@ describe('VaultBundleService', () => {
 
     await expect(target.service.applyImport(target.sessionKey, preview.previewId, { hostConflicts: 'skip', groupConflicts: 'reuse' })).rejects.toMatchObject({ code: 'HOST_VALIDATION_FAILED' });
     expect(target.hosts.getForConnection('host-1')).toBeNull();
+    source.database.close();
+    target.database.close();
+  });
+
+  it('preserves nested groups, reusable identities, and inherited host credential sources', async () => {
+    const source = await createFixture(false);
+    const target = await createFixture(false);
+    const identity = await source.identityService.create('default', {
+      name: 'Operations', type: 'password', username: 'ops', auth: { type: 'password', password: 'identity-password' }
+    }, source.sessionKey);
+    source.groups.create({ id: 'group-root', name: 'Production', defaultIdentityId: identity.id, connectionProfile: { keepaliveIntervalMs: 4_000 } });
+    source.groups.create({ id: 'group-child', name: 'API', parentId: 'group-root' });
+    source.hosts.createHost({
+      id: 'host-inherited', ownerId: 'default', name: 'Inherited API', address: '10.0.0.10', port: 22, username: 'ops',
+      authType: 'password', credentialCiphertext: null, credentialVersion: 1, credentialSource: 'group', identityId: null,
+      hostKeyAlgorithm: null, hostKeyFingerprint: null, groupId: 'group-child', tags: ['prod'], isFavorite: false, lastConnectedAt: null
+    });
+
+    const bundle = await source.service.export(source.sessionKey, EXPORT_PASSWORD);
+    const preview = await target.service.previewImport(target.sessionKey, EXPORT_PASSWORD, bundle);
+    expect(preview).toEqual(expect.objectContaining({ hostCount: 1, groupCount: 2, identityCount: 1, conflicts: [] }));
+    await target.service.applyImport(target.sessionKey, preview.previewId, {
+      hostConflicts: 'skip', groupConflicts: 'reuse', identityConflicts: 'reuse'
+    });
+
+    expect(target.groups.get('group-child')).toEqual(expect.objectContaining({ parentId: 'group-root' }));
+    expect(target.groups.get('group-root')).toEqual(expect.objectContaining({ defaultIdentityId: identity.id, connectionProfile: { keepaliveIntervalMs: 4_000 } }));
+    expect(target.hosts.getForConnection('host-inherited')).toEqual(expect.objectContaining({
+      credentialCiphertext: null, groupId: 'group-child', credentialSource: { type: 'group' }
+    }));
+    expect(await target.identityService.get('default', identity.id)).toEqual(expect.objectContaining({ name: 'Operations' }));
     source.database.close();
     target.database.close();
   });

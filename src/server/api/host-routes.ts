@@ -4,28 +4,37 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 
 import { AppError } from '../../shared/errors.js';
-import { validateJumpChain } from '../../shared/core/models.js';
+import { validateJumpChain, type ConnectionProfileOverrides } from '../../shared/core/models.js';
+import { resolveConnectionConfiguration } from '../../shared/core/connection-resolution.js';
 import {
   parseHostCreateInput,
   parseHostPatchInput,
   defaultConnectionProfileSettings,
   mergeConnectionProfileSettings,
+  storedHostCredentialSchema,
   type HostCredentialInput,
-  type HostCreateInput
+  type StoredHostCredential,
+  type HostCreateInput,
+  type HostMetadata
 } from '../../shared/validation.js';
 import { SessionStore } from '../auth/session-store.js';
 import { VaultService, type EncryptedJson } from '../vault/vault-service.js';
 import { AuditRepository, HostRepository } from '../db/repositories.js';
+import type { GroupRepository } from '../db/repositories.js';
 import type { HostPatch } from '../db/types.js';
 import type { SshConnectConfig, SshHostKeyChallenge, SshSessionManagerPort } from '../ssh/types.js';
+import { IdentityService } from '../identity/identity-service.js';
 import { requireUnlockedSession, toHostMetadataDto } from './route-helpers.js';
+import type { IdentityMetadata } from '../../shared/core/models.js';
 
 export interface HostRouteDependencies {
   ownerId: string;
   hostRepository: HostRepository;
+  groupRepository?: GroupRepository;
   sessionStore: SessionStore;
   vaultService: VaultService;
   auditRepository: AuditRepository;
+  identityService?: IdentityService;
   sshSessionManager?: SshSessionManagerPort;
 }
 
@@ -70,12 +79,53 @@ const parseEncryptedCredential = (value: string): EncryptedJson => {
   }
 };
 
+const mergeConnectionProfileOverrides = (
+  current: ConnectionProfileOverrides | null | undefined,
+  patch: ConnectionProfileOverrides
+): ConnectionProfileOverrides => ({
+  ...(current ?? {}),
+  ...patch,
+  ...((current?.reconnect !== undefined || patch.reconnect !== undefined)
+    ? { reconnect: { ...(current?.reconnect ?? {}), ...(patch.reconnect ?? {}) } }
+    : {})
+});
+
 const readHost = (dependencies: HostRouteDependencies, id: string) => {
   const row = dependencies.hostRepository.getForConnection(id);
   if (!row) {
     throw new AppError('HOST_NOT_FOUND');
   }
   return row;
+};
+
+const enrichHostMetadata = async (
+  dependencies: HostRouteDependencies,
+  row: HostMetadata
+): Promise<HostMetadata> => {
+  const metadata = toHostMetadataDto(row);
+  const resolved = resolveConnectionConfiguration(metadata, dependencies.groupRepository?.list() ?? []);
+  const identity = resolved.identityId && dependencies.identityService
+    ? await dependencies.identityService.get(dependencies.ownerId, resolved.identityId)
+    : null;
+  return {
+    ...metadata,
+    ...(identity ? { authType: identity.type } : {}),
+    resolvedConnectionProfile: resolved.profile,
+    identityName: identity?.name ?? null,
+    identitySource: resolved.identitySource
+  };
+};
+
+const requireGroupIdentity = async (
+  dependencies: HostRouteDependencies,
+  groupId: string | null | undefined
+): Promise<IdentityMetadata> => {
+  if (!groupId || !dependencies.identityService) throw new AppError('IDENTITY_NOT_FOUND');
+  const resolved = resolveConnectionConfiguration({ groupId }, dependencies.groupRepository?.list() ?? []);
+  if (!resolved.identityId) throw new AppError('IDENTITY_NOT_FOUND');
+  const identity = await dependencies.identityService.get(dependencies.ownerId, resolved.identityId);
+  if (!identity) throw new AppError('IDENTITY_NOT_FOUND');
+  return identity;
 };
 
 const validateJumpHostGraph = (
@@ -101,28 +151,53 @@ const decryptHostCredential = async (
   dependencies: HostRouteDependencies,
   sessionKey: Buffer,
   row: ReturnType<HostRepository['getForConnection']> extends infer T ? Exclude<T, null> : never
-): Promise<HostCredentialInput> => dependencies.vaultService.decryptJson<HostCredentialInput>(
-  sessionKey,
-  credentialAad(row.id),
-  parseEncryptedCredential(row.credentialCiphertext)
-);
+): Promise<HostCredentialInput> => {
+  const resolved = resolveConnectionConfiguration(row, dependencies.groupRepository?.list() ?? []);
+  const identityId = row.credentialSource?.type === 'identity'
+    ? row.identityId
+    : row.credentialSource?.type === 'group' ? resolved.identityId : null;
+  if (identityId) {
+    if (!dependencies.identityService) throw new AppError('IDENTITY_NOT_FOUND');
+    const credential = await dependencies.identityService.getCredential(dependencies.ownerId, identityId, sessionKey);
+    if (credential.type === 'pending') throw new AppError('IMPORT_RECORD_INVALID', '请先在连接时补录凭据');
+    return credential;
+  }
+  if (row.credentialSource?.type === 'group') throw new AppError('IDENTITY_NOT_FOUND');
+  if (row.credentialCiphertext === null) throw new AppError('IMPORT_RECORD_INVALID', '请先在连接时补录凭据');
+  const stored = await dependencies.vaultService.decryptJson<StoredHostCredential>(
+    sessionKey,
+    credentialAad(row.id),
+    parseEncryptedCredential(row.credentialCiphertext)
+  );
+  const parsed = storedHostCredentialSchema.safeParse(stored);
+  if (!parsed.success || parsed.data.type === 'pending') throw new AppError('IMPORT_RECORD_INVALID', '请先在连接时补录凭据');
+  return parsed.data;
+};
 
 const toSshConfig = async (
   dependencies: HostRouteDependencies,
   sessionKey: Buffer,
   row: Exclude<ReturnType<HostRepository['getForConnection']>, null>
-): Promise<SshConnectConfig> => ({
-  hostId: row.id,
-  address: row.address,
-  port: row.port,
-  username: row.username,
-  auth: await decryptHostCredential(dependencies, sessionKey, row),
-  hostKeyAlgorithm: row.hostKeyAlgorithm,
-  hostKeyFingerprint: row.hostKeyFingerprint,
-  keepaliveInterval: row.connectionProfile?.keepaliveIntervalMs,
-  keepaliveCountMax: row.connectionProfile?.keepaliveCountMax,
-  reconnect: row.connectionProfile?.reconnect
-});
+): Promise<SshConnectConfig> => {
+  const resolved = resolveConnectionConfiguration({
+    groupId: row.groupId,
+    connectionProfile: row.connectionProfile,
+    connectionProfileOverrides: row.connectionProfileOverrides,
+    credentialSource: row.credentialSource
+  }, dependencies.groupRepository?.list() ?? []).profile;
+  return {
+    hostId: row.id,
+    address: row.address,
+    port: row.port,
+    username: row.username,
+    auth: await decryptHostCredential(dependencies, sessionKey, row),
+    hostKeyAlgorithm: row.hostKeyAlgorithm,
+    hostKeyFingerprint: row.hostKeyFingerprint,
+    keepaliveInterval: resolved.keepaliveIntervalMs,
+    keepaliveCountMax: resolved.keepaliveCountMax,
+    reconnect: resolved.reconnect
+  };
+};
 
 export const registerHostRoutes = async (
   app: FastifyInstance,
@@ -136,12 +211,13 @@ export const registerHostRoutes = async (
     } catch {
       throw new AppError('HOST_VALIDATION_FAILED');
     }
-    reply.send(dependencies.hostRepository.listMetadata(filter));
+    const hosts = dependencies.hostRepository.listMetadata(filter);
+    reply.send(await Promise.all(hosts.map((host) => enrichHostMetadata(dependencies, host))));
   });
 
   app.get('/api/hosts/:id', async (request, reply) => {
     requireUnlockedSession(request, dependencies.sessionStore);
-    reply.send(toHostMetadataDto(readHost(dependencies, hostId(request.params))));
+    reply.send(await enrichHostMetadata(dependencies, readHost(dependencies, hostId(request.params))));
   });
 
   app.post('/api/hosts', async (request, reply) => {
@@ -149,11 +225,30 @@ export const registerHostRoutes = async (
     const input: HostCreateInput = parseHostCreateInput(request.body);
     const id = randomUUID();
     validateJumpHostGraph(dependencies, id, input.jumpHostIds);
-    const encrypted = await dependencies.vaultService.encryptJson(
-      session.record.vaultKey,
-      credentialAad(id),
-      input.auth
-    );
+    let authType: HostCredentialInput['type'];
+    let credentialCiphertext: string | null = null;
+    let credentialSource: 'inline' | 'identity' | 'group' = 'inline';
+    let identityId: string | null = null;
+    if (input.credentialSource?.type === 'identity') {
+      const identity = await dependencies.identityService?.get(dependencies.ownerId, input.credentialSource.identityId);
+      if (!identity) throw new AppError('IDENTITY_NOT_FOUND');
+      authType = identity.type;
+      credentialSource = 'identity';
+      identityId = identity.id;
+    } else if (input.credentialSource?.type === 'group') {
+      const identity = await requireGroupIdentity(dependencies, input.groupId);
+      authType = identity.type;
+      credentialSource = 'group';
+    } else {
+      if (!input.auth) throw new AppError('HOST_VALIDATION_FAILED');
+      const encrypted = await dependencies.vaultService.encryptJson(
+        session.record.vaultKey,
+        credentialAad(id),
+        input.auth
+      );
+      authType = input.auth.type;
+      credentialCiphertext = serializeEncryptedCredential(encrypted);
+    }
     const created = dependencies.hostRepository.createHost({
       id,
       ownerId: dependencies.ownerId,
@@ -161,20 +256,23 @@ export const registerHostRoutes = async (
       address: input.address,
       port: input.port,
       username: input.username,
-      authType: input.auth.type,
-      credentialCiphertext: serializeEncryptedCredential(encrypted),
+      authType,
+      credentialCiphertext,
       credentialVersion: 1,
+      credentialSource,
+      identityId,
       hostKeyAlgorithm: null,
       hostKeyFingerprint: null,
       groupId: input.groupId ?? null,
       jumpHostIds: input.jumpHostIds,
       connectionProfile: mergeConnectionProfileSettings(input.connectionProfile),
+      connectionProfileOverrides: input.connectionProfile ?? null,
       tags: input.tags,
       isFavorite: input.isFavorite,
       lastConnectedAt: null
     });
     dependencies.auditRepository.insert({ eventType: 'host_created', hostId: id, requestId: request.id });
-    reply.code(201).send(toHostMetadataDto(created));
+    reply.code(201).send(await enrichHostMetadata(dependencies, created));
   });
 
   app.patch('/api/hosts/:id', async (request, reply) => {
@@ -190,13 +288,25 @@ export const registerHostRoutes = async (
       username: input.username,
       groupId: input.groupId,
       jumpHostIds: input.jumpHostIds,
-      ...(input.connectionProfile === undefined ? {} : {
-        connectionProfile: mergeConnectionProfileSettings(input.connectionProfile, current.connectionProfile ?? defaultConnectionProfileSettings())
-      }),
       tags: input.tags,
       isFavorite: input.isFavorite
     };
-    if (input.auth !== undefined) {
+    const nextGroupId = input.groupId === undefined ? current.groupId : input.groupId;
+    if (input.connectionProfile !== undefined) {
+      const connectionProfileOverrides = mergeConnectionProfileOverrides(current.connectionProfileOverrides, input.connectionProfile);
+      patch.connectionProfile = mergeConnectionProfileSettings(connectionProfileOverrides, current.connectionProfile ?? defaultConnectionProfileSettings());
+      patch.connectionProfileOverrides = connectionProfileOverrides;
+    }
+    const nextCredentialSource = input.credentialSource?.type ?? current.credentialSource?.type;
+    if (input.credentialSource?.type === 'identity') {
+      const identity = await dependencies.identityService?.get(dependencies.ownerId, input.credentialSource.identityId);
+      if (!identity) throw new AppError('IDENTITY_NOT_FOUND');
+      patch.authType = identity.type;
+      patch.credentialSource = 'identity';
+      patch.identityId = identity.id;
+      patch.credentialCiphertext = null;
+      patch.credentialVersion = 1;
+    } else if (input.auth !== undefined) {
       const encrypted = await dependencies.vaultService.encryptJson(
         session.record.vaultKey,
         credentialAad(id),
@@ -205,11 +315,20 @@ export const registerHostRoutes = async (
       patch.authType = input.auth.type;
       patch.credentialCiphertext = serializeEncryptedCredential(encrypted);
       patch.credentialVersion = 1;
+      patch.credentialSource = 'inline';
+      patch.identityId = null;
+    } else if (nextCredentialSource === 'group') {
+      const identity = await requireGroupIdentity(dependencies, nextGroupId);
+      patch.authType = identity.type;
+      patch.credentialSource = 'group';
+      patch.identityId = null;
+      patch.credentialCiphertext = null;
+      patch.credentialVersion = 1;
     }
 
     const updated = dependencies.hostRepository.updateHost(id, patch);
     dependencies.auditRepository.insert({ eventType: 'host_updated', hostId: id, requestId: request.id });
-    reply.send(toHostMetadataDto(updated));
+    reply.send(await enrichHostMetadata(dependencies, updated));
   });
 
   app.delete('/api/hosts/:id', async (request, reply) => {

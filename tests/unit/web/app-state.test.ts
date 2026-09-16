@@ -133,6 +133,26 @@ describe('appReducer', () => {
     expect(state.activeTerminalId).toBe('tab-2');
   });
 
+  it('preserves shared group inheritance fields when hydrating web state', () => {
+    const group = {
+      id: 'group-1',
+      name: 'Production',
+      sortOrder: 0,
+      parentId: 'root',
+      defaultIdentityId: 'identity-1',
+      connectionProfile: { keepaliveIntervalMs: 5000, reconnect: { enabled: false } }
+    };
+    const state = appReducer(initialAppState, { type: 'groupsLoaded', groups: [group] });
+    expect(state.groups).toEqual([group]);
+  });
+
+  it('preserves explicit connection profile overrides in web metadata state', () => {
+    const overrides = { keepaliveIntervalMs: 2_000, reconnect: { enabled: false } };
+    const state = appReducer(initialAppState, { type: 'hostsLoaded', hosts: [host({ connectionProfileOverrides: overrides })] });
+
+    expect(state.hosts[0]?.connectionProfileOverrides).toEqual(overrides);
+  });
+
   it('opens multiple consoles for the same host and keeps them independent', () => {
     let state = initialAppState;
     state = appReducer(state, { type: 'terminalOpened', terminalId: 'tab-1', hostId: 'host-1' });

@@ -21,7 +21,8 @@ export const withWorkspaceLayout = (state: WorkspaceState, layout: WorkspaceLayo
   ...state,
   layout: {
     mode: layout.mode,
-    ratio: Math.min(0.8, Math.max(0.2, layout.ratio))
+    ratio: Math.min(0.8, Math.max(0.2, layout.ratio)),
+    ...(layout.paneTabIds === undefined ? {} : { paneTabIds: [...layout.paneTabIds].slice(0, 4) })
   }
 });
 

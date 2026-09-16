@@ -40,7 +40,12 @@ const addHost = async (page: Page, name: string, fixture: E2eSshFixture): Promis
   await page.getByLabel('端口').fill(String(fixture.port));
   await page.getByLabel('用户名').fill(fixture.username);
   await page.getByLabel('密码').fill(fixture.password);
+  const responsePromise = page.waitForResponse((response) => (
+    response.url().endsWith('/api/hosts') && response.request().method() === 'POST'
+  ));
   await page.getByRole('button', { name: '保存 Server' }).click();
+  const response = await responsePromise;
+  expect(response.status(), await response.text()).toBe(201);
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 };
 
@@ -112,7 +117,7 @@ test.describe('SSH productivity boundaries', () => {
     await page.getByRole('button', { name: '远程文件' }).click();
     const filePanel = page.locator('.sftp-panel');
     await expect(filePanel.getByText('正在读取目录…')).toBeHidden({ timeout: 15_000 });
-    await filePanel.getByLabel('远程路径').fill(fixture.remoteDirectory);
+    await filePanel.getByRole('textbox', { name: '远程路径', exact: true }).fill(fixture.remoteDirectory);
     await filePanel.getByRole('button', { name: '跳转' }).click();
     await expect(filePanel.getByRole('button', { name: fixture.knownFileName, exact: true })).toBeVisible({ timeout: 15_000 });
 
@@ -121,7 +126,7 @@ test.describe('SSH productivity boundaries', () => {
       mimeType: 'text/plain',
       buffer: Buffer.from('browser-upload-content\n')
     });
-    await expect(page.locator('.transfer-item')).toContainText('completed', { timeout: 15_000 });
+    await expect(page.locator('.transfer-item')).toContainText(/已完成|completed/u, { timeout: 15_000 });
     await expect(filePanel.getByRole('button', { name: 'browser-upload.txt', exact: true })).toBeVisible({ timeout: 15_000 });
 
     const downloadPromise = page.waitForEvent('download');

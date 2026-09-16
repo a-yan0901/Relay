@@ -35,8 +35,10 @@ class FakeChannel extends EventEmitter implements SshChannel {
 
 class ChallengeAdapter implements SshAdapterPort {
   readonly channels: FakeChannel[] = [];
+  readonly configs: SshConnectConfig[] = [];
 
   async connect(config: SshConnectConfig, callbacks: SshConnectCallbacks): Promise<SshChannel> {
+    this.configs.push(config);
     const challenge = {
       algorithm: 'ssh-ed25519',
       fingerprint: 'SHA256:fixture-key',
@@ -152,6 +154,16 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 1_000): Promise<voi
   expect(predicate()).toBe(true);
 };
 
+const multipart = (filename: string, content: string): { body: Buffer; contentType: string } => {
+  const boundary = '----terminal-credential-test-boundary';
+  const body = Buffer.from([
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: text/plain\r\n\r\n`,
+    content,
+    `\r\n--${boundary}--\r\n`
+  ].join(''), 'utf8');
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+};
+
 afterEach(async () => {
   for (const app of apps.splice(0)) await app.close();
   for (const database of databases.splice(0)) database.close();
@@ -221,6 +233,50 @@ describe('terminal WebSocket gateway', () => {
     expect((await nextJson<{ type: string; state?: string }>(socket)).state).toBe('closed');
     expect(channel.closeCalls).toBe(1);
     socket.close();
+  });
+
+  it('persists a missing imported password after a successful connection', async () => {
+    const { app, adapter } = await makeApp();
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const cookie = cookieFrom(setup);
+    const upload = multipart('connections.csv', 'name,host,user,password\nImported SSH,ssh-fixture,fixture,\n');
+    const previewResponse = await app.inject({ method: 'POST', url: '/api/import/preview', headers: { cookie, 'content-type': upload.contentType }, payload: upload.body });
+    const preview = json<{ previewId: string; connections: Array<{ sourceId: string }> }>(previewResponse);
+    const applied = await app.inject({ method: 'POST', url: '/api/import/apply', headers: { cookie }, payload: {
+      previewId: preview.previewId,
+      selectedSourceIds: [preview.connections[0].sourceId],
+      conflictPolicy: 'create'
+    } });
+    expect(applied.statusCode).toBe(200);
+    const hosts = json<Array<{ id: string }>>(await app.inject({ method: 'GET', url: '/api/hosts', headers: { cookie } }));
+    const hostId = hosts[0]?.id;
+    expect(hostId).toBeTruthy();
+
+    const url = await listen(app);
+    const socket = await connectSocket(url, { cookie, origin: ORIGIN });
+    socket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'tab-missing-credential' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'awaiting-credential' }));
+    expect(await nextJson<{ type: string; hostId: string; authType: string }>(socket)).toEqual(expect.objectContaining({ type: 'credential-required', hostId, authType: 'password' }));
+
+    socket.send(JSON.stringify({ type: 'credential', hostId, credential: { type: 'password', password: 'filled-at-connect' } }));
+    const connecting = await nextJson<{ type: string; state?: string }>(socket);
+    expect(connecting).toEqual(expect.objectContaining({ type: 'status', state: 'connecting' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'awaiting-host-key' }));
+    expect(await nextJson<{ type: string; fingerprint: string }>(socket)).toEqual(expect.objectContaining({ type: 'host-key', fingerprint: 'SHA256:fixture-key' }));
+    socket.send(JSON.stringify({ type: 'host-key-decision', decision: 'trust', fingerprint: 'SHA256:fixture-key' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'connected' }));
+    expect(adapter.configs[0]?.auth).toEqual({ type: 'password', password: 'filled-at-connect' });
+
+    socket.send(JSON.stringify({ type: 'close' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'closed' }));
+    socket.close();
+
+    const secondSocket = await connectSocket(url, { cookie, origin: ORIGIN });
+    secondSocket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'tab-missing-credential-retry' }));
+    expect(await nextJson<{ type: string; state?: string }>(secondSocket)).toEqual(expect.objectContaining({ type: 'status', state: 'connecting' }));
+    expect(await nextJson<{ type: string; state?: string }>(secondSocket)).toEqual(expect.objectContaining({ type: 'status', state: 'connected' }));
+    expect(adapter.configs[1]?.auth).toEqual({ type: 'password', password: 'filled-at-connect' });
+    secondSocket.close();
   });
 
   it('replays buffered output when a refreshed browser reattaches the terminal session', async () => {

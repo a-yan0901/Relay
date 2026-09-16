@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '@shared/errors';
-import { parseTerminalClientMessage } from '@shared/protocol';
+import { parseTerminalClientMessage, parseTerminalEnvelope } from '@shared/protocol';
 
 describe('parseTerminalClientMessage', () => {
+  it('parses the versioned cross-platform terminal envelope', () => {
+    expect(parseTerminalEnvelope({
+      protocolVersion: 1,
+      message: { type: 'ping' }
+    })).toEqual({ protocolVersion: 1, message: { type: 'ping' } });
+  });
+
   it('parses a terminal open message', () => {
     expect(parseTerminalClientMessage({
       type: 'open',
@@ -24,6 +31,18 @@ describe('parseTerminalClientMessage', () => {
     expect(parseTerminalClientMessage({ type: 'input', data: 'ls\n' })).toEqual({ type: 'input', data: 'ls\n' });
     expect(parseTerminalClientMessage({ type: 'ping' })).toEqual({ type: 'ping' });
     expect(parseTerminalClientMessage({ type: 'close' })).toEqual({ type: 'close' });
+  });
+
+  it('parses a connection-time credential message', () => {
+    expect(parseTerminalClientMessage({
+      type: 'credential',
+      hostId: 'host-1',
+      credential: { type: 'password', password: 'filled-at-connect' }
+    })).toEqual({
+      type: 'credential',
+      hostId: 'host-1',
+      credential: { type: 'password', password: 'filled-at-connect' }
+    });
   });
 
   it('requires a matching pending fingerprint before trusting a host key', () => {

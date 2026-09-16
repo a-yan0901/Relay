@@ -45,6 +45,8 @@ import { SnippetService } from './automation/snippet-service.js';
 import { CommandRunStore } from './automation/command-run-store.js';
 import { CommandRunner } from './automation/command-runner.js';
 import { AuditService } from './audit/audit-service.js';
+import { IdentityService } from './identity/identity-service.js';
+import { registerIdentityRoutes } from './api/identity-routes.js';
 
 export interface AppDependencies {
   database: SqliteDatabase;
@@ -66,6 +68,7 @@ export interface AppDependencies {
   snippetService?: SnippetService;
   commandRunner?: CommandRunner;
   auditService?: AuditService;
+  identityService?: IdentityService;
 }
 
 export interface BuiltAppDependencies {
@@ -75,6 +78,7 @@ export interface BuiltAppDependencies {
   hostRepository: HostRepository;
   groupRepository: GroupRepository;
   auditRepository: AuditRepository;
+  identityService: IdentityService;
 }
 
 const isMutatingMethod = (method: string): boolean => ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method);
@@ -89,16 +93,18 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   const groupRepository = dependencies.groupRepository ?? new GroupRepository(dependencies.database, 'default');
   const auditRepository = dependencies.auditRepository ?? new AuditRepository(dependencies.database, 'default');
   const auditService = dependencies.auditService ?? new AuditService(auditRepository);
+  const identityService = dependencies.identityService ?? new IdentityService({ database: dependencies.database, vaultService });
   const workspaceService = dependencies.workspaceService ?? new WorkspaceService(new WorkspaceRepository(dependencies.database), hostRepository);
   const vaultBundleService = dependencies.vaultBundleService ?? new VaultBundleService({
     ownerId: 'default',
     database: dependencies.database,
     hostRepository,
     groupRepository,
-    vaultService
+    vaultService,
+    identityService
   });
   const sshImportService = dependencies.sshImportService ?? new SshImportService({
-    ownerId: 'default', database: dependencies.database, hostRepository, groupRepository, vaultService
+    ownerId: 'default', database: dependencies.database, hostRepository, groupRepository, vaultService, identityService
   });
   const sshSessionManager = dependencies.sshSessionManager ?? new SshSessionManager({
     adapter: new Ssh2Adapter(),
@@ -114,6 +120,8 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     hostRepository,
     connectionPathResolver,
     vaultService,
+    groupRepository,
+    identityService,
     adapter: connectionAdapter
   });
   const sftpResourceProvider: SftpResourceProvider = {
@@ -135,7 +143,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     hostLookup: { hasHost: (hostId, ownerId) => ownerId === 'default' && hostRepository.getForConnection(hostId) !== null },
     resourceProvider: sftpResourceProvider
   });
-  const transferManager = dependencies.transferManager ?? new TransferManager({ resourceProvider: sftpResourceProvider });
+  const transferManager = dependencies.transferManager ?? new TransferManager({ resourceProvider: sftpResourceProvider, ownerId: 'default', database: dependencies.database });
   const snippetService = dependencies.snippetService ?? new SnippetService({ ownerId: 'default', database: dependencies.database, vaultService });
   const commandRunner = dependencies.commandRunner ?? new CommandRunner({
     ownerId: 'default',
@@ -151,7 +159,8 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     vaultService,
     hostRepository,
     groupRepository,
-    auditRepository
+    auditRepository,
+    identityService
   };
 
   const app = Fastify({
@@ -174,7 +183,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   await app.register(helmet);
   await app.register(rateLimit, {
     global: true,
-    max: 120,
+    max: dependencies.config.rateLimitMax ?? 120,
     timeWindow: '1 minute'
   });
   await app.register(websocket);
@@ -242,12 +251,15 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     groupRepository,
     sessionStore
   });
+  await registerIdentityRoutes(app, { ownerId: 'default', sessionStore, identityService });
   await registerHostRoutes(app, {
     ownerId: 'default',
     hostRepository,
+    groupRepository,
     sessionStore,
     vaultService,
     auditRepository,
+    identityService,
     sshSessionManager
   });
   await registerWorkspaceRoutes(app, {
@@ -272,8 +284,10 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     config: dependencies.config,
     sessionStore,
     hostRepository,
+    groupRepository,
     auditRepository,
     vaultService,
+    identityService,
     sessionManager: sshSessionManager,
     connectionPathResolver
   });

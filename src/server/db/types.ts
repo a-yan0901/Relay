@@ -1,5 +1,5 @@
+import type { ConnectionProfileOverrides, GroupNode, TransferJob, TransferStatus, TransferKind, WorkspaceState } from '../../shared/core/models.js';
 import type { ConnectionProfileSettings, HostCredentialInput, HostMetadata } from '../../shared/validation.js';
-import type { WorkspaceState } from '../../shared/core/models.js';
 import type { VaultConfig } from '../vault/types.js';
 
 export interface AppConfigRow {
@@ -12,7 +12,7 @@ export interface AppConfigRow {
 
 export interface HostRow extends HostMetadata {
   ownerId: string;
-  credentialCiphertext: string;
+  credentialCiphertext: string | null;
   credentialVersion: number;
 }
 
@@ -24,8 +24,10 @@ export interface HostCreateRow {
   port: number;
   username: string;
   authType: HostCredentialInput['type'];
-  credentialCiphertext: string;
+  credentialCiphertext: string | null;
   credentialVersion: number;
+  credentialSource?: 'inline' | 'identity' | 'group';
+  identityId?: string | null;
   hostKeyAlgorithm: string | null;
   hostKeyFingerprint: string | null;
   groupId: string | null;
@@ -34,9 +36,10 @@ export interface HostCreateRow {
   lastConnectedAt: string | null;
   jumpHostIds?: string[];
   connectionProfile?: ConnectionProfileSettings;
+  connectionProfileOverrides?: ConnectionProfileOverrides | null;
 }
 
-export type HostPatch = Partial<Pick<HostRow,
+export interface HostPatch extends Partial<Pick<HostRow,
   | 'name'
   | 'address'
   | 'port'
@@ -52,7 +55,11 @@ export type HostPatch = Partial<Pick<HostRow,
   | 'lastConnectedAt'
   | 'jumpHostIds'
   | 'connectionProfile'
->>;
+  | 'connectionProfileOverrides'
+>> {
+  credentialSource?: 'inline' | 'identity' | 'group';
+  identityId?: string | null;
+}
 
 export interface HostFilter {
   query?: string;
@@ -60,22 +67,38 @@ export interface HostFilter {
   favorite?: boolean;
 }
 
-export interface GroupRow {
-  id: string;
+export interface GroupRow extends GroupNode {
   ownerId: string;
-  name: string;
-  sortOrder: number;
   createdAt: string;
   updatedAt: string;
 }
 
 export type GroupCreateInput = {
   name: string;
+  parentId?: string | null;
   sortOrder?: number;
+  defaultIdentityId?: string | null;
+  connectionProfile?: ConnectionProfileOverrides | null;
   id?: string;
 };
 
-export type GroupPatch = Partial<Pick<GroupRow, 'name' | 'sortOrder'>>;
+export type GroupPatch = Partial<Pick<GroupRow, 'name' | 'parentId' | 'sortOrder' | 'defaultIdentityId' | 'connectionProfile'>>;
+
+export interface IdentityRow {
+  ownerId: string;
+  id: string;
+  name: string;
+  type: 'password' | 'private_key';
+  username: string;
+  keyFingerprint: string | null;
+  credentialCiphertext: string;
+  credentialVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IdentityCreateRow extends IdentityRow {}
+export type IdentityPatch = Partial<Pick<IdentityRow, 'name' | 'type' | 'username' | 'keyFingerprint' | 'credentialCiphertext' | 'credentialVersion' | 'updatedAt'>>;
 
 export interface AuditEventInput {
   eventType: string;
@@ -143,7 +166,7 @@ export interface CommandRunRow {
   id: string;
   commandCiphertext: string;
   hostIds: string[];
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   persistOutput: boolean;
   createdAt: string;
   finishedAt: string | null;
@@ -153,7 +176,7 @@ export interface CommandRunTargetRow {
   ownerId: string;
   runId: string;
   hostId: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   exitCode: number | null;
   outputCiphertext: string | null;
   outputBytes: number;
@@ -161,4 +184,27 @@ export interface CommandRunTargetRow {
   errorCode: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+}
+
+export interface TransferJobRow extends TransferJob {
+  ownerId: string;
+}
+
+export type TransferJobPatch = Partial<Pick<TransferJob, 'status' | 'completedBytes' | 'totalBytes' | 'updatedAt'>> & {
+  errorCode?: string | null;
+};
+
+export interface TransferJobCreateRow {
+  ownerId: string;
+  id: string;
+  kind: TransferKind;
+  hostId: string;
+  sourcePath: string;
+  targetPath: string;
+  status: TransferStatus;
+  completedBytes: number;
+  totalBytes: number | null;
+  errorCode?: string;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -10,6 +10,7 @@ describe('loadConfig', () => {
       dataDir: '/data',
       sessionIdleTimeoutMs: 86_400_000,
       maxSessions: 8,
+      rateLimitMax: 120,
       logLevel: 'info'
     });
   });
@@ -29,6 +30,7 @@ describe('loadConfig', () => {
       TRUSTED_ORIGINS: 'http://localhost:4173, http://localhost:4173',
       SESSION_IDLE_TIMEOUT: '60000',
       MAX_SESSIONS: '12',
+      RATE_LIMIT_MAX: '240',
       LOG_LEVEL: 'debug'
     })).toMatchObject({
       port: 4173,
@@ -36,11 +38,13 @@ describe('loadConfig', () => {
       trustedOrigins: ['http://localhost:4173'],
       sessionIdleTimeoutMs: 60_000,
       maxSessions: 12,
+      rateLimitMax: 240,
       logLevel: 'debug'
     });
 
     expect(() => loadConfig({ PORT: '0' })).toThrow('PORT');
     expect(() => loadConfig({ SESSION_IDLE_TIMEOUT: '10' })).toThrow('SESSION_IDLE_TIMEOUT');
+    expect(() => loadConfig({ RATE_LIMIT_MAX: '0' })).toThrow('RATE_LIMIT_MAX');
     expect(() => loadConfig({ TRUSTED_ORIGINS: 'ssh.example' })).toThrow('TRUSTED_ORIGINS');
   });
 });

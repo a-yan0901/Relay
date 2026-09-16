@@ -68,4 +68,63 @@ describe('SftpPanel', () => {
     expect(onCancel).toHaveBeenCalledWith('transfer-1');
     expect(onRetry).toHaveBeenCalledWith('transfer-2');
   });
+
+  it('treats a transfer interrupted by service restart as retryable', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    render(<TransferQueue jobs={[{
+      id: 'transfer-restarted', kind: 'download', hostId: 'host-1', sourcePath: '/logs/app.log', targetPath: 'app.log',
+      status: 'interrupted', completedBytes: 4, totalBytes: 10, createdAt: '', updatedAt: ''
+    }]} onRetry={onRetry} />);
+
+    expect(screen.getByText(/服务重启中断，可重试/u)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '重试' }));
+    expect(onRetry).toHaveBeenCalledWith('transfer-restarted');
+  });
+
+  it('supports breadcrumbs, directory creation and renaming without leaving the current host', async () => {
+    const user = userEvent.setup();
+    const onList = vi.fn(async (_hostId: string, path: string) => path === '/apps'
+      ? [{ name: 'app.log', path: '/apps/app.log', type: 'file' as const, size: 12, mode: 0o644, modifiedAt: null }]
+      : [{ name: 'apps', path: '/apps', type: 'directory' as const, size: 0, mode: 0o755, modifiedAt: null }]);
+    const onCreateDirectory = vi.fn(async () => {});
+    const onRename = vi.fn(async () => {});
+    render(<SftpPanel hostId="host-1" onList={onList} onCreateDirectory={onCreateDirectory} onRename={onRename} />);
+
+    await user.click(await screen.findByRole('button', { name: '打开目录 apps' }));
+    expect(screen.getByRole('button', { name: '路径 /' })).toBeInTheDocument();
+    expect(screen.getByText('apps', { selector: 'strong' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '新建目录' }));
+    await user.type(screen.getByLabelText('新目录名称'), 'release');
+    await user.click(screen.getByRole('button', { name: '创建目录' }));
+    expect(onCreateDirectory).toHaveBeenCalledWith('/apps/release');
+
+    await user.click(screen.getByRole('button', { name: '重命名 app.log' }));
+    const renameInput = screen.getByLabelText('新名称');
+    await user.clear(renameInput);
+    await user.type(renameInput, 'app-current.log');
+    await user.click(screen.getByRole('button', { name: '确认重命名' }));
+    expect(onRename).toHaveBeenCalledWith('/apps/app.log', '/apps/app-current.log');
+  });
+
+  it('allows selecting multiple entries and confirms a batch delete', async () => {
+    const user = userEvent.setup();
+    const onList = vi.fn(async () => [
+      { name: 'one.log', path: '/one.log', type: 'file' as const, size: 1, mode: 0o644, modifiedAt: null },
+      { name: 'two.log', path: '/two.log', type: 'file' as const, size: 2, mode: 0o644, modifiedAt: null }
+    ]);
+    const onDelete = vi.fn(async () => {});
+    render(<SftpPanel hostId="host-1" onList={onList} onDelete={onDelete} />);
+
+    await screen.findByText('one.log');
+    await user.click(screen.getByRole('checkbox', { name: '选择 one.log' }));
+    await user.click(screen.getByRole('checkbox', { name: '选择 two.log' }));
+    expect(screen.getByText('已选择 2 项')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '删除选中' }));
+    expect(screen.getByText('删除 2 个远程项目？')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
+    expect(onDelete).toHaveBeenCalledWith('/one.log');
+    expect(onDelete).toHaveBeenCalledWith('/two.log');
+  });
 });

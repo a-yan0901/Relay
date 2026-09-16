@@ -38,7 +38,7 @@ Web 是当前唯一的一等客户端。服务端继续维护单实例、单 Vau
 
 `src/shared/core` 提供平台无关的模型、状态机、错误码、能力集合、`CoreRuntime` 和 ports。完整 runtime 需要覆盖 Vault session、Host/Identity/Group/Workspace/Snippet/Activity store、ConnectionProbe、Session/File/Command transport、SecretStore 和 ImportExportPort；它不依赖 Node、DOM、React、浏览器 WebSocket、浏览器文件对象或 ssh2。
 
-Web adapter 提供 HTTP/WSS、Cookie、浏览器 WebSocket、服务端文件传输和服务端 Vault 边界。当前 Web-first 页面仍有少量应用生命周期、主机 CRUD 和轮询的薄 API wiring，这是待收口的架构 gap，不得作为未来客户端的业务范式。未来桌面版可在 Windows/Linux 通过桌面 shell 接入 OS keychain；Android 通过 Keystore 接入；两者可以替换为本地 SSH，也可以继续使用服务端 transport，但都必须实现相同的 shared ports：
+Web adapter 提供 HTTP/WSS、Cookie、浏览器 WebSocket、服务端文件传输和服务端 Vault 边界。`src/web/main.tsx` 将 Web runtime 注入 `App`，而 Web-first 页面内部只通过 `CoreRuntime` 调用业务能力；导入/导出使用 shared `ImportExportPort` 的 `ImportSourceFile`/`Uint8Array` 契约，浏览器 `File`/`Blob`/`FormData` 只停留在 Web UI/adapter 边界。未来桌面版可在 Windows/Linux 通过桌面 shell 接入 OS keychain；Android 通过 Keystore 接入；两者可以替换为本地 SSH，也可以继续使用服务端 transport，但都必须实现相同的 shared ports：
 
 - Host Key 确认、跳板诊断和错误语义不变；
 - SFTP 路径规范化和批量目标确认不变；

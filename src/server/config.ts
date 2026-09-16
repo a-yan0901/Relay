@@ -7,6 +7,7 @@ export interface AppRuntimeConfig {
   trustedOrigins: string[];
   sessionIdleTimeoutMs: number;
   maxSessions: number;
+  rateLimitMax?: number;
   logLevel: string;
 }
 
@@ -15,6 +16,7 @@ const DEFAULT_DATA_DIR = '/data';
 const DEFAULT_FRONTEND_PORT = 5173;
 const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_SESSIONS = 8;
+const DEFAULT_RATE_LIMIT_MAX = 120;
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 type Environment = Record<string, string | undefined>;
 
@@ -112,6 +114,7 @@ export const loadConfig = (env: Environment = process.env): AppRuntimeConfig => 
     24 * 60 * 60 * 1000
   );
   const maxSessions = parseInteger(env, 'MAX_SESSIONS', DEFAULT_MAX_SESSIONS, 1, 64);
+  const rateLimitMax = parseInteger(env, 'RATE_LIMIT_MAX', DEFAULT_RATE_LIMIT_MAX, 1, 100_000);
   const logLevel = env.LOG_LEVEL?.trim() || 'info';
   if (!(LOG_LEVELS as readonly string[]).includes(logLevel)) {
     throw new Error('LOG_LEVEL is invalid');
@@ -124,6 +127,7 @@ export const loadConfig = (env: Environment = process.env): AppRuntimeConfig => 
     trustedOrigins: parseTrustedOrigins(env, nodeEnv),
     sessionIdleTimeoutMs,
     maxSessions,
+    rateLimitMax,
     logLevel
   };
 };

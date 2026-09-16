@@ -5,9 +5,8 @@ import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
 
-import type { TerminalStatus } from '@shared/protocol';
-import type { ConnectionDiagnostic } from '../../shared/core/models';
-
+import type { TerminalCredentialRequiredEvent, TerminalStatus } from '@shared/protocol';
+import type { HostCredentialInput } from '@shared/validation';
 import type { HostMetadataState } from '../state/app-state';
 import { TerminalOutputSanitizer } from '../terminal-output';
 import { useTerminalSession, type TerminalSessionSnapshot } from '../hooks/use-terminal-session';
@@ -20,13 +19,33 @@ const isTouchDevice = (): boolean => {
   return coarsePointer || touchPoints;
 };
 
-const diagnosticStageLabels: Record<ConnectionDiagnostic['stage'], string> = {
-  resolve: '解析路径',
-  tcp: '建立网络连接',
-  jump: '连接跳板',
-  'host-key': '校验主机指纹',
-  authentication: '认证',
-  channel: '打开会话通道'
+const CredentialDialog = ({ terminalId, prompt, onSubmit, onCancel }: { terminalId: string; prompt: TerminalCredentialRequiredEvent; onSubmit: (credential: HostCredentialInput) => void; onCancel: () => void }) => {
+  const [value, setValue] = useState('');
+
+  useEffect(() => setValue(''), [prompt.hostId, prompt.authType]);
+
+  const submit = (): void => {
+    if (!value) return;
+    onSubmit(prompt.authType === 'private_key' ? { type: 'private_key', privateKey: value } : { type: 'password', password: value });
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="host-key-dialog credential-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-dialog-title">
+        <p className="eyebrow">CONNECTION CREDENTIAL</p>
+        <h2 id="credential-dialog-title">补录连接凭据</h2>
+        <p className="dialog-copy">{prompt.name} · {prompt.address}:{prompt.port} 尚未保存凭据，请输入本次连接使用的{prompt.authType === 'private_key' ? '私钥' : '密码'}。</p>
+        <label htmlFor={`terminal-credential-input-${terminalId}`}>{prompt.authType === 'private_key' ? '私钥' : '密码'}</label>
+        {prompt.authType === 'private_key'
+          ? <textarea id={`terminal-credential-input-${terminalId}`} value={value} onChange={(event) => setValue(event.target.value)} rows={8} autoFocus spellCheck={false} />
+          : <input id={`terminal-credential-input-${terminalId}`} type="password" value={value} onChange={(event) => setValue(event.target.value)} autoComplete="current-password" autoFocus onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }} />}
+        <div className="dialog-actions">
+          <button className="button button-ghost" type="button" onClick={onCancel}>取消</button>
+          <button className="button button-primary" type="button" disabled={!value} onClick={submit}>连接</button>
+        </div>
+      </section>
+    </div>
+  );
 };
 
 export interface TerminalPanelToolbarState {
@@ -49,7 +68,7 @@ export interface TerminalPanelProps {
   preferences?: UiPreferences;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onToolbarChange, preferences = DEFAULT_PREFERENCES }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onStatusChange, onToolbarChange, preferences = DEFAULT_PREFERENCES }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const outputSanitizerRef = useRef(new TerminalOutputSanitizer());
@@ -61,10 +80,10 @@ export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onTool
   const session = useTerminalSession({
     hostId: host.id,
     terminalId,
-    reconnectEnabled: host.connectionProfile?.reconnect.enabled,
-    reconnectMaxAttempts: host.connectionProfile?.reconnect.maxAttempts,
-    reconnectBaseMs: host.connectionProfile?.reconnect.baseDelayMs,
-    reconnectMaxMs: host.connectionProfile?.reconnect.maxDelayMs,
+    reconnectEnabled: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.enabled,
+    reconnectMaxAttempts: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.maxAttempts,
+    reconnectBaseMs: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.baseDelayMs,
+    reconnectMaxMs: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.maxDelayMs,
     getSize: () => ({
       cols: terminalRef.current?.cols ?? 80,
       rows: terminalRef.current?.rows ?? 24
@@ -191,11 +210,6 @@ export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onTool
     }
   }, []);
 
-  const latestDiagnostic = session.state.diagnostics?.at(-1);
-  const diagnosticMessage = latestDiagnostic
-    ? `${diagnosticStageLabels[latestDiagnostic.stage]}${latestDiagnostic.status === 'failed' ? '失败' : latestDiagnostic.status === 'succeeded' ? '完成' : '中'}`
-    : null;
-
   useEffect(() => {
     if (!active) {
       onToolbarChange?.(terminalId, null);
@@ -217,9 +231,9 @@ export const TerminalPanel = ({ terminalId, host, active, onStatusChange, onTool
     <section className={`terminal-panel ${active ? 'is-active' : ''}`} aria-hidden={!active}>
       {searchOpen && <div className="terminal-search"><label htmlFor={`terminal-search-${terminalId}`}>终端搜索</label><input id={`terminal-search-${terminalId}`} autoFocus value={searchValue} onChange={(event) => updateSearch(event.target.value)} placeholder="搜索终端输出" /></div>}
       <div className="terminal-canvas" ref={mountRef} />
-      {latestDiagnostic && diagnosticMessage && <div className="terminal-diagnostic" role="status" aria-label="连接诊断"><span>{diagnosticMessage}</span>{latestDiagnostic.status === 'failed' && latestDiagnostic.retryable && <button className="button button-ghost button-small" type="button" aria-label="重试连接" onClick={session.reconnect}>重试</button>}</div>}
       {session.state.error && <div className="terminal-error" role="alert"><strong>{session.state.error.message}</strong><button className="button button-ghost button-small" type="button" onClick={session.reconnect}>重新连接</button></div>}
       {session.state.hostKey && <HostKeyDialog challenge={session.state.hostKey} onDecision={session.decideHostKey} />}
+      {session.state.credential && <CredentialDialog terminalId={terminalId} prompt={session.state.credential} onSubmit={session.submitCredential} onCancel={onClose} />}
     </section>
   );
 };

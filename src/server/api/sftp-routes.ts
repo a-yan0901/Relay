@@ -42,7 +42,7 @@ const readTransferId = (params: unknown): string => parse(transferParamsSchema, 
 export const registerSftpRoutes = async (app: FastifyInstance, dependencies: SftpRouteDependencies): Promise<void> => {
   const publishTransferUpdate = (requestId: string, job: TransferJob): void => {
     dependencies.operationBus.publish(dependencies.ownerId, { type: 'transfer', job });
-    if (['completed', 'failed', 'cancelled'].includes(job.status)) {
+    if (['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status)) {
       dependencies.auditRepository.insert({
         eventType: `sftp_transfer_${job.status}`,
         hostId: job.hostId,
@@ -110,6 +110,11 @@ export const registerSftpRoutes = async (app: FastifyInstance, dependencies: Sft
     const stream = await dependencies.transferManager.streamDownload(transferId, session.record.vaultKey, (updated) => publishTransferUpdate(request.id, updated));
     const filename = (job.sourcePath.split('/').at(-1) || 'download').replace(/[\r\n"\\]/gu, '_');
     return reply.header('content-disposition', `attachment; filename="${filename}"`).type('application/octet-stream').send(Readable.from(stream));
+  });
+
+  app.get('/api/transfers', async (request, reply) => {
+    requireUnlockedSession(request, dependencies.sessionStore);
+    reply.send(await dependencies.transferManager.list());
   });
 
   app.get('/api/transfers/:transferId', async (request, reply) => {

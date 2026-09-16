@@ -1,21 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import { AppError } from '@shared/errors';
-import type { HostCreateInput, HostPatchInput } from '@shared/validation';
+import type { HostCreateInput, HostPatchInput, IdentityCreateInput, IdentityUpdateInput, SnippetInput } from '@shared/validation';
 
-import {
-  createHost,
-  deleteHost,
-  getSetupStatus,
-  listGroups,
-  listHosts,
-  lockVault,
-  setupVault,
-  testConnection,
-  unlockVault,
-  updateHost
-} from './api';
-import * as webApi from './api';
 import { HostForm } from './components/HostForm';
 import { HostWorkspace } from './components/HostWorkspace';
 import { SetupGate } from './components/SetupGate';
@@ -25,7 +12,14 @@ import { WorkspaceSettings } from './components/WorkspaceSettings';
 import { CommandRunDialog } from './components/CommandRunDialog';
 import { CommandRunResults } from './components/CommandRunResults';
 import { ActivityPanel } from './components/ActivityPanel';
-import type { AuditEvent, CommandRun, CommandRunRequest, Snippet, SnippetMetadata, TransferJob } from '../shared/core/models';
+import { IdentityManager } from './components/IdentityManager';
+import { SnippetManager } from './components/SnippetManager';
+import { SnippetPalette } from './components/SnippetPalette';
+import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
+import type { AuditEvent, CommandRun, CommandRunRequest, IdentityMetadata, Snippet, SnippetMetadata, TransferJob, WorkspaceTemplate } from '../shared/core/models';
+import type { CapabilitySet } from '../shared/core/capabilities';
+import type { BinarySource } from '../shared/core/ports';
+import type { CoreRuntime } from '../shared/core/runtime';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
 import {
@@ -38,7 +32,6 @@ import {
   type HostMetadataState
 } from './state/app-state';
 import { createFreshTerminalIds, workspaceStateFromAppState } from './state/workspace-state';
-import { webWorkspaceAdapter } from './platform/web-adapters';
 import type { WorkspaceState } from '../shared/core/models';
 import {
   applyPreferences,
@@ -91,7 +84,7 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, onActivity, compact = false }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void; onActivity?: () => void; compact?: boolean }) => (
+const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, onActivity, onIdentities, onSnippets, onWorkspaces, compact = false }: { onLock: () => void; terminalCount: number; onOpenTerminals: () => void; onSettings: () => void; onActivity?: () => void; onIdentities?: () => void; onSnippets?: () => void; onWorkspaces?: () => void; compact?: boolean }) => (
   <header className={`app-header ${compact ? 'app-header-embedded' : ''}`}>
     <Brand />
     <div className="app-header-actions">
@@ -101,13 +94,16 @@ const WorkspaceHeader = ({ onLock, terminalCount, onOpenTerminals, onSettings, o
       </button>
       {terminalCount > 0 && !compact && <button className="button button-ghost button-small" type="button" onClick={onOpenTerminals}>终端 <span className="header-count">{terminalCount}</span></button>}
       {onActivity && <button className="button button-ghost button-small" type="button" onClick={onActivity}>活动</button>}
+      {onIdentities && <button className="button button-ghost button-small" type="button" onClick={onIdentities}>身份</button>}
+      {onSnippets && <button className="button button-ghost button-small" type="button" onClick={onSnippets}>片段</button>}
+      {onWorkspaces && <button className="button button-ghost button-small" type="button" onClick={onWorkspaces}>工作区</button>}
       <button className="button button-ghost button-small" type="button" aria-label="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
   </header>
 );
 
-const PreferencesPanel = ({ preferences, onChange, onClose, onWorkspaceSettings }: { preferences: UiPreferences; onChange: (preferences: UiPreferences) => void; onClose: () => void; onWorkspaceSettings: () => void }) => {
+const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiPreferences; onChange: (preferences: UiPreferences) => void; onClose: () => void }) => {
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, true, onClose, '#theme-select');
 
@@ -128,24 +124,37 @@ const PreferencesPanel = ({ preferences, onChange, onClose, onWorkspaceSettings 
           {fontSizeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
         </select>
       </div>
-      <button className="button button-ghost" type="button" onClick={onWorkspaceSettings}>工作区与加密数据</button>
       <p className="preferences-note">偏好只保存在当前浏览器，不包含主密码、服务器密码或私钥。</p>
     </aside>
   </div>
   );
 };
 
-export const App = () => {
+export interface AppProps {
+  runtime: CoreRuntime;
+}
+
+export const App = ({ runtime }: AppProps) => {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const [hostFormOpen, setHostFormOpen] = useState(false);
   const [editingHost, setEditingHost] = useState<HostMetadataState | null>(null);
+  const [identities, setIdentities] = useState<IdentityMetadata[]>([]);
   const [terminalView, setTerminalView] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
   const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
+  const [capabilities, setCapabilities] = useState<CapabilitySet>(() => runtime.capabilities);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
-  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
+  const [identityOpen, setIdentityOpen] = useState(false);
+  const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
+  const [snippetPaletteOpen, setSnippetPaletteOpen] = useState(false);
+  const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
+  const [workspaceTemplates, setWorkspaceTemplates] = useState<WorkspaceTemplate[]>([]);
+  const [workspaceSettingsMode, setWorkspaceSettingsMode] = useState<'import' | 'export' | null>(null);
   const [commandDialogOpen, setCommandDialogOpen] = useState(false);
+  const [commandTargetHostIds, setCommandTargetHostIds] = useState<string[]>([]);
+  const [commandInitialCommand, setCommandInitialCommand] = useState('');
+  const [commandInitialVariables, setCommandInitialVariables] = useState<Record<string, string>>({});
   const [commandRun, setCommandRun] = useState<CommandRun | null>(null);
   const [snippetCount, setSnippetCount] = useState(0);
   const [snippets, setSnippets] = useState<SnippetMetadata[]>([]);
@@ -172,7 +181,7 @@ export const App = () => {
       .then(async () => {
         if (lastSavedWorkspaceRef.current === requestComparable) return;
         const expectedVersion = workspaceVersionRef.current;
-        const saved = await webWorkspaceAdapter.save(expectedVersion, { ...requestWorkspace, version: expectedVersion });
+        const saved = await runtime.workspace.save(expectedVersion, { ...requestWorkspace, version: expectedVersion });
         workspaceVersionRef.current = saved.version;
         const latestWorkspace = workspaceStateFromAppState(latestStateRef.current);
         const latestComparable = JSON.stringify({ ...latestWorkspace, version: undefined });
@@ -184,7 +193,7 @@ export const App = () => {
         if (latestStateRef.current.phase === 'ready') dispatch({ type: 'error', message: messageFromError(error) });
       });
     workspaceSaveQueueRef.current = saveTask.then(() => undefined, () => undefined);
-  }, []);
+  }, [runtime]);
 
   useEffect(() => {
     applyPreferences(preferences);
@@ -193,15 +202,24 @@ export const App = () => {
 
   const loadWorkspace = useCallback(async (options: { openTerminalView?: boolean } = {}): Promise<void> => {
     try {
-      const [hosts, groups] = await Promise.all([listHosts(), listGroups()]);
+      const negotiatedCapabilities = await runtime.negotiateCapabilities().catch(() => runtime.capabilities);
+      setCapabilities(negotiatedCapabilities);
+      const [hosts, groups, loadedIdentities] = await Promise.all([
+        runtime.hosts.list(),
+        runtime.groups.list(),
+        runtime.identities.list().catch(() => [] as readonly IdentityMetadata[])
+      ]);
       let workspace: WorkspaceState;
       try {
-        workspace = await webWorkspaceAdapter.load();
+        workspace = await runtime.workspace.load();
       } catch {
         workspace = defaultWorkspaceState;
       }
-      dispatch({ type: 'hostsLoaded', hosts });
-      dispatch({ type: 'groupsLoaded', groups });
+      dispatch({ type: 'hostsLoaded', hosts: [...hosts] });
+      dispatch({ type: 'groupsLoaded', groups: [...groups].map((group) => ({ ...group })) });
+      setIdentities([...loadedIdentities]);
+      void runtime.workspace.listTemplates().then((templates) => setWorkspaceTemplates([...templates])).catch(() => setWorkspaceTemplates([]));
+      void runtime.files.listTransfers().then((jobs) => setTransferJobs([...jobs])).catch(() => setTransferJobs([]));
       const availableHostIds = new Set(hosts.map((host) => host.id));
       const descriptors = loadTerminalDescriptors().filter((descriptor) => availableHostIds.has(descriptor.hostId));
       const descriptorByTabId = new Map(descriptors.map((descriptor) => [descriptor.workspaceTabId ?? `tab-${descriptor.terminalId}`, descriptor.terminalId]));
@@ -222,7 +240,7 @@ export const App = () => {
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
     }
-  }, [enqueueWorkspaceSave]);
+  }, [enqueueWorkspaceSave, runtime]);
 
   useEffect(() => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
@@ -238,13 +256,13 @@ export const App = () => {
 
   useEffect(() => {
     let cancelled = false;
-    void getSetupStatus()
+    void runtime.vault.status()
       .then((status) => {
         if (cancelled) return;
-        dispatch({ type: 'setup', initialized: status.initialized, locked: status.locked });
-        if (status.initialized && !status.locked) {
+        dispatch({ type: 'setup', initialized: status.phase !== 'uninitialized', locked: status.phase !== 'unlocked' });
+        if (status.phase === 'unlocked') {
           void loadWorkspace();
-        } else if (!status.initialized) {
+        } else if (status.phase === 'uninitialized') {
           clearTerminalDescriptors();
         }
       })
@@ -269,7 +287,7 @@ export const App = () => {
 
   const completeSetup = async (masterPassword: string): Promise<void> => {
     try {
-      await setupVault(masterPassword);
+      await runtime.vault.setup(masterPassword);
       dispatch({ type: 'setup', initialized: true, locked: false });
       await loadWorkspace();
     } catch (error) {
@@ -280,7 +298,7 @@ export const App = () => {
 
   const completeUnlock = async (masterPassword: string): Promise<void> => {
     try {
-      await unlockVault(masterPassword);
+      await runtime.vault.unlock(masterPassword);
       dispatch({ type: 'unlock' });
       const openTerminalView = !lockedFromCurrentAppRef.current;
       lockedFromCurrentAppRef.current = false;
@@ -293,9 +311,39 @@ export const App = () => {
 
   const handleCreateHost = async (input: HostCreateInput): Promise<void> => {
     try {
-      const host = await createHost(input);
+      const host = await runtime.hosts.create(input);
       dispatch({ type: 'hostCreated', host });
       setHostFormOpen(false);
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+      throw error;
+    }
+  };
+
+  const handleCreateIdentity = async (input: IdentityCreateInput): Promise<void> => {
+    try {
+      const created = await runtime.identities.create(input);
+      setIdentities((current) => [...current, created].sort((left, right) => left.name.localeCompare(right.name)));
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+      throw error;
+    }
+  };
+
+  const handleUpdateIdentity = async (id: string, input: IdentityUpdateInput): Promise<void> => {
+    try {
+      const updated = await runtime.identities.update(id, input);
+      setIdentities((current) => current.map((identity) => identity.id === id ? updated : identity));
+    } catch (error) {
+      dispatch({ type: 'error', message: messageFromError(error) });
+      throw error;
+    }
+  };
+
+  const handleDeleteIdentity = async (id: string): Promise<void> => {
+    try {
+      await runtime.identities.delete(id);
+      setIdentities((current) => current.filter((identity) => identity.id !== id));
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
       throw error;
@@ -305,7 +353,7 @@ export const App = () => {
   const handleUpdateHost = async (input: HostPatchInput): Promise<void> => {
     if (!editingHost) return;
     try {
-      const host = await updateHost(editingHost.id, input);
+      const host = await runtime.hosts.update(editingHost.id, input);
       dispatch({ type: 'hostUpdated', host });
       setEditingHost(null);
       setHostFormOpen(false);
@@ -319,7 +367,7 @@ export const App = () => {
     const nextFavorite = !host.isFavorite;
     dispatch({ type: 'favoriteOptimistic', hostId: host.id, isFavorite: nextFavorite });
     try {
-      const updated = await updateHost(host.id, { isFavorite: nextFavorite });
+      const updated = await runtime.hosts.update(host.id, { isFavorite: nextFavorite });
       dispatch({ type: 'hostUpdated', host: updated });
       dispatch({ type: 'favoriteCommitted', hostId: host.id });
     } catch (error) {
@@ -336,12 +384,105 @@ export const App = () => {
     setTerminalView(true);
   };
 
-  const handleOpenBatchCommand = (): void => {
-    if (state.terminals.length === 0) return;
+  const loadSnippets = async (): Promise<readonly SnippetMetadata[]> => {
+    try {
+      const loaded = await runtime.snippets.list();
+      setSnippets([...loaded]);
+      setSnippetCount(loaded.length);
+      return loaded;
+    } catch {
+      setSnippets([]);
+      setSnippetCount(0);
+      return [];
+    }
+  };
+
+  const handleOpenSnippetManager = (): void => {
+    setSnippetManagerOpen(true);
+    void loadSnippets();
+  };
+
+  const handleOpenSnippetPalette = (): void => {
+    setSnippetPaletteOpen(true);
+    void loadSnippets();
+  };
+
+  const handleOpenWorkspaceSwitcher = (): void => {
+    setWorkspaceSwitcherOpen(true);
+    void runtime.workspace.listTemplates().then((templates) => setWorkspaceTemplates([...templates])).catch(() => setWorkspaceTemplates([]));
+  };
+
+  const handleSaveWorkspaceTemplate = async (name: string): Promise<void> => {
+    const template = await runtime.workspace.createTemplate({ name, state: workspaceStateFromAppState(latestStateRef.current) });
+    setWorkspaceTemplates((current) => [template, ...current.filter((candidate) => candidate.id !== template.id)]);
+  };
+
+  const handleDeleteWorkspaceTemplate = async (id: string): Promise<void> => {
+    await runtime.workspace.deleteTemplate(id);
+    setWorkspaceTemplates((current) => current.filter((template) => template.id !== id));
+  };
+
+  const handleOpenWorkspaceTemplate = (template: WorkspaceTemplate): void => {
+    const availableHostIds = new Set(latestStateRef.current.hosts.map((host) => host.id));
+    const terminalIds = createFreshTerminalIds(template.state, availableHostIds, () => createTerminalId());
+    dispatch({ type: 'workspaceLoaded', workspace: template.state, terminalIds });
+    const nextWorkspace: WorkspaceState = { ...template.state, version: workspaceVersionRef.current };
+    enqueueWorkspaceSave(nextWorkspace);
+    setWorkspaceSwitcherOpen(false);
+    setTerminalView(Object.keys(terminalIds).length > 0);
+  };
+
+  const handleOpenBatchCommand = (hostIds: readonly string[] = state.terminals.map((terminal) => terminal.hostId)): void => {
+    const uniqueHostIds = [...new Set(hostIds)];
+    if (uniqueHostIds.length === 0) return;
+    setCommandInitialCommand('');
+    setCommandInitialVariables({});
+    setCommandTargetHostIds(uniqueHostIds);
     setCommandDialogOpen(true);
-    const list = webApi.listSnippets;
-    if (!list) return;
-    void list().then((loaded) => { setSnippets(loaded); setSnippetCount(loaded.length); }).catch(() => { setSnippets([]); setSnippetCount(0); });
+    void loadSnippets();
+  };
+
+  const handleSelectSnippetFromPalette = (id: string): void => {
+    void runtime.snippets.get(id).then((snippet) => {
+      if (!snippet) throw new AppError('SNIPPET_NOT_FOUND');
+      setSnippetPaletteOpen(false);
+      setWorkspaceSwitcherOpen(false);
+      setCommandInitialCommand(snippet.command);
+      setCommandInitialVariables(Object.fromEntries(snippet.variables.map((name) => [name, ''])));
+      setCommandTargetHostIds([...new Set(state.terminals.map((terminal) => terminal.hostId))]);
+      setCommandDialogOpen(true);
+    }).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
+  };
+
+  const handleCreateSnippet = async (input: SnippetInput): Promise<void> => {
+    const created = await runtime.snippets.create(input);
+    setSnippets((current) => [...current, {
+      id: created.id,
+      name: created.name,
+      description: created.description,
+      tags: [...created.tags],
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt
+    }].sort((left, right) => left.name.localeCompare(right.name)));
+    setSnippetCount((count) => count + 1);
+  };
+
+  const handleUpdateSnippet = async (id: string, input: SnippetInput): Promise<void> => {
+    const updated = await runtime.snippets.update(id, input);
+    setSnippets((current) => current.map((snippet) => snippet.id === id ? {
+      id: updated.id,
+      name: updated.name,
+      description: updated.description,
+      tags: [...updated.tags],
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt
+    } : snippet).sort((left, right) => left.name.localeCompare(right.name)));
+  };
+
+  const handleDeleteSnippet = async (id: string): Promise<void> => {
+    await runtime.snippets.delete(id);
+    setSnippets((current) => current.filter((snippet) => snippet.id !== id));
+    setSnippetCount((count) => Math.max(0, count - 1));
   };
 
   const updateTransferJob = (job: TransferJob): void => {
@@ -351,9 +492,9 @@ export const App = () => {
   };
 
   const refreshTransferJob = async (id: string): Promise<TransferJob | null> => {
-    if (!webApi.getTransfer) return null;
     try {
-      const job = await webApi.getTransfer(id);
+      const job = await runtime.files.getTransfer(id);
+      if (!job) return null;
       updateTransferJob(job);
       return job;
     } catch {
@@ -363,22 +504,35 @@ export const App = () => {
 
   useEffect(() => {
     const activeJobs = transferJobs.filter((job) => job.status === 'queued' || job.status === 'running');
-    if (activeJobs.length === 0 || !webApi.getTransfer) return;
+    if (activeJobs.length === 0) return;
     const timer = window.setTimeout(() => {
       void Promise.all(activeJobs.map((job) => refreshTransferJob(job.id)));
     }, 1_000);
     return () => window.clearTimeout(timer);
   }, [transferJobs]);
 
+  const fileToBinarySource = (file: File): BinarySource => ({
+    name: file.name,
+    size: file.size,
+    async *stream() {
+      yield new Uint8Array(await file.arrayBuffer());
+    }
+  });
+
+  const streamToBlob = async (stream: AsyncIterable<Uint8Array>): Promise<Blob> => {
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    return new Blob(chunks.map((chunk) => chunk.slice().buffer as ArrayBuffer), { type: 'application/octet-stream' });
+  };
+
   const handleUploadSftp = async (hostId: string, file: File, path: string): Promise<void> => {
-    if (!webApi.createTransfer || !webApi.uploadTransferContent) throw new AppError('CAPABILITY_UNAVAILABLE');
     const targetPath = path === '/' ? `/${file.name}` : `${path}/${file.name}`;
-    const job = await webApi.createTransfer({ kind: 'upload', hostId, sourcePath: file.name, targetPath, totalBytes: file.size });
+    const job = await runtime.files.createTransfer({ kind: 'upload', hostId, sourcePath: file.name, targetPath, totalBytes: file.size });
     transferFilesRef.current.set(job.id, file);
     updateTransferJob(job);
     try {
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-      updateTransferJob(await webApi.uploadTransferContent(job.id, file));
+      updateTransferJob(await runtime.files.upload(job.id, fileToBinarySource(file)));
     } catch (error) {
       await refreshTransferJob(job.id);
       throw error;
@@ -386,12 +540,11 @@ export const App = () => {
   };
 
   const handleDownloadSftp = async (hostId: string, sourcePath: string, name: string): Promise<void> => {
-    if (!webApi.createTransfer || !webApi.downloadTransferContent) throw new AppError('CAPABILITY_UNAVAILABLE');
-    const job = await webApi.createTransfer({ kind: 'download', hostId, sourcePath, targetPath: name });
+    const job = await runtime.files.createTransfer({ kind: 'download', hostId, sourcePath, targetPath: name });
     updateTransferJob(job);
     try {
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-      const blob = await webApi.downloadTransferContent(job.id);
+      const blob = await streamToBlob(await runtime.files.download(job.id));
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
@@ -408,23 +561,21 @@ export const App = () => {
   const handleCancelTransfer = (id: string): void => {
     const job = transferJobs.find((candidate) => candidate.id === id);
     if (job) updateTransferJob({ ...job, status: 'cancelled', updatedAt: new Date().toISOString() });
-    if (webApi.cancelTransfer) void webApi.cancelTransfer(id).then(() => refreshTransferJob(id));
+    void runtime.files.cancelTransfer(id).then(() => refreshTransferJob(id));
   };
 
   const handleRetryTransfer = (id: string): void => {
-    if (!webApi.retryTransfer) return;
-    void webApi.retryTransfer(id).then((job) => {
+    void runtime.files.retryTransfer(id).then((job) => {
       updateTransferJob(job);
       if (job.kind === 'upload') {
         const file = transferFilesRef.current.get(id);
-        if (!file || !webApi.uploadTransferContent) return;
+        if (!file) return;
         updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-        void webApi.uploadTransferContent(id, file).then(updateTransferJob).catch(() => refreshTransferJob(id));
+        void runtime.files.upload(id, fileToBinarySource(file)).then(updateTransferJob).catch(() => refreshTransferJob(id));
         return;
       }
-      if (!webApi.downloadTransferContent) return;
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-      void webApi.downloadTransferContent(id).then((blob) => {
+      void runtime.files.download(id).then(streamToBlob).then((blob) => {
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement('a');
         anchor.href = url;
@@ -437,20 +588,14 @@ export const App = () => {
   };
 
   const handleOpenActivity = (): void => {
-    const list = webApi.listAuditEvents;
-    if (!list) return;
     setActivityOpen(true);
-    void list({ limit: 50 }).then((response) => setActivityEvents(response.items)).catch(() => setActivityEvents([]));
+    void runtime.activity.list({ limit: 50 }).then((events) => setActivityEvents([...events])).catch(() => setActivityEvents([]));
   };
 
   const handleOpenRunFromActivity = (runId: string): void => {
     setActivityOpen(false);
-    const get = webApi.getCommandRun;
-    if (!get) {
-      setExpiredRunIds((current) => new Set(current).add(runId));
-      return;
-    }
-    void get(runId).then((run) => {
+    void runtime.commands.get(runId).then((run) => {
+      if (!run) throw new AppError('COMMAND_RUN_NOT_FOUND');
       setExpiredRunIds((current) => {
         const next = new Set(current);
         next.delete(runId);
@@ -464,8 +609,7 @@ export const App = () => {
 
   const handleStartCommandRun = async (request: CommandRunRequest): Promise<void> => {
     try {
-      if (!webApi.startCommandRun) throw new AppError('CAPABILITY_UNAVAILABLE');
-      const run = await webApi.startCommandRun(request);
+      const run = await runtime.commands.start(request);
       setCommandRun(run);
       setCommandDialogOpen(false);
     } catch (error) {
@@ -475,14 +619,13 @@ export const App = () => {
   };
 
   const handleCancelCommandRun = (): void => {
-    if (!commandRun || !webApi.cancelCommandRun) return;
-    void webApi.cancelCommandRun(commandRun.id).then(() => refreshCommandRun(commandRun.id)).catch(() => undefined);
+    if (!commandRun) return;
+    void runtime.commands.cancel(commandRun.id).then(() => refreshCommandRun(commandRun.id)).catch(() => undefined);
   };
 
   const refreshCommandRun = async (id: string): Promise<void> => {
-    if (!webApi.getCommandRun) return;
     try {
-      setCommandRun(await webApi.getCommandRun(id));
+      setCommandRun(await runtime.commands.get(id));
     } catch {
       setCommandRun(null);
     }
@@ -491,9 +634,7 @@ export const App = () => {
   useEffect(() => {
     if (!commandRun || !['queued', 'running'].includes(commandRun.status)) return;
     const timer = window.setTimeout(() => {
-      const get = webApi.getCommandRun;
-      if (!get) return;
-      void get(commandRun.id).then(setCommandRun).catch(() => undefined);
+      void runtime.commands.get(commandRun.id).then(setCommandRun).catch(() => undefined);
     }, 750);
     return () => window.clearTimeout(timer);
   }, [commandRun]);
@@ -501,7 +642,7 @@ export const App = () => {
   const handleDeleteHost = async (host: HostMetadataState): Promise<void> => {
     if (!window.confirm(`确定删除 Server「${host.name}」吗？`)) return;
     try {
-      await deleteHost(host.id);
+      await runtime.hosts.delete(host.id);
       const remainingTerminals = state.terminals.filter((terminal) => terminal.hostId !== host.id);
       dispatch({ type: 'hostDeleted', hostId: host.id });
       saveTerminalDescriptors(remainingTerminals.map(({ terminalId, hostId }) => ({ terminalId, hostId, workspaceTabId: state.workspaceTabIdByTerminalId[terminalId] })));
@@ -514,7 +655,7 @@ export const App = () => {
   const handleTestConnection = async (host: HostMetadataState): Promise<void> => {
     setConnectionFeedback(null);
     try {
-      const result = await testConnection(host.id);
+      const result = await runtime.connection.test(host.id);
       if (result.ok) {
         dispatch({ type: 'error', message: null });
         setConnectionFeedback({ tone: 'success', message: `连接测试成功：${host.name}` });
@@ -557,6 +698,12 @@ export const App = () => {
       const target = event.target;
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
+      if (event.shiftKey && key === 'p') {
+        event.preventDefault();
+        if (terminalView) handleOpenSnippetPalette();
+        else handleOpenSnippetManager();
+        return;
+      }
       const isTerminalInput = target instanceof HTMLTextAreaElement && target.classList.contains('xterm-helper-textarea');
       const isTextEntry = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
       if (isTextEntry && !(isTerminalInput && (key === 'k' || key === 'w'))) return;
@@ -592,8 +739,8 @@ export const App = () => {
     }
     if (refreshedHostForTerminalRef.current.has(terminalId)) return;
     refreshedHostForTerminalRef.current.add(terminalId);
-    void listHosts()
-      .then((hosts) => dispatch({ type: 'hostsLoaded', hosts }))
+    void runtime.hosts.list()
+      .then((hosts) => dispatch({ type: 'hostsLoaded', hosts: [...hosts] }))
       .catch(() => {
         refreshedHostForTerminalRef.current.delete(terminalId);
       });
@@ -601,13 +748,15 @@ export const App = () => {
 
   const handleLock = async (): Promise<void> => {
     try {
-      await lockVault();
+      await runtime.vault.lock();
       lockedFromCurrentAppRef.current = true;
       dispatch({ type: 'lock' });
       clearTerminalDescriptors();
       setTerminalView(false);
       closeHostForm();
       setActivityOpen(false);
+      setSnippetManagerOpen(false);
+      setSnippetPaletteOpen(false);
       setCommandRun(null);
       setTransferJobs([]);
       transferFilesRef.current.clear();
@@ -622,7 +771,7 @@ export const App = () => {
 
   return (
     <main className="app-shell">
-      {!terminalView && <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} onActivity={handleOpenActivity} />}
+      {!terminalView && <WorkspaceHeader onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} onActivity={capabilities.supports('audit.activity') ? handleOpenActivity : undefined} onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined} onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined} onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined} />}
       {state.errorMessage && (
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
@@ -636,36 +785,7 @@ export const App = () => {
         </div>
       )}
       <div className={`app-body ${terminalView ? 'app-body-terminal' : ''}`}>
-        {terminalView ? (
-          <TerminalWorkspace
-            hosts={state.hosts}
-            terminals={state.terminals}
-            activeTerminalId={state.activeTerminalId}
-            onActivate={(terminalId) => dispatch({ type: 'terminalActivated', terminalId })}
-            onClose={handleCloseTerminal}
-            onConnectHost={handleOpenTerminal}
-            onStatusChange={handleTerminalStatus}
-            onOpenBatchCommand={handleOpenBatchCommand}
-            onListSftp={async (hostId, path) => {
-              if (!webApi.listSftpEntries) throw new AppError('CAPABILITY_UNAVAILABLE');
-              return webApi.listSftpEntries(hostId, path);
-            }}
-            onDeleteSftp={async (hostId, path) => {
-              if (!webApi.mutateSftpEntry) throw new AppError('CAPABILITY_UNAVAILABLE');
-              await webApi.mutateSftpEntry(hostId, { action: 'delete', path, confirmed: true });
-            }}
-            onUploadSftp={handleUploadSftp}
-            onDownloadSftp={handleDownloadSftp}
-            transferJobs={transferJobs}
-            onCancelTransfer={handleCancelTransfer}
-            onRetryTransfer={handleRetryTransfer}
-            workspaceLayout={state.workspace.layout}
-            onLayoutChange={(layout) => dispatch({ type: 'workspaceLayoutChanged', layout })}
-            preferences={preferences}
-            onBackToHosts={() => setTerminalView(false)}
-            workspaceHeader={<WorkspaceHeader compact onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} onActivity={handleOpenActivity} />}
-          />
-        ) : (
+        <div className="app-view" hidden={terminalView} aria-hidden={terminalView}>
           <HostWorkspace
             hosts={state.hosts}
             groups={state.groups}
@@ -678,53 +798,99 @@ export const App = () => {
             onFavoriteToggle={(host) => void handleFavoriteToggle(host)}
             onConnect={handleOpenTerminal}
             onAddHost={openCreateHost}
+            onBatchCommand={capabilities.supports('automation.batch-exec') ? handleOpenBatchCommand : undefined}
+            onImport={capabilities.supports('vault.bundle') ? () => setWorkspaceSettingsMode('import') : undefined}
+            onExport={capabilities.supports('vault.bundle') ? () => setWorkspaceSettingsMode('export') : undefined}
             onEdit={openEditHost}
             onDelete={(host) => void handleDeleteHost(host)}
             onTestConnection={(host) => void handleTestConnection(host)}
           />
-        )}
+        </div>
+        <div className="app-view app-view-terminal" hidden={!terminalView} aria-hidden={!terminalView}>
+          <TerminalWorkspace
+            hosts={state.hosts}
+            terminals={state.terminals}
+            activeTerminalId={state.activeTerminalId}
+            onActivate={(terminalId) => dispatch({ type: 'terminalActivated', terminalId })}
+            onClose={handleCloseTerminal}
+            onConnectHost={handleOpenTerminal}
+            onStatusChange={handleTerminalStatus}
+            onOpenBatchCommand={capabilities.supports('automation.batch-exec') ? () => handleOpenBatchCommand() : undefined}
+            onOpenSnippetPalette={capabilities.supports('automation.snippets') ? handleOpenSnippetPalette : undefined}
+            onListSftp={capabilities.supports('sftp.browse') ? (hostId, path) => runtime.files.list(hostId, path) : undefined}
+            onCreateDirectorySftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.createDirectory(hostId, path) : undefined}
+            onRenameSftp={capabilities.supports('sftp.entry-mutations') ? (hostId, from, to) => runtime.files.rename(hostId, from, to) : undefined}
+            onDeleteSftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.remove(hostId, path) : undefined}
+            onUploadSftp={capabilities.supports('sftp.transfer') ? handleUploadSftp : undefined}
+            onDownloadSftp={capabilities.supports('sftp.transfer') ? handleDownloadSftp : undefined}
+            transferJobs={capabilities.supports('sftp.transfer') ? transferJobs : []}
+            onCancelTransfer={capabilities.supports('sftp.transfer') ? handleCancelTransfer : undefined}
+            onRetryTransfer={capabilities.supports('sftp.transfer') ? handleRetryTransfer : undefined}
+            allowMultiPane={capabilities.supports('workspace.multi-pane')}
+            workspaceLayout={state.workspace.layout}
+            workspaceTabIdByTerminalId={state.workspaceTabIdByTerminalId}
+            onLayoutChange={(layout) => dispatch({ type: 'workspaceLayoutChanged', layout })}
+            preferences={preferences}
+            visible={terminalView}
+            onBackToHosts={() => setTerminalView(false)}
+            workspaceHeader={<WorkspaceHeader compact onLock={() => void handleLock()} terminalCount={state.terminals.length} onOpenTerminals={() => setTerminalView(true)} onSettings={() => setPreferencesOpen(true)} onActivity={capabilities.supports('audit.activity') ? handleOpenActivity : undefined} onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined} onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined} onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined} />}
+          />
+        </div>
       </div>
       {hostFormOpen && (
         <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeHostForm(); }}>
           <aside ref={drawerRef} className="drawer" role="dialog" aria-modal="true" aria-labelledby="host-form-title" onMouseDown={(event) => event.stopPropagation()}>
-            {editingHost ? <HostForm mode="edit" initialHost={editingHost} groups={state.groups} hosts={state.hosts} onEditSubmit={handleUpdateHost} onCancel={closeHostForm} /> : <HostForm groups={state.groups} hosts={state.hosts} onSubmit={handleCreateHost} onCancel={closeHostForm} />}
+            {editingHost ? <HostForm mode="edit" initialHost={editingHost} groups={state.groups} hosts={state.hosts} identities={identities} onEditSubmit={handleUpdateHost} onCancel={closeHostForm} /> : <HostForm groups={state.groups} hosts={state.hosts} identities={identities} onSubmit={handleCreateHost} onCancel={closeHostForm} />}
           </aside>
         </div>
       )}
-      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} onWorkspaceSettings={() => { setPreferencesOpen(false); setWorkspaceSettingsOpen(true); }} />}
+      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} />}
+      {identityOpen && capabilities.supports('vault.identities') && <IdentityManager identities={identities} onCreate={handleCreateIdentity} onUpdate={handleUpdateIdentity} onDelete={async (id) => { if (window.confirm('确定删除这个身份吗？')) await handleDeleteIdentity(id); }} onClose={() => setIdentityOpen(false)} />}
+      {snippetManagerOpen && capabilities.supports('automation.snippet-manager') && <SnippetManager snippets={snippets} onGet={(id) => runtime.snippets.get(id)} onCreate={handleCreateSnippet} onUpdate={handleUpdateSnippet} onDelete={handleDeleteSnippet} onClose={() => setSnippetManagerOpen(false)} />}
+      {snippetPaletteOpen && capabilities.supports('automation.snippets') && <SnippetPalette snippets={snippets} onSelect={handleSelectSnippetFromPalette} onClose={() => setSnippetPaletteOpen(false)} />}
+      {workspaceSwitcherOpen && capabilities.supports('workspace.templates') && <WorkspaceSwitcher templates={workspaceTemplates} currentWorkspace={workspaceStateFromAppState(state)} hosts={state.hosts} onOpen={handleOpenWorkspaceTemplate} onSave={handleSaveWorkspaceTemplate} onDelete={handleDeleteWorkspaceTemplate} onClose={() => setWorkspaceSwitcherOpen(false)} />}
       {commandDialogOpen && <CommandRunDialog
         hosts={state.hosts}
-        hostIds={state.terminals.map((terminal) => terminal.hostId)}
+        hostIds={commandTargetHostIds}
+        initialCommand={commandInitialCommand}
+        initialVariables={commandInitialVariables}
+        groups={state.groups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          parentId: group.parentId ?? null,
+          sortOrder: group.sortOrder,
+          defaultIdentityId: group.defaultIdentityId ?? null,
+          connectionProfile: group.connectionProfile ?? null
+        }))}
         snippets={snippets}
-        onSnippetSelect={async (id): Promise<Snippet> => {
-          if (!webApi.getSnippet) throw new AppError('CAPABILITY_UNAVAILABLE');
-          return webApi.getSnippet(id);
-        }}
+        onSnippetSelect={(id): Promise<Snippet> => runtime.snippets.get(id).then((snippet) => {
+          if (!snippet) throw new AppError('SNIPPET_NOT_FOUND');
+          return snippet;
+        })}
         onClose={() => setCommandDialogOpen(false)}
         onConfirm={handleStartCommandRun}
       />}
       {commandRun && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal" role="dialog" aria-modal="true" aria-labelledby="command-run-result-title"><CommandRunResults run={commandRun} hosts={state.hosts} onCancel={handleCancelCommandRun} /><button className="button button-ghost" id="command-run-result-title" type="button" onClick={() => setCommandRun(null)}>关闭结果</button></section></div>}
       {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
-      {workspaceSettingsOpen && <WorkspaceSettings
-        onClose={() => setWorkspaceSettingsOpen(false)}
-        onExport={webWorkspaceAdapter.exportEncrypted}
-        onPreviewImport={webWorkspaceAdapter.previewImport}
-        onPreviewExternalImport={webWorkspaceAdapter.previewExternalImport}
-        onExportOpenSsh={webWorkspaceAdapter.exportOpenSshConfig}
-        onExportCsv={webWorkspaceAdapter.exportCsv}
+      {workspaceSettingsMode && <WorkspaceSettings
+        mode={workspaceSettingsMode}
+        onClose={() => setWorkspaceSettingsMode(null)}
+        onExport={runtime.imports.exportVaultBundle}
+        onPreviewImport={runtime.imports.previewVaultImport}
+        onPreviewExternalImport={runtime.imports.previewExternalImport}
         onApplyImport={async (previewId, resolution) => {
-          const result = await webWorkspaceAdapter.applyImport(previewId, resolution);
-          const [hosts, groups, workspace] = await Promise.all([listHosts(), listGroups(), webWorkspaceAdapter.load()]);
-          dispatch({ type: 'hostsLoaded', hosts });
-          dispatch({ type: 'groupsLoaded', groups });
+          const result = await runtime.imports.applyVaultImport(previewId, resolution);
+          const [hosts, groups, workspace] = await Promise.all([runtime.hosts.list(), runtime.groups.list(), runtime.workspace.load()]);
+          dispatch({ type: 'hostsLoaded', hosts: [...hosts] });
+          dispatch({ type: 'groupsLoaded', groups: [...groups].map((group) => ({ ...group })) });
           dispatch({ type: 'workspaceLoaded', workspace, terminalIds: createFreshTerminalIds(workspace, new Set(hosts.map((host) => host.id)), () => createTerminalId()) });
           return result;
         }}
         onApplyExternalImport={async (previewId, input) => {
-          const result = await webWorkspaceAdapter.applyExternalImport(previewId, input);
-          const [hosts, groups, workspace] = await Promise.all([listHosts(), listGroups(), webWorkspaceAdapter.load()]);
-          dispatch({ type: 'hostsLoaded', hosts });
-          dispatch({ type: 'groupsLoaded', groups });
+          const result = await runtime.imports.applyExternalImport(previewId, input);
+          const [hosts, groups, workspace] = await Promise.all([runtime.hosts.list(), runtime.groups.list(), runtime.workspace.load()]);
+          dispatch({ type: 'hostsLoaded', hosts: [...hosts] });
+          dispatch({ type: 'groupsLoaded', groups: [...groups].map((group) => ({ ...group })) });
           dispatch({ type: 'workspaceLoaded', workspace, terminalIds: createFreshTerminalIds(workspace, new Set(hosts.map((host) => host.id)), () => createTerminalId()) });
           return result;
         }}

@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App';
+import { webAdapters } from './platform/web-adapters';
 import './styles.css';
 import '@xterm/xterm/css/xterm.css';
 
@@ -13,6 +14,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <App runtime={webAdapters} />
   </StrictMode>
 );

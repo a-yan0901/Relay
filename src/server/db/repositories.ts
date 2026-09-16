@@ -3,10 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../../shared/errors.js';
 import {
   connectionProfileSettingsSchema,
+  connectionProfileSettingsPatchSchema,
   defaultConnectionProfileSettings,
   type ConnectionProfileSettings,
   type HostMetadata
 } from '../../shared/validation.js';
+import type { ConnectionProfileOverrides } from '../../shared/core/models.js';
 import { ARGON2ID_PARAMS, VAULT_VERSION, type VaultConfig } from '../vault/types.js';
 import type { SqliteDatabase } from './database.js';
 import {
@@ -24,7 +26,13 @@ import {
   type HostFilter,
   type HostPatch,
   type HostRow,
-  type SnippetRow
+  type IdentityCreateRow,
+  type IdentityPatch,
+  type IdentityRow,
+  type SnippetRow,
+  type TransferJobCreateRow,
+  type TransferJobPatch,
+  type TransferJobRow
 } from './types.js';
 
 interface AppConfigSqlRow {
@@ -44,7 +52,10 @@ interface GroupSqlRow {
   id: string;
   owner_id: string;
   name: string;
+  parent_id: string | null;
   sort_order: number;
+  default_identity_id: string | null;
+  connection_profile_json: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -57,14 +68,17 @@ interface HostSqlRow {
   port: number;
   username: string;
   auth_type: 'password' | 'private_key';
-  credential_ciphertext: string;
+  credential_ciphertext: string | null;
   credential_version: number;
+  credential_source: 'inline' | 'identity' | 'group';
+  identity_id: string | null;
   host_key_algorithm: string | null;
   host_key_fingerprint: string | null;
   group_id: string | null;
   tags_json: string;
   jump_host_ids_json: string;
   connection_profile_json: string;
+  connection_profile_overrides_json: string | null;
   is_favorite: number;
   last_connected_at: string | null;
   created_at: string;
@@ -72,6 +86,19 @@ interface HostSqlRow {
 }
 
 type HostMetadataSqlRow = Omit<HostSqlRow, 'credential_ciphertext' | 'credential_version'>;
+
+interface IdentitySqlRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  type: 'password' | 'private_key';
+  username: string;
+  key_fingerprint: string | null;
+  credential_ciphertext: string;
+  credential_version: number;
+  created_at: string;
+  updated_at: string;
+}
 
 interface AuditSqlRow {
   sequence: number;
@@ -120,6 +147,21 @@ interface CommandRunTargetSqlRow {
   error_code: string | null;
   started_at: string | null;
   finished_at: string | null;
+}
+
+interface TransferJobSqlRow {
+  id: string;
+  owner_id: string;
+  kind: TransferJobRow['kind'];
+  host_id: string;
+  source_path: string;
+  target_path: string;
+  status: TransferJobRow['status'];
+  completed_bytes: number;
+  total_bytes: number | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -216,8 +258,27 @@ const parseConnectionProfile = (value: string | undefined): ConnectionProfileSet
   }
 };
 
+const parseConnectionProfileOverrides = (value: string | null | undefined): ConnectionProfileOverrides | null => {
+  if (value === null || value === undefined) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    const result = connectionProfileSettingsPatchSchema.safeParse(parsed);
+    if (!result.success) throw new Error('invalid connection profile overrides');
+    return result.data;
+  } catch {
+    throw new AppError('HOST_VALIDATION_FAILED');
+  }
+};
+
 const serializeConnectionProfile = (value: ConnectionProfileSettings | undefined): string => {
   const parsed = connectionProfileSettingsSchema.safeParse(value ?? defaultConnectionProfileSettings());
+  if (!parsed.success) throw new AppError('HOST_VALIDATION_FAILED');
+  return JSON.stringify(parsed.data);
+};
+
+const serializeConnectionProfileOverrides = (value: ConnectionProfileOverrides | null | undefined): string | null => {
+  if (value === null || value === undefined) return null;
+  const parsed = connectionProfileSettingsPatchSchema.safeParse(value);
   if (!parsed.success) throw new AppError('HOST_VALIDATION_FAILED');
   return JSON.stringify(parsed.data);
 };
@@ -236,7 +297,10 @@ const toGroupRow = (row: GroupSqlRow): GroupRow => ({
   id: row.id,
   ownerId: row.owner_id,
   name: row.name,
+  parentId: row.parent_id,
   sortOrder: row.sort_order,
+  defaultIdentityId: row.default_identity_id,
+  connectionProfile: parseConnectionProfileOverrides(row.connection_profile_json),
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -251,14 +315,36 @@ const toHostRow = (row: HostSqlRow): HostRow => ({
   authType: row.auth_type,
   credentialCiphertext: row.credential_ciphertext,
   credentialVersion: row.credential_version,
+  ...(row.credential_source === 'identity' && row.identity_id ? {
+    credentialSource: { type: 'identity' as const, identityId: row.identity_id },
+    identityId: row.identity_id
+  } : row.credential_source === 'group' ? {
+    credentialSource: { type: 'group' as const }
+  } : {
+    credentialSource: { type: 'inline' as const, authType: row.auth_type }
+  }),
   hostKeyAlgorithm: row.host_key_algorithm,
   hostKeyFingerprint: row.host_key_fingerprint,
   groupId: row.group_id,
   tags: parseTags(row.tags_json),
   jumpHostIds: parseJumpHostIds(row.jump_host_ids_json),
   connectionProfile: parseConnectionProfile(row.connection_profile_json),
+  connectionProfileOverrides: parseConnectionProfileOverrides(row.connection_profile_overrides_json),
   isFavorite: row.is_favorite === 1,
   lastConnectedAt: row.last_connected_at,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const toIdentityRow = (row: IdentitySqlRow): IdentityRow => ({
+  ownerId: row.owner_id,
+  id: row.id,
+  name: row.name,
+  type: row.type,
+  username: row.username,
+  keyFingerprint: row.key_fingerprint,
+  credentialCiphertext: row.credential_ciphertext,
+  credentialVersion: row.credential_version,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -276,10 +362,19 @@ const toHostMetadata = (row: HostMetadataSqlRow): HostMetadata => ({
   tags: parseTags(row.tags_json),
   jumpHostIds: parseJumpHostIds(row.jump_host_ids_json),
   connectionProfile: parseConnectionProfile(row.connection_profile_json),
+  connectionProfileOverrides: parseConnectionProfileOverrides(row.connection_profile_overrides_json),
   isFavorite: row.is_favorite === 1,
   lastConnectedAt: row.last_connected_at,
   createdAt: row.created_at,
-  updatedAt: row.updated_at
+  updatedAt: row.updated_at,
+  ...(row.credential_source === 'identity' && row.identity_id ? {
+    credentialSource: { type: 'identity' as const, identityId: row.identity_id },
+    identityId: row.identity_id
+  } : row.credential_source === 'group' ? {
+    credentialSource: { type: 'group' as const }
+  } : {
+    credentialSource: { type: 'inline' as const, authType: row.auth_type }
+  })
 });
 
 const toAuditRow = (row: AuditSqlRow): AuditEventRow => ({
@@ -328,6 +423,21 @@ const toCommandRunTargetRow = (row: CommandRunTargetSqlRow): CommandRunTargetRow
   errorCode: row.error_code,
   startedAt: row.started_at,
   finishedAt: row.finished_at
+});
+
+const toTransferJobRow = (row: TransferJobSqlRow): TransferJobRow => ({
+  ownerId: row.owner_id,
+  id: row.id,
+  kind: row.kind,
+  hostId: row.host_id,
+  sourcePath: row.source_path,
+  targetPath: row.target_path,
+  status: row.status,
+  completedBytes: row.completed_bytes,
+  totalBytes: row.total_bytes,
+  ...(row.error_code === null ? {} : { errorCode: row.error_code }),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
 });
 
 const parseVaultConfig = (row: AppConfigSqlRow): VaultConfig => {
@@ -451,17 +561,28 @@ export class GroupRepository {
   create(input: GroupCreateInput): GroupRow {
     const id = input.id ?? randomUUID();
     assertIdentifier(id, 'HOST_VALIDATION_FAILED');
+    const parentId = input.parentId ?? null;
+    this.assertParent(id, parentId);
+    this.assertIdentity(input.defaultIdentityId ?? null);
     const timestamp = now();
 
     try {
       this.database.prepare(`
-        INSERT INTO groups (id, owner_id, name, sort_order, created_at, updated_at)
-        VALUES (@id, @ownerId, @name, @sortOrder, @createdAt, @updatedAt)
+        INSERT INTO groups (
+          id, owner_id, name, parent_id, sort_order, default_identity_id,
+          connection_profile_json, created_at, updated_at
+        ) VALUES (
+          @id, @ownerId, @name, @parentId, @sortOrder, @defaultIdentityId,
+          @connectionProfile, @createdAt, @updatedAt
+        )
       `).run({
         id,
         ownerId: this.ownerId,
         name: input.name,
+        parentId,
         sortOrder: input.sortOrder ?? 0,
+        defaultIdentityId: input.defaultIdentityId ?? null,
+        connectionProfile: serializeConnectionProfileOverrides(input.connectionProfile),
         createdAt: timestamp,
         updatedAt: timestamp
       });
@@ -484,7 +605,8 @@ export class GroupRepository {
   get(id: string): GroupRow | null {
     assertIdentifier(id, 'HOST_VALIDATION_FAILED');
     const row = this.database.prepare(`
-      SELECT id, owner_id, name, sort_order, created_at, updated_at
+      SELECT id, owner_id, name, parent_id, sort_order, default_identity_id,
+             connection_profile_json, created_at, updated_at
       FROM groups
       WHERE id = @id AND owner_id = @ownerId
     `).get({ id, ownerId: this.ownerId }) as GroupSqlRow | undefined;
@@ -493,7 +615,8 @@ export class GroupRepository {
 
   list(): GroupRow[] {
     const rows = this.database.prepare(`
-      SELECT id, owner_id, name, sort_order, created_at, updated_at
+      SELECT id, owner_id, name, parent_id, sort_order, default_identity_id,
+             connection_profile_json, created_at, updated_at
       FROM groups
       WHERE owner_id = @ownerId
       ORDER BY sort_order ASC, name COLLATE NOCASE ASC
@@ -508,17 +631,28 @@ export class GroupRepository {
     }
 
     const nextName = patch.name ?? current.name;
+    const nextParentId = patch.parentId === undefined ? current.parentId : patch.parentId;
     const nextSortOrder = patch.sortOrder ?? current.sortOrder;
+    const nextDefaultIdentityId = patch.defaultIdentityId === undefined ? current.defaultIdentityId : patch.defaultIdentityId;
+    const nextConnectionProfile = patch.connectionProfile === undefined ? current.connectionProfile : patch.connectionProfile;
+    this.assertParent(id, nextParentId);
+    this.assertIdentity(nextDefaultIdentityId);
     try {
       this.database.prepare(`
         UPDATE groups
-        SET name = @name, sort_order = @sortOrder, updated_at = @updatedAt
+        SET name = @name, parent_id = @parentId, sort_order = @sortOrder,
+            default_identity_id = @defaultIdentityId,
+            connection_profile_json = @connectionProfile,
+            updated_at = @updatedAt
         WHERE id = @id AND owner_id = @ownerId
       `).run({
         id,
         ownerId: this.ownerId,
         name: nextName,
+        parentId: nextParentId,
         sortOrder: nextSortOrder,
+        defaultIdentityId: nextDefaultIdentityId,
+        connectionProfile: serializeConnectionProfileOverrides(nextConnectionProfile),
         updatedAt: now()
       });
     } catch (error) {
@@ -539,11 +673,26 @@ export class GroupRepository {
 
   delete(id: string): void {
     assertIdentifier(id, 'HOST_VALIDATION_FAILED');
+    const current = this.get(id);
+    if (!current) throw new AppError('GROUP_NOT_FOUND');
     const deleteGroup = this.database.transaction(() => {
+      const inUse = this.database.prepare(`
+        SELECT 1 AS present
+        FROM hosts
+        WHERE owner_id = @ownerId AND group_id = @id AND credential_source = 'group'
+        LIMIT 1
+      `).get({ id, ownerId: this.ownerId });
+      if (inUse) throw new AppError('GROUP_IN_USE');
+
       this.database.prepare(`
         UPDATE hosts SET group_id = NULL, updated_at = @updatedAt
         WHERE group_id = @id AND owner_id = @ownerId
       `).run({ id, ownerId: this.ownerId, updatedAt: now() });
+
+      this.database.prepare(`
+        UPDATE groups SET parent_id = @parentId, updated_at = @updatedAt
+        WHERE parent_id = @id AND owner_id = @ownerId
+      `).run({ id, parentId: current.parentId, ownerId: this.ownerId, updatedAt: now() });
 
       const result = this.database.prepare(`
         DELETE FROM groups WHERE id = @id AND owner_id = @ownerId
@@ -554,6 +703,127 @@ export class GroupRepository {
     });
 
     deleteGroup();
+  }
+
+  private assertIdentity(identityId: string | null): void {
+    if (identityId === null) return;
+    assertIdentifier(identityId, 'HOST_VALIDATION_FAILED');
+    const row = this.database.prepare('SELECT id FROM identities WHERE id = @identityId AND owner_id = @ownerId').get({ identityId, ownerId: this.ownerId });
+    if (!row) throw new AppError('IDENTITY_NOT_FOUND');
+  }
+
+  private assertParent(groupId: string, parentId: string | null): void {
+    if (parentId === null) return;
+    assertIdentifier(parentId, 'HOST_VALIDATION_FAILED');
+    const active = new Set([groupId]);
+    let cursor: string | null = parentId;
+    let depth = 1;
+    while (cursor !== null) {
+      if (active.has(cursor)) throw new AppError('GROUP_CYCLE');
+      const parent = this.get(cursor);
+      if (!parent) throw new AppError('GROUP_NOT_FOUND');
+      active.add(cursor);
+      depth += 1;
+      if (depth > 8) throw new AppError('GROUP_DEPTH_EXCEEDED');
+      cursor = parent.parentId;
+    }
+  }
+}
+
+export class IdentityRepository {
+  constructor(
+    private readonly database: SqliteDatabase,
+    readonly ownerId: string
+  ) {
+    assertOwner(ownerId);
+  }
+
+  create(input: IdentityCreateRow): IdentityRow {
+    assertIdentifier(input.id, 'HOST_VALIDATION_FAILED');
+    if (input.ownerId !== this.ownerId) throw new AppError('HOST_VALIDATION_FAILED');
+    try {
+      this.database.prepare(`
+        INSERT INTO identities (
+          id, owner_id, name, type, username, key_fingerprint,
+          credential_ciphertext, credential_version, created_at, updated_at
+        ) VALUES (@id, @ownerId, @name, @type, @username, @keyFingerprint,
+                  @credentialCiphertext, @credentialVersion, @createdAt, @updatedAt)
+      `).run(input);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+        throw new AppError('GROUP_ALREADY_EXISTS', '已存在同名凭据身份');
+      }
+      throw error;
+    }
+    const created = this.get(input.id);
+    if (!created) throw new AppError('INTERNAL_ERROR');
+    return created;
+  }
+
+  get(id: string): IdentityRow | null {
+    assertIdentifier(id, 'HOST_VALIDATION_FAILED');
+    const row = this.database.prepare(`
+      SELECT id, owner_id, name, type, username, key_fingerprint,
+             credential_ciphertext, credential_version, created_at, updated_at
+      FROM identities WHERE id = @id AND owner_id = @ownerId
+    `).get({ id, ownerId: this.ownerId }) as IdentitySqlRow | undefined;
+    return row ? toIdentityRow(row) : null;
+  }
+
+  list(): IdentityRow[] {
+    const rows = this.database.prepare(`
+      SELECT id, owner_id, name, type, username, key_fingerprint,
+             credential_ciphertext, credential_version, created_at, updated_at
+      FROM identities WHERE owner_id = @ownerId ORDER BY name COLLATE NOCASE ASC
+    `).all({ ownerId: this.ownerId }) as IdentitySqlRow[];
+    return rows.map(toIdentityRow);
+  }
+
+  countHostReferences(id: string): number {
+    assertIdentifier(id, 'HOST_VALIDATION_FAILED');
+    const hostRow = this.database.prepare('SELECT COUNT(*) AS count FROM hosts WHERE owner_id = @ownerId AND credential_source = \'identity\' AND identity_id = @id').get({ ownerId: this.ownerId, id }) as { count: number };
+    const groupRow = this.database.prepare('SELECT COUNT(*) AS count FROM groups WHERE owner_id = @ownerId AND default_identity_id = @id').get({ ownerId: this.ownerId, id }) as { count: number };
+    return hostRow.count + groupRow.count;
+  }
+
+  update(id: string, patch: IdentityPatch): IdentityRow {
+    const current = this.get(id);
+    if (!current) throw new AppError('IDENTITY_NOT_FOUND');
+    try {
+      this.database.prepare(`
+        UPDATE identities
+        SET name = @name, type = @type, username = @username,
+            key_fingerprint = @keyFingerprint, credential_ciphertext = @credentialCiphertext,
+            credential_version = @credentialVersion, updated_at = @updatedAt
+        WHERE id = @id AND owner_id = @ownerId
+      `).run({
+        id,
+        ownerId: this.ownerId,
+        name: patch.name ?? current.name,
+        type: patch.type ?? current.type,
+        username: patch.username ?? current.username,
+        keyFingerprint: patch.keyFingerprint === undefined ? current.keyFingerprint : patch.keyFingerprint,
+        credentialCiphertext: patch.credentialCiphertext ?? current.credentialCiphertext,
+        credentialVersion: patch.credentialVersion ?? current.credentialVersion,
+        updatedAt: patch.updatedAt ?? now()
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+        throw new AppError('GROUP_ALREADY_EXISTS', '已存在同名凭据身份');
+      }
+      throw error;
+    }
+    const updated = this.get(id);
+    if (!updated) throw new AppError('INTERNAL_ERROR');
+    return updated;
+  }
+
+  delete(id: string): void {
+    const current = this.get(id);
+    if (!current) throw new AppError('IDENTITY_NOT_FOUND');
+    if (this.countHostReferences(id) > 0) throw new AppError('IDENTITY_IN_USE');
+    const result = this.database.prepare('DELETE FROM identities WHERE id = @id AND owner_id = @ownerId').run({ id, ownerId: this.ownerId });
+    if (result.changes === 0) throw new AppError('IDENTITY_NOT_FOUND');
   }
 }
 
@@ -579,14 +849,21 @@ export class HostRepository {
     }
   }
 
+  private assertIdentityBelongsToOwner(identityId: string | null): void {
+    if (identityId === null) return;
+    assertIdentifier(identityId, 'HOST_VALIDATION_FAILED');
+    const row = this.database.prepare('SELECT id FROM identities WHERE id = @identityId AND owner_id = @ownerId').get({ identityId, ownerId: this.ownerId });
+    if (!row) throw new AppError('IDENTITY_NOT_FOUND');
+  }
+
   private getRow(id: string): HostRow | null {
     assertIdentifier(id, 'HOST_VALIDATION_FAILED');
     const row = this.database.prepare(`
       SELECT id, owner_id, name, address, port, username, auth_type,
-             credential_ciphertext, credential_version, host_key_algorithm,
+             credential_ciphertext, credential_version, credential_source, identity_id, host_key_algorithm,
              host_key_fingerprint, group_id, tags_json, is_favorite,
              jump_host_ids_json,
-             connection_profile_json,
+             connection_profile_json, connection_profile_overrides_json,
              last_connected_at, created_at, updated_at
       FROM hosts
       WHERE id = @id AND owner_id = @ownerId
@@ -602,23 +879,33 @@ export class HostRepository {
       throw new AppError('HOST_VALIDATION_FAILED');
     }
     this.assertGroupBelongsToOwner(input.groupId);
+    const credentialSource = input.credentialSource ?? 'inline';
+    const identityId = input.identityId ?? null;
+    this.assertIdentityBelongsToOwner(identityId);
+    if (
+      (credentialSource === 'identity' && (identityId === null || input.credentialCiphertext !== null)) ||
+      (credentialSource === 'inline' && (input.credentialCiphertext === null || identityId !== null)) ||
+      (credentialSource === 'group' && (input.groupId === null || input.credentialCiphertext !== null || identityId !== null))
+    ) {
+      throw new AppError('HOST_VALIDATION_FAILED');
+    }
     const timestamp = now();
 
     try {
       this.database.prepare(`
         INSERT INTO hosts (
           id, owner_id, name, address, port, username, auth_type,
-          credential_ciphertext, credential_version, host_key_algorithm,
+          credential_ciphertext, credential_version, credential_source, identity_id, host_key_algorithm,
           host_key_fingerprint, group_id, tags_json, is_favorite,
           jump_host_ids_json,
-          connection_profile_json,
+          connection_profile_json, connection_profile_overrides_json,
           last_connected_at, created_at, updated_at
         ) VALUES (
           @id, @ownerId, @name, @address, @port, @username, @authType,
-          @credentialCiphertext, @credentialVersion, @hostKeyAlgorithm,
+          @credentialCiphertext, @credentialVersion, @credentialSource, @identityId, @hostKeyAlgorithm,
           @hostKeyFingerprint, @groupId, @tags, @isFavorite,
           @jumpHostIds,
-          @connectionProfile,
+          @connectionProfile, @connectionProfileOverrides,
           @lastConnectedAt, @createdAt, @updatedAt
         )
       `).run({
@@ -631,12 +918,15 @@ export class HostRepository {
         authType: input.authType,
         credentialCiphertext: input.credentialCiphertext,
         credentialVersion: input.credentialVersion,
+        credentialSource,
+        identityId,
         hostKeyAlgorithm: input.hostKeyAlgorithm,
         hostKeyFingerprint: input.hostKeyFingerprint,
         groupId: input.groupId,
         tags: serializeTags(input.tags),
         jumpHostIds: serializeJumpHostIds(input.jumpHostIds),
         connectionProfile: serializeConnectionProfile(input.connectionProfile),
+        connectionProfileOverrides: serializeConnectionProfileOverrides(input.connectionProfileOverrides),
         isFavorite: input.isFavorite ? 1 : 0,
         lastConnectedAt: input.lastConnectedAt,
         createdAt: timestamp,
@@ -670,27 +960,41 @@ export class HostRepository {
       port: patch.port ?? current.port,
       username: patch.username ?? current.username,
       authType: patch.authType ?? current.authType,
-      credentialCiphertext: patch.credentialCiphertext ?? current.credentialCiphertext,
+      credentialCiphertext: patch.credentialCiphertext === undefined ? current.credentialCiphertext : patch.credentialCiphertext,
       credentialVersion: patch.credentialVersion ?? current.credentialVersion,
+      credentialSource: patch.credentialSource ?? current.credentialSource?.type ?? 'inline',
+      identityId: patch.identityId === undefined ? current.identityId ?? null : patch.identityId,
       hostKeyAlgorithm: patch.hostKeyAlgorithm === undefined ? current.hostKeyAlgorithm : patch.hostKeyAlgorithm,
       hostKeyFingerprint: patch.hostKeyFingerprint === undefined ? current.hostKeyFingerprint : patch.hostKeyFingerprint,
       groupId: patch.groupId === undefined ? current.groupId : patch.groupId,
       tags: patch.tags ?? current.tags,
       jumpHostIds: patch.jumpHostIds === undefined ? current.jumpHostIds : patch.jumpHostIds,
       connectionProfile: patch.connectionProfile === undefined ? current.connectionProfile : patch.connectionProfile,
+      connectionProfileOverrides: patch.connectionProfileOverrides === undefined ? current.connectionProfileOverrides : patch.connectionProfileOverrides,
       isFavorite: patch.isFavorite ?? current.isFavorite,
       lastConnectedAt: patch.lastConnectedAt === undefined ? current.lastConnectedAt : patch.lastConnectedAt
     };
     this.assertGroupBelongsToOwner(next.groupId);
+    this.assertIdentityBelongsToOwner(next.credentialSource === 'identity' ? next.identityId : null);
+    if (
+      (next.credentialSource === 'identity' && (next.identityId === null || next.credentialCiphertext !== null)) ||
+      (next.credentialSource === 'inline' && (next.credentialCiphertext === null || next.identityId !== null)) ||
+      (next.credentialSource === 'group' && (next.groupId === null || next.credentialCiphertext !== null || next.identityId !== null))
+    ) {
+      throw new AppError('HOST_VALIDATION_FAILED');
+    }
 
     this.database.prepare(`
       UPDATE hosts
       SET name = @name, address = @address, port = @port, username = @username,
           auth_type = @authType, credential_ciphertext = @credentialCiphertext,
-          credential_version = @credentialVersion, host_key_algorithm = @hostKeyAlgorithm,
+          credential_version = @credentialVersion, credential_source = @credentialSource,
+          identity_id = @identityId, host_key_algorithm = @hostKeyAlgorithm,
           host_key_fingerprint = @hostKeyFingerprint, group_id = @groupId,
           tags_json = @tags, jump_host_ids_json = @jumpHostIds,
-          connection_profile_json = @connectionProfile, is_favorite = @isFavorite,
+          connection_profile_json = @connectionProfile,
+          connection_profile_overrides_json = @connectionProfileOverrides,
+          is_favorite = @isFavorite,
           last_connected_at = @lastConnectedAt, updated_at = @updatedAt
       WHERE id = @id AND owner_id = @ownerId
     `).run({
@@ -700,6 +1004,7 @@ export class HostRepository {
       tags: serializeTags(next.tags),
       jumpHostIds: serializeJumpHostIds(next.jumpHostIds),
       connectionProfile: serializeConnectionProfile(next.connectionProfile),
+      connectionProfileOverrides: serializeConnectionProfileOverrides(next.connectionProfileOverrides),
       isFavorite: next.isFavorite ? 1 : 0,
       updatedAt: now()
     });
@@ -753,7 +1058,8 @@ export class HostRepository {
     const rows = this.database.prepare(`
       SELECT id, owner_id, name, address, port, username, auth_type,
              host_key_algorithm, host_key_fingerprint, group_id, tags_json,
-             jump_host_ids_json, connection_profile_json, is_favorite,
+             credential_source, identity_id,
+             jump_host_ids_json, connection_profile_json, connection_profile_overrides_json, is_favorite,
              last_connected_at, created_at, updated_at
       FROM hosts
       WHERE ${clauses.join(' AND ')}
@@ -772,9 +1078,9 @@ export class HostRepository {
   listForBundle(): HostRow[] {
     const rows = this.database.prepare(`
       SELECT id, owner_id, name, address, port, username, auth_type,
-             credential_ciphertext, credential_version, host_key_algorithm,
+             credential_ciphertext, credential_version, credential_source, identity_id, host_key_algorithm,
              host_key_fingerprint, group_id, tags_json, is_favorite,
-             jump_host_ids_json, connection_profile_json,
+             jump_host_ids_json, connection_profile_json, connection_profile_overrides_json,
              last_connected_at, created_at, updated_at
       FROM hosts
       WHERE owner_id = @ownerId
@@ -1133,6 +1439,112 @@ export class CommandRunRepository {
     this.database.prepare(`
       DELETE FROM command_runs
       WHERE owner_id = @ownerId AND created_at <= @cutoff
+    `).run({ ownerId: this.ownerId, cutoff });
+  }
+
+  markActiveRunsFailed(errorCode: string, finishedAt: string): number {
+    const operation = this.database.transaction(() => {
+      const result = this.database.prepare(`
+        UPDATE command_runs
+        SET status = 'failed', finished_at = @finishedAt
+        WHERE owner_id = @ownerId AND status IN ('queued', 'running')
+      `).run({ ownerId: this.ownerId, errorCode, finishedAt });
+      this.database.prepare(`
+        UPDATE command_run_targets
+        SET status = 'failed', error_code = @errorCode, finished_at = @finishedAt
+        WHERE owner_id = @ownerId AND status IN ('queued', 'running')
+      `).run({ ownerId: this.ownerId, errorCode, finishedAt });
+      return result.changes;
+    });
+    return operation();
+  }
+}
+
+export class TransferRepository {
+  constructor(
+    private readonly database: SqliteDatabase,
+    private readonly ownerId: string
+  ) {
+    assertOwner(ownerId);
+  }
+
+  create(input: TransferJobCreateRow): TransferJobRow {
+    assertIdentifier(input.id, 'HOST_VALIDATION_FAILED');
+    if (input.ownerId !== this.ownerId) throw new AppError('HOST_VALIDATION_FAILED');
+    this.database.prepare(`
+      INSERT INTO transfer_jobs (id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, created_at, updated_at)
+      VALUES (@id, @ownerId, @kind, @hostId, @sourcePath, @targetPath, @status, @completedBytes, @totalBytes, @errorCode, @createdAt, @updatedAt)
+    `).run({
+      id: input.id,
+      ownerId: this.ownerId,
+      kind: input.kind,
+      hostId: input.hostId,
+      sourcePath: input.sourcePath,
+      targetPath: input.targetPath,
+      status: input.status,
+      completedBytes: input.completedBytes,
+      totalBytes: input.totalBytes,
+      errorCode: input.errorCode ?? null,
+      createdAt: input.createdAt,
+      updatedAt: input.updatedAt
+    });
+    const created = this.get(input.id);
+    if (!created) throw new AppError('INTERNAL_ERROR');
+    return created;
+  }
+
+  get(id: string): TransferJobRow | null {
+    assertIdentifier(id, 'HOST_VALIDATION_FAILED');
+    const row = this.database.prepare(`
+      SELECT id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, created_at, updated_at
+      FROM transfer_jobs WHERE id = @id AND owner_id = @ownerId
+    `).get({ id, ownerId: this.ownerId }) as TransferJobSqlRow | undefined;
+    return row ? toTransferJobRow(row) : null;
+  }
+
+  list(): TransferJobRow[] {
+    const rows = this.database.prepare(`
+      SELECT id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, created_at, updated_at
+      FROM transfer_jobs WHERE owner_id = @ownerId ORDER BY updated_at DESC
+    `).all({ ownerId: this.ownerId }) as TransferJobSqlRow[];
+    return rows.map(toTransferJobRow);
+  }
+
+  update(id: string, patch: TransferJobPatch): TransferJobRow {
+    const current = this.get(id);
+    if (!current) throw new AppError('TRANSFER_NOT_FOUND');
+    this.database.prepare(`
+      UPDATE transfer_jobs
+      SET status = @status, completed_bytes = @completedBytes, total_bytes = @totalBytes,
+          error_code = @errorCode, updated_at = @updatedAt
+      WHERE id = @id AND owner_id = @ownerId
+    `).run({
+      id,
+      ownerId: this.ownerId,
+      status: patch.status ?? current.status,
+      completedBytes: patch.completedBytes ?? current.completedBytes,
+      totalBytes: patch.totalBytes === undefined ? current.totalBytes : patch.totalBytes,
+      errorCode: patch.errorCode === undefined ? current.errorCode ?? null : patch.errorCode ?? null,
+      updatedAt: patch.updatedAt ?? current.updatedAt
+    });
+    const updated = this.get(id);
+    if (!updated) throw new AppError('INTERNAL_ERROR');
+    return updated;
+  }
+
+  markActiveInterrupted(errorCode: string, updatedAt: string): number {
+    const result = this.database.prepare(`
+      UPDATE transfer_jobs
+      SET status = 'interrupted', error_code = @errorCode, updated_at = @updatedAt
+      WHERE owner_id = @ownerId AND status IN ('queued', 'running')
+    `).run({ ownerId: this.ownerId, errorCode, updatedAt });
+    return result.changes;
+  }
+
+  deleteExpired(cutoff: string): void {
+    this.database.prepare(`
+      DELETE FROM transfer_jobs
+      WHERE owner_id = @ownerId AND status IN ('completed', 'failed', 'cancelled', 'interrupted') AND updated_at <= @cutoff
     `).run({ ownerId: this.ownerId, cutoff });
   }
 }

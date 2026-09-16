@@ -127,6 +127,7 @@ export type TransferEvent =
   | { type: 'progress'; completedBytes: number }
   | { type: 'completed' }
   | { type: 'failed'; code: string }
+  | { type: 'interrupted'; code: string }
   | { type: 'cancelled' }
   | { type: 'retry' };
 
@@ -159,11 +160,14 @@ export const transitionTransfer = (state: TransferState, event: TransferEvent): 
     case 'failed':
       if (state.status !== 'running' && state.status !== 'queued') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'failed', errorCode: event.code };
+    case 'interrupted':
+      if (state.status !== 'queued' && state.status !== 'running') throw invalidTransition(state.status, event.type);
+      return { ...state, status: 'interrupted', errorCode: event.code };
     case 'cancelled':
       if (state.status !== 'queued' && state.status !== 'running') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'cancelled' };
     case 'retry':
-      if (state.status !== 'failed') throw invalidTransition(state.status, event.type);
+      if (state.status !== 'failed' && state.status !== 'interrupted') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'queued', completedBytes: 0, errorCode: undefined };
   }
 };

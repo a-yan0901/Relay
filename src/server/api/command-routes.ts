@@ -71,8 +71,8 @@ export const registerCommandRoutes = async (app: FastifyInstance, dependencies: 
   });
 
   app.get('/api/command-runs/:runId', async (request, reply) => {
-    requireUnlockedSession(request, dependencies.sessionStore);
-    const run = await dependencies.commandRunner.get(parseId(request.params, 'COMMAND_RUN_NOT_FOUND'));
+    const session = requireUnlockedSession(request, dependencies.sessionStore);
+    const run = await dependencies.commandRunner.get(parseId(request.params, 'COMMAND_RUN_NOT_FOUND'), session.record.vaultKey);
     if (!run) throw new AppError('COMMAND_RUN_NOT_FOUND');
     reply.send(run);
   });

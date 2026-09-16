@@ -1,7 +1,11 @@
 import { AppError } from '../../shared/errors.js';
-import type { HostCredentialInput } from '../../shared/validation.js';
+import { storedHostCredentialSchema, type HostCredentialInput } from '../../shared/validation.js';
+import { resolveConnectionConfiguration } from '../../shared/core/connection-resolution.js';
+import type { GroupNode } from '../../shared/core/models.js';
 import type { HostRepository } from '../db/repositories.js';
+import type { GroupRepository } from '../db/repositories.js';
 import { VaultService } from '../vault/vault-service.js';
+import type { IdentityService } from '../identity/identity-service.js';
 import type { ConnectionPathResolver } from './connection-path.js';
 import type { SshConnectConfig, SshConnectionResource, SshHostKeyChallenge, SshResourceAdapter } from './types.js';
 
@@ -15,6 +19,8 @@ export interface ConnectionResourceProviderOptions {
   hostRepository: HostRepository;
   connectionPathResolver: ConnectionPathResolver;
   vaultService: VaultService;
+  groupRepository?: GroupRepository;
+  identityService?: IdentityService;
   adapter: SshResourceAdapter;
 }
 
@@ -36,11 +42,31 @@ const toConfig = async (
   repository: HostRepository,
   vaultService: VaultService,
   sessionKey: Buffer,
-  hostId: string
+  hostId: string,
+  ownerId: string,
+  identityService?: IdentityService,
+  groups: readonly GroupNode[] = []
 ): Promise<SshConnectConfig> => {
   const row = repository.getForConnection(hostId);
   if (!row) throw new AppError('HOST_NOT_FOUND');
-  const auth = await vaultService.decryptJson<HostCredentialInput>(sessionKey, credentialAad(row.id), parseEncryptedCredential(row.credentialCiphertext));
+  const resolved = resolveConnectionConfiguration(row, groups);
+  let auth: HostCredentialInput;
+  const identityId = row.credentialSource?.type === 'identity'
+    ? row.identityId
+    : row.credentialSource?.type === 'group' ? resolved.identityId : null;
+  if (identityId) {
+    if (!identityService || !ownerId) throw new AppError('IDENTITY_NOT_FOUND');
+    const credential = await identityService.getCredential(ownerId, identityId, sessionKey);
+    if (credential.type === 'pending') throw new AppError('IMPORT_RECORD_INVALID', '请先在连接时补录凭据');
+    auth = credential;
+  } else {
+    if (row.credentialSource?.type === 'group') throw new AppError('IDENTITY_NOT_FOUND');
+    if (row.credentialCiphertext === null) throw new AppError('IMPORT_RECORD_INVALID', '请先在连接时补录凭据');
+    const stored = await vaultService.decryptJson<unknown>(sessionKey, credentialAad(row.id), parseEncryptedCredential(row.credentialCiphertext));
+    const parsed = storedHostCredentialSchema.safeParse(stored);
+    if (!parsed.success || parsed.data.type === 'pending') throw new AppError('IMPORT_RECORD_INVALID', '请先在连接时补录凭据');
+    auth = parsed.data;
+  }
   return {
     hostId: row.id,
     address: row.address,
@@ -49,9 +75,9 @@ const toConfig = async (
     auth,
     hostKeyAlgorithm: row.hostKeyAlgorithm,
     hostKeyFingerprint: row.hostKeyFingerprint,
-    keepaliveInterval: row.connectionProfile?.keepaliveIntervalMs,
-    keepaliveCountMax: row.connectionProfile?.keepaliveCountMax,
-    reconnect: row.connectionProfile?.reconnect
+    keepaliveInterval: resolved.profile.keepaliveIntervalMs,
+    keepaliveCountMax: resolved.profile.keepaliveCountMax,
+    reconnect: resolved.profile.reconnect
   };
 };
 
@@ -59,8 +85,9 @@ export const createConnectionResourceProvider = (options: ConnectionResourceProv
   async open(hostId: string, sessionKey?: Buffer): Promise<ConnectionResourceLease> {
     if (!sessionKey || !Buffer.isBuffer(sessionKey)) throw new AppError('SESSION_INVALID');
     const path = options.connectionPathResolver.resolve(hostId, options.ownerId);
+    const groups = options.groupRepository?.list() ?? [];
     const configs: SshConnectConfig[] = [];
-    for (const hop of path.hops) configs.push(await toConfig(options.hostRepository, options.vaultService, sessionKey, hop.id));
+    for (const hop of path.hops) configs.push(await toConfig(options.hostRepository, options.vaultService, sessionKey, hop.id, options.ownerId, options.identityService, groups));
     const target = configs.at(-1);
     if (!target) throw new AppError('HOST_NOT_FOUND');
     const connection = await options.adapter.connect({

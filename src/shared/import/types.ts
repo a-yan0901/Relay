@@ -125,6 +125,36 @@ export interface ImportApplyResult {
   warnings: string[];
 }
 
+export interface VaultBundleConflict {
+  type: 'host' | 'group' | 'identity';
+  id: string;
+  name: string;
+}
+
+export interface VaultBundlePreview {
+  previewId: string;
+  hostCount: number;
+  groupCount: number;
+  identityCount?: number;
+  conflicts: readonly VaultBundleConflict[];
+  expiresAt: string;
+}
+
+export interface VaultBundleResolution {
+  hostConflicts: 'skip' | 'replace';
+  groupConflicts: 'reuse' | 'replace';
+  identityConflicts?: 'reuse' | 'replace';
+}
+
+export interface VaultBundleApplyResult {
+  importedHosts: number;
+  importedGroups: number;
+  skippedHosts: number;
+  skippedGroups: number;
+  importedIdentities?: number;
+  skippedIdentities?: number;
+}
+
 export interface ExportOptions {
   includePasswords?: boolean;
   confirmPasswordExport?: boolean;

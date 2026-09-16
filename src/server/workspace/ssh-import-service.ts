@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../../shared/errors.js';
 import { validateJumpChain } from '../../shared/core/models.js';
+import { resolveConnectionConfiguration } from '../../shared/core/connection-resolution.js';
 import { exportGenericCsv, exportOpenSshConfig } from '../../shared/import/export.js';
 import { resolveImportConnections, stableImportKey, type ResolvedImportedConnection } from '../../shared/import/dedupe.js';
 import { extractImportZip } from '../../shared/import/zip.js';
@@ -20,11 +21,19 @@ import type {
   ImportedCredential
 } from '../../shared/import/types.js';
 import { supportedImportFormats } from '../../shared/import/types.js';
-import { hostCreateSchema, hostCredentialSchema, mergeConnectionProfileSettings, type HostCredentialInput } from '../../shared/validation.js';
+import {
+  hostMetadataInputSchema,
+  hostCredentialSchema,
+  mergeConnectionProfileSettings,
+  storedHostCredentialSchema,
+  type HostCredentialInput,
+  type StoredHostCredential
+} from '../../shared/validation.js';
 import { GroupRepository, HostRepository } from '../db/repositories.js';
 import type { SqliteDatabase } from '../db/database.js';
 import { VaultService, type EncryptedJson } from '../vault/vault-service.js';
 import { VAULT_KEY_LENGTH } from '../vault/types.js';
+import type { IdentityService } from '../identity/identity-service.js';
 
 const DEFAULT_PREVIEW_TTL_MS = 10 * 60 * 1000;
 const MAX_FILES = 32;
@@ -46,6 +55,7 @@ export interface SshImportServiceOptions {
   hostRepository: HostRepository;
   groupRepository: GroupRepository;
   vaultService: VaultService;
+  identityService?: IdentityService;
   now?: () => number;
   previewTtlMs?: number;
 }
@@ -137,8 +147,11 @@ const toExistingHost = (host: ReturnType<HostRepository['listMetadata']>[number]
   groupId: host.groupId
 });
 
-const credentialFromConnection = (connection: ImportedConnection, supplied: ImportedCredential | undefined): HostCredentialInput => {
+const credentialFromConnection = (connection: ImportedConnection, supplied: ImportedCredential | undefined): StoredHostCredential => {
   const candidate = supplied ?? connection.credential;
+  if (!candidate) {
+    return { type: 'pending', authType: connection.authType === 'private_key' ? 'private_key' : 'password' };
+  }
   const parsed = hostCredentialSchema.safeParse(candidate);
   if (!parsed.success) throw new AppError('IMPORT_RECORD_INVALID');
   if (parsed.data.type === 'private_key' && connection.identityFile && !parsed.data.identityFile) {
@@ -244,7 +257,7 @@ export class SshImportService {
     const existingByKey = new Map(existingHosts.map((host) => [stableImportKey(host), host]));
     const sourceToHostId = new Map<string, string>();
     const skippedSourceIds = new Set<string>();
-    const hostPlans: Array<{ connection: ResolvedImportedConnection; hostId: string; auth: HostCredentialInput; existing: ExistingImportHost | undefined }> = [];
+    const hostPlans: Array<{ connection: ResolvedImportedConnection; hostId: string; auth: StoredHostCredential; existing: ExistingImportHost | undefined }> = [];
 
     for (const connection of pending.connections) {
       const existing = existingByKey.get(stableImportKey(connection));
@@ -274,17 +287,16 @@ export class SshImportService {
     for (const plan of hostPlans) {
       const jumpHostIds = plan.connection.jumpHostSourceIds.map((sourceId) => sourceToHostId.get(sourceId)).filter((id): id is string => Boolean(id));
       profiles.set(plan.hostId, { jumpHostIds });
-      const parsed = hostCreateSchema.safeParse({
+      const parsed = hostMetadataInputSchema.safeParse({
         name: plan.connection.name,
         address: plan.connection.address,
         port: plan.connection.port,
         username: plan.connection.username,
-        auth: plan.auth,
         jumpHostIds,
         tags: plan.connection.tags,
         isFavorite: false
       });
-      if (!parsed.success) throw new AppError('IMPORT_RECORD_INVALID');
+      if (!parsed.success || !storedHostCredentialSchema.safeParse(plan.auth).success) throw new AppError('IMPORT_RECORD_INVALID');
     }
     for (const plan of hostPlans) {
       try {
@@ -326,7 +338,7 @@ export class SshImportService {
           address: plan.connection.address,
           port: plan.connection.port,
           username: plan.connection.username,
-          authType: plan.auth.type,
+          authType: plan.auth.type === 'pending' ? plan.auth.authType : plan.auth.type,
           credentialCiphertext: plan.credentialCiphertext,
           credentialVersion: 1,
           hostKeyAlgorithm: null,
@@ -381,12 +393,27 @@ export class SshImportService {
   private async exportConnections(sessionKey: Buffer, includePasswords: boolean): Promise<ImportedConnection[]> {
     const groups = new Map(this.options.groupRepository.list().map((group) => [group.id, group.name]));
     const rows = this.options.hostRepository.listForBundle();
+    const groupNodes = this.options.groupRepository.list();
     const connections: ImportedConnection[] = [];
     for (const row of rows) {
       let credential: ImportedCredential | undefined;
-      const decrypted = await this.options.vaultService.decryptJson<HostCredentialInput>(sessionKey, hostCredentialAad(row.id), parseEncryptedCredential(row.credentialCiphertext));
-      const decryptedImportCredential = toImportCredential(decrypted);
-      if (includePasswords || decryptedImportCredential.type === 'private_key') credential = decryptedImportCredential;
+      let decrypted: StoredHostCredential;
+      const resolved = resolveConnectionConfiguration(row, groupNodes);
+      const identityId = row.credentialSource?.type === 'identity'
+        ? row.identityId
+        : row.credentialSource?.type === 'group' ? resolved.identityId : null;
+      if (identityId) {
+        if (!this.options.identityService) throw new AppError('IDENTITY_NOT_FOUND');
+        decrypted = await this.options.identityService.getCredential(this.options.ownerId, identityId, sessionKey);
+      } else {
+        if (row.credentialSource?.type === 'group') throw new AppError('IDENTITY_NOT_FOUND');
+        if (row.credentialCiphertext === null) throw new AppError('IMPORT_RECORD_INVALID', '请先在连接时补录凭据');
+        decrypted = await this.options.vaultService.decryptJson<StoredHostCredential>(sessionKey, hostCredentialAad(row.id), parseEncryptedCredential(row.credentialCiphertext));
+      }
+      const parsedCredential = storedHostCredentialSchema.safeParse(decrypted);
+      if (!parsedCredential.success) throw new AppError('VAULT_CRYPTO_FAILED');
+      const decryptedImportCredential = parsedCredential.data.type === 'pending' ? undefined : toImportCredential(parsedCredential.data);
+      if (decryptedImportCredential && (includePasswords || decryptedImportCredential.type === 'private_key')) credential = decryptedImportCredential;
       connections.push({
         sourceId: `host:${row.id}`,
         name: row.name,
@@ -394,8 +421,8 @@ export class SshImportService {
         port: row.port,
         username: row.username,
         authType: row.authType,
-        credentialState: 'ready',
-        ...(decryptedImportCredential.type === 'private_key' && decryptedImportCredential.identityFile ? { identityFile: decryptedImportCredential.identityFile, credentialSource: decryptedImportCredential.identityFile } : {}),
+        credentialState: decryptedImportCredential ? 'ready' : 'needs-user-input',
+        ...(decryptedImportCredential?.type === 'private_key' && decryptedImportCredential.identityFile ? { identityFile: decryptedImportCredential.identityFile, credentialSource: decryptedImportCredential.identityFile } : {}),
         ...(credential ? { credential } : {}),
         groupPath: row.groupId && groups.has(row.groupId) ? [groups.get(row.groupId) as string] : [],
         tags: [...row.tags],

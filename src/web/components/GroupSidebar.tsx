@@ -1,4 +1,5 @@
 import type { GroupSummary } from '../state/app-state';
+import { flattenGroupTree } from '../../shared/core/group-tree';
 
 export interface GroupSidebarProps {
   groups: GroupSummary[];
@@ -8,8 +9,9 @@ export interface GroupSidebarProps {
   onFavoriteFilter: (favoriteOnly: boolean) => void;
 }
 
-export const GroupSidebar = ({ groups, selectedGroupId, favoriteOnly, onGroupSelected, onFavoriteFilter }: GroupSidebarProps) => (
-  <aside className="sidebar" aria-label="Server 导航">
+export const GroupSidebar = ({ groups, selectedGroupId, favoriteOnly, onGroupSelected, onFavoriteFilter }: GroupSidebarProps) => {
+  const rows = flattenGroupTree(groups);
+  return <aside className="sidebar" aria-label="Server 导航">
     <div className="sidebar-section">
       <p className="sidebar-label">工作区</p>
       <button className={`nav-item ${selectedGroupId === null && !favoriteOnly ? 'is-active' : ''}`} type="button" onClick={() => { onGroupSelected(null); onFavoriteFilter(false); }}>
@@ -22,13 +24,13 @@ export const GroupSidebar = ({ groups, selectedGroupId, favoriteOnly, onGroupSel
     <div className="sidebar-section">
       <div className="sidebar-heading"><p className="sidebar-label">分组</p><span className="sidebar-count">{groups.length}</span></div>
       <div className="group-list">
-        {groups.map((group) => (
-          <button className={`nav-item ${selectedGroupId === group.id ? 'is-active' : ''}`} type="button" key={group.id} onClick={() => { onGroupSelected(group.id); onFavoriteFilter(false); }}>
+        {rows.map(({ group, depth }) => (
+          <button className={`nav-item ${selectedGroupId === group.id ? 'is-active' : ''}`} style={{ paddingInlineStart: `${10 + depth * 16}px` }} type="button" key={group.id} data-group-depth={depth} onClick={() => { onGroupSelected(group.id); onFavoriteFilter(false); }}>
             <span className="group-dot" aria-hidden="true" />{group.name}
           </button>
         ))}
       </div>
     </div>
     <div className="sidebar-footer"><span className="status-dot status-dot-green" />本地 Vault 已加密</div>
-  </aside>
-);
+  </aside>;
+};

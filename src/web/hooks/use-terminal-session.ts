@@ -2,17 +2,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ConnectionDiagnostic } from '@shared/core/models';
 import type {
+  TerminalCredentialRequiredEvent,
   TerminalErrorEvent,
   TerminalHostKeyEvent,
   TerminalServerEvent,
   TerminalStatus
 } from '@shared/protocol';
+import type { HostCredentialInput } from '@shared/validation';
 
 const TERMINAL_STATES: readonly TerminalStatus[] = [
   'connecting',
   'awaiting-host-key',
+  'awaiting-credential',
   'connected',
   'reconnecting',
+  'interrupted',
+  'needs-reopen',
   'closed',
   'failed'
 ];
@@ -45,6 +50,10 @@ const isServerEvent = (value: unknown): value is TerminalServerEvent => {
   if (value.type === 'pong') return true;
   if (value.type === 'exit') return typeof value.code === 'number' || value.code === null;
   if (value.type === 'error') return typeof value.code === 'string' && typeof value.message === 'string';
+  if (value.type === 'credential-required') return typeof value.hostId === 'string' &&
+    (value.authType === 'password' || value.authType === 'private_key') &&
+    typeof value.name === 'string' && typeof value.address === 'string' &&
+    typeof value.port === 'number' && typeof value.username === 'string';
   return value.type === 'host-key' &&
     typeof value.algorithm === 'string' &&
     typeof value.fingerprint === 'string' &&
@@ -80,6 +89,7 @@ export interface TerminalHostKeyPrompt extends TerminalHostKeyEvent {}
 export interface TerminalSessionSnapshot {
   state: TerminalStatus;
   hostKey: TerminalHostKeyPrompt | null;
+  credential: TerminalCredentialRequiredEvent | null;
   error: TerminalErrorEvent | null;
   exit: Extract<TerminalServerEvent, { type: 'exit' }> | null;
   reconnectDelayMs: number;
@@ -124,6 +134,7 @@ export class TerminalSessionController {
   private snapshotValue: TerminalSessionSnapshot = {
     state: 'closed',
     hostKey: null,
+    credential: null,
     error: null,
     exit: null,
     reconnectDelayMs: 0,
@@ -170,7 +181,7 @@ export class TerminalSessionController {
     if (this.retryBlocked) return;
     if (this.socket && (this.socket.readyState === 0 || this.socket.readyState === 1)) return;
     this.clearReconnectTimer();
-    this.updateSnapshot({ state: 'connecting', error: null, exit: null, reconnectDelayMs: 0 });
+    this.updateSnapshot({ state: 'connecting', error: null, exit: null, credential: null, reconnectDelayMs: 0 });
 
     const socket = this.socketFactory(terminalSocketUrl());
     this.socket = socket;
@@ -182,7 +193,7 @@ export class TerminalSessionController {
         this.updateSnapshot({ state: 'failed', error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: 'WebSocket 连接异常' } });
       }
     };
-    socket.onclose = () => this.handleClose(socket);
+    socket.onclose = (event) => this.handleClose(socket, event);
   }
 
   reconnect(): void {
@@ -193,6 +204,12 @@ export class TerminalSessionController {
     this.detachSocket(this.socket);
     this.socket = null;
     this.connect();
+  }
+
+  submitCredential(credential: HostCredentialInput): void {
+    const prompt = this.snapshotValue.credential;
+    if (!prompt || credential.type !== prompt.authType || !this.isSocketOpen()) return;
+    this.sendControl({ type: 'credential', hostId: prompt.hostId, credential });
   }
 
   sendInput(data: string): void {
@@ -223,7 +240,7 @@ export class TerminalSessionController {
     }
     this.detachSocket(socket);
     socket?.close(1000, 'terminal closed');
-    this.updateSnapshot({ state: 'closed', reconnectDelayMs: 0 });
+    this.updateSnapshot({ state: 'closed', credential: null, reconnectDelayMs: 0 });
   }
 
   private isSocketOpen(): boolean {
@@ -285,19 +302,27 @@ export class TerminalSessionController {
       case 'status':
         this.updateSnapshot({
           state: event.state,
-          ...(event.state === 'awaiting-host-key' ? {} : { hostKey: null })
+          ...(event.state === 'awaiting-host-key' ? {} : { hostKey: null }),
+          ...(event.state === 'awaiting-credential' ? {} : { credential: null })
         });
         if (event.state === 'connected') {
           this.reconnectAttempt = 0;
-          this.updateSnapshot({ reconnectDelayMs: 0, error: null });
+          this.updateSnapshot({ reconnectDelayMs: 0, error: null, credential: null });
         }
         return;
       case 'host-key':
         this.updateSnapshot({ state: 'awaiting-host-key', hostKey: event, error: null });
         return;
+      case 'credential-required':
+        this.updateSnapshot({ state: 'awaiting-credential', credential: event, error: null });
+        return;
       case 'error':
         this.retryBlocked = true;
-        this.updateSnapshot({ state: 'failed', error: event });
+        if (['SESSION_NEEDS_REOPEN', 'SERVICE_RESTARTED', 'OPERATION_NOT_FOUND'].includes(event.code)) {
+          this.updateSnapshot({ state: 'needs-reopen', error: event, credential: null, reconnectDelayMs: 0 });
+        } else {
+          this.updateSnapshot({ state: 'failed', error: event, credential: null });
+        }
         return;
       case 'diagnostic':
         this.updateSnapshot({ diagnostics: [...this.snapshotValue.diagnostics, event.diagnostic].slice(-100) });
@@ -313,12 +338,21 @@ export class TerminalSessionController {
     }
   }
 
-  private handleClose(socket: TerminalSocketLike): void {
+  private handleClose(socket: TerminalSocketLike, event?: unknown): void {
     if (this.socket !== socket) return;
     this.socket = null;
     this.detachSocket(socket);
     if (this.stopped) {
-      this.updateSnapshot({ state: 'closed', reconnectDelayMs: 0 });
+      this.updateSnapshot({ state: 'closed', credential: null, reconnectDelayMs: 0 });
+      return;
+    }
+    if (isRecord(event) && event.code === 1008) {
+      this.retryBlocked = true;
+      this.updateSnapshot({
+        state: 'needs-reopen',
+        reconnectDelayMs: 0,
+        error: { type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务会话已失效，请重新连接终端' }
+      });
       return;
     }
     if (this.retryBlocked) return;
@@ -400,6 +434,7 @@ export const useTerminalSession = (options: UseTerminalSessionOptions) => {
   const sendInput = useCallback((data: string) => controller.sendInput(data), [controller]);
   const resize = useCallback((cols: number, rows: number) => controller.resize(cols, rows), [controller]);
   const decideHostKey = useCallback((decision: 'trust' | 'reject') => controller.decideHostKey(decision), [controller]);
+  const submitCredential = useCallback((credential: HostCredentialInput) => controller.submitCredential(credential), [controller]);
   const close = useCallback(() => controller.close(), [controller]);
 
   return {
@@ -409,6 +444,7 @@ export const useTerminalSession = (options: UseTerminalSessionOptions) => {
     sendInput,
     resize,
     decideHostKey,
+    submitCredential,
     close
   };
 };

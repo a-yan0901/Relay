@@ -15,8 +15,11 @@ export interface TerminalToolbarProps {
 export const terminalStatusLabels: Record<TerminalStatus, string> = {
   connecting: '连接中',
   'awaiting-host-key': '等待确认',
+  'awaiting-credential': '等待凭据',
   connected: '已连接',
   reconnecting: '重连中',
+  interrupted: '已中断',
+  'needs-reopen': '需要重新连接',
   closed: '已断开',
   failed: '连接失败'
 };
@@ -25,7 +28,9 @@ export const terminalStatusDotClass = (state: TerminalStatus): string => {
   if (state === 'connected') return 'status-dot-green';
   if (state === 'failed') return 'status-dot-red';
   if (state === 'awaiting-host-key') return 'status-dot-amber';
+  if (state === 'awaiting-credential') return 'status-dot-amber';
   if (state === 'connecting' || state === 'reconnecting') return 'status-dot-blue';
+  if (state === 'interrupted' || state === 'needs-reopen') return 'status-dot-amber';
   return 'status-dot-muted';
 };
 

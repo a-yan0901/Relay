@@ -68,6 +68,10 @@ export const parseMobaXterm = (content: string | Uint8Array, filename = 'MobaXte
       }
       const address = normalizeScalar(fields.get('remoteHost'));
       const username = normalizeScalar(fields.get('username'));
+      if (!address || !username) {
+        warnings.push(`${filename}:${name} 缺少远程主机或用户名，已跳过`);
+        continue;
+      }
       const identityFile = normalizeScalar(fields.get('privateKeyPath'));
       const gatewayHosts = splitReferenceList(normalizeScalar(fields.get('gatewayHost')));
       const gatewayPorts = splitReferenceList(normalizeScalar(fields.get('gatewayPort')));
@@ -95,10 +99,6 @@ export const parseMobaXterm = (content: string | Uint8Array, filename = 'MobaXte
           ...(gatewayHosts.length > 0 ? { GatewayHost: gatewayHosts.join(','), GatewayPort: gatewayPorts.join(','), GatewayUser: gatewayUsers.join(',') } : {})
         }
       };
-      if (!address) {
-        connection.notes.push('缺少远程主机');
-        warnings.push(`${filename}:${name} 缺少远程主机`);
-      }
       if (fields.get('localProxyCommand')) {
         connection.notes.push('MobaXterm 本地代理命令未转换');
       }

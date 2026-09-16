@@ -17,6 +17,8 @@ docker compose up -d --build
 
 应用只需要一个持久化数据卷 `/data`。备份整个 Docker volume 或宿主机绑定目录，并将备份视为敏感数据：数据库中的 Server 密码、私钥、passphrase、Snippet 和可保存的批量输出是密文，但解锁后的运行中实例能够暂时使用这些凭据建立 SSH 连接。
 
+服务端默认按来源限制每分钟 120 个请求；只有在明确评估部署流量后才调整 `RATE_LIMIT_MAX`，不要用它替代反向代理和身份认证层的限流。
+
 ## 工作区使用
 
 - 同一台 Server 可以打开多个独立 Console；顶部 tab 会显示 `Server · 1`、`Server · 2`，每个窗口拥有自己的输入、尺寸、Host Key 确认和重连状态。
@@ -24,6 +26,8 @@ docker compose up -d --build
 - 工作区会在服务端持久化打开哪些主机、活动 tab、分屏比例和筛选状态；浏览器刷新会在约 30 秒的会话保留窗口内尝试恢复 live Console。恢复描述只在当前标签页的 `sessionStorage` 保存 `terminalId`、`hostId` 和非敏感的工作区 tab 绑定，不进入持久化工作区；锁定 Vault 或显式关闭 Console 后会清除描述。应用进程重启后只恢复 tab 意图并创建新 shell，不宣称远端 shell 仍然存在。
 - “偏好”中可切换深夜蓝、浅色、高对比主题和终端字号。偏好只保存在当前浏览器，不包含任何密码、私钥或会话 token。
 - “工作区与加密数据”支持加密 Vault bundle 的导出、导入预览和冲突确认；导出密码不会写入 bundle、数据库或日志。
+- “身份”支持创建可复用的密码/私钥身份；多个 Server 可以共享同一身份。Group 支持嵌套、默认身份和连接参数继承，Server 可选择跟随分组身份；导入/导出会保留这些关系。
+- “工作区”支持保存、打开和删除命名模板；终端支持左右/上下分屏及最多四格布局，模板只保存非敏感的 tab 意图。
 - Server 卡片支持最近连接排序、编辑、测试连接和删除；编辑时凭据留空表示保留原凭据，测试连接不会保存新的认证材料。连接可配置 Keepalive、自动重连和最多四级 ProxyJump，每一跳都执行 host key 校验。
 
 ## 文件、命令与活动
@@ -31,7 +35,12 @@ docker compose up -d --build
 - 终端工具栏中的“远程文件”复用当前 Server 的认证、host key 和跳板路径，可浏览目录、上传、下载、新建目录、重命名和删除文件。
 - 上传先写入远程临时文件，完成后原子重命名；队列显示进度，支持取消和失败重试。SFTP 路径会拒绝 NUL、控制字符、反斜杠和规范化后的目录越界。
 - “批量执行”支持 `{{variable}}` 参数、目标预览、并发（默认 4、最大 16）、超时、输出大小上限和逐主机结果。多主机或高风险命令必须显式确认，服务端会重新校验主机归属。
+- “片段”支持加密保存命令、变量和标签；终端中可用 `Ctrl/Cmd+Shift+P` 搜索并带入批量执行预览，不绕过确认步骤。
 - “活动”只显示结构化脱敏摘要，不录制交互式终端原始输入输出；选择保存的批量输出按主机隔离并在 TTL 后过期。
+
+## 跨端扩展边界
+
+`src/shared/core` 提供平台无关的模型、校验、错误码、状态机、目标/连接解析、`CoreRuntime` 和 ports；当前 Web 通过 `src/web/platform/web-adapters.ts` 接入 HTTP/WSS 和浏览器文件能力。桌面与 Android 后续可以替换 transport、文件选择器和 OS keychain/Keystore，不需要复制 Host、Group、Identity、Workspace、Snippet、SFTP 或任务终态规则。当前已用同一套 CoreRuntime contract 验证 Web adapter 与 desktop/Android native-like runtime；这证明了跨端扩展边界，但不代表原生 UI、系统密钥链或本地 SSH 已交付。云同步、团队协作和更多协议暂不属于当前核心的隐式依赖。
 
 ## 反向代理要求
 

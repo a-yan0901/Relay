@@ -17,7 +17,11 @@ const exportSchema = z.object({ exportPassword: z.string().min(1).max(4096) }).s
 const previewSchema = z.object({ exportPassword: z.string().min(1).max(4096), bundle: z.string().min(1).max(64 * 1024 * 1024) }).strict();
 const applySchema = z.object({
   previewId: z.string().min(1).max(128),
-  resolution: z.object({ hostConflicts: z.enum(['skip', 'replace']), groupConflicts: z.enum(['reuse', 'replace']) }).strict()
+  resolution: z.object({
+    hostConflicts: z.enum(['skip', 'replace']),
+    groupConflicts: z.enum(['reuse', 'replace']),
+    identityConflicts: z.enum(['reuse', 'replace']).default('reuse')
+  }).strict()
 }).strict();
 
 const parseBody = <T>(schema: z.ZodType<T>, body: unknown): T => {

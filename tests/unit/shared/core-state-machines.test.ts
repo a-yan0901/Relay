@@ -50,6 +50,12 @@ describe('shared core state machines', () => {
     expect(() => transitionTransfer(state, { type: 'start', totalBytes: 10 })).toThrow();
   });
 
+  it('allows restart reconciliation to mark active transfers interrupted and retry them', () => {
+    const interrupted = transitionTransfer({ id: 'transfer-1', status: 'running', completedBytes: 4, totalBytes: 10 }, { type: 'interrupted', code: 'SERVICE_RESTARTED' });
+    expect(interrupted).toMatchObject({ status: 'interrupted', completedBytes: 4, errorCode: 'SERVICE_RESTARTED' });
+    expect(transitionTransfer(interrupted, { type: 'retry' })).toMatchObject({ status: 'queued', completedBytes: 0 });
+  });
+
   it('does not move a completed command target back to running', () => {
     let state = initialCommandTargetState('host-1');
     state = transitionCommandTarget(state, { type: 'start' });

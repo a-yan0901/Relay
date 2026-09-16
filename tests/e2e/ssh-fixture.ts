@@ -9,7 +9,6 @@ import { randomUUID } from 'node:crypto';
 const execFile = promisify(execFileCallback);
 const SSHD_PATH = '/usr/sbin/sshd';
 const FIXTURE_PASSWORD = 'webssh-e2e-password';
-const FIXTURE_USER = `webssh_e2e_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 
 export interface E2eSshFixture {
   username: string;
@@ -34,14 +33,14 @@ const findFreePort = async (): Promise<number> => {
   return port;
 };
 
-const setPassword = async (): Promise<void> => {
+const setPassword = async (username: string): Promise<void> => {
   await new Promise<void>((resolve, reject) => {
     const child = spawn('/usr/sbin/chpasswd', [], { stdio: ['pipe', 'ignore', 'pipe'] });
     let errorOutput = '';
     child.stderr?.on('data', (chunk: Buffer) => { errorOutput += chunk.toString('utf8'); });
     child.once('error', reject);
     child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(errorOutput || 'could not set e2e fixture password')));
-    child.stdin.end(`${FIXTURE_USER}:${FIXTURE_PASSWORD}\n`);
+    child.stdin.end(`${username}:${FIXTURE_PASSWORD}\n`);
   });
 };
 
@@ -66,6 +65,7 @@ export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
   if (process.platform !== 'linux' || process.getuid?.() !== 0) {
     throw new Error('the local e2e SSH fixture requires Linux root privileges');
   }
+  const fixtureUser = `webssh_e2e_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
   const root = await mkdtemp(join(tmpdir(), 'webssh-e2e-ssh-'));
   await chmod(root, 0o755);
   const home = join(root, 'home');
@@ -86,7 +86,7 @@ export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
     'KbdInteractiveAuthentication no',
     'UsePAM no',
     'PermitRootLogin no',
-    `AllowUsers ${FIXTURE_USER}`,
+    `AllowUsers ${fixtureUser}`,
     'StrictModes no',
     `PidFile ${join(root, 'sshd.pid')}`,
     'X11Forwarding no',
@@ -97,12 +97,12 @@ export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
     'Subsystem sftp /usr/lib/openssh/sftp-server',
     'LogLevel QUIET'
   ].join('\n'));
-  await execFile('/usr/sbin/useradd', ['--no-create-home', '--shell', '/bin/sh', '--home-dir', home, FIXTURE_USER]);
-  await execFile('/usr/bin/chown', [`${FIXTURE_USER}:${FIXTURE_USER}`, home]);
-  await setPassword();
+  await execFile('/usr/sbin/useradd', ['--no-create-home', '--shell', '/bin/sh', '--home-dir', home, fixtureUser]);
+  await execFile('/usr/bin/chown', [`${fixtureUser}:${fixtureUser}`, home]);
+  await setPassword(fixtureUser);
   await mkdir(remoteDirectory, { mode: 0o700 });
   await writeFile(knownFilePath, 'fixture-known-file\n', { mode: 0o600 });
-  await execFile('/usr/bin/chown', [`${FIXTURE_USER}:${FIXTURE_USER}`, remoteDirectory, knownFilePath]);
+  await execFile('/usr/bin/chown', [`${fixtureUser}:${fixtureUser}`, remoteDirectory, knownFilePath]);
   await execFile(SSHD_PATH, ['-t', '-f', configPath]);
   const child = spawn(SSHD_PATH, ['-D', '-e', '-f', configPath], { stdio: ['ignore', 'ignore', 'pipe'] });
   child.stderr?.resume();
@@ -111,7 +111,7 @@ export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
     await waitForSshd(child, port);
   } catch (error) {
     child.kill('SIGTERM');
-    await execFile('/usr/sbin/userdel', ['--remove', FIXTURE_USER]).catch(() => undefined);
+    await execFile('/usr/sbin/userdel', ['--remove', fixtureUser]).catch(() => undefined);
     await rm(remoteDirectory, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
     throw error;
@@ -127,10 +127,10 @@ export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
       child.once('exit', () => resolve());
       setTimeout(resolve, 1_000).unref();
     });
-    await execFile('/usr/sbin/userdel', ['--remove', FIXTURE_USER]).catch(() => undefined);
+    await execFile('/usr/sbin/userdel', ['--remove', fixtureUser]).catch(() => undefined);
     await rm(remoteDirectory, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
   };
 
-  return { username: FIXTURE_USER, password: FIXTURE_PASSWORD, port, remoteDirectory, knownFileName, knownFilePath, close };
+  return { username: fixtureUser, password: FIXTURE_PASSWORD, port, remoteDirectory, knownFileName, knownFilePath, close };
 };

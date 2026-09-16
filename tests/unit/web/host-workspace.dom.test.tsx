@@ -81,6 +81,35 @@ describe('HostWorkspace', () => {
     expect(onFavoriteToggle).toHaveBeenCalledWith(hosts[0]);
   });
 
+  it('shows separate import and export entries on the Vault page', async () => {
+    const user = userEvent.setup();
+    const onImport = vi.fn();
+    const onExport = vi.fn();
+    render(
+      <HostWorkspace
+        hosts={hosts}
+        groups={groups}
+        query=""
+        selectedGroupId={null}
+        favoriteOnly={false}
+        onQueryChange={vi.fn()}
+        onGroupSelected={vi.fn()}
+        onFavoriteFilter={vi.fn()}
+        onFavoriteToggle={vi.fn()}
+        onConnect={vi.fn()}
+        onAddHost={vi.fn()}
+        onImport={onImport}
+        onExport={onExport}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '导入' }));
+    await user.click(screen.getByRole('button', { name: '导出' }));
+    expect(onImport).toHaveBeenCalledOnce();
+    expect(onExport).toHaveBeenCalledOnce();
+    expect(screen.queryByText('Vault 已解锁')).not.toBeInTheDocument();
+  });
+
   it('offers a first-server action when the filtered list is empty', () => {
     const onAddHost = vi.fn();
     render(
@@ -130,5 +159,28 @@ describe('HostWorkspace', () => {
     const cards = screen.getByLabelText('Server 列表').querySelectorAll('.host-card');
     expect(cards[0]).toHaveTextContent('Staging Shell');
     expect(cards[1]).toHaveTextContent('Production API');
+  });
+
+  it('includes hosts from nested groups when a parent group is selected', () => {
+    render(
+      <HostWorkspace
+        hosts={hosts}
+        groups={[
+          { id: 'group-1', name: 'Production', sortOrder: 0, parentId: null },
+          { id: 'group-api', name: 'API', sortOrder: 0, parentId: 'group-1' }
+        ]}
+        query=""
+        selectedGroupId="group-1"
+        favoriteOnly={false}
+        onQueryChange={vi.fn()}
+        onGroupSelected={vi.fn()}
+        onFavoriteFilter={vi.fn()}
+        onFavoriteToggle={vi.fn()}
+        onConnect={vi.fn()}
+        onAddHost={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Production API')).toBeInTheDocument();
   });
 });

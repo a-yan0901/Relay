@@ -118,6 +118,24 @@ describe('TerminalSessionController', () => {
     expect(controller.snapshot.hostKey).toBeNull();
   });
 
+  it('prompts for a missing credential and sends it only for the active connection', () => {
+    FakeSocket.instances = [];
+    const controller = new TerminalSessionController({
+      hostId: 'host-1',
+      terminalId: 'terminal-1',
+      webSocketFactory: (url) => new FakeSocket(url)
+    });
+    controller.connect();
+    const socket = lastSocket();
+    socket.open();
+    socket.message(JSON.stringify({ type: 'credential-required', hostId: 'host-1', authType: 'password', name: 'Production', address: '10.0.0.8', port: 22, username: 'ops' }));
+
+    expect(controller.snapshot.state).toBe('awaiting-credential');
+    expect(controller.snapshot.credential?.hostId).toBe('host-1');
+    controller.submitCredential({ type: 'password', password: 'filled-at-connect' });
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({ type: 'credential', hostId: 'host-1', credential: { type: 'password', password: 'filled-at-connect' } });
+  });
+
   it('reconnects after an unintentional close with a capped exponential backoff', () => {
     vi.useFakeTimers();
     try {
@@ -185,6 +203,22 @@ describe('TerminalSessionController', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('shows an explicit reopen state when the server says the session is gone', () => {
+    FakeSocket.instances = [];
+    const controller = new TerminalSessionController({
+      hostId: 'host-1',
+      terminalId: 'terminal-1',
+      webSocketFactory: (url) => new FakeSocket(url)
+    });
+    controller.connect();
+    const socket = lastSocket();
+    socket.open();
+    socket.message(JSON.stringify({ type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务会话已失效，请重新连接终端' }));
+
+    expect(controller.snapshot.state).toBe('needs-reopen');
+    expect(controller.snapshot.error?.code).toBe('SESSION_NEEDS_REOPEN');
   });
 
   it('keeps sanitized connection diagnostics for the status UI', () => {
