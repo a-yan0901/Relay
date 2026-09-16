@@ -1,7 +1,7 @@
 # Relay 账号、设备与端到端加密同步设计
 
 日期：2026-09-16
-状态：方向已确认，待用户审阅 spec
+状态：M5 核心 Web/自托管切片已实现（可选、默认关闭）；完整跨端正式发布仍待恢复与密钥安全闭环
 适用范围：个人账号、跨设备同步、Web/桌面/Android 的同步边界；不包含团队协作和 Agent 实现。
 
 ## 1. 决策摘要
@@ -15,6 +15,8 @@ Relay 采用“可选账号 + 端到端加密同步”的方案：
 - 当前 Web-mediated SSH 的 Relay 执行端仍是受信的解密边界：它需要在 Vault 解锁后使用凭据建立 SSH。新设计保护的是云端同步存储和传输，不宣称当前执行端对自己持有的运行时凭据是零知识。
 - 桌面/Android 如果采用本地 SSH，可以在本地 OS keychain/Keystore 解密并使用凭据；如果继续使用 server-mediated transport，则沿用现有受信执行端边界。
 - 个人同步与团队 Vault、RBAC、实时协作和 Agent/MCP 分开建模，分别进入后续里程碑。
+
+> 实现边界（2026-09-17）：当前代码已经交付 Web 端可选的账号会话、设备列表/撤销、opaque encrypted snapshot、revision 冲突、pending/retry、登出和云端删除恢复窗口；`ACCOUNT_SYNC_ENABLED` 默认为关闭。该切片通过当前的 focused/full 技术验证，但不等同于完整 M5 安全发布：recovery key 的生成/轮换、独立本地 Vault 的新设备恢复 UI、真实 re-auth、冲突“导出两份”和账号删除闭环仍需后续实现与评审。
 
 ## 2. 目标与非目标
 
@@ -367,6 +369,8 @@ Blind sync store 只实现版本、大小、哈希、幂等、游标和权限，
 - 再做新设备恢复、离线队列、revision 冲突、加密备份和登出/删除语义。
 - 通过 Web、desktop-like 和 Android-like adapter contract 后，才把登录同步作为可选正式能力。
 
+当前实现只达到 M5 的核心 Web/自托管切片：账号、设备、opaque snapshot、revision conflict、offline pending/retry、登出和云端删除恢复窗口已落地；同步默认关闭，且当前 Relay server 仍是 Web-mediated SSH 的受信解密边界。recovery key 生成/轮换、独立新设备恢复交互、真实删除 re-auth、冲突“导出两份”、Desktop/Android 原生实现和安全评审仍是 M5 退出条件，不应由当前代码或测试结果推断为已完成。
+
 ### M6：团队与受控 Agent
 
 - 团队 Vault 不复用个人同步的“同一主密码/同一拥有者”假设。
@@ -395,10 +399,12 @@ Blind sync store 只实现版本、大小、哈希、幂等、游标和权限，
 - `secret_persistence_findings = 0`、冲突覆盖测试无静默覆盖、错误恢复无半应用 Vault、设备撤销测试通过。
 - 涉及核心数据模型、加密、迁移、账号权限或跨模块行为时，按 Q-01 Release gate 执行全量验证；纯 UI 文案或文档变化使用 Artifact/Focused 验证。
 
+本次实现验证记录（2026-09-17）：account/sync focused Vitest 7 files / 40 tests、`npm run typecheck`、`npm run lint`、full Vitest 105 files / 464 tests、`npm run build`、默认 E2E 4/4，以及 account-enabled `tests/e2e/account-sync.spec.ts` 2/2 均通过。技术门禁通过不代表上述未交付的 recovery/rotation/new-device/re-auth/export-both 功能已经具备发布资格。
+
 ## 11. 明确结论
 
 - Relay 同时支持 Local-only 和 Account-sync 两种模式；账号是同步能力的开关，不是产品可用性的门槛。
 - “登录账号即可同步”在产品上成立，但必须以 Vault 已解锁或可用恢复密钥为前提；账号本身不能解锁 Vault。
 - 云端同步采用加密盲存储；当前 Web 的 Relay 执行端继续属于受信解密边界，不能包装成零知识服务。
 - 个人同步先采用加密 snapshot + revision conflict；团队共享、对象级合并和 Agent 权限另行设计。
-- 这套边界先进入 M4/M5/M6 路线图，当前版本不实现账号登录、云同步或团队能力。
+- 当前版本实现了默认关闭的 Web Account-sync 核心切片；桌面/Android 原生 UI、recovery key/rotation、独立新设备恢复、团队能力和完整 M5 安全发布仍未交付。
