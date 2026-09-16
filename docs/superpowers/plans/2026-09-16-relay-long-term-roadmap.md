@@ -398,7 +398,7 @@ export interface TransferResumeRequest {
 
 ## Task R-03: 网络切换、刷新、锁定和 Workspace 恢复
 
-**Status:** Ready
+**Status:** Done（2026-09-16）
 **Priority:** P0
 **Milestone:** M1
 **Depends on:** R-01 的状态终态；现有 `sessionStorage` live descriptor 和 Workspace snapshot。
@@ -407,7 +407,7 @@ export interface TransferResumeRequest {
 
 - Modify: `src/web/hooks/use-terminal-session.ts`, `src/web/state/app-state.ts`, `src/web/state/workspace-state.ts`, `src/web/App.tsx`, `src/web/components/TerminalWorkspace.tsx`, `src/web/components/WorkspaceSwitcher.tsx`
 - Modify: `src/server/ssh/session-manager.ts`, `src/server/ws/terminal-gateway.ts`, `src/server/workspace/workspace-service.ts`
-- Test: `tests/unit/web/terminal-descriptors.test.ts`, `tests/unit/web/app-state.test.ts`, `tests/unit/web/app-terminal-lifecycle.dom.test.tsx`, `tests/unit/server/session-manager.test.ts`, `tests/integration/server/restart-boundaries.test.ts`, `tests/e2e/host-to-terminal.spec.ts`
+- Test: `tests/unit/web/terminal-descriptors.test.ts`, `tests/unit/web/app-state.test.ts`, `tests/unit/web/terminal-session.test.ts`, `tests/unit/web/app-terminal-lifecycle.dom.test.tsx`, `tests/unit/web/terminal-workspace.dom.test.tsx`, `tests/unit/web/app.dom.test.tsx`, `tests/unit/web/workspace-switcher.dom.test.tsx`, `tests/unit/server/session-manager.test.ts`, `tests/unit/server/workspace-service.test.ts`, `tests/integration/server/terminal-gateway.test.ts`, `tests/integration/server/restart-boundaries.test.ts`, `tests/e2e/host-to-terminal.spec.ts`
 
 **Interfaces:**
 
@@ -415,26 +415,26 @@ export interface TransferResumeRequest {
 - `restoreWorkspace()` 返回每个 tab 的 `restored | needs-reopen | missing-host` 结果，UI 不用一个全局布尔值掩盖部分失败。
 - 运行中 session 在浏览器路由离开、页面刷新、网络切换、Vault lock 和 server restart 时分别使用明确策略；不能以“刷新成功”推断“远端命令仍在运行”。
 
-- [ ] **Step 1: 写恢复矩阵测试。**
+- [x] **Step 1: 写恢复矩阵测试。**
 
-  覆盖浏览器刷新、WebSocket 短断、网络切换、服务重启、显式关闭、锁定/解锁、删除 Host 和模板打开冲突；断言每种场景的 tab/terminal/command/transfer 终态和页面动作。
+  覆盖浏览器刷新、WebSocket 短断、网络切换、服务重启、显式关闭、锁定/解锁、删除 Host 和模板打开冲突；本 slice 断言 tab/terminal 终态和页面动作，command/transfer 继续复用 R-01/R-02 的终态与 Vault lock 清理边界。
 
-- [ ] **Step 2: 运行恢复聚焦测试确认失败。**
+- [x] **Step 2: 运行恢复聚焦测试确认失败。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   npm test -- --run tests/unit/web/terminal-descriptors.test.ts tests/unit/web/app-state.test.ts tests/unit/server/session-manager.test.ts tests/integration/server/restart-boundaries.test.ts
   ```
 
-- [ ] **Step 3: 实现分层恢复策略。**
+- [x] **Step 3: 实现分层恢复策略。**
 
   保留短期 live reattach；路由离开时不静默销毁 session，若平台无法保持则显示明确提示；服务重启将旧会话标为 needs-reopen；模板只恢复 tab 意图、布局和筛选。
 
-- [ ] **Step 4: 实现 UI 恢复结果。**
+- [x] **Step 4: 实现 UI 恢复结果。**
 
   Workspace tab、TerminalToolbar、Activity 和全局反馈显示“已恢复/需要重新连接/主机已不存在”；失败 tab 仍保留在列表中，用户可选择重新连接或关闭，不自动丢失。
 
-- [ ] **Step 5: 运行刷新/重启/锁定 E2E 并提交。**
+- [x] **Step 5: 运行刷新 E2E、重启边界集成测试并提交。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -446,7 +446,15 @@ export interface TransferResumeRequest {
 
 **Acceptance:** 刷新/网络切换在保留窗口内可恢复；服务重启、锁定、删除 Host 和模板冲突均有清晰终态；没有把旧 Shell 误报为仍在运行。
 
-**Verification:** Web/server 恢复矩阵测试、restart-boundaries integration 和 Chromium 刷新/锁定/重启 E2E；跨模块改动在 M1 退出时执行 Release gate。
+**Verification:**
+
+- Web/server 恢复矩阵聚焦回归：9 个文件、63 个测试通过；覆盖 descriptor 清理、Workspace tab 逐项恢复、网络离线/恢复、session reattach、服务会话失效、删除 Server 保留 tab 意图和缺失 Server UI；`WorkspaceSwitcher` 模板 Host 冲突定向回归另有 1 个文件、3 个测试通过。
+- `npm run typecheck`、`npm run lint`、`npm run build` 通过；构建仅有既有前端 chunk 体积提示。
+- Full regression：`npm test`，83 个测试文件、317 个测试全部通过。
+- Chromium：`npm run test:e2e -- --project=chromium tests/e2e/host-to-terminal.spec.ts`，1/1 通过；覆盖真实 SSH 建连、双 tab、页面刷新后的 Workspace 恢复、锁定/解锁和窄屏布局。
+- `git diff --check` 通过；feature commit：`28af895`（`feat: make workspace recovery states explicit`）。
+
+**Evidence gap / follow-up:** 当前服务重启的 live session 失效由 service-instance、Gateway 和 session controller 的单测/集成覆盖，浏览器 E2E 已覆盖刷新与锁定/解锁，但还没有在 Playwright 中实际重启 Web 服务或模拟真实网络设备切换；后续跨平台生命周期矩阵补充这两类环境测试。Workspace 恢复结果只保留非敏感 tab 意图，command/transfer 的持久化任务仍遵循各自已有终态和 Vault lock 清理边界。
 
 ---
 
