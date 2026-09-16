@@ -110,7 +110,7 @@ describe('database migrations', () => {
     const table = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transfer_jobs'").get() as { sql: string };
     expect(table.sql).toContain("'paused'");
     expect(database.prepare('SELECT status, checkpoint_offset, temporary_path FROM transfer_jobs WHERE id = ?').get('transfer-legacy')).toEqual({ status: 'interrupted', checkpoint_offset: 4, temporary_path: '/remote.bin.tmp' });
-    expect(database.pragma('user_version', { simple: true })).toBe(12);
+    expect(database.pragma('user_version', { simple: true })).toBe(13);
   });
 
   it('adds account metadata tables without rebuilding existing Vault and host data', () => {
@@ -134,6 +134,6 @@ describe('database migrations', () => {
       ]);
     expect(database.prepare('SELECT name, address, credential_ciphertext FROM hosts WHERE id = ?').get('legacy-host'))
       .toEqual({ name: 'Legacy host', address: '10.0.0.8', credential_ciphertext: 'ciphertext' });
-    expect(database.pragma('user_version', { simple: true })).toBe(12);
+    expect(database.pragma('user_version', { simple: true })).toBe(13);
   });
 });

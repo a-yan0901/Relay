@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from './database.js';
 
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 export const migrate = (database: SqliteDatabase): void => {
   const applyMigration = database.transaction(() => {
@@ -44,6 +44,60 @@ export const migrate = (database: SqliteDatabase): void => {
         expires_at TEXT NOT NULL,
         last_used_at TEXT NOT NULL,
         created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS sync_vaults (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        vault_id TEXT NOT NULL UNIQUE,
+        key_version INTEGER NOT NULL CHECK (key_version >= 1),
+        vault_unlock_envelope_json TEXT NOT NULL,
+        wrapped_sync_key_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS sync_envelopes (
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL CHECK (revision >= 1),
+        parent_revision INTEGER CHECK (parent_revision IS NULL OR parent_revision >= 0),
+        device_id TEXT NOT NULL REFERENCES account_devices(id) ON DELETE RESTRICT,
+        key_version INTEGER NOT NULL CHECK (key_version >= 1),
+        nonce TEXT NOT NULL,
+        ciphertext TEXT NOT NULL,
+        auth_tag TEXT NOT NULL,
+        aad TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        byte_length INTEGER NOT NULL CHECK (byte_length >= 0),
+        idempotency_key_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (account_id, revision),
+        UNIQUE (account_id, idempotency_key_hash)
+      );
+
+      CREATE TABLE IF NOT EXISTS sync_conflicts (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        local_revision INTEGER NOT NULL,
+        remote_revision INTEGER NOT NULL,
+        local_envelope_json TEXT NOT NULL,
+        remote_envelope_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS sync_delete_requests (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        delete_after TEXT NOT NULL,
+        requested_at TEXT NOT NULL,
+        restored_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS sync_client_state (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        pending_envelope_json TEXT,
+        status TEXT NOT NULL CHECK (status IN ('local-only', 'needs-unlock', 'syncing', 'synced', 'pending', 'offline', 'conflict', 'device-revoked')),
+        error_code TEXT,
+        updated_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS groups (
@@ -180,6 +234,12 @@ export const migrate = (database: SqliteDatabase): void => {
         ON account_sessions (account_id, last_used_at DESC);
       CREATE INDEX IF NOT EXISTS idx_account_sessions_device
         ON account_sessions (device_id);
+      CREATE INDEX IF NOT EXISTS idx_sync_envelopes_account_revision
+        ON sync_envelopes (account_id, revision DESC);
+      CREATE INDEX IF NOT EXISTS idx_sync_envelopes_device
+        ON sync_envelopes (account_id, device_id, revision DESC);
+      CREATE INDEX IF NOT EXISTS idx_sync_conflicts_account_created
+        ON sync_conflicts (account_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_hosts_owner_name
         ON hosts (owner_id, name COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS idx_hosts_owner_address

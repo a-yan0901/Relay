@@ -512,11 +512,11 @@ export interface SyncService {
 }
 ```
 
-- [ ] **Step 1: Write failing blind-store/revision/snapshot tests.**
+- [x] **Step 1: Write failing blind-store/revision/snapshot tests.**
 
   测试要求：同一 idempotency key 重复 PUT 返回同一 head；错误 parent revision 返回 `SYNC_CONFLICT` 且旧 envelope 不变；不同 account 不能读写；descriptor 只有 wrapped key；snapshot 只序列化 Host/Group/Identity/Snippet/Workspace/Host Key，不包含 live session/transfer/command/activity；快照应用失败时数据库事务回滚。
 
-- [ ] **Step 2: Run the tests to verify failure.**
+- [x] **Step 2: Run the tests to verify failure.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -525,19 +525,19 @@ export interface SyncService {
 
   Expected: FAIL because sync tables/service/snapshot bridge are absent.
 
-- [ ] **Step 3: Add blind sync schema and repository.**
+- [x] **Step 3: Add blind sync schema and repository.**
 
   将 schema version 从 12 升到 13，新增 `sync_vaults`、`sync_envelopes`、`sync_conflicts`、`sync_delete_requests` 和 `sync_client_state`。`sync_envelopes` 只拆存 schema/revision/device/keyVersion/nonce/ciphertext/tag/aad/hash/byteLength，不增加 Host/email/address 列；`sync_client_state` 保存加密 pending envelope、状态和错误码，不保存 plaintext。所有 PUT 在单个 SQLite transaction 内校验 account、parent revision、idempotency 和大小后写入。
 
-- [ ] **Step 4: Extract canonical snapshot and transactional apply.**
+- [x] **Step 4: Extract canonical snapshot and transactional apply.**
 
   从 `VaultBundleService` 抽取可复用的 owner-scoped payload 生成/校验逻辑，追加 Workspace、Snippet 和 schemaVersion；凭据只在 `create` 的内存 Buffer 中出现，先用 `K_sync` 加密再交给 repository。`validate` 使用现有 schemas、`validateJumpChain`、Group depth/identity references；`apply` 使用现有 repository transaction/preview 规则，先备份本地加密 envelope，再按 `keep-local`/`use-remote`/`export-both` 处理冲突，不覆盖运行态表。
 
-- [ ] **Step 5: Implement service lifecycle and secure bootstrap.**
+- [x] **Step 5: Implement service lifecycle and secure bootstrap.**
 
   `enable` 在 Vault unlocked 且 account signed-in 时生成 stable `vaultId`/`K_sync`，用 `K_vault` 包装，并创建 revision 1 encrypted snapshot；`pull` 仅返回 opaque envelope。新增 `POST /api/setup/from-sync` 作为 bootstrap-only route：只接受 `masterPassword + VaultUnlockEnvelope`，在未初始化实例中用现有 Argon2id 解包并创建本地 Vault config/session；它不接受 Vault plaintext，也不属于 blind Sync API。`resolveConflict` 先保存本地加密副本，再事务应用远端或生成加密 bundle。
 
-- [ ] **Step 6: Run snapshot/revision focused tests.**
+- [x] **Step 6: Run snapshot/revision focused tests.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -546,7 +546,7 @@ export interface SyncService {
 
   Expected: PASS; response/log/database inspection contains no plaintext secret fields.
 
-- [ ] **Step 7: Commit blind store and snapshot slice.**
+- [x] **Step 7: Commit blind store and snapshot slice.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

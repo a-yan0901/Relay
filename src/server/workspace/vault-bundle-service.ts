@@ -33,7 +33,7 @@ const PREVIEW_TTL_MS = 10 * 60 * 1000;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 4096;
 
-interface BundleGroup {
+export interface BundleGroup {
   id: string;
   name: string;
   sortOrder: number;
@@ -42,7 +42,7 @@ interface BundleGroup {
   connectionProfile?: ConnectionProfileOverrides | null;
 }
 
-interface BundleIdentity {
+export interface BundleIdentity {
   id: string;
   name: string;
   type: 'password' | 'private_key';
@@ -51,7 +51,7 @@ interface BundleIdentity {
   auth: StoredHostCredential;
 }
 
-interface BundleHost {
+export interface BundleHost {
   id: string;
   name: string;
   address: string;
@@ -70,7 +70,7 @@ interface BundleHost {
   connectionProfileOverrides?: ConnectionProfileOverrides | null;
 }
 
-interface BundlePayload {
+export interface BundlePayload {
   groups: BundleGroup[];
   hosts: BundleHost[];
   identities?: BundleIdentity[];
@@ -124,6 +124,7 @@ export interface ImportResult {
 interface PendingPreview {
   expiresAt: number;
   payload: BundlePayload;
+  afterApply?: () => void;
 }
 
 const validateImportedJumpGraph = (
@@ -176,7 +177,7 @@ const parseJson = (value: string): unknown => {
 
 const bundleIdentifier = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
-const parsePayload = (value: unknown): BundlePayload => {
+export const parsePayload = (value: unknown): BundlePayload => {
   if (typeof value !== 'object' || value === null) throw new AppError('VAULT_BUNDLE_INVALID');
   const candidate = value as Record<string, unknown>;
   if (!Array.isArray(candidate.groups) || !Array.isArray(candidate.hosts)) throw new AppError('VAULT_BUNDLE_INVALID');
@@ -330,9 +331,9 @@ export class VaultBundleService {
 
   constructor(private readonly options: VaultBundleServiceOptions) {}
 
-  async export(sessionKey: Buffer, exportPassword: string): Promise<string> {
+  /** Build the canonical plaintext payload shared by export and encrypted sync. */
+  async createPayload(sessionKey: Buffer): Promise<BundlePayload> {
     assertSessionKey(sessionKey);
-    assertPassword(exportPassword);
     const groupNodes = this.options.groupRepository.list();
     const groups: BundleGroup[] = groupNodes.map((group) => ({
       id: group.id,
@@ -389,7 +390,14 @@ export class VaultBundleService {
         ...(credentialSource === 'identity' ? { identityId: row.identityId } : {})
       });
     }
-    const payload = Buffer.from(JSON.stringify({ groups, hosts, identities } satisfies BundlePayload), 'utf8');
+    return { groups, hosts, identities };
+  }
+
+  async export(sessionKey: Buffer, exportPassword: string): Promise<string> {
+    assertSessionKey(sessionKey);
+    assertPassword(exportPassword);
+    const payloadValue = await this.createPayload(sessionKey);
+    const payload = Buffer.from(JSON.stringify(payloadValue satisfies BundlePayload), 'utf8');
     const bundleKey = randomBytes(VAULT_KEY_LENGTH);
     const salt = randomBytes(VAULT_SALT_LENGTH);
     let exportKey: Buffer | undefined;
@@ -410,6 +418,23 @@ export class VaultBundleService {
       bundleKey.fill(0);
       exportKey?.fill(0);
       salt.fill(0);
+    }
+  }
+
+  /** Apply an already validated plaintext payload through the same transactional import path. */
+  async applyPayload(
+    sessionKey: Buffer,
+    payload: BundlePayload,
+    resolution: ImportResolution,
+    afterApply?: () => void
+  ): Promise<ImportResult> {
+    assertSessionKey(sessionKey);
+    const previewId = randomUUID();
+    this.previews.set(previewId, { expiresAt: Date.now() + PREVIEW_TTL_MS, payload, afterApply });
+    try {
+      return await this.applyImport(sessionKey, previewId, resolution);
+    } finally {
+      this.previews.delete(previewId);
     }
   }
 
@@ -549,6 +574,7 @@ export class VaultBundleService {
         });
         importedHosts += 1;
       }
+      pending.afterApply?.();
       return { importedHosts, importedGroups, skippedHosts, skippedGroups, importedIdentities, skippedIdentities };
     });
     const result = operation();

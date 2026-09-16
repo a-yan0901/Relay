@@ -111,6 +111,40 @@ export class WorkspaceRepository {
     return saved;
   }
 
+  /** Replace workspace state while an outer snapshot transaction is active. */
+  replaceWithinTransaction(ownerId: string, state: WorkspaceState): WorkspaceSnapshot {
+    assertOwner(ownerId);
+    const parsed = parseState(state);
+    const current = this.get(ownerId);
+    const timestamp = now();
+    if (current) {
+      this.database.prepare(`
+        UPDATE workspace_snapshots
+        SET version = @version, state_json = @stateJson, updated_at = @updatedAt
+        WHERE owner_id = @ownerId
+      `).run({
+        ownerId,
+        version: parsed.version,
+        stateJson: JSON.stringify(parsed),
+        updatedAt: timestamp
+      });
+    } else {
+      this.database.prepare(`
+        INSERT INTO workspace_snapshots (owner_id, version, state_json, created_at, updated_at)
+        VALUES (@ownerId, @version, @stateJson, @createdAt, @updatedAt)
+      `).run({
+        ownerId,
+        version: parsed.version,
+        stateJson: JSON.stringify(parsed),
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+    }
+    const saved = this.get(ownerId);
+    if (!saved) throw new AppError('INTERNAL_ERROR');
+    return saved;
+  }
+
   listTemplates(ownerId: string): WorkspaceTemplate[] {
     assertOwner(ownerId);
     const rows = this.database.prepare(`
