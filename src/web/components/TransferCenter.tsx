@@ -8,6 +8,8 @@ export interface TransferCenterProps {
   onPause?: (id: string) => void;
   onRetry?: (id: string) => void;
   onResume?: (id: string) => void;
+  /** Whether paused/interrupted jobs can safely continue from a checkpoint. */
+  resumeSupported?: boolean;
   onOpenPath?: (job: TransferJob) => void;
   ariaLabel?: string;
   includeJobIdInActionLabel?: boolean;
@@ -22,6 +24,10 @@ const transferStatusLabels: Record<TransferJob['status'], string> = {
   cancelled: '已取消',
   interrupted: '服务重启中断，可重试'
 };
+
+const transferStatusLabel = (job: TransferJob, resumeSupported: boolean): string => (
+  job.status === 'paused' && !resumeSupported ? '已暂停，可重试' : transferStatusLabels[job.status]
+);
 
 const transferErrorLabels: Record<string, string> = {
   SFTP_PERMISSION_DENIED: '远程权限不足',
@@ -52,7 +58,8 @@ const errorDetail = (job: TransferJob): string => {
   return `${job.errorCode} · ${transferErrorLabels[job.errorCode] ?? '请检查传输状态'}`;
 };
 
-const recoveryDetail = (job: TransferJob): string => {
+const recoveryDetail = (job: TransferJob, resumeSupported: boolean): string => {
+  if (!resumeSupported) return '';
   const offset = job.checkpoint?.offset ?? job.completedBytes;
   if (job.status === 'paused') return offset > 0 ? `可从 ${formatBytes(offset)} 继续` : '';
   if (!['failed', 'interrupted'].includes(job.status) || offset <= 0) return '';
@@ -69,6 +76,7 @@ export const TransferCenter = ({
   onPause,
   onRetry,
   onResume,
+  resumeSupported = true,
   onOpenPath,
   ariaLabel = '传输中心',
   includeJobIdInActionLabel = true
@@ -91,15 +99,15 @@ export const TransferCenter = ({
             : null;
           const checkpointOffset = job.checkpoint?.offset ?? job.completedBytes;
           const error = errorDetail(job);
-          const recovery = recoveryDetail(job);
+          const recovery = recoveryDetail(job, resumeSupported);
           const remotePath = remotePathForJob(job);
           const alias = hostAliases[job.hostId] ?? job.hostId;
-          const canResume = ['paused', 'interrupted'].includes(job.status) && onResume !== undefined;
+          const canResume = resumeSupported && ['paused', 'interrupted'].includes(job.status) && onResume !== undefined;
           return (
             <li key={job.id} className={`transfer-item transfer-item-${job.status}`} data-transfer-id={job.id}>
               <div className="transfer-item-content">
                 <div className="transfer-item-title"><strong>{job.kind === 'upload' ? '上传' : '下载'} · <span className="transfer-host-alias">{alias}</span></strong>{onOpenPath ? <button className="transfer-path-button" type="button" onClick={() => onOpenPath(job)} aria-label={`回到路径 ${job.id}`}>{remotePath}</button> : <span className="transfer-path-button">{remotePath}</span>}</div>
-                <small>{transferStatusLabels[job.status]}{percentage === null ? '' : ` · ${percentage}%`}{job.status === 'running' && job.speedBytesPerSecond !== undefined ? ` · ${formatRate(job.speedBytesPerSecond)}` : ''}{job.status === 'running' && job.etaSeconds !== undefined && job.etaSeconds !== null ? ` · 预计 ${formatEta(job.etaSeconds)}` : ''}</small>
+                <small>{transferStatusLabel(job, resumeSupported)}{percentage === null ? '' : ` · ${percentage}%`}{job.status === 'running' && job.speedBytesPerSecond !== undefined ? ` · ${formatRate(job.speedBytesPerSecond)}` : ''}{job.status === 'running' && job.etaSeconds !== undefined && job.etaSeconds !== null ? ` · 预计 ${formatEta(job.etaSeconds)}` : ''}</small>
                 {percentage !== null && <progress value={percentage} max={100} aria-label={`${job.id} 传输进度`} />}
                 <span className="transfer-item-context">远端路径：{remotePath} · 断点 {formatBytes(checkpointOffset)}{error ? ` · 错误码：${error}` : ''}{recovery ? ` · ${recovery}` : ''}</span>
               </div>

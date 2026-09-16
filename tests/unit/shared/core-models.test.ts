@@ -7,7 +7,7 @@ import {
   type WorkspaceState
 } from '../../../src/shared/core/models.js';
 import { connectionProfileSchema, workspaceStateSchema } from '../../../src/shared/validation.js';
-import { createCapabilitySet, effectiveMaxPanes } from '../../../src/shared/core/capabilities.js';
+import { createCapabilitySet, effectiveMaxPanes, negotiateCapabilitySet } from '../../../src/shared/core/capabilities.js';
 
 const profile = (hostId: string, jumpHostIds: string[] = []): ConnectionProfile => ({
   hostId,
@@ -66,5 +66,22 @@ describe('shared core models', () => {
     expect(effectiveMaxPanes(createCapabilitySet('desktop', ['workspace.max-panes'], { maxWorkspacePanes: 2 }), 16)).toBe(2);
     expect(effectiveMaxPanes(createCapabilitySet('web', ['workspace.max-panes'], { maxWorkspacePanes: 8 }), 6)).toBe(6);
     expect(effectiveMaxPanes(createCapabilitySet('web', [], { maxWorkspacePanes: 4 }), 4)).toBe(1);
+    expect(effectiveMaxPanes(createCapabilitySet('web', ['workspace.max-panes'], { maxWorkspacePanes: 4 }))).toBe(4);
+  });
+
+  it('keeps client, server and effective capability sets explicit', () => {
+    const negotiated = negotiateCapabilitySet(
+      'web',
+      ['workspace.persistence', 'transfer.resume', 'account.auth'],
+      ['workspace.persistence', 'transfer.resume', 'sync.encrypted'],
+      { maxWorkspacePanes: 16 }
+    );
+
+    expect(negotiated.clientCapabilities).toEqual(['workspace.persistence', 'transfer.resume', 'account.auth']);
+    expect(negotiated.serverCapabilities).toEqual(['workspace.persistence', 'transfer.resume', 'sync.encrypted']);
+    expect(negotiated.intersection).toEqual(['workspace.persistence', 'transfer.resume']);
+    expect(negotiated.capabilities).toBe(negotiated.intersection);
+    expect(negotiated.supports('account.auth')).toBe(false);
+    expect(negotiated.supports('sync.encrypted')).toBe(false);
   });
 });

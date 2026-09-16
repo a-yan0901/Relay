@@ -34,6 +34,9 @@ export const assertSessionTransportContract = async (transport: SessionTransport
   expect(typeof handle.write).toBe('function');
   expect(typeof handle.resize).toBe('function');
   expect(typeof handle.subscribe).toBe('function');
+  const unsubscribe = handle.subscribe(() => undefined);
+  expect(typeof unsubscribe).toBe('function');
+  unsubscribe();
   const reconnected = await transport.reconnect('session-1');
   expect(reconnected.id).toBe('session-1');
   await transport.close('session-1');
@@ -42,8 +45,10 @@ export const assertSessionTransportContract = async (transport: SessionTransport
 export const assertFileTransportContract = async (transport: FileTransport): Promise<void> => {
   const request: TransferRequest = { kind: 'download', hostId: 'host-1', sourcePath: '/var/log/app.log', targetPath: 'app.log' };
   const job = await transport.createTransfer(request);
+  expect(['queued', 'running', 'paused', 'completed', 'failed', 'cancelled', 'interrupted']).toContain(job.status);
   expect(job.hostId).toBe(request.hostId);
   expect((await transport.getTransfer(job.id))?.id).toBe(job.id);
+  expect(await transport.list('host-1', '/var/log')).toBeInstanceOf(Array);
   await transport.createDirectory('host-1', '/tmp/new');
   await transport.rename('host-1', '/tmp/new', '/tmp/renamed');
   await transport.remove('host-1', '/tmp/renamed');
@@ -60,7 +65,8 @@ export const assertFileTransportContract = async (transport: FileTransport): Pro
   expect(chunks.every((chunk) => chunk instanceof Uint8Array)).toBe(true);
   await transport.pauseTransfer(job.id);
   await transport.cancelTransfer(job.id);
-  await transport.retryTransfer(job.id);
+  const retried = await transport.retryTransfer(job.id);
+  expect(['queued', 'running', 'paused', 'completed', 'failed', 'cancelled', 'interrupted']).toContain(retried.status);
 };
 
 export const assertCommandTransportContract = async (transport: CommandTransport): Promise<void> => {
@@ -88,6 +94,9 @@ export const assertCoreRuntimeContract = async (
   expect(runtime.capabilities.client).toBe(options.platform);
   const negotiated = await runtime.negotiateCapabilities();
   expect(negotiated).toBe(runtime.capabilities);
+  expect(negotiated.capabilities).toBe(negotiated.intersection);
+  expect(negotiated.clientCapabilities.length).toBeGreaterThanOrEqual(negotiated.intersection.length);
+  expect(negotiated.serverCapabilities.length).toBeGreaterThanOrEqual(negotiated.intersection.length);
   for (const capability of options.requiredCapabilities ?? ['workspace.persistence']) {
     expect(runtime.capabilities.supports(capability)).toBe(true);
   }
@@ -107,7 +116,14 @@ export const assertCoreRuntimeContract = async (
   expect(runtime.imports).toBeDefined();
 
   await runtime.vault.status();
-  await runtime.connection.test('host-1');
+  const connectionResult = await runtime.connection.test('host-1');
+  expect(typeof connectionResult.ok).toBe('boolean');
+  if (connectionResult.hostKey) {
+    expect(typeof connectionResult.hostKey.algorithm).toBe('string');
+    expect(typeof connectionResult.hostKey.fingerprint).toBe('string');
+    expect(typeof connectionResult.hostKey.address).toBe('string');
+    expect(Number.isInteger(connectionResult.hostKey.port)).toBe(true);
+  }
   await runtime.hosts.list();
   await runtime.identities.list();
   await runtime.groups.list();

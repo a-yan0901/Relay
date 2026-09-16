@@ -18,11 +18,14 @@ export interface SftpWorkspaceProps {
   onRemotePathChange?: (path: string) => void;
   onUploadFile?: (file: File, path: string) => Promise<void>;
   onDownloadFile?: (path: string, name: string) => Promise<void>;
+  /** Whether this client can open a local file picker/drop target. */
+  localFilesEnabled?: boolean;
   mutationsEnabled?: boolean;
   onCancelTransfer?: (id: string) => void;
   onPauseTransfer?: (id: string) => void;
   onRetryTransfer?: (id: string) => void;
   onResumeTransfer?: (id: string) => void;
+  resumeSupported?: boolean;
   onOpenTransferPath?: (job: TransferJob) => void;
   onBackToTerminal?: () => void;
 }
@@ -37,11 +40,13 @@ export const SftpWorkspace = ({
   onRemotePathChange,
   onUploadFile,
   onDownloadFile,
+  localFilesEnabled = true,
   mutationsEnabled = true,
   onCancelTransfer,
   onPauseTransfer,
   onRetryTransfer,
   onResumeTransfer,
+  resumeSupported = true,
   onOpenTransferPath,
   onBackToTerminal
 }: SftpWorkspaceProps) => {
@@ -78,7 +83,13 @@ export const SftpWorkspace = ({
         {onBackToTerminal && <button className="button button-ghost button-small" type="button" onClick={onBackToTerminal}>返回终端</button>}
       </div>
       <div className="sftp-workspace-columns">
-        <LocalFilePanel remotePath={currentPath} onFilesSelected={uploadFiles} disabled={uploading || onUploadFile === undefined} />
+        {localFilesEnabled
+          ? <LocalFilePanel remotePath={currentPath} onFilesSelected={uploadFiles} disabled={uploading || onUploadFile === undefined} />
+          : <section className="local-file-panel local-file-panel-unavailable" aria-label="本地文件">
+            <div className="form-heading"><div><p className="eyebrow">LOCAL FILES</p><h2>本地文件</h2></div><span className="local-file-panel-count">不可用</span></div>
+            <p className="local-file-panel-path">当前客户端不支持本地文件选择。</p>
+            <p className="local-file-panel-hint" role="status">当前客户端不支持本地文件选择，仍可浏览远端文件；请在支持文件权限的客户端中上传或下载。</p>
+          </section>}
         <div className="sftp-remote-pane">
           <SftpPanel
             key={hostId}
@@ -102,6 +113,7 @@ export const SftpWorkspace = ({
         onPause={onPauseTransfer}
         onRetry={onRetryTransfer}
         onResume={onResumeTransfer}
+        resumeSupported={resumeSupported}
         onOpenPath={onOpenTransferPath}
       />
     </section>

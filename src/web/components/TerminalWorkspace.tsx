@@ -12,6 +12,7 @@ import { SftpPanel } from './SftpPanel';
 import { TransferQueue } from './TransferQueue';
 import { SftpWorkspace } from './SftpWorkspace';
 import { shortcutCommandForEvent } from '../state/shortcut-map';
+import { createHostSearchIndex, filterHostsByQuery } from '../state/navigation-state';
 
 type SplitOrientation = 'horizontal' | 'vertical';
 type PaneKey = 'primary' | 'secondary';
@@ -48,6 +49,8 @@ export interface TerminalWorkspaceProps {
   onPauseTransfer?: (id: string) => void;
   onRetryTransfer?: (id: string) => void;
   onResumeTransfer?: (id: string) => void;
+  resumeSupported?: boolean;
+  localFilesEnabled?: boolean;
   sftpMutationsEnabled?: boolean;
   workspaceId?: string | null;
   onStatusChange?: (terminalId: string, snapshot: TerminalSessionSnapshot) => void;
@@ -118,6 +121,8 @@ export const TerminalWorkspace = ({
   onPauseTransfer,
   onRetryTransfer,
   onResumeTransfer,
+  resumeSupported = true,
+  localFilesEnabled = true,
   sftpMutationsEnabled = true,
   onStatusChange,
   onEditHost,
@@ -146,6 +151,7 @@ export const TerminalWorkspace = ({
   const [attentionByTerminalId, setAttentionByTerminalId] = useState<Record<string, TerminalAttention>>({});
   const [filePanelOpen, setFilePanelOpen] = useState(false);
   const [sftpPathByHostId, setSftpPathByHostId] = useState<Record<string, string>>({});
+  const hostSearchIndex = useMemo(() => createHostSearchIndex(hosts), [hosts]);
   const layoutRef = useRef<HTMLDivElement>(null);
   const pendingPaneRef = useRef<PaneKey | null>(null);
   const previousTerminalIdsRef = useRef(new Set(terminals.map((terminal) => terminal.terminalId)));
@@ -206,9 +212,8 @@ export const TerminalWorkspace = ({
   }, [activeTerminalId, clearTerminalAttention]);
 
   const visibleHosts = useMemo(() => {
-    const normalized = hostQuery.trim().toLowerCase();
-    return hosts.filter((host) => !normalized || `${host.name} ${host.address} ${host.username}`.toLowerCase().includes(normalized));
-  }, [hostQuery, hosts]);
+    return filterHostsByQuery(hosts, hostQuery, hostSearchIndex);
+  }, [hostQuery, hostSearchIndex, hosts]);
 
   const hostById = useMemo(() => new Map(hosts.map((host) => [host.id, host])), [hosts]);
   const terminalById = useMemo(() => new Map(terminals.map((terminal) => [terminal.terminalId, terminal])), [terminals]);
@@ -615,16 +620,18 @@ export const TerminalWorkspace = ({
               onRemotePathChange={handleRemotePathChange}
               onUploadFile={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined}
               onDownloadFile={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined}
+              localFilesEnabled={localFilesEnabled}
               mutationsEnabled={sftpMutationsEnabled}
               onCancelTransfer={onCancelTransfer}
               onPauseTransfer={onPauseTransfer}
               onRetryTransfer={onRetryTransfer}
               onResumeTransfer={onResumeTransfer}
+              resumeSupported={resumeSupported}
               onOpenTransferPath={handleOpenTransferPath}
               onBackToTerminal={() => setFilePanelOpen(false)}
             />
             : onListSftp && <>
-              <SftpPanel hostId={activeHostId} remotePath={sftpPathByHostId[activeHostId] ?? '/'} onNavigate={handleRemotePathChange} onList={onListSftp} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} />
+              <SftpPanel hostId={activeHostId} remotePath={sftpPathByHostId[activeHostId] ?? '/'} onNavigate={handleRemotePathChange} onList={onListSftp} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={localFilesEnabled && onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} />
               <TransferQueue jobs={transferJobs} onCancel={onCancelTransfer} onRetry={onRetryTransfer} />
             </>}
         </aside>

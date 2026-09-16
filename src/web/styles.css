@@ -634,6 +634,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sftp-workspace-columns { display: grid; gap: 10px; grid-template-columns: minmax(140px, 0.78fr) minmax(0, 1.22fr); min-height: 0; min-width: 0; }
 .local-file-panel, .sftp-remote-pane { background: rgba(5, 15, 28, 0.2); border: 1px solid var(--border); border-radius: 9px; min-width: 0; }
 .local-file-panel { padding: 11px; }
+.local-file-panel-unavailable { border-style: dashed; }
+.local-file-panel-unavailable .local-file-panel-count { color: var(--faint); }
 .local-file-panel .form-heading { align-items: center; display: flex; gap: 8px; justify-content: space-between; }
 .local-file-panel h2 { font-size: 14px; margin: 0; }
 .local-file-panel .eyebrow { margin-bottom: 6px; }

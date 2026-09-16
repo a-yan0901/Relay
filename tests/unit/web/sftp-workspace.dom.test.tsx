@@ -62,4 +62,29 @@ describe('SftpWorkspace', () => {
     await user.upload(screen.getByLabelText('选择本地文件'), new File(['payload'], 'release.txt', { type: 'text/plain' }));
     expect(onUploadFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'release.txt' }), '/');
   });
+
+  it('explains when the client cannot access local files while keeping remote SFTP available', async () => {
+    const fileTransport = {
+      list: vi.fn(async () => entries),
+      createDirectory: vi.fn(async () => {}),
+      rename: vi.fn(async () => {}),
+      remove: vi.fn(async () => {})
+    };
+
+    render(
+      <SftpWorkspace
+        hostId="host-1"
+        workspaceId="workspace-1"
+        remotePath="/srv"
+        fileTransport={fileTransport}
+        transferJobs={[]}
+        localFilesEnabled={false}
+        onUploadFile={vi.fn(async () => {})}
+      />
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('当前客户端不支持本地文件选择');
+    expect(screen.queryByLabelText('选择本地文件')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '.env' })).toBeInTheDocument();
+  });
 });

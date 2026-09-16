@@ -160,4 +160,14 @@ describe('shared core adapter contracts', () => {
   it('composes every store and transport behind one CoreRuntime contract', async () => {
     await assertCoreRuntimeContract(createInMemoryCoreRuntime('web', ['workspace.persistence']), { platform: 'web' });
   });
+
+  it('degrades to a stable Local-only capability set when account and sync are absent', async () => {
+    const runtime = createInMemoryCoreRuntime('web', ['workspace.persistence', 'ssh.shell']);
+    const negotiated = await runtime.negotiateCapabilities();
+
+    expect(negotiated.supports('account.auth')).toBe(false);
+    expect(negotiated.supports('device.trust')).toBe(false);
+    expect(negotiated.supports('sync.encrypted')).toBe(false);
+    expect(negotiated.supports('workspace.persistence')).toBe(true);
+  });
 });

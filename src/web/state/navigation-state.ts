@@ -55,9 +55,28 @@ export const hostSearchableText = (host: Pick<HostMetadataState, 'name' | 'addre
   ...host.tags
 ].join(' ').toLocaleLowerCase();
 
-export const matchesHostNavigationFilter = (host: HostMetadataState, filter: HostNavigationFilter): boolean => {
+/** Build once per Host collection so each keystroke only scans the indexed strings. */
+export const createHostSearchIndex = (hosts: readonly HostMetadataState[]): ReadonlyMap<string, string> => (
+  new Map(hosts.map((host) => [host.id, hostSearchableText(host)]))
+);
+
+export const filterHostsByQuery = (
+  hosts: readonly HostMetadataState[],
+  query: string,
+  searchIndex: ReadonlyMap<string, string> = createHostSearchIndex(hosts)
+): readonly HostMetadataState[] => {
+  const normalizedQuery = normalized(query);
+  if (!normalizedQuery) return hosts;
+  return hosts.filter((host) => (searchIndex.get(host.id) ?? hostSearchableText(host)).includes(normalizedQuery));
+};
+
+export const matchesHostNavigationFilter = (
+  host: HostMetadataState,
+  filter: HostNavigationFilter,
+  searchableText = hostSearchableText(host)
+): boolean => {
   const query = normalized(filter.query);
-  return (!query || hostSearchableText(host).includes(query)) &&
+  return (!query || searchableText.includes(query)) &&
     (!filter.favoriteOnly || host.isFavorite) &&
     (!filter.recentOnly || host.lastConnectedAt !== null) &&
     (filter.selectedTag === undefined || filter.selectedTag === null || host.tags.includes(filter.selectedTag));

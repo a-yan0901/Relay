@@ -9,7 +9,7 @@ import type { OperationDiagnostic } from '@shared/core/models';
 import type { TerminalCredentialRequiredEvent, TerminalStatus } from '@shared/protocol';
 import type { HostCredentialInput } from '@shared/validation';
 import type { HostMetadataState, WorkspaceRestoreStatus } from '../state/app-state';
-import { TerminalOutputSanitizer } from '../terminal-output';
+import { TERMINAL_SCROLLBACK_LINES, TerminalOutputSanitizer } from '../terminal-output';
 import { useTerminalSession, type TerminalSessionSnapshot } from '../hooks/use-terminal-session';
 import { getTerminalTheme, DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
 import { HostKeyDialog } from './HostKeyDialog';
@@ -118,7 +118,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       fontSize: preferences.fontSize,
       lineHeight: 1.25,
       rightClickSelectsWord: isTouchDevice(),
-      scrollback: 5_000,
+      scrollback: TERMINAL_SCROLLBACK_LINES,
       theme: getTerminalTheme(preferences.theme)
     });
     const fitAddon = new FitAddon();

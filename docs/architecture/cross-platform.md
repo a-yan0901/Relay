@@ -4,7 +4,7 @@ Relay 当前以 Web app 为核心客户端，服务端负责 SSH、SFTP、批量
 
 ## Review 结论
 
-本轮 review 后，统一核心已经形成可执行边界：`src/shared/core` 固定模型、校验、错误码、状态机、分组/连接继承、目标快照、`CoreRuntime` 和 ports；Web 只实现第一套 adapter。桌面和 Android 仍不做 UI，但可以替换 adapter 而不复制领域规则和用户任务语义；原生端仍需按各自生命周期和交互范式实现 UI。跨端验收也已落地：Web adapter 与 desktop/android native-like fake 运行同一套 shared contract，证明扩展点不依赖 DOM 或 HTTP。
+本轮 review 后，统一核心已经形成可执行边界：`src/shared/core` 固定模型、校验、错误码、状态机、分组/连接继承、目标快照、`CoreRuntime` 和 ports；Web 只实现第一套 adapter。桌面和 Android 仍不做 UI，但可以替换 adapter 而不复制领域规则和用户任务语义；原生端仍需按各自生命周期和交互范式实现 UI。X-01 已将 capability 协商、Web/native-like contract 和规模回归落地：Web adapter 与 desktop/android native-like fake 运行同一套 shared contract，证明扩展点不依赖 DOM 或 HTTP。
 
 剩余风险已收敛为明确的后置能力，而不是架构债务：原生客户端、个人账号/加密同步、团队 Vault、更多协议和更大规模 pane 分别通过 capability、数据归属和生命周期 spec 管理；个人账号/加密同步的边界见 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md)，本轮不把它们伪装成已交付的 Web 能力。
 
@@ -86,6 +86,25 @@ export interface CoreRuntime {
 }
 ~~~
 
+### Capability 协商
+
+`CapabilitySet` 同时保留 `clientCapabilities`、`serverCapabilities` 和 `intersection`；历史字段 `capabilities` 只是 `intersection` 的兼容别名，`supports()` 只检查交集。业务代码不得用 client 集合自行放行请求，也不得通过 UI 绕过服务端权限。`negotiateCapabilitySet()` 保持 client 顺序、去重，并以服务端集合计算有效交集。
+
+能力名称描述行为，不描述平台。当前矩阵如下：
+
+| 行为能力 | Web 当前状态 | 缺失时的稳定降级 |
+| --- | --- | --- |
+| `workspace.max-panes` / `terminal.broadcast` | 已协商；pane 上限取服务端与 Web 上限的较小值 | 单 Console；隐藏分屏/广播入口 |
+| `sftp.browse` / `sftp.entry-mutations` | 按服务端交集控制远端浏览和目录/重命名/删除 | 保留可用的远端只读能力，隐藏写操作 |
+| `sftp.transfer` | 按交集显示传输中心、上传/下载动作 | 不加载传输队列，不调用传输 port |
+| `transfer.resume` | Web 支持断点校验时才显示“继续”；否则显示“重试”且不发送 resume 参数 | 从头重试，不伪装成断点恢复 |
+| `sftp.local-files` | 控制浏览器本地文件选择/drop 区 | 保留远端 SFTP，显示“不支持本地文件选择”说明 |
+| `session.reattach` | 已纳入能力集合；仍受服务端会话保留窗口约束 | 刷新后明确显示需要重新连接 |
+| `account.auth` / `device.trust` / `sync.encrypted` | 当前 Web 不宣称已交付 | 保持 Local-only，不创建账号/同步调用 |
+| `forwarding.local` | 当前未广告 | 不在导航和 runtime 中创建转发入口 |
+
+账号/同步能力即使被服务端错误或提前声明，仍必须经过 client/server 交集；因此当前 Web 不会因为服务端响应包含这些名称而进入账号或云同步路径。
+
 其中 `WorkspaceStore` 只保存非敏感工作区意图，`IdentityStore` 只返回 Identity metadata，`SecretStore` 由平台决定保存位置，`ImportExportPort` 使用 shared 的 `ImportSourceFile` 和 `Uint8Array`，不使用浏览器 `File`/`Blob`。Web adapter 可以在边界把浏览器对象转换成这些类型，native adapter 则把文件选择器或系统路径转换成同一输入。`FileTransport.download()` 对所有端返回 `Promise<ByteStream>`，resolve 后的 stream 只包含 `Uint8Array`；Web 端只在 stream 内部读取 Blob，避免浏览器对象泄露到 shared port。
 
 Host Key policy、ProxyJump 每一跳校验、SFTP 路径规范化、批量目标快照、并发/超时/输出上限、任务终态、重启中断和审计脱敏属于 core/server 共同不变量，不能由某个平台 UI 自行放宽。连接 profile 继承还必须保留旧版本 Host 的显式配置，迁移后以 host override 参与解析。
@@ -104,7 +123,7 @@ Host Key policy、ProxyJump 每一跳校验、SFTP 路径规范化、批量目�
 
 ## Web adapter
 
-`src/web/platform/web-adapters.ts` 是 Web 对 `CoreRuntime` 的唯一实现入口，`src/web/main.tsx` 将它注入 Web/React `App`；`App.tsx` 本身只依赖 `CoreRuntime`，但原生客户端应复用 shared core、ports、状态语义和 contract tests，并按平台重写 UI/生命周期编排。Web adapter 负责把 setup/unlock/lock、Host CRUD、connection probe、activity、任务轮询、HTTP/WSS、浏览器 WebSocket、浏览器文件和服务端响应映射为 shared ports；`File`/`Blob`/`FormData` 只在 Web UI/adapter 侧转换。`negotiateCapabilities()` 是跨平台契约：Web 做服务端交集协商，原生端可以返回本地能力与服务端能力的交集。
+`src/web/platform/web-adapters.ts` 是 Web 对 `CoreRuntime` 的唯一实现入口，`src/web/main.tsx` 将它注入 Web/React `App`；`App.tsx` 本身只依赖 `CoreRuntime`，但原生客户端应复用 shared core、ports、状态语义和 contract tests，并按平台重写 UI/生命周期编排。Web adapter 负责把 setup/unlock/lock、Host CRUD、connection probe、activity、任务轮询、HTTP/WSS、浏览器 WebSocket、浏览器文件和服务端响应映射为 shared ports；`File`/`Blob`/`FormData` 只在 Web UI/adapter 侧转换。`negotiateCapabilities()` 通过 `WebCapabilityAdapter` 读取服务端集合，并使用 shared `negotiateCapabilitySet()` 生成 client/server/intersection 三组结果；原生端可以用同一 helper 返回本地能力与服务端能力的交集。Web UI 只消费协商后的 `supports()` 和有效 pane 上限，不依赖 `client === 'web'` 做业务放行。
 
 Web 的 `SecretStore` 不在浏览器中保存主密码、服务器凭据、导出密码、bundle、token 或命令输出；Web session 由服务端 Vault 解析凭据。若未来桌面/Android 采用本地 SSH，则由 OS keychain/Android Keystore 实现 `SecretStore`，且凭据不会因为复用 core 而自动上传。
 
@@ -137,11 +156,22 @@ Windows/Linux 桌面端可以使用 OS keychain 或桌面安全存储，Android 
 
 平台差异应存在于 adapter，不应进入 shared core 或改变服务端的安全默认值。云同步不是 CoreRuntime 的必选端口；已批准的账号/同步设计通过可选 `AccountSessionPort`、`DeviceTrustPort` 和 `SyncPort` 扩展，并必须遵守 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md) 的数据归属、冲突、加密和离线语义。
 
+## X-01 规模回归基线
+
+规模检查使用结构性上限和相对基线，不把一次机器的绝对耗时当作发布承诺：
+
+- `tests/performance/host-vault-scale.test.ts` 用 100 Host 作为基线，对 1,000 Host 重复执行 100 轮搜索；搜索索引按 Host 集合构建一次，回归阈值为 `max(40 × 小样本耗时, 500ms)`，用于发现非线性退化和重复元数据拼接。
+- `tests/performance/terminal-output-scale.test.ts` 固定 xterm scrollback 不超过 5,000 行；Terminal server 的输出缓冲仍由 `SshSessionManager` 按字节上限控制。
+- `TransferCenter` 保持 render-only，不为每个任务建立订阅；任务状态由 `App` 的单一刷新队列负责，DOM 测试覆盖暂停/重试/取消等生命周期动作。
+
+这些是回归门槛，不是对所有设备的性能保证；后续平台 shell 需要在真实浏览器、桌面和移动设备上补充相同工作负载的实测基线。
+
 ## Contract tests 与发布门槛
 
 - `tests/fixtures/core-runtime-contract.ts` 保存平台无关的 session、file、command、store、capability 和 `Uint8Array` import/export 断言。
 - `tests/unit/shared/core-adapter-contract.test.ts` 用无平台依赖的 in-memory runtime 验证 `CoreRuntime` 组合；`tests/unit/shared/native-adapter-contract.test.ts` 用同一断言覆盖 desktop 和 Android native-like fake。
 - `tests/unit/web/web-adapters.test.ts` 对真实 Web adapter 运行同一套 CoreRuntime contract，另行验证 HTTP/WSS/浏览器对象到 shared port 的映射，不把 Web 实现细节泄露给 core。
+- `tests/performance/host-vault-scale.test.ts`、`tests/performance/terminal-output-scale.test.ts` 和 TransferCenter DOM 回归覆盖 Host 搜索、终端 scrollback 与传输任务动作；阈值不依赖固定机器的绝对性能。
 - CI 对 `src/shared` 做静态依赖检查，禁止出现 Node/DOM/React/WebSocket/`ssh2`/浏览器存储依赖；同时运行 Web 和 server 两个 TypeScript target。
 - 每个新功能先修改 shared contract 和 fake contract test，再实现 Web adapter；没有 shared port 的功能不得直接写入 `App.tsx`。
 

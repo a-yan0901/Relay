@@ -2,6 +2,9 @@ const UTF8_C1_LEAD_BYTE = 0xc2;
 const C1_CONTROL_START = 0x80;
 const C1_CONTROL_END = 0x9f;
 
+/** xterm retains a finite viewport history so terminal DOM work cannot grow forever. */
+export const TERMINAL_SCROLLBACK_LINES = 5_000;
+
 const isC1ContinuationByte = (value: number): boolean => value >= C1_CONTROL_START && value <= C1_CONTROL_END;
 
 /**

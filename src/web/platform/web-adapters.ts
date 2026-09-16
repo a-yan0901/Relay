@@ -1,5 +1,5 @@
 import type { CapabilitySet } from '../../shared/core/capabilities';
-import { createCapabilitySet, createWebCapabilitySet } from '../../shared/core/capabilities';
+import { createWebCapabilitySet, negotiateCapabilitySet } from '../../shared/core/capabilities';
 import type {
   ActivityFilter,
   ActivityPage,
@@ -58,9 +58,10 @@ const webPaneLimit = (serverLimit: number | undefined): number => {
   return Math.max(1, Math.min(WEB_PLATFORM_MAX_PANES, Math.floor(serverLimit)));
 };
 
-const createEffectiveWebCapabilitySet = (capabilities: readonly Capability[], serverLimit?: number): CapabilitySet => (
-  createCapabilitySet('web', capabilities, { maxWorkspacePanes: webPaneLimit(serverLimit) })
-);
+const createEffectiveWebCapabilitySet = (serverCapabilities: readonly Capability[], serverLimit?: number): CapabilitySet => {
+  const clientCapabilities = createWebCapabilitySet().clientCapabilities;
+  return negotiateCapabilitySet('web', clientCapabilities, serverCapabilities, { maxWorkspacePanes: webPaneLimit(serverLimit) });
+};
 
 const emptyWorkspace = (): WorkspaceState => ({
   version: 0,
@@ -600,9 +601,8 @@ export class WebCapabilityAdapter {
   async load(): Promise<CapabilitySet> {
     const response = await this.client.getCapabilities?.() ?? { client: 'web', version: 1, capabilities: [...createWebCapabilitySet().capabilities] } satisfies CapabilityResponse;
     if (response.version !== 1 || response.client !== 'web' || !Array.isArray(response.capabilities)) throw new AppError('CAPABILITY_UNAVAILABLE');
-    const webCapabilities = createWebCapabilitySet();
     const serverLimit = response.limits?.maxWorkspacePanes ?? response.limits?.maxPanes;
-    return createEffectiveWebCapabilitySet(response.capabilities.filter((capability): capability is typeof webCapabilities.capabilities[number] => webCapabilities.supports(capability)), serverLimit);
+    return createEffectiveWebCapabilitySet(response.capabilities, serverLimit);
   }
 }
 
@@ -693,9 +693,7 @@ export const createWebAdapters = (options: { api?: WebApiClient; webSocketFactor
     imports: new WebImportExportAdapter(client as Pick<WebApiClient, 'previewExternalImport' | 'applyExternalImport' | 'exportOpenSshConfig' | 'exportSshCsv' | 'exportVaultBundle' | 'previewVaultImport' | 'applyVaultImport'>),
     capabilityAdapter,
     negotiateCapabilities: async (): Promise<CapabilitySet> => {
-      const serverCapabilities = await capabilityAdapter.load();
-      const webCapabilities = createWebCapabilitySet();
-      runtime.capabilities = createEffectiveWebCapabilitySet(webCapabilities.capabilities.filter((capability) => serverCapabilities.supports(capability)), serverCapabilities.limits.maxWorkspacePanes);
+      runtime.capabilities = await capabilityAdapter.load();
       return runtime.capabilities;
     },
     refreshCapabilities: async (): Promise<CapabilitySet> => runtime.negotiateCapabilities()

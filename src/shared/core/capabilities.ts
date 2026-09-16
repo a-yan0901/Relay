@@ -3,6 +3,13 @@ import type { Capability, ClientPlatform } from './models.js';
 export interface CapabilitySet {
   client: ClientPlatform;
   version: 1;
+  /** Capabilities implemented by the current client adapter before negotiation. */
+  clientCapabilities: readonly Capability[];
+  /** Capabilities advertised by the server/peer before client filtering. */
+  serverCapabilities: readonly Capability[];
+  /** The only capabilities that application code may use. */
+  intersection: readonly Capability[];
+  /** Backwards-compatible alias for the negotiated intersection. */
   capabilities: readonly Capability[];
   limits: CapabilityLimits;
   supports(capability: Capability): boolean;
@@ -18,23 +25,64 @@ const normalizeMaxWorkspacePanes = (value: number | undefined): number | undefin
   return Math.max(1, Math.floor(value));
 };
 
+const uniqueCapabilities = (capabilities: readonly Capability[]): readonly Capability[] => (
+  Object.freeze([...new Set(capabilities)])
+);
+
+const createCapabilitySetFromParts = (
+  client: ClientPlatform,
+  clientCapabilities: readonly Capability[],
+  serverCapabilities: readonly Capability[],
+  intersection: readonly Capability[],
+  limits: Partial<CapabilityLimits>
+): CapabilitySet => {
+  const normalizedClientCapabilities = uniqueCapabilities(clientCapabilities);
+  const normalizedServerCapabilities = uniqueCapabilities(serverCapabilities);
+  const normalizedIntersection = uniqueCapabilities(intersection);
+  const maxWorkspacePanes = normalizeMaxWorkspacePanes(limits.maxWorkspacePanes);
+  return {
+    client,
+    version: 1,
+    clientCapabilities: normalizedClientCapabilities,
+    serverCapabilities: normalizedServerCapabilities,
+    intersection: normalizedIntersection,
+    capabilities: normalizedIntersection,
+    limits: maxWorkspacePanes === undefined ? {} : { maxWorkspacePanes },
+    supports: (capability) => normalizedIntersection.includes(capability)
+  };
+};
+
 export const createCapabilitySet = (
   client: ClientPlatform,
   capabilities: readonly Capability[],
   limits: Partial<CapabilityLimits> = {}
 ): CapabilitySet => {
-  const unique = [...new Set(capabilities)];
-  return {
+  const unique = uniqueCapabilities(capabilities);
+  return createCapabilitySetFromParts(client, unique, unique, unique, limits);
+};
+
+/**
+ * Creates a negotiated capability set. The returned `capabilities` field is
+ * intentionally the same array as `intersection` so older callers cannot
+ * accidentally bypass the server's advertised permission set.
+ */
+export const negotiateCapabilitySet = (
+  client: ClientPlatform,
+  clientCapabilities: readonly Capability[],
+  serverCapabilities: readonly Capability[],
+  limits: Partial<CapabilityLimits> = {}
+): CapabilitySet => {
+  const normalizedClientCapabilities = uniqueCapabilities(clientCapabilities);
+  const normalizedServerCapabilities = uniqueCapabilities(serverCapabilities);
+  const serverSet = new Set(normalizedServerCapabilities);
+  const intersection = normalizedClientCapabilities.filter((capability) => serverSet.has(capability));
+  return createCapabilitySetFromParts(
     client,
-    version: 1,
-    capabilities: unique,
-    limits: {
-      ...(normalizeMaxWorkspacePanes(limits.maxWorkspacePanes) === undefined
-        ? {}
-        : { maxWorkspacePanes: normalizeMaxWorkspacePanes(limits.maxWorkspacePanes) })
-    },
-    supports: (capability) => unique.includes(capability)
-  };
+    normalizedClientCapabilities,
+    normalizedServerCapabilities,
+    intersection,
+    limits
+  );
 };
 
 export const supportsWorkspacePanes = (capabilities: CapabilitySet): boolean => (
@@ -46,9 +94,11 @@ export const supportsWorkspacePanes = (capabilities: CapabilitySet): boolean => 
  * upper bound. The shared core deliberately does not know Web/Desktop/Android
  * limits.
  */
-export const effectiveMaxPanes = (capabilities: CapabilitySet, platformMaxPanes: number): number => {
+export const effectiveMaxPanes = (capabilities: CapabilitySet, platformMaxPanes?: number): number => {
   if (!supportsWorkspacePanes(capabilities)) return 1;
-  const localLimit = Number.isFinite(platformMaxPanes) ? Math.max(1, Math.floor(platformMaxPanes)) : 1;
+  const localLimit = platformMaxPanes === undefined
+    ? capabilities.limits.maxWorkspacePanes ?? 1
+    : Number.isFinite(platformMaxPanes) ? Math.max(1, Math.floor(platformMaxPanes)) : 1;
   return Math.min(localLimit, capabilities.limits.maxWorkspacePanes ?? localLimit);
 };
 
@@ -63,8 +113,11 @@ export const WEB_CAPABILITIES: readonly Capability[] = [
   'ssh.shell',
   'ssh.reconnect',
   'ssh.proxy-jump',
+  'session.reattach',
   'sftp.browse',
   'sftp.transfer',
+  'transfer.resume',
+  'sftp.local-files',
   'sftp.entry-mutations',
   'automation.snippets',
   'automation.snippet-manager',

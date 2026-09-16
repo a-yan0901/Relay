@@ -969,7 +969,7 @@ export interface TargetSelectionSnapshot {
 
 ## Task X-01: Capability、跨端 contract 和规模性能门槛
 
-**Status:** Ready
+**Status:** Done（2026-09-16）
 **Priority:** P1/P2
 **Milestone:** M4
 **Depends on:** R-01、U-02、U-03 的 capability 使用点；现有 `CoreRuntime` 和 native-like runtime。
@@ -978,7 +978,9 @@ export interface TargetSelectionSnapshot {
 
 - Modify: `src/shared/core/capabilities.ts`, `src/shared/core/ports.ts`, `src/shared/core/runtime.ts`, `src/shared/core/models.ts`
 - Modify: `src/web/platform/web-adapters.ts`, `src/web/App.tsx`, `src/web/components/TerminalWorkspace.tsx`, `src/web/components/SftpWorkspace.tsx`
+- Modify: `src/web/components/HostWorkspace.tsx`, `src/web/components/TerminalPanel.tsx`, `src/web/components/TransferCenter.tsx`, `src/web/state/navigation-state.ts`, `src/web/terminal-output.ts`, `src/web/styles.css`
 - Modify: `tests/fixtures/core-runtime-contract.ts`, `tests/fixtures/native-runtime.ts`, `tests/unit/shared/core-adapter-contract.test.ts`, `tests/unit/shared/native-adapter-contract.test.ts`, `tests/unit/web/web-adapters.test.ts`
+- Modify: `tests/unit/shared/core-models.test.ts`, `tests/unit/web/sftp-workspace.dom.test.tsx`, `tests/unit/web/transfer-center.dom.test.tsx`
 - Create: `tests/performance/host-vault-scale.test.ts`, `tests/performance/terminal-output-scale.test.ts` only when the test runner supports stable timing thresholds
 - Modify: `docs/architecture/cross-platform.md`
 
@@ -988,31 +990,33 @@ export interface TargetSelectionSnapshot {
 - `CoreRuntime.negotiateCapabilities()` 返回 client、server 和交集；UI 对不可用能力显示原因或隐藏入口，但不能在 UI 旁路 server 权限。账号/同步能力缺失时必须稳定降级到 Local-only。
 - Web/native contract tests 同时验证 Host Key、SFTP 路径、批量目标、任务终态、取消、输出上限、导入/导出和错误码。
 
-- [ ] **Step 1: 补 capability matrix 和 contract 失败测试。**
+- [x] **Step 1: 补 capability matrix 和 contract 失败测试。**
 
   覆盖 Web、native-like 和能力缺失三种 runtime；不同 pane 上限、不可恢复传输、无本地文件选择器时的降级均有断言。
 
-- [ ] **Step 2: 实现能力交集和 UI 降级。**
+- [x] **Step 2: 实现能力交集和 UI 降级。**
 
   删除按 `client === 'web'` 的业务分支；使用 capability 控制按钮、面板和错误文案；共享规则只存在于 core/adapter，不复制到平台组件。
 
-- [ ] **Step 3: 建立规模测试。**
+- [x] **Step 3: 建立规模测试。**
 
   在不绑定脆弱的绝对机器时间前提下，验证 1,000 Host 列表搜索不会阻塞输入、长终端输出不会无限增长 DOM、传输队列不会泄漏订阅；先记录基线，再设回归阈值。
 
-- [ ] **Step 4: 运行 contract/性能 focused tests 并提交。**
+- [x] **Step 4: 运行 contract/性能 focused tests 并提交。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-  npm test -- --run tests/unit/shared/core-adapter-contract.test.ts tests/unit/shared/native-adapter-contract.test.ts tests/unit/web/web-adapters.test.ts
-  git add src/shared/core/capabilities.ts src/shared/core/ports.ts src/shared/core/runtime.ts src/shared/core/models.ts src/web/platform/web-adapters.ts src/web/App.tsx src/web/components/TerminalWorkspace.tsx src/web/components/SftpWorkspace.tsx tests/fixtures/core-runtime-contract.ts tests/fixtures/native-runtime.ts tests/unit/shared/core-adapter-contract.test.ts tests/unit/shared/native-adapter-contract.test.ts tests/unit/web/web-adapters.test.ts tests/performance/host-vault-scale.test.ts tests/performance/terminal-output-scale.test.ts docs/architecture/cross-platform.md
+  npm test -- --run tests/unit/shared/core-models.test.ts tests/unit/shared/core-adapter-contract.test.ts tests/unit/shared/native-adapter-contract.test.ts tests/unit/web/web-adapters.test.ts tests/unit/web/sftp-workspace.dom.test.tsx tests/unit/web/transfer-center.dom.test.tsx tests/performance/host-vault-scale.test.ts tests/performance/terminal-output-scale.test.ts
+  npm run lint
+  npm run typecheck
+  git add src/shared/core/capabilities.ts src/shared/core/ports.ts src/shared/core/runtime.ts src/shared/core/models.ts src/web/platform/web-adapters.ts src/web/App.tsx src/web/components/HostWorkspace.tsx src/web/components/TerminalPanel.tsx src/web/components/TerminalWorkspace.tsx src/web/components/SftpWorkspace.tsx src/web/components/TransferCenter.tsx src/web/state/navigation-state.ts src/web/terminal-output.ts src/web/styles.css tests/fixtures/core-runtime-contract.ts tests/fixtures/native-runtime.ts tests/unit/shared/core-models.test.ts tests/unit/shared/core-adapter-contract.test.ts tests/unit/shared/native-adapter-contract.test.ts tests/unit/web/web-adapters.test.ts tests/unit/web/sftp-workspace.dom.test.tsx tests/unit/web/transfer-center.dom.test.tsx tests/performance/host-vault-scale.test.ts tests/performance/terminal-output-scale.test.ts docs/architecture/cross-platform.md docs/superpowers/plans/2026-09-16-relay-long-term-roadmap.md
   git diff --cached --check
   git commit -m "test: enforce capability and cross-platform contracts"
   ```
 
 **Acceptance:** Web/native-like runtime 共享状态和安全规则；能力缺失时可解释降级；规模测试有可重复的基线和阈值；shared core 不引入平台依赖。
 
-**Verification:** core-adapter/native contract tests、Web adapter tests 和稳定的规模回归；shared core 发生跨模块变化时执行 Q-01 Release gate。
+**Verification:** focused contract/performance tests 8 files / 26 tests passed；`npm run lint` passed；`npm run typecheck` passed；Q-01 release gate `npm test` 95 files / 398 tests passed，`npm run build` Web/server 均成功，`npm run test:e2e` Chromium 3/3 passed。client/server/intersection、Local-only、不可恢复传输和 1,000 Host 搜索规模回归均有测试证据；build 仅保留既有的 Web bundle >500 kB 提示。
 
 ---
 

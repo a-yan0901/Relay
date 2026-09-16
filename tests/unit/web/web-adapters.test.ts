@@ -43,7 +43,7 @@ const createWebContractApi = () => {
     createdAt: ''
   };
   return {
-    getCapabilities: async () => ({ client: 'web' as const, version: 1 as const, capabilities: ['workspace.persistence'] as const }),
+    getCapabilities: async () => ({ client: 'web' as const, version: 1 as const, capabilities: ['workspace.persistence', 'account.auth', 'sync.encrypted'] as const }),
     getSetupStatus: async () => ({ initialized: true, locked: false }),
     testConnection: async () => ({ ok: true }),
     getWorkspace: async () => ({ version: 0, tabs: [], activeTabId: null, layout: { mode: 'single' as const, ratio: 0.5 }, filters: { query: '', groupId: null, favoriteOnly: false } }),
@@ -263,6 +263,12 @@ describe('web adapters', () => {
     await expect(runtime.refreshCapabilities()).resolves.toEqual(expect.objectContaining({ capabilities: ['workspace.persistence'] }));
     expect(runtime.capabilities.supports('workspace.persistence')).toBe(true);
     expect(runtime.capabilities.supports('workspace.multi-pane')).toBe(false);
+    expect(runtime.capabilities.clientCapabilities).toContain('sftp.local-files');
+    expect(runtime.capabilities.serverCapabilities).toEqual(['workspace.persistence', 'account.auth', 'sync.encrypted']);
+    expect(runtime.capabilities.intersection).toEqual(['workspace.persistence']);
+    expect(runtime.capabilities.supports('transfer.resume')).toBe(false);
+    expect(runtime.capabilities.supports('account.auth')).toBe(false);
+    expect(runtime.capabilities.supports('sync.encrypted')).toBe(false);
   });
 
   it('intersects a server pane limit with the Web platform upper bound', async () => {
@@ -280,6 +286,9 @@ describe('web adapters', () => {
     await runtime.refreshCapabilities();
     expect(runtime.capabilities.limits.maxWorkspacePanes).toBe(4);
     expect(runtime.capabilities.supports('workspace.max-panes')).toBe(true);
+    expect(runtime.capabilities.clientCapabilities).toContain('workspace.max-panes');
+    expect(runtime.capabilities.serverCapabilities).toEqual(['workspace.max-panes']);
+    expect(runtime.capabilities.intersection).toEqual(['workspace.max-panes']);
   });
 
   it('keeps cross-product import/export behind the shared imports port', async () => {

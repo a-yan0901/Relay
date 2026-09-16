@@ -92,4 +92,19 @@ describe('TransferCenter', () => {
     await user.click(screen.getByRole('button', { name: '继续 paused-upload' }));
     expect(onResume).toHaveBeenCalledWith('paused-upload');
   });
+
+  it('downgrades paused work to retry when checkpoint resume is unavailable', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    render(<TransferCenter jobs={[{
+      id: 'paused-no-resume', kind: 'upload', hostId: 'host-prod', sourcePath: 'release.bin', targetPath: '/srv/release.bin',
+      status: 'paused', completedBytes: 4, totalBytes: 10,
+      checkpoint: { transferId: 'paused-no-resume', offset: 4, totalBytes: 10, checksum: 'e'.repeat(64) }, createdAt: '', updatedAt: ''
+    }]} onRetry={onRetry} resumeSupported={false} />);
+
+    expect(screen.getByText(/已暂停，可重试/u)).toBeInTheDocument();
+    expect(screen.queryByText(/可从 4 B 继续/u)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '重试 paused-no-resume' }));
+    expect(onRetry).toHaveBeenCalledWith('paused-no-resume');
+  });
 });

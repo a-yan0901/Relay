@@ -170,6 +170,7 @@ const NATIVE_CAPABILITIES: readonly Capability[] = [
   'ssh.shell',
   'ssh.reconnect',
   'ssh.proxy-jump',
+  'session.reattach',
   'sftp.browse',
   'sftp.transfer',
   'sftp.entry-mutations',

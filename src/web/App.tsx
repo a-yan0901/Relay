@@ -23,7 +23,6 @@ import type { ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, C
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
 import type { BinarySource } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
-import { WEB_PLATFORM_MAX_PANES } from './platform/web-adapters';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
 import { shortcutCommandForEvent } from './state/shortcut-map';
@@ -221,7 +220,7 @@ export const App = ({ runtime }: AppProps) => {
     workspaceTemplates,
     snippets
   }), [snippets, state.groups, state.hosts, state.terminals, workspaceTemplates]);
-  const maxWorkspacePanes = effectiveMaxPanes(capabilities, WEB_PLATFORM_MAX_PANES);
+  const maxWorkspacePanes = effectiveMaxPanes(capabilities);
 
   useEffect(() => {
     const handleOffline = (): void => setNetworkOnline(false);
@@ -290,7 +289,11 @@ export const App = ({ runtime }: AppProps) => {
       dispatch({ type: 'groupsLoaded', groups: [...groups].map((group) => ({ ...group })) });
       setIdentities([...loadedIdentities]);
       void runtime.workspace.listTemplates().then((templates) => setWorkspaceTemplates([...templates])).catch(() => setWorkspaceTemplates([]));
-      void runtime.files.listTransfers().then((jobs) => setTransferJobs([...jobs])).catch(() => setTransferJobs([]));
+      if (negotiatedCapabilities.supports('sftp.transfer')) {
+        void runtime.files.listTransfers().then((jobs) => setTransferJobs([...jobs])).catch(() => setTransferJobs([]));
+      } else {
+        setTransferJobs([]);
+      }
       const availableHostIds = new Set(hosts.map((host) => host.id));
       const restoreResults = restoreWorkspace(workspace, availableHostIds, loadTerminalDescriptors(), () => createTerminalId());
       if (workspaceLoadRequestRef.current !== loadRequest || latestStateRef.current.phase === 'locked') return;
@@ -743,6 +746,7 @@ export const App = ({ runtime }: AppProps) => {
   };
 
   const handleRetryTransfer = (id: string): void => {
+    const resumeSupported = capabilities.supports('transfer.resume');
     const currentJob = transferJobs.find((candidate) => candidate.id === id);
     const preparedWriter = currentJob?.kind === 'download' && !downloadWritersRef.current.has(id)
       ? openDownloadWriter(currentJob.targetPath)
@@ -753,7 +757,7 @@ export const App = ({ runtime }: AppProps) => {
         const file = transferFilesRef.current.get(id);
         if (!file) return;
         updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-        void runtime.files.upload(id, fileToBinarySource(file), resumeRequestForJob(job)).then(updateTransferJob).catch(() => refreshTransferJob(id));
+        void runtime.files.upload(id, fileToBinarySource(file), resumeSupported ? resumeRequestForJob(job) : undefined).then(updateTransferJob).catch(() => refreshTransferJob(id));
         return;
       }
       if (!writer) {
@@ -761,7 +765,7 @@ export const App = ({ runtime }: AppProps) => {
         return;
       }
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-      void runtime.files.download(id, resumeRequestForJob(job)).then((stream) => saveDownloadStream(id, stream, job.targetPath, job.checkpoint?.offset ?? 0, writer)).then(() => {
+      void runtime.files.download(id, resumeSupported ? resumeRequestForJob(job) : undefined).then((stream) => saveDownloadStream(id, stream, job.targetPath, resumeSupported ? job.checkpoint?.offset ?? 0 : 0, writer)).then(() => {
         return refreshTransferJob(id);
       }).catch(() => refreshTransferJob(id));
     })).catch(() => undefined);
@@ -1105,13 +1109,15 @@ export const App = ({ runtime }: AppProps) => {
             onDeleteSftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.remove(hostId, path) : undefined}
             fileTransport={capabilities.supports('sftp.browse') ? runtime.files : undefined}
             sftpMutationsEnabled={capabilities.supports('sftp.entry-mutations')}
-            onUploadSftp={capabilities.supports('sftp.transfer') ? handleUploadSftp : undefined}
+            onUploadSftp={capabilities.supports('sftp.transfer') && capabilities.supports('sftp.local-files') ? handleUploadSftp : undefined}
             onDownloadSftp={capabilities.supports('sftp.transfer') ? handleDownloadSftp : undefined}
             transferJobs={capabilities.supports('sftp.transfer') ? transferJobs : []}
             onCancelTransfer={capabilities.supports('sftp.transfer') ? handleCancelTransfer : undefined}
             onPauseTransfer={capabilities.supports('sftp.transfer') ? handlePauseTransfer : undefined}
             onRetryTransfer={capabilities.supports('sftp.transfer') ? handleRetryTransfer : undefined}
-            onResumeTransfer={capabilities.supports('sftp.transfer') ? handleRetryTransfer : undefined}
+            onResumeTransfer={capabilities.supports('sftp.transfer') && capabilities.supports('transfer.resume') ? handleRetryTransfer : undefined}
+            resumeSupported={capabilities.supports('transfer.resume')}
+            localFilesEnabled={capabilities.supports('sftp.local-files')}
             allowMultiPane={supportsWorkspacePanes(capabilities)}
             maxPanes={maxWorkspacePanes}
             workspaceLayout={state.workspace.layout}

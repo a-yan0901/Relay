@@ -158,6 +158,7 @@ export interface SessionTransport {
 }
 
 export interface FileTransport {
+  /** Paths are normalized/validated by the adapter and never treated as local paths. */
   list(hostId: string, path: string): Promise<readonly SftpEntry[]>;
   createDirectory(hostId: string, path: string): Promise<void>;
   rename(hostId: string, from: string, to: string): Promise<void>;
@@ -165,6 +166,7 @@ export interface FileTransport {
   createTransfer(request: TransferRequest): Promise<TransferJob>;
   listTransfers(): Promise<readonly TransferJob[]>;
   getTransfer(transferId: string): Promise<TransferJob | null>;
+  /** Resume arguments are optional so clients without `transfer.resume` can use a fresh transfer. */
   upload(transferId: string, source: BinarySource, resume?: TransferResumeRequest): Promise<TransferJob>;
   download(transferId: string, resume?: TransferResumeRequest): Promise<ByteStream>;
   pauseTransfer(transferId: string): Promise<void>;

@@ -20,7 +20,11 @@ import type { ClientPlatform } from './models.js';
 export interface CoreRuntime {
   platform: ClientPlatform;
   capabilities: CapabilitySet;
-  /** Negotiates the effective client/server feature intersection. */
+  /**
+   * Negotiates client capabilities with the server/peer. Consumers must use
+   * `capabilities.supports()` or `capabilities.intersection`; the client set
+   * is descriptive and never grants permission by itself.
+   */
   negotiateCapabilities(): Promise<CapabilitySet>;
   vault: VaultSessionPort;
   hosts: HostStore;

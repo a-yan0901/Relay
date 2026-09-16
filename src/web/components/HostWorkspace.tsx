@@ -4,7 +4,7 @@ import type { HostMetadataState, GroupSummary } from '../state/app-state';
 import { GroupSidebar } from './GroupSidebar';
 import { HostList } from './HostList';
 import { descendantGroupIds } from '../../shared/core/group-tree';
-import { matchesHostNavigationFilter } from '../state/navigation-state';
+import { createHostSearchIndex, matchesHostNavigationFilter } from '../state/navigation-state';
 
 export interface HostWorkspaceProps {
   hosts: HostMetadataState[];
@@ -55,11 +55,12 @@ export const HostWorkspace = ({
   onTestConnection,
   onClearHostKey
 }: HostWorkspaceProps) => {
+  const hostSearchIndex = useMemo(() => createHostSearchIndex(hosts), [hosts]);
   const visibleHosts = useMemo(() => {
     const groupScope = selectedGroupId === null ? null : new Set(descendantGroupIds(selectedGroupId, groups));
     return hosts.filter((host) => {
-      return matchesHostNavigationFilter(host, { query, favoriteOnly, recentOnly, selectedTag }) &&
-        (groupScope === null || (host.groupId !== null && groupScope.has(host.groupId)));
+      return matchesHostNavigationFilter(host, { query, favoriteOnly, recentOnly, selectedTag }, hostSearchIndex.get(host.id)) &&
+      (groupScope === null || (host.groupId !== null && groupScope.has(host.groupId)));
     }).sort((left, right) => {
       if (left.isFavorite !== right.isFavorite) return left.isFavorite ? -1 : 1;
       const leftTime = left.lastConnectedAt ? Date.parse(left.lastConnectedAt) : Number.NEGATIVE_INFINITY;
@@ -67,7 +68,7 @@ export const HostWorkspace = ({
       if (leftTime !== rightTime) return rightTime - leftTime;
       return left.name.localeCompare(right.name);
     });
-  }, [favoriteOnly, groups, hosts, query, recentOnly, selectedGroupId, selectedTag]);
+  }, [favoriteOnly, groups, hosts, hostSearchIndex, query, recentOnly, selectedGroupId, selectedTag]);
 
   const isFilteredEmpty = hosts.length > 0 && visibleHosts.length === 0;
   const tags = useMemo(() => [...new Set(hosts.flatMap((host) => host.tags))].sort((left, right) => left.localeCompare(right)), [hosts]);
