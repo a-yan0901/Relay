@@ -32,6 +32,7 @@ import type {
   HostStore,
   IdentityStore,
   ImportExportPort,
+  PlatformServices,
   SecretRef,
   SecretStore,
   SessionEvent,
@@ -46,6 +47,7 @@ import type { CoreRuntime } from '../../shared/core/runtime';
 import { AppError } from '../../shared/errors';
 import type { TerminalSocketLike } from '../hooks/use-terminal-session';
 import { TerminalSessionController } from '../hooks/use-terminal-session';
+import { createBrowserSystemServices } from './browser-system-services';
 import * as api from '../api';
 import type { CapabilityResponse } from '../api';
 import { Sha256 } from '../../shared/crypto/sha256';
@@ -672,12 +674,18 @@ export interface WebAdapters extends CoreRuntime {
   refreshCapabilities: () => Promise<CapabilitySet>;
 }
 
-export const createWebAdapters = (options: { api?: WebApiClient; webSocketFactory?: (url: string) => TerminalSocketLike } = {}): WebAdapters => {
+export const createWebAdapters = (options: {
+  api?: WebApiClient;
+  webSocketFactory?: (url: string) => TerminalSocketLike;
+  platformServices?: PlatformServices;
+} = {}): WebAdapters => {
   const client = options.api ?? api;
   const capabilityAdapter = new WebCapabilityAdapter(client as Pick<WebApiClient, 'getCapabilities'>);
+  const platformServices = options.platformServices ?? createBrowserSystemServices();
   const runtime = {
     platform: 'web',
     capabilities: createWebCapabilitySet({ maxWorkspacePanes: WEB_PLATFORM_MAX_PANES }),
+    platformServices,
     vault: new WebVaultSession(client as Pick<WebApiClient, 'getSetupStatus'>),
     connection: new WebConnectionProbe(client as Pick<WebApiClient, 'testConnection'>),
     workspace: createWorkspaceWebAdapter(client),

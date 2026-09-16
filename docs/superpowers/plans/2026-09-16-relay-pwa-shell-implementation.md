@@ -80,25 +80,25 @@ export interface PlatformServices {
 }
 ```
 
-- [ ] **Step 1: Write the failing contract fake.**
+- [x] **Step 1: Write the failing contract fake.**
 
   在 `platform-services-contract.test.ts` 中创建只使用字符串和 `Promise` 的 fake：记录 `readText`/`writeText` 参数，记录 notification request，并断言 `PlatformServices` 可以作为 `CoreRuntime.platformServices` 的可选字段使用。测试不得引用 `window`、`navigator`、`Notification` 或 `Clipboard`。
 
-- [ ] **Step 2: Run the focused typecheck to verify the contract is absent.**
+- [x] **Step 2: Run the focused typecheck to verify the contract is absent.**
 
   Run: `npx tsc --ignoreConfig --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --esModuleInterop tests/unit/shared/platform-services-contract.test.ts`
   Expected: FAIL，因为新增类型和 `CoreRuntime.platformServices` 尚不存在；Vitest 本身只转译此 type-only contract，不承担 export 检查。
 
-- [ ] **Step 3: Add the platform-neutral types and optional runtime field.**
+- [x] **Step 3: Add the platform-neutral types and optional runtime field.**
 
   把类型放在 `src/shared/core/ports.ts`，从 `runtime.ts` 导入 `PlatformServices`，将 `platformServices?: PlatformServices` 放在 `CoreRuntime` 的 transport/store 字段附近。不要把它设为 required，也不要把浏览器检测逻辑放进 shared。
 
-- [ ] **Step 4: Run the focused contract and boundary tests.**
+- [x] **Step 4: Run the focused contract and boundary tests.**
 
   Run: `npx tsc --ignoreConfig --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck --esModuleInterop tests/unit/shared/platform-services-contract.test.ts && npx vitest run tests/unit/shared/platform-services-contract.test.ts tests/unit/shared/core-boundary.test.ts`
   Expected: PASS；shared boundary 不出现 DOM、浏览器存储或平台 API。
 
-- [ ] **Step 5: Commit the shared contract.**
+- [x] **Step 5: Commit the shared contract.**
 
   ```bash
   git add src/shared/core/ports.ts src/shared/core/runtime.ts tests/unit/shared/platform-services-contract.test.ts
@@ -140,29 +140,29 @@ export const createBrowserSystemServices: () => BrowserSystemServices;
 - `notify()` 只接收已经由调用方脱敏的 `NotificationRequest`，不把异常原文写入日志；构造器异常也映射为 `CAPABILITY_UNAVAILABLE`。
 - 为测试提供不依赖全局对象的内部 host 参数或小型 host factory；生产导出仍使用 `globalThis`，不在 App 中直接访问 `navigator.clipboard`/`Notification`。
 
-- [ ] **Step 1: Write failing adapter tests.**
+- [x] **Step 1: Write failing adapter tests.**
 
   覆盖以下断言：安全上下文和方法存在时 read/write 可调用；非安全上下文或方法缺失时能力为 false 且操作抛 `CAPABILITY_UNAVAILABLE`；notification permission 为 `default` 时不会创建通知；显式 request 后变成 `granted` 才允许 notify；底层 API reject 映射为稳定 AppError；request body 原样只传给 host，不由 adapter 拼接 Host/命令信息。
 
-- [ ] **Step 2: Run the focused adapter tests and observe failure.**
+- [x] **Step 2: Run the focused adapter tests and observe failure.**
 
   Run: `npx vitest run tests/unit/web/browser-system-services.test.ts`
   Expected: FAIL，因为 adapter 尚不存在。
 
-- [ ] **Step 3: Implement the browser adapters.**
+- [x] **Step 3: Implement the browser adapters.**
 
   使用 `ClipboardPort`/`NotificationPort` 实现依赖注入；`createBrowserSystemServices()` 返回 ports 和检测结果。所有 capability 判断只影响 UI 可用性，不修改 server capability intersection。
 
-- [ ] **Step 4: Inject services from Web adapters.**
+- [x] **Step 4: Inject services from Web adapters.**
 
   在 `createWebAdapters(options)` 中增加 `platformServices?: PlatformServices` 可选参数；调用方提供时原样使用，未提供时调用 `createBrowserSystemServices()`。返回对象的 `platformServices` 仍是可选 shared 字段，现有 fake runtime 无需实现。
 
-- [ ] **Step 5: Run adapter, Web adapter and core type checks.**
+- [x] **Step 5: Run adapter, Web adapter and core type checks.**
 
   Run: `npx vitest run tests/unit/web/browser-system-services.test.ts tests/unit/web/web-adapters.test.ts tests/unit/shared/core-models.test.ts && npm run typecheck`
   Expected: PASS。
 
-- [ ] **Step 6: Commit the adapter boundary.**
+- [x] **Step 6: Commit the adapter boundary.**
 
   ```bash
   git add src/web/platform/browser-system-services.ts src/web/platform/web-adapters.ts tests/unit/web/browser-system-services.test.ts
