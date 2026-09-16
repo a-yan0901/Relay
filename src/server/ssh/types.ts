@@ -96,4 +96,5 @@ export interface SshSessionManagerPort {
   getBufferedOutput(sessionId: string, expectedHostId?: string): Buffer | null;
   close(sessionId: string): void;
   closeAll?(): void;
+  closeForHost?(hostId: string): void;
 }

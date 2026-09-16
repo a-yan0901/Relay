@@ -8,6 +8,7 @@ import {
   type AppState,
   type HostMetadataState
 } from '../../../src/web/state/app-state';
+import { restoreWorkspace, workspaceStateFromAppState } from '../../../src/web/state/workspace-state';
 
 const host = (overrides: Partial<HostMetadataState> = {}): HostMetadataState => ({
   id: 'host-1',
@@ -28,6 +29,34 @@ const host = (overrides: Partial<HostMetadataState> = {}): HostMetadataState => 
 });
 
 describe('appReducer', () => {
+  it('returns a recovery result for every workspace tab', () => {
+    const workspace: WorkspaceState = {
+      version: 4,
+      tabs: [
+        { id: 'tab-live', hostId: 'host-1', title: 'Live' },
+        { id: 'tab-reopen', hostId: 'host-2', title: 'Reopen' },
+        { id: 'tab-missing', hostId: 'host-deleted', title: 'Missing' }
+      ],
+      activeTabId: 'tab-live',
+      layout: { mode: 'horizontal', ratio: 0.7 },
+      filters: { query: 'prod', groupId: null, favoriteOnly: false }
+    };
+
+    expect(restoreWorkspace(
+      workspace,
+      new Set(['host-1', 'host-2']),
+      [{ terminalId: 'terminal-live', hostId: 'host-1', workspaceTabId: 'tab-live' }],
+      (() => {
+        const ids = ['terminal-reopen', 'terminal-missing'];
+        return () => ids.shift() ?? 'terminal-fallback';
+      })()
+    )).toEqual([
+      { tabId: 'tab-live', hostId: 'host-1', title: 'Live', status: 'restored', terminalId: 'terminal-live' },
+      { tabId: 'tab-reopen', hostId: 'host-2', title: 'Reopen', status: 'needs-reopen', terminalId: 'terminal-reopen' },
+      { tabId: 'tab-missing', hostId: 'host-deleted', title: 'Missing', status: 'missing-host', terminalId: 'terminal-missing' }
+    ]);
+  });
+
   it('hydrates durable workspace tabs into fresh live terminal ids', () => {
     const workspace: WorkspaceState = {
       version: 4,
@@ -131,6 +160,63 @@ describe('appReducer', () => {
       { terminalId: 'tab-2', hostId: 'host-2', state: 'closed', reconnectDelayMs: 0, errorMessage: null }
     ]);
     expect(state.activeTerminalId).toBe('tab-2');
+  });
+
+  it('keeps a deleted host tab as an explicit missing-host recovery item', () => {
+    let state = appReducer(initialAppState, { type: 'terminalOpened', terminalId: 'terminal-1', hostId: 'host-1', workspaceTabId: 'tab-1' });
+    state = appReducer(state, { type: 'hostDeleted', hostId: 'host-1' });
+
+    expect(state.workspace.tabs).toEqual([{ id: 'tab-1', hostId: 'host-1' }]);
+    expect(state.terminals).toEqual([expect.objectContaining({
+      terminalId: 'terminal-1',
+      state: 'needs-reopen',
+      recoveryStatus: 'missing-host'
+    })]);
+    expect(workspaceStateFromAppState(state).tabs).toEqual([{ id: 'tab-1', hostId: 'host-1' }]);
+  });
+
+  it('updates the recovery summary when a restored session is lost and reopened', () => {
+    const workspace: WorkspaceState = {
+      version: 1,
+      tabs: [{ id: 'tab-1', hostId: 'host-1' }],
+      activeTabId: 'tab-1',
+      layout: { mode: 'single', ratio: 0.5 },
+      filters: { query: '', groupId: null, favoriteOnly: false }
+    };
+    let state = appReducer(initialAppState, {
+      type: 'workspaceLoaded',
+      workspace,
+      terminalIds: { 'tab-1': 'terminal-1' },
+      restoreResults: [{ tabId: 'tab-1', hostId: 'host-1', status: 'restored', terminalId: 'terminal-1' }]
+    });
+    state = appReducer(state, {
+      type: 'terminalStatusUpdated',
+      terminalId: 'terminal-1',
+      state: 'needs-reopen',
+      reconnectDelayMs: 0,
+      errorMessage: '服务已重启，请重新打开终端'
+    });
+    expect(state.workspaceRecovery[0]?.status).toBe('needs-reopen');
+    expect(state.terminals[0]?.recoveryStatus).toBe('needs-reopen');
+
+    state = appReducer(state, {
+      type: 'terminalStatusUpdated',
+      terminalId: 'terminal-1',
+      state: 'connecting',
+      reconnectDelayMs: 0,
+      errorMessage: null
+    });
+    expect(state.terminals[0]?.recoveryStatus).toBeUndefined();
+    expect(state.workspaceRecovery[0]?.status).toBe('needs-reopen');
+
+    state = appReducer(state, {
+      type: 'terminalStatusUpdated',
+      terminalId: 'terminal-1',
+      state: 'connected',
+      reconnectDelayMs: 0,
+      errorMessage: null
+    });
+    expect(state.workspaceRecovery[0]?.status).toBe('restored');
   });
 
   it('preserves shared group inheritance fields when hydrating web state', () => {

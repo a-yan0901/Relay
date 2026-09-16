@@ -1,7 +1,6 @@
 import { AppError } from '../../shared/errors.js';
 import { normalizeWorkspaceState, type WorkspaceState } from '../../shared/core/models.js';
 import { parseWorkspaceState } from '../../shared/validation.js';
-import { HostRepository } from '../db/repositories.js';
 import type { WorkspaceSnapshot, WorkspaceTemplate } from '../db/types.js';
 import { WorkspaceRepository } from './workspace-repository.js';
 
@@ -20,10 +19,7 @@ const assertNoDuplicateTabIds = (state: WorkspaceState): void => {
 };
 
 export class WorkspaceService {
-  constructor(
-    private readonly repository: WorkspaceRepository,
-    private readonly hostRepository: HostRepository
-  ) {}
+  constructor(private readonly repository: WorkspaceRepository) {}
 
   load(ownerId: string): WorkspaceState {
     return this.repository.get(ownerId)?.state ?? defaultWorkspaceState();
@@ -33,9 +29,6 @@ export class WorkspaceService {
     const parsed = parseWorkspaceState(state);
     const normalized = normalizeWorkspaceState(parsed);
     assertNoDuplicateTabIds(normalized);
-    for (const tab of normalized.tabs) {
-      if (!this.hostRepository.getForConnection(tab.hostId)) throw new AppError('HOST_NOT_FOUND');
-    }
     return this.repository.put(ownerId, expectedVersion, normalized);
   }
 
@@ -46,9 +39,6 @@ export class WorkspaceService {
   createTemplate(ownerId: string, name: string, state: WorkspaceState): WorkspaceTemplate {
     const parsed = normalizeWorkspaceState(parseWorkspaceState(state));
     assertNoDuplicateTabIds(parsed);
-    for (const tab of parsed.tabs) {
-      if (!this.hostRepository.getForConnection(tab.hostId)) throw new AppError('HOST_NOT_FOUND');
-    }
     return this.repository.createTemplate(ownerId, name, parsed);
   }
 

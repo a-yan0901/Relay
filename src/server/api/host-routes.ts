@@ -336,6 +336,7 @@ export const registerHostRoutes = async (
     const id = hostId(request.params);
     readHost(dependencies, id);
     dependencies.hostRepository.deleteHost(id);
+    dependencies.sshSessionManager?.closeForHost?.(id);
     dependencies.auditRepository.insert({ eventType: 'host_deleted', requestId: request.id });
     reply.code(204).send();
   });

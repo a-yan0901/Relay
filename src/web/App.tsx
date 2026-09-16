@@ -29,9 +29,10 @@ import {
   initialAppState,
   loadTerminalDescriptors,
   saveTerminalDescriptors,
-  type HostMetadataState
+  type HostMetadataState,
+  type TerminalDescriptor
 } from './state/app-state';
-import { createFreshTerminalIds, workspaceStateFromAppState } from './state/workspace-state';
+import { createFreshTerminalIds, restoreWorkspace, workspaceStateFromAppState } from './state/workspace-state';
 import type { WorkspaceState } from '../shared/core/models';
 import {
   applyPreferences,
@@ -156,6 +157,7 @@ export const App = ({ runtime }: AppProps) => {
   const [terminalView, setTerminalView] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
+  const [networkOnline, setNetworkOnline] = useState(() => globalThis.navigator?.onLine !== false);
   const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
   const [capabilities, setCapabilities] = useState<CapabilitySet>(() => runtime.capabilities);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
@@ -188,6 +190,26 @@ export const App = ({ runtime }: AppProps) => {
   const lastSavedWorkspaceRef = useRef<string | null>(null);
   const workspaceVersionRef = useRef(0);
   const workspaceSaveQueueRef = useRef(Promise.resolve());
+  const workspaceLoadRequestRef = useRef(0);
+
+  useEffect(() => {
+    const handleOffline = (): void => setNetworkOnline(false);
+    const handleOnline = (): void => setNetworkOnline(true);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
+  const terminalDescriptorsFor = (terminals: readonly { terminalId: string; hostId: string; recoveryStatus?: string; state: string }[], tabIds: Readonly<Record<string, string>>): TerminalDescriptor[] => terminals
+    .filter((terminal) => {
+      if (terminal.recoveryStatus === 'missing-host' || terminal.recoveryStatus === 'needs-reopen') return false;
+      if (terminal.recoveryStatus === 'restored') return terminal.state !== 'failed' && terminal.state !== 'needs-reopen';
+      return ['connecting', 'awaiting-host-key', 'awaiting-credential', 'connected', 'reconnecting', 'interrupted'].includes(terminal.state);
+    })
+    .map(({ terminalId, hostId }) => ({ terminalId, hostId, workspaceTabId: tabIds[terminalId] }));
 
   const enqueueWorkspaceSave = useCallback((requestWorkspace: WorkspaceState): void => {
     const requestComparable = JSON.stringify({ ...requestWorkspace, version: undefined });
@@ -217,6 +239,8 @@ export const App = ({ runtime }: AppProps) => {
   }, [preferences]);
 
   const loadWorkspace = useCallback(async (options: { openTerminalView?: boolean } = {}): Promise<void> => {
+    const loadRequest = workspaceLoadRequestRef.current + 1;
+    workspaceLoadRequestRef.current = loadRequest;
     try {
       const negotiatedCapabilities = await runtime.negotiateCapabilities().catch(() => runtime.capabilities);
       setCapabilities(negotiatedCapabilities);
@@ -237,19 +261,14 @@ export const App = ({ runtime }: AppProps) => {
       void runtime.workspace.listTemplates().then((templates) => setWorkspaceTemplates([...templates])).catch(() => setWorkspaceTemplates([]));
       void runtime.files.listTransfers().then((jobs) => setTransferJobs([...jobs])).catch(() => setTransferJobs([]));
       const availableHostIds = new Set(hosts.map((host) => host.id));
-      const descriptors = loadTerminalDescriptors().filter((descriptor) => availableHostIds.has(descriptor.hostId));
-      const descriptorByTabId = new Map(descriptors.map((descriptor) => [descriptor.workspaceTabId ?? `tab-${descriptor.terminalId}`, descriptor.terminalId]));
-      const terminalIds = createFreshTerminalIds(workspace, availableHostIds, () => createTerminalId());
-      for (const tab of workspace.tabs) {
-        const previousTerminalId = descriptorByTabId.get(tab.id);
-        if (previousTerminalId && availableHostIds.has(tab.hostId)) terminalIds[tab.id] = previousTerminalId;
-      }
-      saveTerminalDescriptors(workspace.tabs.flatMap((tab) => {
-        const terminalId = terminalIds[tab.id];
-        return terminalId ? [{ terminalId, hostId: tab.hostId, workspaceTabId: tab.id }] : [];
-      }));
-      dispatch({ type: 'workspaceLoaded', workspace, terminalIds });
-      if ((options.openTerminalView ?? true) && workspace.tabs.some((tab) => terminalIds[tab.id])) setTerminalView(true);
+      const restoreResults = restoreWorkspace(workspace, availableHostIds, loadTerminalDescriptors(), () => createTerminalId());
+      if (workspaceLoadRequestRef.current !== loadRequest || latestStateRef.current.phase === 'locked') return;
+      const terminalIds = Object.fromEntries(restoreResults.map((result) => [result.tabId, result.terminalId]));
+      saveTerminalDescriptors(restoreResults
+        .filter((result) => result.status === 'restored' && availableHostIds.has(result.hostId))
+        .map((result) => ({ terminalId: result.terminalId, hostId: result.hostId, workspaceTabId: result.tabId })));
+      dispatch({ type: 'workspaceLoaded', workspace, terminalIds, restoreResults });
+      if ((options.openTerminalView ?? true) && restoreResults.length > 0) setTerminalView(true);
       workspaceVersionRef.current = workspace.version;
       lastSavedWorkspaceRef.current = JSON.stringify({ ...workspace, version: undefined });
       setWorkspaceHydrated(true);
@@ -293,7 +312,7 @@ export const App = ({ runtime }: AppProps) => {
 
   useEffect(() => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
-    saveTerminalDescriptors(state.terminals.map(({ terminalId, hostId }) => ({ terminalId, hostId, workspaceTabId: state.workspaceTabIdByTerminalId[terminalId] })));
+    saveTerminalDescriptors(terminalDescriptorsFor(state.terminals, state.workspaceTabIdByTerminalId));
   }, [state.phase, state.terminals, workspaceHydrated]);
 
   const retryBoot = (): void => {
@@ -440,12 +459,13 @@ export const App = ({ runtime }: AppProps) => {
 
   const handleOpenWorkspaceTemplate = (template: WorkspaceTemplate): void => {
     const availableHostIds = new Set(latestStateRef.current.hosts.map((host) => host.id));
-    const terminalIds = createFreshTerminalIds(template.state, availableHostIds, () => createTerminalId());
-    dispatch({ type: 'workspaceLoaded', workspace: template.state, terminalIds });
+    const restoreResults = restoreWorkspace(template.state, availableHostIds, [], () => createTerminalId());
+    const terminalIds = Object.fromEntries(restoreResults.map((result) => [result.tabId, result.terminalId]));
+    dispatch({ type: 'workspaceLoaded', workspace: template.state, terminalIds, restoreResults });
     const nextWorkspace: WorkspaceState = { ...template.state, version: workspaceVersionRef.current };
     enqueueWorkspaceSave(nextWorkspace);
     setWorkspaceSwitcherOpen(false);
-    setTerminalView(Object.keys(terminalIds).length > 0);
+    setTerminalView(restoreResults.length > 0);
   };
 
   const handleOpenBatchCommand = (hostIds: readonly string[] = state.terminals.map((terminal) => terminal.hostId)): void => {
@@ -821,6 +841,7 @@ export const App = ({ runtime }: AppProps) => {
   const handleLock = async (): Promise<void> => {
     try {
       await runtime.vault.lock();
+      workspaceLoadRequestRef.current += 1;
       lockedFromCurrentAppRef.current = true;
       dispatch({ type: 'lock' });
       clearTerminalDescriptors();
@@ -849,6 +870,20 @@ export const App = ({ runtime }: AppProps) => {
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
           <button className="icon-button" type="button" aria-label="关闭提示" onClick={() => dispatch({ type: 'error', message: null })}>×</button>
+        </div>
+      )}
+      {!networkOnline && (
+        <div className="global-feedback global-feedback-info" role="status" aria-live="polite">
+          <span>网络已断开，终端会话将在恢复后自动重连；未提交的操作请稍后重试。</span>
+        </div>
+      )}
+      {state.workspaceRecovery.some((result) => result.status !== 'restored') && (
+        <div className="global-feedback global-feedback-info" role="status" aria-live="polite">
+          <span>
+            工作区已加载：{state.workspaceRecovery.filter((result) => result.status === 'restored').length} 个 Console 已恢复，
+            {state.workspaceRecovery.filter((result) => result.status === 'needs-reopen').length} 个需要重新连接，
+            {state.workspaceRecovery.filter((result) => result.status === 'missing-host').length} 个 Server 已不存在。
+          </span>
         </div>
       )}
       {connectionFeedback && (

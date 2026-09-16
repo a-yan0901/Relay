@@ -82,6 +82,59 @@ describe('TerminalSessionController', () => {
     expect(JSON.parse(socket.sent[2] as string)).toEqual({ type: 'resize', cols: 120, rows: 42 });
   });
 
+  it('uses reattach-only mode when restoring a browser tab', () => {
+    FakeSocket.instances = [];
+    const controller = new TerminalSessionController({
+      hostId: 'host-1',
+      terminalId: 'terminal-restore',
+      reattachOnly: true,
+      webSocketFactory: (url) => new FakeSocket(url)
+    });
+
+    controller.connect();
+    const socket = lastSocket();
+    socket.open();
+
+    expect(JSON.parse(socket.sent[0] as string)).toEqual(expect.objectContaining({
+      type: 'open',
+      requestId: 'terminal-restore',
+      reattachOnly: true
+    }));
+    controller.close();
+  });
+
+  it('pauses reconnects while offline and resumes after the network returns', () => {
+    vi.useFakeTimers();
+    try {
+      FakeSocket.instances = [];
+      const controller = new TerminalSessionController({
+        hostId: 'host-1',
+        terminalId: 'terminal-network',
+        networkAware: true,
+        webSocketFactory: (url) => new FakeSocket(url),
+        reconnectBaseMs: 250
+      });
+
+      controller.connect();
+      const socket = lastSocket();
+      socket.open();
+      socket.message(JSON.stringify({ type: 'status', state: 'connected', serviceInstanceId: 'service-a' }));
+
+      window.dispatchEvent(new Event('offline'));
+      expect(controller.snapshot.state).toBe('interrupted');
+      expect(controller.snapshot.networkOffline).toBe(true);
+      expect(socket.closeCalls).toBe(1);
+
+      window.dispatchEvent(new Event('online'));
+      vi.advanceTimersByTime(0);
+      expect(FakeSocket.instances).toHaveLength(2);
+      expect(controller.snapshot.state).toBe('connecting');
+      controller.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('writes binary output and tracks status and host-key challenge events', () => {
     FakeSocket.instances = [];
     const onOutput = vi.fn();

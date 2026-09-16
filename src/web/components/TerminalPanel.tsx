@@ -8,7 +8,7 @@ import { Terminal } from '@xterm/xterm';
 import type { OperationDiagnostic } from '@shared/core/models';
 import type { TerminalCredentialRequiredEvent, TerminalStatus } from '@shared/protocol';
 import type { HostCredentialInput } from '@shared/validation';
-import type { HostMetadataState } from '../state/app-state';
+import type { HostMetadataState, WorkspaceRestoreStatus } from '../state/app-state';
 import { TerminalOutputSanitizer } from '../terminal-output';
 import { useTerminalSession, type TerminalSessionSnapshot } from '../hooks/use-terminal-session';
 import { getTerminalTheme, DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
@@ -52,6 +52,7 @@ const CredentialDialog = ({ terminalId, prompt, onSubmit, onCancel }: { terminal
 export interface TerminalPanelToolbarState {
   state: TerminalStatus;
   reconnectDelayMs: number;
+  networkOffline?: boolean;
   diagnostic: OperationDiagnostic | null;
   onReconnect: () => void;
   onClear: () => void;
@@ -69,9 +70,10 @@ export interface TerminalPanelProps {
   onStatusChange?: (snapshot: TerminalSessionSnapshot) => void;
   onToolbarChange?: (terminalId: string, toolbar: TerminalPanelToolbarState | null) => void;
   preferences?: UiPreferences;
+  recoveryStatus?: WorkspaceRestoreStatus;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, preferences = DEFAULT_PREFERENCES }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, preferences = DEFAULT_PREFERENCES, recoveryStatus }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const outputSanitizerRef = useRef(new TerminalOutputSanitizer());
@@ -87,6 +89,9 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     reconnectMaxAttempts: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.maxAttempts,
     reconnectBaseMs: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.baseDelayMs,
     reconnectMaxMs: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.maxDelayMs,
+    reattachOnly: recoveryStatus === 'restored',
+    networkAware: true,
+    autoConnect: recoveryStatus !== 'needs-reopen',
     getSize: () => ({
       cols: terminalRef.current?.cols ?? 80,
       rows: terminalRef.current?.rows ?? 24
@@ -101,7 +106,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
   });
 
   useEffect(() => {
-    if (session.state.state !== 'connecting' && session.state.state !== 'reconnecting' && session.state.state !== 'closed' && session.state.state !== 'failed') return;
+    if (session.state.state !== 'connecting' && session.state.state !== 'reconnecting' && session.state.state !== 'interrupted' && session.state.state !== 'closed' && session.state.state !== 'failed') return;
     outputSanitizerRef.current.reset();
   }, [session.state.state]);
 
@@ -215,6 +220,9 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
 
   const diagnostic = session.state.diagnostics.at(-1) ?? null;
   const errorAction = diagnostic?.nextAction;
+  const displayState: TerminalStatus = recoveryStatus === 'needs-reopen' && session.state.state === 'closed'
+    ? 'needs-reopen'
+    : session.state.state;
 
   useEffect(() => {
     if (!active) {
@@ -222,8 +230,9 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       return;
     }
     onToolbarChange?.(terminalId, {
-      state: session.state.state,
+      state: displayState,
       reconnectDelayMs: session.state.reconnectDelayMs,
+      networkOffline: session.state.networkOffline,
       diagnostic,
       onReconnect: session.reconnect,
       onClear: clear,
@@ -232,7 +241,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       searchActive: searchOpen
     });
     return () => onToolbarChange?.(terminalId, null);
-  }, [active, clear, diagnostic, fullscreen, onToolbarChange, searchOpen, session.reconnect, session.state.reconnectDelayMs, session.state.state, terminalId, toggleSearch]);
+  }, [active, clear, diagnostic, displayState, fullscreen, onToolbarChange, recoveryStatus, searchOpen, session.reconnect, session.state.networkOffline, session.state.reconnectDelayMs, session.state.state, terminalId, toggleSearch]);
 
   const errorActionButton = errorAction === 'edit-credentials'
     ? onEditHost ? <button className="button button-ghost button-small" type="button" onClick={() => onEditHost(host)}>编辑 Server 凭据</button> : null
@@ -244,6 +253,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     <section className={`terminal-panel ${active ? 'is-active' : ''}`} aria-hidden={!active}>
       {searchOpen && <div className="terminal-search"><label htmlFor={`terminal-search-${terminalId}`}>终端搜索</label><input id={`terminal-search-${terminalId}`} autoFocus value={searchValue} onChange={(event) => updateSearch(event.target.value)} placeholder="搜索终端输出" /></div>}
       <div className="terminal-canvas" ref={mountRef} />
+      {recoveryStatus === 'needs-reopen' && session.state.state === 'closed' && <div className="terminal-recovery" role="status"><strong>此 Console 需要重新连接</strong><span>原来的远程 Shell 不再可用，重新打开会创建新的 Shell。</span><button className="button button-ghost button-small" type="button" onClick={session.reconnect}>重新打开</button></div>}
       {session.state.error && <div className="terminal-error" role="alert"><strong>{session.state.error.message}</strong>{errorAction !== 'none' && errorActionButton}</div>}
       {session.state.hostKey && <HostKeyDialog challenge={session.state.hostKey} onDecision={session.decideHostKey} />}
       {session.state.credential && <CredentialDialog terminalId={terminalId} prompt={session.state.credential} onSubmit={session.submitCredential} onCancel={onClose} />}

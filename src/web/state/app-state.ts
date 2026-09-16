@@ -19,12 +19,27 @@ export interface TerminalTabState {
   state: TerminalStatus;
   reconnectDelayMs: number;
   errorMessage: string | null;
+  /** Runtime-only state explaining why a durable tab is not currently live. */
+  recoveryStatus?: WorkspaceRestoreStatus;
+  /** Durable tab title used when its Host metadata is no longer available. */
+  label?: string;
 }
 
 export interface TerminalDescriptor {
   terminalId: string;
   hostId: string;
   workspaceTabId?: string;
+}
+
+export type WorkspaceRestoreStatus = 'restored' | 'needs-reopen' | 'missing-host';
+
+export interface WorkspaceRestoreResult {
+  tabId: string;
+  hostId: string;
+  title?: string;
+  status: WorkspaceRestoreStatus;
+  /** Runtime-only id; never part of the durable workspace snapshot. */
+  terminalId: string;
 }
 
 export const TERMINAL_DESCRIPTORS_STORAGE_KEY = 'relay.terminal.descriptors.v1';
@@ -107,6 +122,7 @@ export interface AppState {
   terminals: TerminalTabState[];
   activeTerminalId: string | null;
   workspaceTabIdByTerminalId: Record<string, string>;
+  workspaceRecovery: WorkspaceRestoreResult[];
   favoriteRollback: Record<string, boolean>;
   errorMessage: string | null;
 }
@@ -130,6 +146,7 @@ export const initialAppState: AppState = {
   terminals: [],
   activeTerminalId: null,
   workspaceTabIdByTerminalId: {},
+  workspaceRecovery: [],
   favoriteRollback: {},
   errorMessage: null
 };
@@ -140,7 +157,7 @@ export type AppAction =
   | { type: 'lock' }
   | { type: 'hostsLoaded'; hosts: HostMetadataState[] }
   | { type: 'groupsLoaded'; groups: GroupSummary[] }
-  | { type: 'workspaceLoaded'; workspace: WorkspaceState; terminalIds: Record<string, string> }
+  | { type: 'workspaceLoaded'; workspace: WorkspaceState; terminalIds: Record<string, string>; restoreResults?: readonly WorkspaceRestoreResult[] }
   | { type: 'workspaceSynced'; workspace: WorkspaceState }
   | { type: 'workspaceLayoutChanged'; layout: WorkspaceState['layout'] }
   | { type: 'hostCreated'; host: HostMetadataState }
@@ -272,7 +289,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     case 'unlock':
       return { ...state, phase: 'ready', errorMessage: null };
     case 'lock':
-      return { ...state, phase: 'locked', terminals: [], activeTerminalId: null, errorMessage: null };
+      return { ...state, phase: 'locked', terminals: [], activeTerminalId: null, workspaceRecovery: [], errorMessage: null };
     case 'hostsLoaded':
       return { ...state, hosts: action.hosts.map(safeHostMetadata), errorMessage: null };
     case 'groupsLoaded':
@@ -283,14 +300,19 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     case 'workspaceLoaded': {
       const workspace = safeWorkspace(action.workspace);
+      const restoreByTabId = new Map((action.restoreResults ?? []).map((result) => [result.tabId, result]));
       const restoredTerminals = workspace.tabs.flatMap((tab) => {
         const terminalId = action.terminalIds[tab.id];
         return terminalId ? [{
           terminalId,
           hostId: tab.hostId,
-          state: 'closed' as const,
+          state: restoreByTabId.get(tab.id)?.status === 'needs-reopen' || restoreByTabId.get(tab.id)?.status === 'missing-host'
+            ? 'needs-reopen' as const
+            : 'closed' as const,
           reconnectDelayMs: 0,
-          errorMessage: null
+          errorMessage: restoreByTabId.get(tab.id)?.status === 'missing-host' ? '这个工作区标签关联的 Server 已不存在。' : null,
+          ...(restoreByTabId.get(tab.id) === undefined ? {} : { recoveryStatus: restoreByTabId.get(tab.id)?.status }),
+          ...(tab.title === undefined ? {} : { label: tab.title })
         }] : [];
       });
       const workspaceTabIdByTerminalId = Object.fromEntries(
@@ -306,6 +328,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         terminals: restoredTerminals,
         activeTerminalId,
         workspaceTabIdByTerminalId,
+        workspaceRecovery: [...(action.restoreResults ?? [])],
         errorMessage: null
       };
     }
@@ -326,15 +349,21 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     case 'hostUpdated':
       return { ...state, hosts: replaceHost(state.hosts, action.host), errorMessage: null };
     case 'hostDeleted': {
-      const terminals = state.terminals.filter((terminal) => terminal.hostId !== action.hostId);
-      const activeTerminalId = terminals.some((terminal) => terminal.terminalId === state.activeTerminalId)
-        ? state.activeTerminalId
-        : terminals.at(-1)?.terminalId ?? null;
+      const terminals = state.terminals.map((terminal) => terminal.hostId === action.hostId
+        ? {
+          ...terminal,
+          state: 'needs-reopen' as const,
+          recoveryStatus: 'missing-host' as const,
+          errorMessage: '这个工作区标签关联的 Server 已不存在。'
+        }
+        : terminal);
       return {
         ...state,
         hosts: state.hosts.filter((host) => host.id !== action.hostId),
         terminals,
-        activeTerminalId
+        workspaceRecovery: state.workspaceRecovery.map((result) => result.hostId === action.hostId
+          ? { ...result, status: 'missing-host' as const }
+          : result)
       };
     }
     case 'favoriteOptimistic': {
@@ -410,18 +439,34 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         activeTerminalId: action.terminalId,
         workspace: { ...state.workspace, activeTabId: workspaceTabForTerminal(state, action.terminalId) }
       };
-    case 'terminalStatusUpdated':
-      return {
-        ...state,
-        terminals: state.terminals.map((terminal) => terminal.terminalId === action.terminalId
-          ? {
+    case 'terminalStatusUpdated': {
+      const workspaceTabId = state.workspaceTabIdByTerminalId[action.terminalId];
+      const terminals = state.terminals.map((terminal) => terminal.terminalId === action.terminalId
+        ? (() => {
+          const next = {
             ...terminal,
             state: action.state,
             reconnectDelayMs: action.reconnectDelayMs,
-            errorMessage: action.errorMessage
+            errorMessage: action.errorMessage,
+            ...(action.state === 'needs-reopen' ? { recoveryStatus: 'needs-reopen' as const } : {})
+          };
+          if (terminal.recoveryStatus !== undefined && action.state !== 'needs-reopen' && action.state !== 'closed') {
+            delete next.recoveryStatus;
           }
-          : terminal)
-      };
+          return next;
+        })()
+        : terminal);
+      const workspaceRecovery = workspaceTabId === undefined
+        ? state.workspaceRecovery
+        : state.workspaceRecovery.map((result) => result.tabId !== workspaceTabId
+          ? result
+          : action.state === 'needs-reopen'
+            ? { ...result, status: 'needs-reopen' as const }
+            : action.state === 'connected' && result.status !== 'missing-host'
+              ? { ...result, status: 'restored' as const }
+              : result);
+      return { ...state, terminals, workspaceRecovery };
+    }
     case 'terminalClosed': {
       const closingIndex = state.terminals.findIndex((terminal) => terminal.terminalId === action.terminalId);
       const terminals = state.terminals.filter((terminal) => terminal.terminalId !== action.terminalId);
@@ -440,7 +485,10 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         terminals,
         activeTerminalId,
         workspace: { ...state.workspace, tabs: workspaceTabs, activeTabId },
-        workspaceTabIdByTerminalId
+        workspaceTabIdByTerminalId,
+        workspaceRecovery: workspaceTabId
+          ? state.workspaceRecovery.filter((result) => result.tabId !== workspaceTabId)
+          : state.workspaceRecovery
       };
     }
     case 'error':

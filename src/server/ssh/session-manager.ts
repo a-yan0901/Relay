@@ -121,7 +121,7 @@ export class SshSessionManager implements SshSessionManagerPort {
 
   reattach(sessionId: string, expectedHostId?: string): SshChannel | null {
     const managed = this.sessions.get(sessionId);
-    if (!managed || managed.closed || (expectedHostId !== undefined && managed.hostId !== expectedHostId)) {
+    if (!managed || managed.closed || !managed.detached || (expectedHostId !== undefined && managed.hostId !== expectedHostId)) {
       return null;
     }
     managed.detached = false;
@@ -157,6 +157,12 @@ export class SshSessionManager implements SshSessionManagerPort {
   closeAll(): void {
     for (const sessionId of [...this.sessions.keys()]) {
       this.close(sessionId);
+    }
+  }
+
+  closeForHost(hostId: string): void {
+    for (const [sessionId, managed] of this.sessions) {
+      if (managed.hostId === hostId) this.close(sessionId);
     }
   }
 

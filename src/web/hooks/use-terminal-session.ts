@@ -101,6 +101,7 @@ export interface TerminalSessionSnapshot {
   error: TerminalErrorEvent | null;
   exit: Extract<TerminalServerEvent, { type: 'exit' }> | null;
   reconnectDelayMs: number;
+  networkOffline: boolean;
   diagnostics: OperationDiagnostic[];
 }
 
@@ -116,6 +117,10 @@ export interface TerminalSessionControllerOptions {
   reconnectMaxAttempts?: number;
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
+  /** Only try to bind the browser tab to an existing server-side session. */
+  reattachOnly?: boolean;
+  /** Subscribe to browser network transitions and pause reconnect timers offline. */
+  networkAware?: boolean;
 }
 
 const defaultSize = (): TerminalSize => ({ cols: 80, rows: 24 });
@@ -133,6 +138,7 @@ export class TerminalSessionController {
   private readonly reconnectMaxAttempts: number;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
+  private readonly networkAware: boolean;
   private readonly subscribers = new Set<(snapshot: TerminalSessionSnapshot) => void>();
   private socket: TerminalSocketLike | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -140,6 +146,9 @@ export class TerminalSessionController {
   private retryBlocked = false;
   private reconnectAttempt = 0;
   private serviceInstanceId: string | null = null;
+  private reattachOnly: boolean;
+  private networkOffline = false;
+  private networkListenersBound = false;
   private snapshotValue: TerminalSessionSnapshot = {
     state: 'closed',
     hostKey: null,
@@ -147,6 +156,7 @@ export class TerminalSessionController {
     error: null,
     exit: null,
     reconnectDelayMs: 0,
+    networkOffline: false,
     diagnostics: []
   };
 
@@ -174,6 +184,8 @@ export class TerminalSessionController {
     this.reconnectMaxAttempts = reconnectMaxAttempts;
     this.reconnectBaseMs = reconnectBaseMs;
     this.reconnectMaxMs = reconnectMaxMs;
+    this.networkAware = options.networkAware ?? false;
+    this.reattachOnly = options.reattachOnly ?? false;
   }
 
   get snapshot(): TerminalSessionSnapshot {
@@ -186,11 +198,22 @@ export class TerminalSessionController {
   }
 
   connect(): void {
+    this.bindNetworkListeners();
     this.stopped = false;
     if (this.retryBlocked) return;
+    if (this.networkOffline || globalThis.navigator?.onLine === false) {
+      this.networkOffline = true;
+      this.updateSnapshot({
+        state: 'interrupted',
+        networkOffline: true,
+        reconnectDelayMs: 0,
+        error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '网络已断开，恢复网络后将自动重连' }
+      });
+      return;
+    }
     if (this.socket && (this.socket.readyState === 0 || this.socket.readyState === 1)) return;
     this.clearReconnectTimer();
-    this.updateSnapshot({ state: 'connecting', error: null, exit: null, credential: null, reconnectDelayMs: 0, diagnostics: [] });
+    this.updateSnapshot({ state: 'connecting', error: null, exit: null, credential: null, reconnectDelayMs: 0, networkOffline: false, diagnostics: [] });
 
     const socket = this.socketFactory(terminalSocketUrl());
     this.socket = socket;
@@ -209,12 +232,23 @@ export class TerminalSessionController {
     if (this.snapshotValue.state === 'needs-reopen') {
       this.serviceInstanceId = null;
     }
+    this.reattachOnly = false;
     this.stopped = false;
     this.retryBlocked = false;
     this.reconnectAttempt = 0;
     this.clearReconnectTimer();
     this.detachSocket(this.socket);
     this.socket = null;
+    if (this.networkOffline || globalThis.navigator?.onLine === false) {
+      this.networkOffline = true;
+      this.updateSnapshot({
+        state: 'interrupted',
+        networkOffline: true,
+        reconnectDelayMs: 0,
+        error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '网络已断开，恢复网络后将自动重连' }
+      });
+      return;
+    }
     this.connect();
   }
 
@@ -243,6 +277,7 @@ export class TerminalSessionController {
   close(): void {
     if (this.stopped && this.snapshotValue.state === 'closed') return;
     this.stopped = true;
+    this.unbindNetworkListeners();
     this.clearReconnectTimer();
     this.reconnectAttempt = 0;
     const socket = this.socket;
@@ -252,7 +287,7 @@ export class TerminalSessionController {
     }
     this.detachSocket(socket);
     socket?.close(1000, 'terminal closed');
-    this.updateSnapshot({ state: 'closed', credential: null, reconnectDelayMs: 0 });
+    this.updateSnapshot({ state: 'closed', credential: null, reconnectDelayMs: 0, networkOffline: false });
   }
 
   private isSocketOpen(): boolean {
@@ -264,13 +299,21 @@ export class TerminalSessionController {
       socket.close(1000, 'terminal stopped');
       return;
     }
+    if (this.networkOffline || globalThis.navigator?.onLine === false) {
+      this.networkOffline = true;
+      this.detachSocket(socket);
+      this.socket = null;
+      socket.close(1001, 'network offline');
+      this.updateSnapshot({ state: 'interrupted', networkOffline: true, reconnectDelayMs: 0, error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '网络已断开，恢复网络后将自动重连' } });
+      return;
+    }
     const size = this.options.getSize?.() ?? defaultSize();
     if (!validDimension(size.cols) || !validDimension(size.rows)) {
       this.updateSnapshot({ state: 'failed', error: { type: 'error', code: 'PROTOCOL_INVALID_MESSAGE', message: '终端尺寸无效' } });
       socket.close(1008, 'invalid terminal size');
       return;
     }
-    this.updateSnapshot({ state: 'connecting', error: null, reconnectDelayMs: 0 });
+    this.updateSnapshot({ state: 'connecting', error: null, reconnectDelayMs: 0, networkOffline: false });
     this.sendControl({
       type: 'open',
       hostId: this.options.hostId,
@@ -278,7 +321,8 @@ export class TerminalSessionController {
       rows: size.rows,
       requestId: this.options.terminalId,
       term: 'xterm-256color',
-      ...(this.serviceInstanceId === null ? {} : { knownServiceInstanceId: this.serviceInstanceId })
+      ...(this.serviceInstanceId === null ? {} : { knownServiceInstanceId: this.serviceInstanceId }),
+      ...(this.reattachOnly ? { reattachOnly: true } : {})
     });
   }
 
@@ -313,6 +357,7 @@ export class TerminalSessionController {
   private handleServerEvent(event: TerminalServerEvent): void {
     switch (event.type) {
       case 'status':
+        this.networkOffline = false;
         if (event.serviceInstanceId !== undefined) {
           if (this.serviceInstanceId !== null && this.serviceInstanceId !== event.serviceInstanceId) {
             this.retryBlocked = true;
@@ -324,6 +369,7 @@ export class TerminalSessionController {
             this.updateSnapshot({
               state: 'needs-reopen',
               reconnectDelayMs: 0,
+              networkOffline: false,
               error: { type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务已重启，请重新打开终端' },
               credential: null,
               hostKey: null,
@@ -343,6 +389,7 @@ export class TerminalSessionController {
         }
         this.updateSnapshot({
           state: event.state,
+          networkOffline: false,
           ...(event.state === 'awaiting-host-key' ? {} : { hostKey: null }),
           ...(event.state === 'awaiting-credential' ? {} : { credential: null })
         });
@@ -374,6 +421,7 @@ export class TerminalSessionController {
         ));
         this.updateSnapshot({
           state,
+          networkOffline: false,
           error: event,
           credential: null,
           ...(needsReopen ? { reconnectDelayMs: 0 } : {}),
@@ -399,8 +447,17 @@ export class TerminalSessionController {
     if (this.socket !== socket) return;
     this.socket = null;
     this.detachSocket(socket);
+    if (this.networkOffline) {
+      this.updateSnapshot({
+        state: 'interrupted',
+        reconnectDelayMs: 0,
+        networkOffline: true,
+        error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '网络已断开，恢复网络后将自动重连' }
+      });
+      return;
+    }
     if (this.stopped) {
-      this.updateSnapshot({ state: 'closed', credential: null, reconnectDelayMs: 0 });
+      this.updateSnapshot({ state: 'closed', credential: null, reconnectDelayMs: 0, networkOffline: false });
       return;
     }
     if (isRecord(event) && event.code === 1008) {
@@ -408,6 +465,7 @@ export class TerminalSessionController {
       this.updateSnapshot({
         state: 'needs-reopen',
         reconnectDelayMs: 0,
+        networkOffline: false,
         error: { type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务会话已失效，请重新连接终端' }
       });
       return;
@@ -418,17 +476,62 @@ export class TerminalSessionController {
       this.updateSnapshot({
         state: 'failed',
         reconnectDelayMs: 0,
+        networkOffline: false,
         error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '自动重连次数已用尽，请手动重试' }
       });
       return;
     }
     const delay = Math.min(this.reconnectBaseMs * (2 ** this.reconnectAttempt), this.reconnectMaxMs);
     this.reconnectAttempt += 1;
-    this.updateSnapshot({ state: 'reconnecting', reconnectDelayMs: delay });
+    this.scheduleReconnect(delay);
+  }
+
+  private scheduleReconnect(delay: number): void {
+    if (this.stopped || this.retryBlocked || this.networkOffline || this.reconnectTimer !== null) return;
+    this.updateSnapshot({ state: 'reconnecting', reconnectDelayMs: delay, networkOffline: false, error: null });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
     }, delay);
+  }
+
+  private handleNetworkOffline = (): void => {
+    if (this.stopped) return;
+    this.networkOffline = true;
+    this.clearReconnectTimer();
+    const socket = this.socket;
+    this.socket = null;
+    this.detachSocket(socket);
+    socket?.close(1001, 'network offline');
+    if (this.retryBlocked || ['closed', 'failed', 'needs-reopen'].includes(this.snapshotValue.state)) return;
+    this.updateSnapshot({
+      state: 'interrupted',
+      reconnectDelayMs: 0,
+      networkOffline: true,
+      error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '网络已断开，恢复网络后将自动重连' }
+    });
+  };
+
+  private handleNetworkOnline = (): void => {
+    if (this.stopped || this.retryBlocked) return;
+    this.networkOffline = false;
+    if (this.socket && (this.socket.readyState === 0 || this.socket.readyState === 1)) return;
+    if (!['interrupted', 'reconnecting', 'connecting', 'awaiting-host-key', 'awaiting-credential'].includes(this.snapshotValue.state)) return;
+    this.scheduleReconnect(0);
+  };
+
+  private bindNetworkListeners(): void {
+    if (!this.networkAware || this.networkListenersBound || typeof globalThis.addEventListener !== 'function') return;
+    globalThis.addEventListener('offline', this.handleNetworkOffline);
+    globalThis.addEventListener('online', this.handleNetworkOnline);
+    this.networkListenersBound = true;
+  }
+
+  private unbindNetworkListeners(): void {
+    if (!this.networkListenersBound || typeof globalThis.removeEventListener !== 'function') return;
+    globalThis.removeEventListener('offline', this.handleNetworkOffline);
+    globalThis.removeEventListener('online', this.handleNetworkOnline);
+    this.networkListenersBound = false;
   }
 
   private sendControl(message: Record<string, unknown>): void {
@@ -484,7 +587,7 @@ export const useTerminalSession = (options: UseTerminalSessionOptions) => {
       unsubscribe();
       controller.close();
     };
-  }, [controller, forceRender, options.autoConnect]);
+  }, [controller, forceRender]);
 
   const connect = useCallback(() => controller.connect(), [controller]);
   const reconnect = useCallback(() => controller.reconnect(), [controller]);

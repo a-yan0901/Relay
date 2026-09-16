@@ -5,6 +5,7 @@ import { ConnectionStatus, operationDiagnosticLabel } from './ConnectionStatus';
 export interface TerminalToolbarProps {
   state: TerminalStatus;
   reconnectDelayMs?: number;
+  networkOffline?: boolean;
   diagnostic?: OperationDiagnostic | null;
   onReconnect: () => void;
   onClose: () => void;
@@ -40,6 +41,7 @@ export const terminalStatusDotClass = (state: TerminalStatus): string => {
 export const TerminalToolbar = ({
   state,
   reconnectDelayMs = 0,
+  networkOffline = false,
   diagnostic = null,
   onReconnect,
   onClose,
@@ -53,7 +55,9 @@ export const TerminalToolbar = ({
     {showStatus && <ConnectionStatus
       label={terminalStatusLabels[state]}
       tone={state === 'connected' ? 'success' : state === 'failed' ? 'danger' : 'neutral'}
-      detail={state === 'reconnecting' && reconnectDelayMs > 0
+      detail={networkOffline
+        ? '网络已断开，恢复后自动重连'
+        : state === 'reconnecting' && reconnectDelayMs > 0
         ? `约 ${Math.max(1, Math.ceil(reconnectDelayMs / 1_000))} 秒后自动重试`
         : operationDiagnosticLabel(diagnostic)}
     />}

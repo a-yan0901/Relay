@@ -53,4 +53,18 @@ describe('WorkspaceSwitcher', () => {
     await user.click(screen.getByRole('button', { name: '继续切换' }));
     expect(onOpen).toHaveBeenCalledWith(template);
   });
+
+  it('asks before replacing a live tab when its host changes in the template', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    const conflictingTemplate: WorkspaceTemplate = {
+      ...template,
+      state: workspace([{ id: 'tab-live', hostId: 'host-2' }])
+    };
+    render(<WorkspaceSwitcher templates={[conflictingTemplate]} currentWorkspace={workspace([{ id: 'tab-live', hostId: 'host-1' }])} hosts={[{ id: 'host-1', name: 'Production' } as never]} onOpen={onOpen} onSave={vi.fn()} onDelete={vi.fn()} onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: '生产排障1 个 Console · 单面板' }));
+    expect(screen.getByText('Production')).toBeInTheDocument();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
 });

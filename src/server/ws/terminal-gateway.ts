@@ -332,6 +332,9 @@ export const registerTerminalGateway = async (
         }
         return;
       }
+      if (message.reattachOnly) {
+        throw new AppError('SESSION_NEEDS_REOPEN');
+      }
 
       const path = dependencies.connectionPathResolver?.resolve(row.id, dependencies.ownerId) ?? { targetHostId: row.id, hopCount: 0, hops: [row] };
       const pathRows = path.hops.map((hop) => dependencies.hostRepository.getForConnection(hop.id)).filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);

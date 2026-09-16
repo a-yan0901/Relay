@@ -154,10 +154,10 @@ export const TerminalWorkspace = ({
     const hostOrdinals = new Map<string, number>();
     terminals.forEach((terminal) => {
       const host = hostById.get(terminal.hostId);
-      if (!host) return;
-      const ordinal = (hostOrdinals.get(host.id) ?? 0) + 1;
-      hostOrdinals.set(host.id, ordinal);
-      labels.set(terminal.terminalId, `${host.name} · ${ordinal}`);
+      const hostLabel = host?.name ?? terminal.label ?? terminal.hostId;
+      const ordinal = (hostOrdinals.get(terminal.hostId) ?? 0) + 1;
+      hostOrdinals.set(terminal.hostId, ordinal);
+      labels.set(terminal.terminalId, `${hostLabel} · ${ordinal}`);
     });
     return labels;
   }, [hostById, terminals]);
@@ -196,7 +196,8 @@ export const TerminalWorkspace = ({
 
   const labelForTerminal = (terminalId: string | null): string => {
     if (!terminalId) return '选择 Console';
-    return terminalLabels.get(terminalId) ?? hostById.get(terminalById.get(terminalId)?.hostId ?? '')?.name ?? 'Console';
+    const terminal = terminalById.get(terminalId);
+    return terminalLabels.get(terminalId) ?? hostById.get(terminal?.hostId ?? '')?.name ?? terminal?.label ?? terminal?.hostId ?? 'Console';
   };
 
   if (terminals.length === 0) {
@@ -362,15 +363,14 @@ export const TerminalWorkspace = ({
           <div className="terminal-tabs" role="tablist" aria-label="终端标签">
             {terminals.map((terminal) => {
               const host = hostById.get(terminal.hostId);
-              if (!host) return null;
-              const label = terminalLabels.get(terminal.terminalId) ?? host.name;
+              const label = terminalLabels.get(terminal.terminalId) ?? host?.name ?? terminal.label ?? terminal.hostId;
               const selected = terminal.terminalId === activeTerminalId;
               return (
                 <div className={`terminal-tab ${selected ? 'is-active' : ''}`} key={terminal.terminalId}>
                   <button className="terminal-tab-trigger" type="button" role="tab" aria-selected={selected} aria-label={`切换 ${label}`} onClick={() => activateTerminal(terminal.terminalId)}>
                     <span className={`status-dot ${terminalStatusDotClass(terminal.state)}`} aria-hidden="true" />
-                    <span className="terminal-tab-meta"><strong>{label}</strong><small>{host.address}</small></span>
-                    <span className="terminal-tab-status">{terminalStatusLabels[terminal.state]}</span>
+                    <span className="terminal-tab-meta"><strong>{label}</strong><small>{host?.address ?? 'Server 已不存在'}</small></span>
+                    <span className="terminal-tab-status">{terminal.recoveryStatus === 'missing-host' ? 'Server 已不存在' : terminalStatusLabels[terminal.state]}</span>
                   </button>
                   <button className="terminal-tab-close" type="button" aria-label={`关闭 ${label}`} onClick={(event) => { event.stopPropagation(); onClose(terminal.terminalId); }}>×</button>
                 </div>
@@ -381,6 +381,7 @@ export const TerminalWorkspace = ({
             {activeToolbar && activeTerminalId && <TerminalToolbar
               state={activeToolbar.state}
               reconnectDelayMs={activeToolbar.reconnectDelayMs}
+              networkOffline={activeToolbar.networkOffline}
               diagnostic={activeToolbar.diagnostic}
               onReconnect={activeToolbar.onReconnect}
               onClose={() => onClose(activeTerminalId)}
@@ -423,7 +424,6 @@ export const TerminalWorkspace = ({
         >
           {terminals.map((terminal) => {
             const host = hostById.get(terminal.hostId);
-            if (!host) return null;
             const pane: PaneKey | null = terminal.terminalId === primaryTerminalId
               ? 'primary'
               : terminal.terminalId === secondaryTerminalId ? 'secondary' : null;
@@ -460,7 +460,7 @@ export const TerminalWorkspace = ({
                     </label>
                   </div>
                 )}
-                <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} />
+                {host ? <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} recoveryStatus={terminal.recoveryStatus} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} /> : paneVisible && <div className="terminal-recovery-pane" role="status"><strong>Server 已不存在</strong><p>这个工作区标签关联的 Server 已不存在。</p><button className="button button-ghost button-small" type="button" onClick={() => onClose(terminal.terminalId)}>关闭标签</button></div>}
               </div>
             );
           })}

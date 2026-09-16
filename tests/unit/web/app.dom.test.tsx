@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -167,5 +167,19 @@ describe('App boot recovery', () => {
     await user.click(screen.getByRole('button', { name: '活动' }));
 
     expect(await screen.findByRole('button', { name: '结果已过期，需要重新执行' })).toBeInTheDocument();
+  });
+
+  it('announces offline recovery without hiding the workspace', async () => {
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    renderApp();
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    window.dispatchEvent(new Event('offline'));
+    expect(await screen.findByText(/网络已断开/u)).toBeInTheDocument();
+
+    window.dispatchEvent(new Event('online'));
+    await waitFor(() => expect(screen.queryByText(/网络已断开/u)).not.toBeInTheDocument());
   });
 });

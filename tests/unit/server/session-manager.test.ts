@@ -85,6 +85,16 @@ describe('SshSessionManager', () => {
     }
   });
 
+  it('does not let a second socket steal an attached session', async () => {
+    const adapter = new FakeAdapter();
+    const manager = new SshSessionManager({ adapter, maxSessions: 2, detachGraceMs: 30_000 });
+    const channel = await manager.open('tab-attached', config, { onHostKey: async () => true });
+
+    expect(manager.reattach('tab-attached')).toBeNull();
+    manager.detach('tab-attached');
+    expect(manager.reattach('tab-attached')).toBe(channel);
+  });
+
   it('retains recent terminal output so a reattached session can replay it', async () => {
     const adapter = new FakeAdapter();
     const manager = new SshSessionManager({ adapter, maxSessions: 2, detachGraceMs: 30_000, outputBufferBytes: 64 });

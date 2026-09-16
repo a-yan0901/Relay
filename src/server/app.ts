@@ -95,7 +95,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   const auditRepository = dependencies.auditRepository ?? new AuditRepository(dependencies.database, 'default');
   const auditService = dependencies.auditService ?? new AuditService(auditRepository);
   const identityService = dependencies.identityService ?? new IdentityService({ database: dependencies.database, vaultService });
-  const workspaceService = dependencies.workspaceService ?? new WorkspaceService(new WorkspaceRepository(dependencies.database), hostRepository);
+  const workspaceService = dependencies.workspaceService ?? new WorkspaceService(new WorkspaceRepository(dependencies.database));
   const vaultBundleService = dependencies.vaultBundleService ?? new VaultBundleService({
     ownerId: 'default',
     database: dependencies.database,

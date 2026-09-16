@@ -604,6 +604,7 @@ export class WebSessionTransport implements SessionTransport {
       terminalId: request.sessionId,
       getSize: () => ({ cols: request.cols, rows: request.rows }),
       webSocketFactory: this.options.webSocketFactory,
+      networkAware: true,
       onOutput: (data) => emit({ type: 'data', data: new TextDecoder().decode(data) }),
       onExit: (event) => emit({ type: 'exit', code: event.code, ...(event.signal === undefined ? {} : { signal: event.signal }) }),
       onSnapshot: (snapshot) => {

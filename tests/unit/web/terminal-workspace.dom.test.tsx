@@ -276,6 +276,25 @@ describe('TerminalWorkspace', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('keeps a deleted host tab visible with an explicit close action', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(
+      <TerminalWorkspace
+        hosts={[]}
+        terminals={[{ terminalId: 'missing-terminal', hostId: 'host-deleted', label: 'Production', recoveryStatus: 'missing-host', state: 'needs-reopen', reconnectDelayMs: 0, errorMessage: 'Server 已不存在' }]}
+        activeTerminalId="missing-terminal"
+        onActivate={vi.fn()}
+        onClose={onClose}
+      />
+    );
+
+    expect(screen.getByRole('tab', { name: '切换 Production · 1' })).toHaveTextContent('Server 已不存在');
+    expect(screen.getByText('这个工作区标签关联的 Server 已不存在。')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '关闭 Production · 1' }));
+    expect(onClose).toHaveBeenCalledWith('missing-terminal');
+  });
+
   it('explains the current connection stage and user action', () => {
     render(<TerminalToolbar
       state="failed"

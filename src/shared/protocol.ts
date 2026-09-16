@@ -18,6 +18,7 @@ export const terminalOpenSchema = z.object({
   rows: dimensionSchema,
   requestId: requestIdSchema,
   knownServiceInstanceId: requestIdSchema.optional(),
+  reattachOnly: z.boolean().optional(),
   term: z.string().min(1).max(64).regex(/^[a-z0-9._+-]+$/iu).optional()
 }).strict();
 

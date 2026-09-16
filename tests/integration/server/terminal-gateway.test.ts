@@ -330,6 +330,35 @@ describe('terminal WebSocket gateway', () => {
     refreshedSocket.close();
   });
 
+  it('does not create a new shell when a restored tab cannot be reattached', async () => {
+    const { app, adapter } = await makeApp();
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const cookie = cookieFrom(setup);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: {
+        name: 'Fixture SSH',
+        address: 'ssh-fixture',
+        username: 'fixture',
+        auth: { type: 'password', password: 'fixture-password' }
+      }
+    });
+    const hostId = json<{ id: string }>(created).id;
+    const url = await listen(app);
+    const socket = await connectSocket(url, { cookie, origin: ORIGIN });
+
+    socket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'tab-missing', reattachOnly: true }));
+
+    expect(await nextJson<{ type: string; code?: string }>(socket)).toEqual(expect.objectContaining({
+      type: 'error',
+      code: 'SESSION_NEEDS_REOPEN'
+    }));
+    expect(adapter.channels).toHaveLength(0);
+    socket.close();
+  });
+
   it('returns stable errors for unknown hosts and malformed control frames', async () => {
     const { app } = await makeApp();
     const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });

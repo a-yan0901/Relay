@@ -31,9 +31,9 @@ export const WorkspaceSwitcher = ({ templates, currentWorkspace, hosts, onOpen, 
   }, [query, templates]);
 
   const requestOpen = (template: WorkspaceTemplate): void => {
-    const templateTabIds = new Set(template.state.tabs.map((tab) => tab.id));
+    const templateHostByTabId = new Map(template.state.tabs.map((tab) => [tab.id, tab.hostId]));
     const closingHosts = currentWorkspace.tabs
-      .filter((tab) => !templateTabIds.has(tab.id))
+      .filter((tab) => templateHostByTabId.get(tab.id) !== tab.hostId)
       .map((tab) => hostNameById.get(tab.hostId) ?? tab.hostId);
     if (closingHosts.length > 0) {
       setPendingAction({ type: 'open', template, closingHosts: [...new Set(closingHosts)] });

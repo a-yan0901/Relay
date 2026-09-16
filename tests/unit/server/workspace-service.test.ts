@@ -48,7 +48,7 @@ describe('WorkspaceService', () => {
     const database = createDatabase();
     const hosts = new HostRepository(database, 'default');
     addHost(hosts);
-    const service = new WorkspaceService(new WorkspaceRepository(database), hosts);
+    const service = new WorkspaceService(new WorkspaceRepository(database));
 
     expect(service.load('default')).toEqual(expect.objectContaining({
       version: 0,
@@ -64,12 +64,11 @@ describe('WorkspaceService', () => {
     database.close();
   });
 
-  it('rejects tabs for unknown hosts and invalid ratios', () => {
+  it('retains tabs for deleted hosts while rejecting invalid ratios', () => {
     const database = createDatabase();
-    const hosts = new HostRepository(database, 'default');
-    const service = new WorkspaceService(new WorkspaceRepository(database), hosts);
+    const service = new WorkspaceService(new WorkspaceRepository(database));
 
-    expect(() => service.save('default', 0, validState())).toThrowError(/找不到服务器配置|HOST_NOT_FOUND/);
+    expect(service.save('default', 0, validState()).state.tabs).toEqual(validState().tabs);
     expect(() => service.save('default', 0, validState({ layout: { mode: 'single', ratio: 0.1 } })))
       .toThrowError(/工作区数据无效|WORKSPACE_INVALID/);
     database.close();
@@ -79,7 +78,7 @@ describe('WorkspaceService', () => {
     const database = createDatabase();
     const hosts = new HostRepository(database, 'default');
     addHost(hosts);
-    const service = new WorkspaceService(new WorkspaceRepository(database), hosts);
+    const service = new WorkspaceService(new WorkspaceRepository(database));
     const unsafe = {
       ...validState(),
       password: 'secret',
