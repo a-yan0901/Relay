@@ -1,12 +1,12 @@
 # 统一核心与跨端/跨平台基础
 
-Relay 当前以 Web app 为核心客户端，服务端负责 SSH、SFTP、批量命令和 Vault 的执行边界。桌面版后续覆盖 Windows 和 Linux，Android 版复用同一套 shared core、错误码和 wire protocol，再替换 transport 与 secret store；本阶段不绑定 Tauri、Electron 或移动 UI 框架，也不提前实现原生 UI。
+Relay 当前以 Web app 为核心客户端，服务端负责 SSH、SFTP、批量命令和 Vault 的执行边界。桌面版后续覆盖 Windows 和 Linux，Android 版复用同一套 shared core、错误码和 wire protocol，再替换 transport 与 secret store；账号与加密同步作为登录后的可选扩展层，本地 Local-only 模式始终保留。本阶段不绑定 Tauri、Electron 或移动 UI 框架，也不提前实现原生 UI。
 
 ## Review 结论
 
 本轮 review 后，统一核心已经形成可执行边界：`src/shared/core` 固定模型、校验、错误码、状态机、分组/连接继承、目标快照、`CoreRuntime` 和 ports；Web 只实现第一套 adapter。桌面和 Android 仍不做 UI，但可以替换 adapter 而不复制领域规则和用户任务语义；原生端仍需按各自生命周期和交互范式实现 UI。跨端验收也已落地：Web adapter 与 desktop/android native-like fake 运行同一套 shared contract，证明扩展点不依赖 DOM 或 HTTP。
 
-剩余风险已收敛为明确的后置能力，而不是架构债务：原生客户端、云同步、团队 Vault、更多协议和更大规模 pane 需要另写 capability、数据归属和生命周期 spec；本轮不把它们伪装成 Web 能力。
+剩余风险已收敛为明确的后置能力，而不是架构债务：原生客户端、个人账号/加密同步、团队 Vault、更多协议和更大规模 pane 分别通过 capability、数据归属和生命周期 spec 管理；个人账号/加密同步的边界见 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md)，本轮不把它们伪装成已交付的 Web 能力。
 
 ## 核心边界与依赖方向
 
@@ -96,6 +96,7 @@ Host Key policy、ProxyJump 每一跳校验、SFTP 路径规范化、批量目�
 | --- | --- | --- |
 | Domain/application | Host、Identity、Group、Workspace、Snippet、Transfer、CommandRun、Activity；validation、错误码、状态机、目标解析 | 无平台 API |
 | Client ports | VaultSession/ConnectionProbe；Workspace/Identity/Group/Snippet/Activity store；Session/File/Command transport；SecretStore；ImportExportPort | 由 Web、桌面、Android 分别实现 |
+| Account/sync extension | Account session、device trust、SyncEnvelope、revision/conflict 状态和 Local-only fallback | 作为可选扩展；不把账号/同步变成 CoreRuntime 的必选依赖 |
 | Web | React UI、HTTP/WSS、浏览器 WebSocket、server-mediated SSH、浏览器文件读写 | 不能在浏览器保存凭据或 Vault secret |
 | Desktop | Windows/Linux UI shell、OS keychain、安全文件选择器；可选本地 SSH 或 server-mediated transport | 不选择具体桌面框架，不改变 core 语义 |
 | Android | Android UI、Keystore、系统文件选择器、移动网络/生命周期 adapter | 处理后台挂起和网络切换，不改变重连/终态定义 |
@@ -109,6 +110,20 @@ Web 的 `SecretStore` 不在浏览器中保存主密码、服务器凭据、导�
 
 服务端通过 `GET /api/capabilities` 返回版本化能力集合。客户端应按 capability 判断功能是否可用，不能根据平台名称复制业务分支；未支持的操作统一返回 `CAPABILITY_UNAVAILABLE`。Terminal/operation wire message 使用 shared 的版本和状态语义，adapter 只负责传输编码与连接生命周期。
 
+## 账号与加密同步边界
+
+账号与同步不改变现有 Local-only 核心路径：
+
+- 未登录账号时，不创建账号会话、不调用同步 API，Host、Identity、Workspace、Snippet 和本地加密凭据只留在当前实例/设备。
+- 登录账号是开启同步的用户动作，但账号密码不等于 Vault 主密码；只有 Vault 已解锁或使用离线 recovery key 后，才读取/上传同步内容。
+- Account service 只管理 account id、设备、会话和撤销；Blind sync store 只保存 opaque vault id、revision、hash、size、时间和加密 envelope。
+- `K_sync` 由现有 `K_vault` 包装；同步服务不能拿到主密码、Vault key、Sync key 或 Vault 明文。当前 Web-mediated SSH 的 Relay 执行端仍是受信解密边界，不宣称对运行时凭据零知识。
+- 同步对象包括加密的 Host/Identity/Group/Snippet/Workspace 数据；不包括 live Shell、terminal/session id、TransferJob、CommandRun、终端原始内容、SFTP 文件内容和默认 Activity 输出。
+- 首版采用 encrypted snapshot + revision conflict；服务端 revision 冲突时拒绝覆盖，客户端保留两侧加密副本并要求用户选择，不能静默最后写入覆盖 Host Key、凭据、ProxyJump 或 Snippet command。
+- 登出或设备撤销停止同步但保留本地数据；同步服务离线时本地 SSH/SFTP/批量能力继续工作，状态显示 `offline`/`pending`。
+
+共享 DTO/可选 ports 只传输 account/device/sync 状态和密文 envelope，不传 session token、主密码、私钥、passphrase、recovery key 或解锁后的凭据。Web 使用 HttpOnly Secure session；桌面/Android 使用 OS keychain/Keystore。具体账号 provider 可以替换，但不能把 provider-specific auth 字段传播到 shared core。
+
 ## Desktop / Windows / Linux / Android 适配要求
 
 Windows/Linux 桌面端可以使用 OS keychain 或桌面安全存储，Android 端使用 Android Keystore；三者仍需保持同样的状态语义和确认步骤。替换 transport 时必须保留：
@@ -120,7 +135,7 @@ Windows/Linux 桌面端可以使用 OS keychain 或桌面安全存储，Android 
 - 活动日志只记录脱敏结构化摘要，不记录交互式 shell 原始输入输出；
 - 移动端后台挂起、网络切换和进程回收只能产生明确的 reconnecting/interrupted/needs-reopen 状态，不能伪造继续执行。
 
-平台差异应存在于 adapter，不应进入 shared core 或改变服务端的安全默认值。云同步不是 CoreRuntime 的必选端口；如果未来增加 `SyncStore`/`SyncTransport`，必须另写数据归属、冲突、加密和离线语义 spec。
+平台差异应存在于 adapter，不应进入 shared core 或改变服务端的安全默认值。云同步不是 CoreRuntime 的必选端口；已批准的账号/同步设计通过可选 `AccountSessionPort`、`DeviceTrustPort` 和 `SyncPort` 扩展，并必须遵守 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md) 的数据归属、冲突、加密和离线语义。
 
 ## Contract tests 与发布门槛
 
@@ -130,4 +145,4 @@ Windows/Linux 桌面端可以使用 OS keychain 或桌面安全存储，Android 
 - CI 对 `src/shared` 做静态依赖检查，禁止出现 Node/DOM/React/WebSocket/`ssh2`/浏览器存储依赖；同时运行 Web 和 server 两个 TypeScript target。
 - 每个新功能先修改 shared contract 和 fake contract test，再实现 Web adapter；没有 shared port 的功能不得直接写入 `App.tsx`。
 
-这套约束保证 Relay 仍是 Web-first、local-first、单 Vault 产品，同时保留跨 Web、Windows/Linux 桌面和 Android 的扩展可能，不提前承担云同步或原生 UI 的实现成本。
+这套约束保证 Relay 仍是 Web-first、local-first、单 Vault 产品，同时保留跨 Web、Windows/Linux 桌面和 Android 的扩展可能；未来登录账号即可进入加密同步，但不牺牲 Local-only 路径，也不提前把团队协作或原生 UI 当作已交付能力。

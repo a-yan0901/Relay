@@ -2,24 +2,25 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在保持 Web-first、local-first、自托管和可信安全边界的前提下，把 Relay 从“可用的 Web SSH 工作台”持续演进为易发现、易操作、状态可信、传输可靠、可复盘并可扩展到多端的长期产品。
+**Goal:** 在保持 Web-first、local-first、自托管和可信安全边界的前提下，把 Relay 从“可用的 Web SSH 工作台”持续演进为易发现、易操作、状态可信、传输可靠、可复盘、可跨端并能在登录账号后安全同步的长期产品。
 
-**Architecture:** 以 `src/shared/core` 的领域模型、状态机、错误码、能力集合和 ports 作为跨端边界；Web 通过 `src/web/platform/web-adapters.ts` 和 React UI 实现第一套体验，未来桌面/移动端替换 transport、文件选择器、生命周期和 secret store，不复制业务规则。交付顺序遵循“可靠性底座 → 现代任务工作流 → 自动化与复盘 → capability/跨端边界 → 团队与生态”。
+**Architecture:** 以 `src/shared/core` 的领域模型、状态机、错误码、能力集合和 ports 作为跨端边界；Web 通过 `src/web/platform/web-adapters.ts` 和 React UI 实现第一套体验，未来桌面/移动端替换 transport、文件选择器、生命周期和 secret store，不复制业务规则。账号与同步作为 shared core 之外的可选身份/盲存储平面，登录后同步加密 Vault，未登录仍保持 Local-only。交付顺序遵循“可靠性底座 → 现代任务工作流 → 自动化与复盘 → capability/跨端边界 → 个人账号与加密同步 → 团队与生态”。
 
 **Tech Stack:** Node.js 22+, TypeScript, React 19, Vite, Fastify, WebSocket, SQLite/better-sqlite3, Argon2id, AES-256-GCM, ssh2, xterm.js, Vitest, React Testing Library, Playwright, Docker Compose, OpenSSH fixture.
 
-**Spec:** `docs/product/2026-09-14-product-requirements.md`, `docs/product/2026-09-15-ssh-productivity-release.md`, `docs/superpowers/specs/2026-09-15-termius-experience-gap-closure-design.md`, `docs/ux/2026-09-15-ux-audit.md`, `relay-ssh-competitive-brief-2026-09-16.html`
+**Spec:** `docs/product/2026-09-14-product-requirements.md`, `docs/product/2026-09-15-ssh-productivity-release.md`, `docs/superpowers/specs/2026-09-15-termius-experience-gap-closure-design.md`, `docs/superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md`, `docs/ux/2026-09-15-ux-audit.md`, `relay-ssh-competitive-brief-2026-09-16.html`
 
 ## Global Constraints
 
-- 保持单实例、单 Vault、单用户、自托管和 Web-first；不为了追赶云客户端而提前引入账号、云同步、团队 Vault、RBAC 或 SSO。
+- M0–M4 保持单实例、单 Vault、单用户、自托管和 Web-first；M5 允许引入可选账号与加密云同步，但 Local-only 永远可用，账号不成为单机使用前置条件。
 - `src/shared/core` 只能依赖平台无关的 TypeScript 类型和纯函数，不导入 Node、DOM、React、浏览器存储、WebSocket、HTTP、`ssh2` 或平台 keychain API。
-- 密码、私钥、passphrase、主密码、导出密码、session cookie、token、bundle 和完整交互式终端内容不得进入浏览器持久化存储或普通日志。
+- 密码、私钥、passphrase、主密码、导出密码、session cookie、账号 token、recovery key、bundle 和完整交互式终端内容不得进入浏览器持久化存储或普通日志。
 - Host Key 首次连接必须明确确认；已知指纹变化必须硬失败；ProxyJump 每一跳执行相同的 Host Key policy，最多四级且不能有环。
 - 工作区快照和模板只保存非敏感意图；`terminalId`/`sessionId` 只能用于当前进程或短期 live reattach，不得伪造应用重启后的旧 Shell 仍然存活。
 - SFTP 路径必须经过现有规范化和越界检查；上传先写远端临时文件，完成后原子重命名；取消或失败不能把半文件当成目标文件。
 - 批量任务默认并发 4、最大 16，单主机默认超时 60 秒，单主机输出默认上限 256 KiB；多主机或高风险动作必须有目标预览和明确确认。
 - 所有状态必须有文字语义；颜色、图标、动画只能增强信息，不能成为唯一的安全或连接提示。
+- 云同步服务只接收加密 envelope 和最小 opaque metadata；账号认证、Vault 解锁和 SSH 执行边界不能混成一个可读取明文的同步存储接口。
 - 新行为遵循 `shared contract → failing test → minimal implementation → focused verification → browser/E2E verification → documentation` 顺序。
 - 验证按变更风险分级：单模块运行聚焦测试；跨模块、核心流程、安全、数据迁移、构建链或重大行为变更在里程碑门槛运行全量验证。
 - 不使用 reset、checkout 或覆盖用户改动；每个任务只 stage 任务文件。提交前检查 `git status`、`git diff` 和 `git diff --check`，除非用户要求不 push。
@@ -73,7 +74,8 @@
 | 批量与复盘 | 有安全批量命令和逐主机结果，但缺少输出对比、历史检索、异常聚合和可选的会话日志书签。 | O-01、O-02 |
 | 迁移 | 已覆盖多个产品的通用输入，FinalShell/Netcatty 原生或专属字段映射仍需评估。 | O-03 |
 | 平台 | shared core 已预留，原生桌面/Android UI、系统 keychain、移动生命周期尚未交付。 | X-01、X-02 |
-| 能力广度 | 端口转发、Agent Forwarding、Mosh、Serial、Telnet、RDP/VNC、X11、团队和云同步尚未进入当前核心。 | X-03、X-04 |
+| 账号与同步 | 当前只有本地 Vault；没有账号会话、设备信任、加密同步、离线队列、冲突和恢复闭环。 | X-04 |
+| 能力广度 | 端口转发、Agent Forwarding、Mosh、Serial、Telnet、RDP/VNC、X11、团队 Vault 和受控 Agent 尚未进入当前核心。 | X-03、X-05 |
 
 ## 2. 长期里程碑与进入/退出条件
 
@@ -85,8 +87,9 @@
 | M1 可信工作台 | 让用户敢在真实环境中传文件、重连和批量执行。 | R-01、R-02、R-03 | 无虚假“已连接”；任务都有终态；中断传输可恢复且不产生坏文件；相关 E2E 通过。 |
 | M2 现代任务工作流 | 让用户少记忆、少跳转、少在 tab 中迷路。 | U-01、U-02、U-03、U-04 | 目标主机/会话可快速找到；Focus/Split/文件面板保持上下文；键盘、触控和窄屏路径通过。 |
 | M3 生产力与复盘 | 让批量命令、片段、结果、日志和迁移形成闭环。 | O-01、O-02、O-03 | 批量目标固定快照；结果可搜索/对比；导入冲突可解释；敏感内容不泄露。 |
-| M4 平台与能力边界 | 在不污染 shared core 的情况下扩展桌面、移动端和协议能力。 | X-01、X-02、X-03 | 每个新平台/协议有 capability、adapter、权限、审计和 contract test；不支持时有一致降级。 |
-| M5 组织与 Agent | 在明确数据归属和权限后支持协作与受控 Agent。 | X-04 | 完成独立 spec、威胁模型、审批/审计和恢复设计；未批准能力不进入 UI。 |
+| M4 平台与能力边界 | 在不污染 shared core 的情况下扩展桌面、移动端和协议能力，并固定账号/同步的接入边界。 | X-01、X-02、X-03 | 每个新平台/协议有 capability、adapter、权限、审计和 contract test；不支持时有一致降级。 |
+| M5 个人账号与加密同步 | 登录账号后跨设备同步加密 Vault；未登录继续 Local-only。 | X-04 | 账号、设备、密钥、同步、冲突、恢复和登出语义通过安全/跨端验证；云端不持有可解密 Vault 的材料。 |
+| M6 组织与 Agent | 在明确数据归属和权限后支持团队协作与受控 Agent。 | X-05 | 完成独立 spec、威胁模型、审批/审计和恢复设计；未批准能力不进入 UI。 |
 
 ## 3. 需求追踪矩阵
 
@@ -97,7 +100,8 @@
 | FR-016–FR-017 | bundle、冲突、事务导入、ProxyJump | 已交付基线；O-03、X-03 扩展边界 |
 | FR-018–FR-019 | SFTP 文件闭环、原子上传、取消、重试和断点续传 | R-02、U-03 |
 | FR-020–FR-024 | Snippets、批量执行、逐主机结果、活动和 TTL | O-01、O-02 |
-| FR-025、NFR-008 | shared core、capability、Web/native adapter | X-01、X-02、X-03、X-04 |
+| FR-025、NFR-008 | shared core、capability、Web/native adapter | X-01、X-02、X-03、X-04、X-05 |
+| Future account/sync | Local-only fallback、账号会话、设备信任、加密 envelope、离线队列、冲突、恢复和撤销 | X-04、Q-01 |
 | NFR-001–NFR-003 | 单容器、加密存储、HTTPS/WSS 和 Origin | 已交付基线；S-01、Q-01 持续回归 |
 | NFR-004–NFR-007 | 可用性、可访问性、可观测性和可测试性 | U-04、R-01、Q-01 |
 
@@ -109,6 +113,7 @@
 - `src/shared/core/ports.ts`：SecretStore、SessionTransport、FileTransport、CommandTransport、ImportExportPort 等平台无关接口。
 - `src/shared/core/state-machines.ts`、`src/shared/core/connection-resolution.ts`、`src/shared/core/target-selection.ts`：状态迁移、连接解析和批量目标快照。
 - `src/shared/core/capabilities.ts`、`src/shared/protocol.ts`、`src/shared/errors.ts`：能力协商、事件协议和稳定错误码。
+- 规划中的可选 `AccountSessionPort`、`DeviceTrustPort`、`SyncPort`：账号、设备和加密同步不成为 Local-only `CoreRuntime` 的必选依赖。
 - `src/shared/validation.ts`、`src/shared/import/`：输入校验、导入检测、规范化、去重、解析和导出。
 
 ### Server
@@ -118,6 +123,7 @@
 - `src/server/automation/`、`src/server/api/command-routes.ts`：Snippet、批量命令、结果存储和取消。
 - `src/server/ws/`、`src/server/api/`：终端/操作事件、Workspace、Vault、Activity 和 Host API。
 - `src/server/db/`、`src/server/vault/`：迁移、Repository、密文和数据生命周期。
+- 规划中的 `src/server/account/`、`src/server/sync/`：账号会话/设备撤销与加密盲存储；同步服务不能调用 Vault 明文解密接口。
 
 ### Web
 
@@ -127,6 +133,7 @@
 - `src/web/components/SftpPanel.tsx`、`TransferQueue.tsx`、`ActivityPanel.tsx`：文件、传输和任务反馈。
 - `src/web/components/HostTargetPicker.tsx`、`CommandRunDialog.tsx`、`CommandRunResults.tsx`、`SnippetPalette.tsx`：批量与片段。
 - `src/web/platform/web-adapters.ts`、`src/web/theme.ts`、`src/web/styles.css`：平台边界、主题和视觉系统。
+- 规划中的账号/同步入口、设备管理、Sync Center 和冲突 UI：只消费 shared account/sync 状态，不在组件中复制加密或冲突规则。
 
 ### Tests
 
@@ -134,6 +141,7 @@
 - Server：`tests/unit/server/`、`tests/integration/server/`、`tests/integration/openssh/`。
 - Web：`tests/unit/web/`，重点是 DOM、状态、焦点、响应式和 adapter 测试。
 - Browser：`tests/e2e/host-to-terminal.spec.ts`、`tests/e2e/ssh-productivity.spec.ts`、`tests/e2e/ssh-fixture.ts`。
+- 规划中的 `tests/unit/shared/account-sync-contract.test.ts`、`tests/integration/server/sync-routes.test.ts` 和跨端 Local fallback/E2E：在 X-04 implementation plan 中落地。
 
 ---
 
@@ -885,8 +893,8 @@ export interface TargetSelectionSnapshot {
 
 **Interfaces:**
 
-- Capability 名称必须表达行为，不表达平台：`workspace.max-panes`、`transfer.resume`、`terminal.broadcast`、`sftp.local-files`、`session.reattach`、`forwarding.local` 等。
-- `CoreRuntime.negotiateCapabilities()` 返回 client、server 和交集；UI 对不可用能力显示原因或隐藏入口，但不能在 UI 旁路 server 权限。
+- Capability 名称必须表达行为，不表达平台：`workspace.max-panes`、`transfer.resume`、`terminal.broadcast`、`sftp.local-files`、`session.reattach`、`forwarding.local`、`account.auth`、`device.trust`、`sync.encrypted` 等。
+- `CoreRuntime.negotiateCapabilities()` 返回 client、server 和交集；UI 对不可用能力显示原因或隐藏入口，但不能在 UI 旁路 server 权限。账号/同步能力缺失时必须稳定降级到 Local-only。
 - Web/native contract tests 同时验证 Host Key、SFTP 路径、批量目标、任务终态、取消、输出上限、导入/导出和错误码。
 
 - [ ] **Step 1: 补 capability matrix 和 contract 失败测试。**
@@ -1002,12 +1010,66 @@ export interface TargetSelectionSnapshot {
 
 ---
 
-## Task X-04: 团队 Vault、同步和受控 Agent/MCP
+## Task X-04: 个人账号、设备信任与端到端加密同步
 
-**Status:** Deferred（必须先完成独立 spec）
+**Status:** Ready（方向已确认，spec 已建立，implementation plan 待单独创建）
 **Priority:** P2
 **Milestone:** M5
-**Depends on:** X-01、X-02、X-03；产品对账号、数据归属和部署模型的明确决策。
+**Depends on:** X-01 的 capability/contract；X-02 的平台 secret store 和生命周期；R-03 的 Local/恢复语义；现有 Vault crypto 和事务导入边界。
+
+**Files:**
+
+- Read: `docs/superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md`
+- Modify: `src/shared/core/capabilities.ts`, `src/shared/core/ports.ts`, `src/shared/core/models.ts`, `src/shared/errors.ts` only after implementation plan approval
+- Create: `src/shared/core/account-sync.ts`, `src/server/account/`, `src/server/sync/`, `src/web/components/AccountMenu.tsx`, `src/web/components/SyncCenter.tsx` only after the implementation plan fixes exact file boundaries
+- Test: `tests/unit/shared/account-sync-contract.test.ts`, `tests/unit/server/account-service.test.ts`, `tests/unit/server/sync-crypto.test.ts`, `tests/integration/server/sync-routes.test.ts`, `tests/unit/web/account-menu.dom.test.tsx`, `tests/unit/web/sync-center.dom.test.tsx`, `tests/e2e/account-sync.spec.ts`
+
+**Interfaces and invariants:**
+
+- Local-only `CoreRuntime` 不要求账号或同步端口；`account.auth`、`device.trust`、`sync.encrypted` 作为可选 capability 协商。
+- Account session 只代表身份/设备/权限；主密码、Vault key、Sync key、私钥、passphrase 和 token 不进入 shared DTO、云端日志或浏览器持久化。
+- `SyncEnvelope` 只包含 opaque vault id、revision、keyVersion、密文、nonce、auth tag、AAD、hash 和幂等元数据；新设备所需的 `VaultUnlockEnvelope`/`wrappedSyncKey` 也只能以包装后的密文返回；Blind sync store 不能调用 Vault 解密或 SSH 凭据接口。
+- `K_sync` 由现有 `K_vault` 包装；新设备必须用原 Vault 主密码或离线 recovery key 解锁，账号密码重置不能恢复 Vault。
+- 登录并解锁后才自动同步；登出停止同步但保留本地数据；设备撤销停止同步但不隐式删除本地 Vault；账号删除默认进入 30 天云端可恢复窗口。
+- 首版使用加密 snapshot + revision conflict；Host、Identity、Host Key trust、ProxyJump 和 Snippet command 不允许静默最后写入覆盖。
+- 不同步 live Shell、terminal/session id、TransferJob、CommandRun、原始终端内容、SFTP 文件内容或普通 Activity 输出。
+
+- [ ] **Step 1: 写 Local-only、账号状态和 capability 失败测试。**
+
+  覆盖未登录无同步请求、登录未解锁为 `needs-unlock`、账号失效/设备撤销和不支持 capability 的降级；确认终端、SFTP、批量命令不依赖账号服务。
+
+- [ ] **Step 2: 写加密 envelope、密钥恢复和盲存储测试。**
+
+  覆盖 `K_vault`/`K_sync` 包装、AAD/hash/version、错误主密码、recovery key、云端 payload 不含明文、密文篡改拒绝和 key rotation；禁止同步 API 接收 master password 或 Vault plaintext。
+
+- [ ] **Step 3: 实现账号会话与设备信任边界。**
+
+  账号认证采用可替换的 Account provider adapter；Web 使用 HttpOnly Secure session，desktop/Android 使用系统安全存储；设备列表、当前设备、撤销和登出状态进入统一 operation/error 语义。
+
+- [ ] **Step 4: 实现离线队列、revision conflict 和事务应用。**
+
+  本地变更先事务提交，再持久化加密待上传 envelope；同步失败不阻塞本地工作；冲突保留两边加密副本并提供 keep-local/use-remote/export-both，应用失败不改变现有 Vault。
+
+- [ ] **Step 5: 实现跨端同步 UI。**
+
+  Account menu 显示 Local-only、Synced、Pending、Offline、Conflict、Needs unlock 和 Device revoked；Sync Center 提供最后同步时间、待处理数量、设备管理、冲突预览和安全恢复说明。
+
+- [ ] **Step 6: 运行跨端 contract、OpenSSH 影响回归和 Release gate。**
+
+  验证同步服务故障不会改变 Host Key、SFTP 路径、批量确认和任务终态；Web、desktop-like、Android-like runtime 共享状态/错误/Local fallback 断言；涉及 Vault、账号、加密、迁移或跨模块行为时按 Q-01 执行全量验证。
+
+**Acceptance:** 未登录时完整 Local-only 可用且没有同步请求；登录并解锁后跨设备恢复加密 Vault；云端无法解密或读取 Vault 明文；离线、撤销、登出、冲突、密钥恢复和删除都有清晰终态；个人同步不改变现有 SSH/SFTP/批量安全不变量。
+
+**Verification:** account/sync shared contract、加密单元、server integration、DOM/E2E、跨端 fake 和敏感数据扫描；通过安全/威胁模型评审后才能创建正式 implementation plan 和代码。
+
+---
+
+## Task X-05: 团队 Vault、协作同步和受控 Agent/MCP
+
+**Status:** Deferred（个人同步完成前不进入实现）
+**Priority:** P2
+**Milestone:** M6
+**Depends on:** X-01、X-02、X-03、X-04；产品对账号、团队数据归属、权限和部署模型的明确决策。
 
 **Files:**
 
@@ -1017,19 +1079,19 @@ export interface TargetSelectionSnapshot {
 
 **Required decisions:**
 
-- 团队 Vault 的 owner、成员、最小权限、离线副本、密钥轮换、审计、撤销和恢复。
-- 云同步/第三方同步的 provider trust、冲突合并、删除恢复、主密码丢失和数据驻留。
+- 团队 Vault 的 owner、成员、最小权限、共享 key wrapping、离线副本、密钥轮换、审计、撤销和恢复；不能复用个人同步的“单一拥有者”假设。
+- 团队协作同步的 provider trust、冲突合并、删除恢复、数据驻留和个人/团队 Vault 的隔离。
 - Agent/MCP 的只读/写入/批量能力、人工确认、审批、速率限制、命令预览和 session 隔离。
 - UI 中如何区分“建议”“预览”“待确认”“已执行”，不能让自然语言代理静默执行生产命令。
 
-- [ ] **Step 1: 编写数据归属和威胁模型。**
+- [ ] **Step 1: 编写团队数据归属和威胁模型。**
 - [ ] **Step 2: 定义 capability、permission、audit 和 recovery contract。**
 - [ ] **Step 3: 以只读查询/诊断作为最小可行范围评审，写独立执行计划。**
 - [ ] **Step 4: 在批准前保持当前产品不变。**
 
-**Acceptance:** 组织/同步/Agent 不改变当前 local-first 安全承诺；任何写入和批量动作都可预览、确认、审计和停止。
+**Acceptance:** 团队/协作/Agent 不改变个人 Local-only 和加密同步承诺；任何写入和批量动作都可预览、确认、审计和停止；成员撤销后权限和离线副本行为可恢复、可验证。
 
-**Verification:** 仅进行独立 spec、权限/威胁模型和恢复设计评审；保持 Deferred，不在当前任务创建团队、同步或 Agent 实现代码。
+**Verification:** 仅进行独立 spec、权限/威胁模型、密钥恢复和数据归属评审；保持 Deferred，不在当前任务创建团队、协作同步或 Agent 实现代码。
 
 ---
 
@@ -1037,7 +1099,7 @@ export interface TargetSelectionSnapshot {
 
 **Status:** Ready
 **Priority:** P0（贯穿所有里程碑）
-**Milestone:** M0–M5
+**Milestone:** M0–M6
 **Depends on:** 每个任务的 focused tests 和指标基线。
 
 **Files:**
@@ -1060,7 +1122,7 @@ export interface TargetSelectionSnapshot {
 
 - [ ] **Step 1: 为核心路径建立矩阵。**
 
-  至少覆盖：初始化/解锁、添加 Host、首次 Host Key、连接、同 Host 多 Console、刷新、网络断线、服务重启、锁定、SFTP 上传/下载/恢复、批量命令、取消、TTL、导入冲突和主题/窄屏。
+  至少覆盖：初始化/解锁、添加 Host、首次 Host Key、连接、同 Host 多 Console、刷新、网络断线、服务重启、锁定、SFTP 上传/下载/恢复、批量命令、取消、TTL、导入冲突、账号登录/未解锁、加密同步、离线队列、冲突、设备撤销和主题/窄屏。
 
 - [ ] **Step 2: 为每个里程碑记录指标基线。**
 
@@ -1101,13 +1163,16 @@ export interface TargetSelectionSnapshot {
 2. **M2 / P1：** U-01 信息架构/Quick Switcher → U-02 Focus/Split/Broadcast → U-03 上下文 SFTP → U-04 交互/无障碍/响应式。
 3. **M3 / P1：** O-01 Snippet/批量闭环 → S-01 Identity/Host Key → O-02 Activity/复盘 → O-03 迁移覆盖。
 4. **M4 / P2：** X-01 capability/规模门槛 → X-02 平台 shell spec → X-03 协议/转发 spec。
-5. **M5 / P2：** X-04 团队、同步和受控 Agent/MCP；只有完成数据、权限、安全和恢复设计后才实现。
-6. **每个阶段：** Q-01 更新指标、运行对应验证、人工走查、记录风险、提交变更，并回写本路线图状态。
+5. **M5 / P2：** X-04 个人账号、设备信任和加密同步；只有完成密钥、恢复、冲突和云端盲存储验证后才实现。
+6. **M6 / P2：** X-05 团队 Vault、协作同步和受控 Agent/MCP；只有完成数据、权限、安全和恢复设计后才实现。
+7. **每个阶段：** Q-01 更新指标、运行对应验证、人工走查、记录风险、提交变更，并回写本路线图状态。
 
 ## 6. 明确不做的事情
 
 - 不复制 Termius/MobaXterm/Netcatty 的全部功能矩阵作为短期目标。
 - 不在传输、连接恢复和状态反馈不可信时优先堆 AI、监控、更多协议或视觉装饰。
-- 不将 16-pane、云同步、团队协作或 Agent 写死进当前 shared core。
+- 不将 16-pane、账号、云同步、团队协作或 Agent 写死进当前 shared core；账号/同步只能作为可选扩展能力。
+- 不把登录账号当作 Local-only 的使用前提，也不把账号密码当作 Vault 解密密钥。
+- 不向云端上传明文 Vault、凭据、Host 地址、用户名、Snippet command、终端内容或活动输出；个人同步与团队协作分开建模。
 - 不把公开评论、Issue 或营销文案写成所有用户都会遇到的事实。
-- 不把原生 UI、系统 keychain、离线同步或完整会话录制当作 Web-first 版本的隐含承诺。
+- 不把原生 UI、系统 keychain、账号登录、离线同步或完整会话录制当作当前 Web-first 版本已经交付的能力。
