@@ -16,6 +16,7 @@ describe('UI preferences', () => {
     window.localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.style.removeProperty('--terminal-font-size');
+    document.documentElement.style.removeProperty('color-scheme');
   });
 
   it('loads valid preferences and falls back from malformed values', () => {
@@ -31,6 +32,7 @@ describe('UI preferences', () => {
     savePreferences(preferences);
 
     expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('light');
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
     expect(JSON.parse(window.localStorage.getItem('relay.ui.preferences.v1') ?? '{}')).toEqual(preferences);
     expect(window.localStorage.getItem('relay.ui.preferences.v1')).not.toContain('password');

@@ -17,6 +17,7 @@ import { SnippetManager } from './components/SnippetManager';
 import { SnippetPalette } from './components/SnippetPalette';
 import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { QuickSwitcher } from './components/QuickSwitcher';
+import { ShortcutMap } from './components/ShortcutMap';
 import { BroadcastPreview } from './components/BroadcastPreview';
 import type { AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
@@ -25,6 +26,7 @@ import type { CoreRuntime } from '../shared/core/runtime';
 import { WEB_PLATFORM_MAX_PANES } from './platform/web-adapters';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
+import { shortcutCommandForEvent } from './state/shortcut-map';
 import {
   appReducer,
   clearTerminalDescriptors,
@@ -114,7 +116,7 @@ const WorkspaceHeader = ({ destination, onLock, onServers, onQuickSwitcher, onSe
       </nav>}
     </div>
     <div className="app-header-actions">
-      <button className="button button-ghost button-small quick-switcher-trigger" type="button" aria-label="快速切换" onClick={onQuickSwitcher}><span aria-hidden="true">⌘K</span><span className="quick-switcher-trigger-label">快速切换</span></button>
+      <button className="button button-ghost button-small quick-switcher-trigger" type="button" aria-label="快速切换" aria-keyshortcuts="Control+K Meta+K" onClick={onQuickSwitcher}><span aria-hidden="true">⌘K</span><span className="quick-switcher-trigger-label">快速切换</span></button>
       <span className="secure-pill"><span className="status-dot status-dot-green" />Vault 已解锁</span>
       <button className="button button-ghost button-small" type="button" onClick={onLock}>
         <span aria-hidden="true">↥</span> 锁定
@@ -122,7 +124,7 @@ const WorkspaceHeader = ({ destination, onLock, onServers, onQuickSwitcher, onSe
       {onIdentities && <button className="button button-ghost button-small" type="button" onClick={onIdentities}>身份</button>}
       {onSnippets && <button className="button button-ghost button-small" type="button" onClick={onSnippets}>片段</button>}
       {compact && onActivity && <button className="button button-ghost button-small" type="button" onClick={onActivity}>活动</button>}
-      <button className="button button-ghost button-small" type="button" aria-label="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
+      <button className="button button-ghost button-small" type="button" aria-label="偏好设置" title="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       <span className="avatar" aria-label="本地用户">L</span>
     </div>
   </header>
@@ -137,7 +139,7 @@ const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiP
     <aside ref={dialogRef} className="preferences-panel" role="dialog" aria-modal="true" aria-labelledby="preferences-title" onMouseDown={(event) => event.stopPropagation()}>
       <div className="form-heading">
         <div><p className="eyebrow">WORKSPACE PREFERENCES</p><h2 id="preferences-title">偏好设置</h2></div>
-        <button className="icon-button" type="button" aria-label="关闭偏好设置" onClick={onClose}>×</button>
+        <button className="icon-button" type="button" aria-label="关闭偏好设置" title="关闭偏好设置" onClick={onClose}>×</button>
       </div>
       <div className="preferences-fields">
         <label htmlFor="theme-select">色彩主题</label>
@@ -149,6 +151,7 @@ const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiP
           {fontSizeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
         </select>
       </div>
+      <ShortcutMap />
       <p className="preferences-note">偏好只保存在当前浏览器，不包含主密码、服务器密码或私钥。</p>
     </aside>
   </div>
@@ -857,30 +860,46 @@ export const App = ({ runtime }: AppProps) => {
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent): void => {
-      const target = event.target;
-      if (!(event.ctrlKey || event.metaKey)) return;
-      const key = event.key.toLowerCase();
-      if (event.shiftKey && key === 'p') {
+      const command = shortcutCommandForEvent(event, { terminalView });
+      if (!command) return;
+      if (command === 'focus-pane') return;
+      if (command === 'quick-switch') {
+        event.preventDefault();
+        handleOpenQuickSwitcher();
+        return;
+      }
+      if (command === 'open-snippets') {
+        const supported = terminalView
+          ? capabilities.supports('automation.snippets')
+          : capabilities.supports('automation.snippet-manager');
+        if (!supported) return;
         event.preventDefault();
         if (terminalView) handleOpenSnippetPalette();
         else handleOpenSnippetManager();
         return;
       }
-      const isTerminalInput = target instanceof HTMLTextAreaElement && target.classList.contains('xterm-helper-textarea');
-      const isTextEntry = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
-      if (isTerminalInput && key === 'k') return;
-      if (isTextEntry && !(isTerminalInput && (key === 'k' || key === 'w'))) return;
-      if (key === 'k') {
+      if (command === 'new-terminal') {
+        const newTerminalButton = document.getElementById('terminal-new-terminal');
+        if (!(newTerminalButton instanceof HTMLButtonElement)) return;
         event.preventDefault();
-        handleOpenQuickSwitcher();
-      } else if (key === 'w' && terminalView && state.activeTerminalId) {
+        newTerminalButton.click();
+        return;
+      }
+      if (command === 'open-sftp') {
+        const openSftpButton = document.getElementById('terminal-open-sftp');
+        if (!(openSftpButton instanceof HTMLButtonElement)) return;
+        event.preventDefault();
+        openSftpButton.click();
+        return;
+      }
+      if (command === 'close-tab' && state.activeTerminalId) {
         event.preventDefault();
         handleCloseTerminal(state.activeTerminalId);
       }
     };
     window.addEventListener('keydown', handleShortcut, true);
     return () => window.removeEventListener('keydown', handleShortcut, true);
-  }, [state.activeTerminalId, terminalView]);
+  }, [capabilities, state.activeTerminalId, terminalView]);
 
   const handleTerminalStatus = (terminalId: string, snapshot: TerminalSessionSnapshot): void => {
     dispatch({
@@ -953,7 +972,7 @@ export const App = ({ runtime }: AppProps) => {
       {state.errorMessage && (
         <div className="global-alert" role="alert">
           <span>{state.errorMessage}</span>
-          <button className="icon-button" type="button" aria-label="关闭提示" onClick={() => dispatch({ type: 'error', message: null })}>×</button>
+          <button className="icon-button" type="button" aria-label="关闭提示" title="关闭提示" onClick={() => dispatch({ type: 'error', message: null })}>×</button>
         </div>
       )}
       {!networkOnline && (
@@ -973,7 +992,7 @@ export const App = ({ runtime }: AppProps) => {
       {connectionFeedback && (
         <div className={`global-feedback global-feedback-${connectionFeedback.tone}`} role="status" aria-live="polite">
           <span>{connectionFeedback.message}</span>
-          <button className="icon-button" type="button" aria-label="关闭提示" onClick={() => setConnectionFeedback(null)}>×</button>
+          <button className="icon-button" type="button" aria-label="关闭提示" title="关闭提示" onClick={() => setConnectionFeedback(null)}>×</button>
         </div>
       )}
       <div className={`app-body ${terminalView ? 'app-body-terminal' : ''}`}>

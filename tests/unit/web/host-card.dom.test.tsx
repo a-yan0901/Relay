@@ -44,6 +44,8 @@ describe('HostCard', () => {
     );
 
     expect(screen.getByText(/最近连接/iu)).toBeInTheDocument();
+    expect(screen.getByText('等待首次验证')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '删除 Production API' })).toHaveTextContent('删除');
     await user.click(screen.getByRole('button', { name: '编辑 Production API' }));
     await user.click(screen.getByRole('button', { name: '测试连接 Production API' }));
     await user.click(screen.getByRole('button', { name: '删除 Production API' }));

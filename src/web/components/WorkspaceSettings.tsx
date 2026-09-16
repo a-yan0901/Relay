@@ -227,7 +227,7 @@ export const WorkspaceSettings = ({ mode, onClose, onExport, onPreviewImport, on
       <aside className="preferences-panel workspace-settings-panel" role="dialog" aria-modal="true" aria-labelledby="vault-transfer-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="form-heading">
           <div><p className="eyebrow">VAULT DATA</p><h2 id="vault-transfer-title">{title}</h2></div>
-          <button className="icon-button" type="button" aria-label={`关闭${title}`} onClick={close}>×</button>
+          <button className="icon-button" type="button" aria-label={`关闭${title}`} title={`关闭${title}`} onClick={close}>×</button>
         </div>
         {mode === 'import' ? (
           <>

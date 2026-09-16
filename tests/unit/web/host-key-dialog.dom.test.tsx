@@ -24,6 +24,7 @@ describe('HostKeyDialog accessibility', () => {
     const dialog = screen.getByRole('dialog');
     const reject = screen.getByRole('button', { name: '拒绝连接' });
     const trust = screen.getByRole('button', { name: '信任并连接' });
+    expect(dialog).toHaveAttribute('aria-describedby', 'host-key-description');
     expect(document.activeElement).toBe(reject);
     await user.tab();
     expect(document.activeElement).toBe(trust);

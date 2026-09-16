@@ -101,6 +101,7 @@ export const savePreferences = (preferences: UiPreferences): void => {
 export const applyPreferences = (preferences: UiPreferences): void => {
   if (typeof document === 'undefined') return;
   document.documentElement.dataset.theme = preferences.theme;
+  document.documentElement.style.setProperty('color-scheme', preferences.theme === 'light' ? 'light' : 'dark');
   document.documentElement.style.setProperty('--terminal-font-size', `${preferences.fontSize}px`);
 };
 

@@ -58,7 +58,7 @@ export const SnippetEditor = ({ snippet, onSubmit, onCancel }: SnippetEditorProp
 
   return (
     <section className="snippet-editor" aria-labelledby="snippet-editor-title">
-      <div className="form-heading"><div><p className="eyebrow">{snippet ? 'EDIT SNIPPET' : 'NEW SNIPPET'}</p><h3 id="snippet-editor-title">{snippet ? '编辑片段' : '新建片段'}</h3></div><button className="icon-button" type="button" aria-label="关闭片段编辑" onClick={onCancel}>×</button></div>
+      <div className="form-heading"><div><p className="eyebrow">{snippet ? 'EDIT SNIPPET' : 'NEW SNIPPET'}</p><h3 id="snippet-editor-title">{snippet ? '编辑片段' : '新建片段'}</h3></div><button className="icon-button" type="button" aria-label="关闭片段编辑" title="关闭片段编辑" onClick={onCancel}>×</button></div>
       <div className="form-grid">
         <div className="field field-wide"><label htmlFor="snippet-name">片段名称</label><input id="snippet-name" aria-label="片段名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：检查服务状态" /></div>
         <div className="field field-wide"><label htmlFor="snippet-description">描述</label><input id="snippet-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="可选" /></div>

@@ -11,6 +11,7 @@ import { TerminalPanel, type TerminalPanelToolbarState } from './TerminalPanel';
 import { SftpPanel } from './SftpPanel';
 import { TransferQueue } from './TransferQueue';
 import { SftpWorkspace } from './SftpWorkspace';
+import { shortcutCommandForEvent } from '../state/shortcut-map';
 
 type SplitOrientation = 'horizontal' | 'vertical';
 type PaneKey = 'primary' | 'secondary';
@@ -341,6 +342,20 @@ export const TerminalWorkspace = ({
     onActivate(terminalId);
   };
 
+  const handleWorkspaceKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (shortcutCommandForEvent(event.nativeEvent, { terminalView: true }) !== 'focus-pane') return;
+    const requestedIndex = Number(event.key) - 1;
+    const focusableTerminalIds = gridLayout
+      ? visibleGridTerminalIds
+      : splitLayout
+        ? [primaryTerminalId, secondaryTerminalId].filter((id): id is string => id !== null)
+        : terminals.map((terminal) => terminal.terminalId);
+    const terminalId = focusableTerminalIds[requestedIndex];
+    if (!terminalId) return;
+    event.preventDefault();
+    activateTerminal(terminalId);
+  };
+
   const toggleSplit = (orientation: SplitOrientation): void => {
     if (gridLayout) {
       setGridLayout(false);
@@ -438,7 +453,7 @@ export const TerminalWorkspace = ({
   const layoutStyle: CSSProperties | undefined = splitLayout || gridLayout ? { '--split-ratio': `${splitRatio * 100}%` } as CSSProperties : undefined;
 
   return (
-    <div className="terminal-workspace-shell">
+    <div className="terminal-workspace-shell" onKeyDownCapture={handleWorkspaceKeyDownCapture}>
       <section className="terminal-main" aria-label="终端标签工作区">
         <div className="terminal-topbar" role="toolbar" aria-label="终端导航与工作区操作">
           {workspaceHeader}
@@ -456,7 +471,7 @@ export const TerminalWorkspace = ({
                     <span className="terminal-tab-status">{terminal.recoveryStatus === 'missing-host' ? 'Server 已不存在' : terminalStatusLabels[terminal.state]}</span>
                     {attentionByTerminalId[terminal.terminalId] && <span className={`terminal-tab-attention terminal-tab-attention-${attentionByTerminalId[terminal.terminalId]}`} aria-label={attentionByTerminalId[terminal.terminalId] === 'error' ? '未读错误' : '未读完成'} title={attentionByTerminalId[terminal.terminalId] === 'error' ? '未读错误' : '未读完成'}>{attentionByTerminalId[terminal.terminalId] === 'error' ? '!' : '✓'}</span>}
                   </button>
-                  <button className="terminal-tab-close" type="button" aria-label={`关闭 ${label}`} onClick={(event) => { event.stopPropagation(); onClose(terminal.terminalId); }}>×</button>
+                  <button className="terminal-tab-close" type="button" aria-label={`关闭 ${label}`} aria-keyshortcuts="Control+W Meta+W" title={`关闭 ${label}`} onClick={(event) => { event.stopPropagation(); onClose(terminal.terminalId); }}>×</button>
                 </div>
               );
             })}
@@ -477,10 +492,10 @@ export const TerminalWorkspace = ({
             />}
             {onConnectHost && (
               <div className="terminal-host-picker-anchor">
-                <button id="terminal-new-terminal" className="terminal-topbar-button terminal-new-button" type="button" aria-label="新建终端" aria-expanded={hostPickerOpen} onClick={openHostPicker}>＋<span>新建</span></button>
+                <button id="terminal-new-terminal" className="terminal-topbar-button terminal-new-button" type="button" aria-label="新建终端" aria-keyshortcuts="Control+N Meta+N" aria-expanded={hostPickerOpen} onClick={openHostPicker}>＋<span>新建</span></button>
                 {hostPickerOpen && (
                   <div className="terminal-host-picker" role="dialog" aria-label="选择 Server">
-                    <div className="terminal-host-picker-heading"><strong>新建 Console</strong><button className="icon-button" type="button" aria-label="关闭 Server 选择器" onClick={() => setHostPickerOpen(false)}>×</button></div>
+                    <div className="terminal-host-picker-heading"><strong>新建 Console</strong><button className="icon-button" type="button" aria-label="关闭 Server 选择器" title="关闭 Server 选择器" onClick={() => setHostPickerOpen(false)}>×</button></div>
                     <label className="terminal-host-picker-search" htmlFor="terminal-host-search"><span aria-hidden="true">⌕</span><span className="visually-hidden">搜索 Server</span><input id="terminal-host-search" aria-label="搜索 Server" autoFocus value={hostQuery} onChange={(event) => setHostQuery(event.target.value)} placeholder="搜索 Server" /></label>
                     <div className="terminal-host-picker-list">
                       {visibleHosts.map((host) => <button className="terminal-host-picker-item" type="button" key={host.id} aria-label={`新建终端：${host.name}`} onClick={() => requestConnectHost(host)}><span><span className="status-dot status-dot-muted" aria-hidden="true" />{host.name}</span><small>{host.username}@{host.address}</small></button>)}
@@ -492,8 +507,8 @@ export const TerminalWorkspace = ({
             )}
             {onOpenBatchCommand && <button className="terminal-topbar-button" type="button" aria-label="批量执行" onClick={onOpenBatchCommand}>⌘<span>批量</span></button>}
             {onOpenBroadcast && writableHostCount >= 2 && <button className="terminal-topbar-button terminal-broadcast-button" type="button" aria-label="广播" onClick={onOpenBroadcast}>◉<span>广播</span></button>}
-            {onOpenSnippetPalette && <button className="terminal-topbar-button" type="button" aria-label="命令片段" onClick={onOpenSnippetPalette}>✦<span>片段</span></button>}
-            {(fileTransport || onListSftp) && <button className="terminal-topbar-button" type="button" aria-label="远程文件" aria-pressed={filePanelOpen} onClick={() => setFilePanelOpen((open) => !open)}>▤<span>文件</span></button>}
+            {onOpenSnippetPalette && <button className="terminal-topbar-button" type="button" aria-label="命令片段" aria-keyshortcuts="Control+Shift+P Meta+Shift+P" onClick={onOpenSnippetPalette}>✦<span>片段</span></button>}
+            {(fileTransport || onListSftp) && <button id="terminal-open-sftp" className="terminal-topbar-button" type="button" aria-label="远程文件" aria-keyshortcuts="Control+Shift+F Meta+Shift+F" aria-pressed={filePanelOpen} title="打开远程文件" onClick={() => setFilePanelOpen((open) => !open)}>▤<span>文件</span></button>}
             {paneLimit > 1 && <>
               <button className="terminal-topbar-button" type="button" aria-label="左右分屏" aria-pressed={splitLayout?.orientation === 'horizontal'} onClick={() => toggleSplit('horizontal')} title="左右分屏">◫</button>
               <button className="terminal-topbar-button" type="button" aria-label="上下分屏" aria-pressed={splitLayout?.orientation === 'vertical'} onClick={() => toggleSplit('vertical')} title="上下分屏">▤</button>

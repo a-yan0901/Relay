@@ -220,7 +220,7 @@ export const HostForm = ({
           <p className="eyebrow">{isEdit ? 'EDIT CONNECTION' : 'NEW CONNECTION'}</p>
           <h2 id="host-form-title">{isEdit ? '编辑 Server' : '添加 Server'}</h2>
         </div>
-        <button className="icon-button" type="button" onClick={onCancel} aria-label="关闭表单">×</button>
+        <button className="icon-button" type="button" onClick={onCancel} aria-label="关闭表单" title="关闭表单">×</button>
       </div>
 
       <div className="form-grid">

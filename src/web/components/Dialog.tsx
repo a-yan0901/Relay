@@ -30,7 +30,7 @@ export const Dialog = ({
       <section ref={dialogRef} className={className} role="dialog" aria-modal="true" aria-labelledby={ariaLabel ? undefined : titleId} aria-label={ariaLabel} onMouseDown={(event) => event.stopPropagation()}>
         <div className="form-heading">
           <h2 id={titleId}>{title}</h2>
-          <button className="icon-button" type="button" aria-label={`关闭${title}`} onClick={onClose}>×</button>
+          <button className="icon-button" type="button" aria-label={`关闭${title}`} title={`关闭${title}`} onClick={onClose}>×</button>
         </div>
         {children}
       </section>

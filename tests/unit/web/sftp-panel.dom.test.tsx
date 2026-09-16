@@ -36,6 +36,7 @@ describe('SftpPanel', () => {
     await user.upload(screen.getByLabelText('选择上传文件'), new File(['payload'], 'release.txt', { type: 'text/plain' }));
     expect(onUpload).toHaveBeenCalledWith(expect.objectContaining({ name: 'release.txt' }), '/');
     await user.click(screen.getByRole('button', { name: '下载 app.log' }));
+    expect(screen.getByRole('button', { name: '下载 app.log' })).toHaveAttribute('title', '下载 app.log');
     expect(onDownload).toHaveBeenCalledWith('/app.log', 'app.log');
   });
 

@@ -32,6 +32,8 @@ test.describe('host to terminal journey', () => {
     await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: '添加第一台 Server' }).click();
+    await page.getByLabel('服务器名称').press('Control+Shift+P');
+    await expect(page.getByRole('dialog', { name: '命令片段' })).toHaveCount(0);
     await page.getByLabel('服务器名称').fill('Fixture SSH A');
     await page.getByLabel('IP / 域名').fill('127.0.0.1');
     await page.getByLabel('端口').fill(String(fixture.port));
@@ -178,5 +180,31 @@ test.describe('host to terminal journey', () => {
     await expect(narrowCard).toBeVisible();
     const narrowCardRight = await narrowCard.evaluate((element) => element.getBoundingClientRect().right);
     expect(narrowCardRight).toBeLessThanOrEqual(320);
+
+    await page.setViewportSize({ width: 1024, height: 720 });
+    await page.getByRole('button', { name: '偏好设置' }).click();
+    await expect(page.getByRole('region', { name: '快捷键' })).toBeVisible();
+    await page.getByRole('combobox', { name: '色彩主题' }).selectOption('contrast');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'contrast');
+    await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
+    await page.getByRole('button', { name: '关闭偏好设置' }).click();
+
+    await page.setViewportSize({ width: 390, height: 430 });
+    await page.getByRole('button', { name: '连接 Fixture SSH A', exact: true }).click();
+    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 430 });
+      const shortViewportLayout = await page.evaluate(() => ({
+        width: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        bodyWidth: document.body.scrollWidth,
+        layoutHeight: document.querySelector('.terminal-layout')?.getBoundingClientRect().height ?? 0,
+        topbarHeight: document.querySelector('.terminal-topbar')?.getBoundingClientRect().height ?? 0
+      }));
+      expect(shortViewportLayout.documentWidth).toBeLessThanOrEqual(shortViewportLayout.width);
+      expect(shortViewportLayout.bodyWidth).toBeLessThanOrEqual(shortViewportLayout.width);
+      expect(shortViewportLayout.layoutHeight).toBeGreaterThan(260);
+      expect(shortViewportLayout.topbarHeight).toBeLessThanOrEqual(38);
+    }
   });
 });

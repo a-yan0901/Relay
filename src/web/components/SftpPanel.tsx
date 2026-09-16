@@ -269,9 +269,9 @@ export const SftpPanel = ({
           <input type="checkbox" aria-label={`选择 ${entry.name}`} checked={selectedPaths.has(entry.path)} onChange={(event) => toggleSelected(entry.path, event.target.checked)} />
           <button type="button" className="sftp-entry-name" aria-label={entry.type === 'directory' ? `打开目录 ${entry.name}` : entry.name} onClick={() => navigate(entry)} disabled={entry.type !== 'directory'}><span aria-hidden="true">{entry.type === 'directory' ? '▸' : '·'}</span>{entry.name}</button>
           <span className="sftp-entry-meta">{entry.type === 'directory' ? '目录' : `${entry.size} B`}</span>
-          {entry.type === 'file' && onDownload && <button type="button" className="icon-button" aria-label={`下载 ${entry.name}`} onClick={() => void download(entry)} disabled={busy}>↓</button>}
-          {onRename && <button type="button" className="icon-button" aria-label={`重命名 ${entry.name}`} onClick={() => openRename(entry)} disabled={busy}>✎</button>}
-          {onDelete && <button type="button" className="icon-button" aria-label={`删除 ${entry.name}`} onClick={() => openDelete([entry.path])} disabled={busy}>×</button>}
+          {entry.type === 'file' && onDownload && <button type="button" className="icon-button" aria-label={`下载 ${entry.name}`} title={`下载 ${entry.name}`} onClick={() => void download(entry)} disabled={busy}>↓</button>}
+          {onRename && <button type="button" className="icon-button" aria-label={`重命名 ${entry.name}`} title={`重命名 ${entry.name}`} onClick={() => openRename(entry)} disabled={busy}>✎</button>}
+          {onDelete && <button type="button" className="icon-button" aria-label={`删除 ${entry.name}`} title={`删除 ${entry.name}`} onClick={() => openDelete([entry.path])} disabled={busy}>×</button>}
         </li>)}</ul>
       </>}
       {dialog?.type === 'create-directory' && <Dialog title="新建目录" onClose={() => setDialog(null)} closeOnBackdrop={false} initialFocusSelector="#sftp-new-directory-name"><label htmlFor="sftp-new-directory-name">目录名称</label><input id="sftp-new-directory-name" aria-label="新目录名称" value={directoryName} onChange={(event) => setDirectoryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createDirectory(); }} /><p className="dialog-copy">将在 {path} 下创建目录。</p><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-primary" type="button" disabled={busy} onClick={() => void createDirectory()}>创建目录</button></div></Dialog>}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -240,6 +240,8 @@ describe('TerminalWorkspace', () => {
     expect(screen.getByRole('button', { name: '全屏' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '重新连接' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '关闭终端' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '全屏' })).toHaveAttribute('title', '全屏');
+    expect(screen.getByRole('button', { name: '关闭终端' })).toHaveAttribute('title', '关闭终端');
 
     await user.click(screen.getByRole('button', { name: '锁定' }));
     await user.click(screen.getByRole('button', { name: '偏好设置' }));
@@ -275,6 +277,8 @@ describe('TerminalWorkspace', () => {
     expect(screen.getByTestId('terminal-panel-tab-2')).toBeVisible();
 
     await user.click(screen.getByRole('region', { name: '右侧 Console' }));
+    expect(onActivate).toHaveBeenCalledWith('tab-2');
+    fireEvent.keyDown(screen.getByRole('region', { name: '终端标签工作区' }), { key: '2', altKey: true });
     expect(onActivate).toHaveBeenCalledWith('tab-2');
 
     divider.focus();

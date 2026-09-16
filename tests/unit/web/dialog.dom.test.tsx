@@ -27,6 +27,8 @@ describe('Dialog', () => {
 
     await user.tab({ shift: true });
     expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭确认操作' }));
+    await user.tab();
+    expect(document.activeElement).toBe(input);
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: '确认操作' })).not.toBeInTheDocument();
     expect(document.activeElement).toBe(trigger);

@@ -50,7 +50,7 @@ export const IdentityEditor = ({ identity, onSubmit, onCancel }: IdentityEditorP
 
   return (
     <section className="identity-editor" aria-labelledby="identity-editor-title">
-      <div className="form-heading"><div><p className="eyebrow">{isEdit ? 'EDIT IDENTITY' : 'NEW IDENTITY'}</p><h3 id="identity-editor-title">{isEdit ? '编辑身份' : '新建身份'}</h3></div><button className="icon-button" type="button" aria-label="关闭身份编辑" onClick={onCancel}>×</button></div>
+      <div className="form-heading"><div><p className="eyebrow">{isEdit ? 'EDIT IDENTITY' : 'NEW IDENTITY'}</p><h3 id="identity-editor-title">{isEdit ? '编辑身份' : '新建身份'}</h3></div><button className="icon-button" type="button" aria-label="关闭身份编辑" title="关闭身份编辑" onClick={onCancel}>×</button></div>
       <div className="form-grid">
         <div className="field field-wide"><label htmlFor="identity-name">身份名称</label><input id="identity-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：Production deploy" /></div>
         <div className="field"><label htmlFor="identity-type">认证方式</label><select id="identity-type" value={type} onChange={(event) => setType(event.target.value as typeof type)}><option value="password">密码</option><option value="private_key">私钥</option></select></div>

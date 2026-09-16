@@ -164,6 +164,22 @@ describe('App boot recovery', () => {
     expect(screen.queryByRole('dialog', { name: '偏好设置' })).not.toBeInTheDocument();
   });
 
+  it('does not open the snippet manager while editing a host', async () => {
+    const user = userEvent.setup();
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    renderApp();
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.click(screen.getByRole('button', { name: '添加第一台 Server' }));
+    const nameInput = screen.getByLabelText('服务器名称');
+    await user.keyboard('{Control>}{Shift>}p{/Shift}{/Control}');
+
+    expect(document.activeElement).toBe(nameInput);
+    expect(screen.queryByRole('dialog', { name: '命令片段' })).not.toBeInTheDocument();
+  });
+
   it('marks an audit link as expired when its result is no longer available', async () => {
     const user = userEvent.setup();
     apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });

@@ -64,9 +64,9 @@ export const TerminalToolbar = ({
     <div className="terminal-toolbar-actions">
       {onSearch && <button className={`toolbar-button ${searchActive ? 'is-active' : ''}`} type="button" aria-label="搜索" onClick={onSearch}>⌕<span>搜索</span></button>}
       <button className="toolbar-button" type="button" aria-label="清屏" onClick={onClear}>⌫<span>清屏</span></button>
-      {onFullscreen && <button className="toolbar-button" type="button" aria-label="全屏" onClick={onFullscreen}>⛶</button>}
+      {onFullscreen && <button className="toolbar-button" type="button" aria-label="全屏" title="全屏" onClick={onFullscreen}>⛶</button>}
       <button className="toolbar-button toolbar-button-reconnect" type="button" aria-label="重新连接" onClick={onReconnect}>↻<span>重连</span></button>
-      <button className="toolbar-button toolbar-button-close" type="button" aria-label="关闭终端" onClick={onClose}>×</button>
+      <button className="toolbar-button toolbar-button-close" type="button" aria-label="关闭终端" title="关闭终端" onClick={onClose}>×</button>
     </div>
   </div>
 );
