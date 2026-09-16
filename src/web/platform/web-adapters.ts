@@ -1,7 +1,9 @@
 import type { CapabilitySet } from '../../shared/core/capabilities';
 import { createWebCapabilitySet, negotiateCapabilitySet, WEB_CLIENT_CAPABILITIES } from '../../shared/core/capabilities';
+import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from '../../shared/core/account-sync';
 import type {
   AccountSession,
+  AccountDeletionState,
   ActivityFilter,
   ActivityPage,
   Capability,
@@ -18,6 +20,7 @@ import type {
   Snippet,
   SnippetMetadata,
   SyncConflictExport,
+  SyncDeletionState,
   SyncDescriptor,
   SyncEnvelope,
   SyncHead,
@@ -150,6 +153,10 @@ export interface WebApiClient {
   register?: typeof api.register;
   signIn?: typeof api.signIn;
   signOut?: typeof api.signOut;
+  reauthenticate?: typeof api.reauthenticate;
+  getAccountDeletion?: typeof api.getAccountDeletion;
+  requestAccountDeletion?: typeof api.requestAccountDeletion;
+  restoreAccountDeletion?: typeof api.restoreAccountDeletion;
   listDevices?: typeof api.listDevices;
   revokeDevice?: typeof api.revokeDevice;
   getSyncState?: typeof api.getSyncState;
@@ -161,6 +168,8 @@ export interface WebApiClient {
   previewPull?: typeof api.previewPull;
   resolveConflict?: typeof api.resolveConflict;
   exportConflict?: typeof api.exportConflict;
+  requestCloudDeletion?: typeof api.requestCloudDeletion;
+  restoreCloudDeletion?: typeof api.restoreCloudDeletion;
   issueRecoveryKey?: typeof api.issueRecoveryKey;
   confirmRecoveryKey?: typeof api.confirmRecoveryKey;
   previewSyncRecovery?: typeof api.previewSyncRecovery;
@@ -470,7 +479,7 @@ export class WebFileTransport implements FileTransport {
   }
 }
 
-type WebAccountClient = Pick<WebApiClient, 'getAccountSession' | 'register' | 'signIn' | 'signOut'>;
+type WebAccountClient = Pick<WebApiClient, 'getAccountSession' | 'register' | 'signIn' | 'signOut'> & Partial<Pick<WebApiClient, 'reauthenticate' | 'getAccountDeletion' | 'requestAccountDeletion' | 'restoreAccountDeletion'>>;
 
 export class WebAccountSession implements AccountSessionPort {
   constructor(private readonly client: WebAccountClient = api) {}
@@ -490,6 +499,24 @@ export class WebAccountSession implements AccountSessionPort {
   signOut(): Promise<void> {
     return requireApi(this.client.signOut)();
   }
+
+  reauthenticate(password: string): Promise<void> {
+    return requireApi(this.client.reauthenticate)(password);
+  }
+
+  async getDeletion(): Promise<AccountDeletionState | null> {
+    return (await requireApi(this.client.getAccountDeletion)()).deletion;
+  }
+
+  async requestDeletion(confirmDelete: AccountDeletionConfirmation): Promise<AccountDeletionState> {
+    const response = await requireApi(this.client.requestAccountDeletion)(confirmDelete);
+    if (!response.deletion) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+    return response.deletion;
+  }
+
+  restoreDeletion(): Promise<void> {
+    return requireApi(this.client.restoreAccountDeletion)();
+  }
 }
 
 type WebDeviceClient = Pick<WebApiClient, 'listDevices' | 'revokeDevice'>;
@@ -506,19 +533,20 @@ export class WebDeviceTrust implements DeviceTrustPort {
   }
 }
 
-type WebSyncClient = Pick<WebApiClient, 'getSyncState' | 'getSyncDescriptor' | 'enableSync' | 'retrySync' | 'previewPull' | 'resolveConflict'> & Partial<Pick<WebApiClient, 'getSyncEnvelope' | 'pushSyncEnvelope' | 'issueRecoveryKey' | 'confirmRecoveryKey' | 'exportConflict'>>;
+type WebSyncClient = Pick<WebApiClient, 'getSyncState' | 'getSyncDescriptor' | 'enableSync' | 'retrySync' | 'previewPull' | 'resolveConflict'> & Partial<Pick<WebApiClient, 'getSyncEnvelope' | 'pushSyncEnvelope' | 'issueRecoveryKey' | 'confirmRecoveryKey' | 'exportConflict' | 'requestCloudDeletion' | 'restoreCloudDeletion'>>;
 
 export class WebSync implements SyncPort {
   constructor(private readonly client: WebSyncClient = api) {}
 
-  async status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string; recovery?: RecoveryKeyState }> {
+  async status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string; recovery?: RecoveryKeyState; deletion?: SyncDeletionState }> {
     const response = await requireApi(this.client.getSyncState)();
     return {
       sync: response.sync,
       head: response.head,
       ...(response.pendingCount === undefined ? {} : { pendingCount: response.pendingCount }),
       ...(response.lastErrorCode === undefined && response.lastError === undefined ? {} : { lastErrorCode: response.lastErrorCode ?? response.lastError }),
-      ...(response.recovery === undefined ? {} : { recovery: response.recovery })
+      ...(response.recovery === undefined ? {} : { recovery: response.recovery }),
+      ...(response.deletion === undefined ? {} : { deletion: response.deletion })
     };
   }
 
@@ -562,6 +590,14 @@ export class WebSync implements SyncPort {
 
   retry(): Promise<void> {
     return requireApi(this.client.retrySync)();
+  }
+
+  requestCloudDeletion(confirmDelete: CloudSyncDeletionConfirmation): Promise<SyncDeletionState> {
+    return requireApi(this.client.requestCloudDeletion)(confirmDelete);
+  }
+
+  restoreCloudDeletion(): Promise<void> {
+    return requireApi(this.client.restoreCloudDeletion)();
   }
 }
 

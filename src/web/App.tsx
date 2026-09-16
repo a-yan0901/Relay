@@ -435,7 +435,7 @@ export const App = ({ runtime }: AppProps) => {
         }
         void runtime.sync.status()
           .then((nextSync) => {
-            if (!cancelled) setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }), ...(nextSync.recovery === undefined ? {} : { recovery: nextSync.recovery }) });
+            if (!cancelled) setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }), ...(nextSync.recovery === undefined ? {} : { recovery: nextSync.recovery }), ...(nextSync.deletion === undefined ? {} : { deletion: nextSync.deletion }) });
           })
           .catch(() => {
             if (!cancelled) setSyncState({ sync: 'offline', head: null, pendingCount: 0 });
@@ -1159,7 +1159,7 @@ export const App = ({ runtime }: AppProps) => {
     setSyncState(null);
     if (!nextAccount || !capabilities.supports('sync.encrypted') || !runtime.sync) return;
     void runtime.sync.status()
-      .then((nextSync) => setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }), ...(nextSync.recovery === undefined ? {} : { recovery: nextSync.recovery }) }))
+      .then((nextSync) => setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }), ...(nextSync.recovery === undefined ? {} : { recovery: nextSync.recovery }), ...(nextSync.deletion === undefined ? {} : { deletion: nextSync.deletion }) }))
       .catch(() => setSyncState({ sync: 'offline', head: null, pendingCount: 0 }));
   };
 

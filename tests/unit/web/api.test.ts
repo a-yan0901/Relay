@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { applySyncRecovery, confirmRecoveryKey, exportConflict, getAccountSession, getSetupStatus, getSyncState, issueRecoveryKey, previewSyncRecovery, signIn } from '../../../src/web/api';
+import { applySyncRecovery, confirmRecoveryKey, exportConflict, getAccountDeletion, getAccountSession, getSetupStatus, getSyncState, issueRecoveryKey, previewSyncRecovery, reauthenticate, requestAccountDeletion, requestCloudDeletion, restoreAccountDeletion, restoreCloudDeletion, signIn } from '../../../src/web/api';
+
+type FetchInit = { method?: string; body?: string };
 
 const createConflictExportResponse = () => {
   const envelope = (aad: string) => ({
@@ -62,6 +64,45 @@ describe('web API request lifecycle', () => {
     expect(JSON.parse((init as { body?: string }).body as string)).toEqual({ email: 'user@example.com', password: 'one-time-password', deviceLabel: '办公室浏览器' });
     expect(JSON.stringify(response)).not.toContain('one-time-password');
     expect(JSON.stringify(response)).not.toMatch(/token|privateKey|passphrase/iu);
+  });
+
+  it('sends only explicit re-auth and deletion confirmations and parses redacted lifecycle state', async () => {
+    let accountDeletionReads = 0;
+    const fetchMock = vi.fn(async (input: string, init?: FetchInit) => {
+      if (input === '/api/account/session/reauth') return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
+      if (input === '/api/account/deletion') {
+        accountDeletionReads += 1;
+        return accountDeletionReads === 1
+          ? new Response(JSON.stringify({ deletion: { kind: 'account', requestedAt: '2026-09-17T00:00:00.000Z', deleteAfter: '2026-10-17T00:00:00.000Z', remainingMs: 2_592_000_000 } }), { status: 202 })
+          : new Response(JSON.stringify({ deletion: null }), { status: 200 });
+      }
+      if (input === '/api/sync/v1/vault/delete') return new Response(JSON.stringify({ kind: 'cloud-sync', requestedAt: '2026-09-17T00:00:00.000Z', deleteAfter: '2026-10-17T00:00:00.000Z', remainingMs: 2_592_000_000 }), { status: 202 });
+      if (input === '/api/account/deletion/restore' || input === '/api/sync/v1/vault/restore') return new Response(null, { status: 204 });
+      throw new Error(`unexpected request ${input} ${(init?.method ?? 'GET')}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await reauthenticate('long enough password');
+    await expect(requestAccountDeletion('DELETE MY ACCOUNT')).resolves.toEqual(expect.objectContaining({ deletion: expect.objectContaining({ kind: 'account' }) }));
+    await expect(requestCloudDeletion('DELETE MY CLOUD VAULT')).resolves.toEqual(expect.objectContaining({ kind: 'cloud-sync' }));
+    await restoreAccountDeletion();
+    await restoreCloudDeletion();
+    const accountDeletion = await getAccountDeletion();
+    expect(accountDeletion).toEqual(expect.objectContaining({ deletion: null }));
+
+    const reauthBody = JSON.parse((fetchMock.mock.calls[0]?.[1] as FetchInit).body as string);
+    const accountDeleteBody = JSON.parse((fetchMock.mock.calls[1]?.[1] as FetchInit).body as string);
+    const cloudDeleteBody = JSON.parse((fetchMock.mock.calls[2]?.[1] as FetchInit).body as string);
+    expect(reauthBody).toEqual({ password: 'long enough password' });
+    expect(accountDeleteBody).toEqual({ confirmDelete: 'DELETE MY ACCOUNT' });
+    expect(cloudDeleteBody).toEqual({ confirmDelete: 'DELETE MY CLOUD VAULT' });
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('reauthenticated');
+  });
+
+  it('rejects deletion state fields outside the declared DTO', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ deletion: { kind: 'account', requestedAt: '2026-09-17T00:00:00.000Z', deleteAfter: '2026-10-17T00:00:00.000Z', remainingMs: 1, token: 'must-not-cross-boundary' } }), { status: 200 })));
+
+    await expect(getAccountDeletion()).rejects.toMatchObject({ code: 'PROTOCOL_INVALID_MESSAGE' });
   });
 
   it('rejects account and sync response fields outside the declared DTOs', async () => {

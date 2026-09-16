@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { assertAccountSyncContract, assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
-import type { AccountSession, DeviceDescriptor, SyncConflictExport, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest, VaultRecoveryPreview } from '../../../src/shared/core/models.js';
+import type { AccountSession, AccountDeletionState, DeviceDescriptor, SyncConflictExport, SyncDeletionState, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest, VaultRecoveryPreview } from '../../../src/shared/core/models.js';
 import type { HostMetadata } from '../../../src/shared/validation.js';
 import { createWebAdapters, WebAccountSession, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync, WebVaultRecovery } from '../../../src/web/platform/web-adapters.js';
 import type { TerminalSocketLike } from '../../../src/web/hooks/use-terminal-session.js';
@@ -399,8 +399,71 @@ describe('web adapters', () => {
     await assertAccountSyncContract(runtime);
   });
 
+  it('forwards account and cloud deletion lifecycle state through the Web ports', async () => {
+    const accountDeletion: AccountDeletionState = {
+      kind: 'account',
+      requestedAt: '2026-09-17T00:00:00.000Z',
+      deleteAfter: '2026-10-17T00:00:00.000Z',
+      remainingMs: 2_592_000_000
+    };
+    const cloudDeletion: SyncDeletionState = {
+      kind: 'cloud-sync',
+      requestedAt: '2026-09-17T00:00:00.000Z',
+      deleteAfter: '2026-10-17T00:00:00.000Z',
+      remainingMs: 2_592_000_000
+    };
+    const reauthenticate = vi.fn(async (_password: string) => undefined);
+    const getAccountDeletion = vi.fn(async () => ({ deletion: accountDeletion }));
+    const requestAccountDeletion = vi.fn(async (_confirmation: 'DELETE MY ACCOUNT') => ({ deletion: accountDeletion }));
+    const restoreAccountDeletion = vi.fn(async () => undefined);
+    const requestCloudDeletion = vi.fn(async (_confirmation: 'DELETE MY CLOUD VAULT') => cloudDeletion);
+    const restoreCloudDeletion = vi.fn(async () => undefined);
+    const session: AccountSession = {
+      accountId: 'account-1',
+      deviceId: 'device-1',
+      state: 'signed-in',
+      expiresAt: '2026-09-17T00:00:00.000Z'
+    };
+    const accountPort = new WebAccountSession({
+      getAccountSession: async () => ({ account: null }),
+      register: async () => ({ account: session }),
+      signIn: async () => ({ account: session }),
+      signOut: async () => undefined,
+      reauthenticate,
+      getAccountDeletion,
+      requestAccountDeletion,
+      restoreAccountDeletion
+    });
+    await accountPort.reauthenticate?.('opaque-password');
+    await expect(accountPort.getDeletion?.()).resolves.toEqual(accountDeletion);
+    await expect(accountPort.requestDeletion?.('DELETE MY ACCOUNT')).resolves.toEqual(accountDeletion);
+    await accountPort.restoreDeletion?.();
+
+    const syncPort = new WebSync({
+      getSyncState: async () => ({ sync: 'local-only' as const, head: null, deletion: cloudDeletion }),
+      getSyncDescriptor: async () => null,
+      enableSync: async () => { throw new Error('not used'); },
+      retrySync: async () => undefined,
+      previewPull: async () => { throw new Error('not used'); },
+      resolveConflict: async () => undefined,
+      requestCloudDeletion,
+      restoreCloudDeletion
+    });
+    await expect(syncPort.status()).resolves.toMatchObject({ sync: 'local-only', deletion: cloudDeletion });
+    await expect(syncPort.requestCloudDeletion?.('DELETE MY CLOUD VAULT')).resolves.toEqual(cloudDeletion);
+    await syncPort.restoreCloudDeletion?.();
+
+    expect(reauthenticate).toHaveBeenCalledWith('opaque-password');
+    expect(getAccountDeletion).toHaveBeenCalledTimes(1);
+    expect(requestAccountDeletion).toHaveBeenCalledWith('DELETE MY ACCOUNT');
+    expect(restoreAccountDeletion).toHaveBeenCalledTimes(1);
+    expect(requestCloudDeletion).toHaveBeenCalledWith('DELETE MY CLOUD VAULT');
+    expect(restoreCloudDeletion).toHaveBeenCalledTimes(1);
+  });
+
   it('maps missing optional functions to CAPABILITY_UNAVAILABLE at the port boundary', async () => {
     await expect(new WebAccountSession({}).status()).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
+    await expect(Promise.resolve().then(() => new WebAccountSession({}).reauthenticate?.('password'))).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
     expect(() => new WebSync({
       getSyncState: async () => ({ sync: 'local-only' as const, head: null }),
       getSyncDescriptor: async () => null,

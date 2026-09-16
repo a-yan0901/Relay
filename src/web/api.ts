@@ -1,5 +1,6 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
-import type { AccountSession, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, Snippet, SnippetMetadata, SyncConflictExport, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
+import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from '@shared/core/account-sync';
+import type { AccountSession, AccountDeletionState, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, Snippet, SnippetMetadata, SyncConflictExport, SyncDeletionState, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
 import { parseSyncConflictExport } from '@shared/core/sync-conflict-export';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
@@ -29,11 +30,19 @@ export interface AccountAuthResponse {
   account: AccountSession;
 }
 
+export interface AccountDeletionResponse {
+  deletion: AccountDeletionState | null;
+}
+
 export interface WebAccountApi {
   getAccountSession(): Promise<AccountSessionResponse>;
   register(email: string, password: string, deviceLabel?: string): Promise<AccountAuthResponse>;
   signIn(email: string, password: string, deviceLabel?: string): Promise<AccountAuthResponse>;
   signOut(): Promise<void>;
+  reauthenticate(password: string): Promise<void>;
+  getAccountDeletion(): Promise<AccountDeletionResponse>;
+  requestDeletion(confirmDelete: AccountDeletionConfirmation): Promise<AccountDeletionResponse>;
+  restoreDeletion(): Promise<void>;
   listDevices(): Promise<DeviceDescriptor[]>;
   revokeDevice(deviceId: string): Promise<void>;
 }
@@ -67,6 +76,8 @@ export interface WebSyncApi {
   previewPull(): Promise<SyncPreview>;
   exportConflict(conflictId: string, exportPassword: string): Promise<SyncConflictExport>;
   resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void>;
+  requestCloudDeletion(confirmDelete: CloudSyncDeletionConfirmation): Promise<SyncDeletionState>;
+  restoreCloudDeletion(): Promise<void>;
 }
 
 export interface WebVaultRecoveryApi {
@@ -233,6 +244,45 @@ const parseAccountSession = (value: unknown): AccountSession => {
 const parseAccountSessionResponse = (value: unknown): AccountSessionResponse => {
   if (!isRecord(value) || !hasExactKeys(value, ['account']) || (value.account !== null && value.account !== undefined && !isRecord(value.account))) return invalidResponse();
   return { account: value.account === null || value.account === undefined ? null : parseAccountSession(value.account) };
+};
+
+const parseAccountDeletionState = (value: unknown): AccountDeletionState => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['kind', 'requestedAt', 'deleteAfter', 'remainingMs'])
+    || value.kind !== 'account'
+    || !isIsoDate(value.requestedAt)
+    || !isIsoDate(value.deleteAfter)
+    || typeof value.remainingMs !== 'number'
+    || !Number.isFinite(value.remainingMs)
+    || value.remainingMs < 0) return invalidResponse();
+  return {
+    kind: 'account',
+    requestedAt: value.requestedAt,
+    deleteAfter: value.deleteAfter,
+    remainingMs: value.remainingMs
+  };
+};
+
+const parseSyncDeletionState = (value: unknown): SyncDeletionState => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['kind', 'requestedAt', 'deleteAfter', 'remainingMs'])
+    || value.kind !== 'cloud-sync'
+    || !isIsoDate(value.requestedAt)
+    || !isIsoDate(value.deleteAfter)
+    || typeof value.remainingMs !== 'number'
+    || !Number.isFinite(value.remainingMs)
+    || value.remainingMs < 0) return invalidResponse();
+  return {
+    kind: 'cloud-sync',
+    requestedAt: value.requestedAt,
+    deleteAfter: value.deleteAfter,
+    remainingMs: value.remainingMs
+  };
+};
+
+const parseAccountDeletionResponse = (value: unknown): AccountDeletionResponse => {
+  if (!isRecord(value) || !hasExactKeys(value, ['deletion']) || (value.deletion !== null && !isRecord(value.deletion))) return invalidResponse();
+  return { deletion: value.deletion === null ? null : parseAccountDeletionState(value.deletion) };
 };
 
 const parseAccountAuthResponse = (value: unknown): AccountAuthResponse => {
@@ -515,6 +565,23 @@ export const signIn: WebAccountApi['signIn'] = (email, password, deviceLabel) =>
 
 export const signOut: WebAccountApi['signOut'] = () => request<void>('/api/account/session', { method: 'DELETE' });
 
+export const reauthenticate: WebAccountApi['reauthenticate'] = (password) => request<void>('/api/account/session/reauth', {
+  method: 'POST',
+  ...json({ password })
+});
+
+export const getAccountDeletion: WebAccountApi['getAccountDeletion'] = () => request<unknown>('/api/account/deletion').then(parseAccountDeletionResponse);
+
+export const requestAccountDeletion: WebAccountApi['requestDeletion'] = (confirmDelete) => request<unknown>('/api/account/deletion', {
+  method: 'POST',
+  ...json({ confirmDelete })
+}).then(parseAccountDeletionResponse);
+
+export const restoreAccountDeletion: WebAccountApi['restoreDeletion'] = () => request<void>('/api/account/deletion/restore', {
+  method: 'POST',
+  ...json({})
+});
+
 export const listDevices: WebAccountApi['listDevices'] = () => request<unknown>('/api/account/devices').then((value) => {
   if (!Array.isArray(value)) return invalidResponse();
   return value.map(parseDevice);
@@ -527,6 +594,16 @@ export const getSyncState: WebSyncApi['getSyncState'] = () => request<unknown>('
 export const getSyncDescriptor: WebSyncApi['getSyncDescriptor'] = () => request<unknown>('/api/sync/v1/descriptor').then(parseSyncDescriptorResponse);
 
 export const enableSync: WebSyncApi['enableSync'] = () => request<unknown>('/api/sync/v1/enable', { method: 'POST' }).then(parseSyncHead);
+
+export const requestCloudDeletion: WebSyncApi['requestCloudDeletion'] = (confirmDelete) => request<unknown>('/api/sync/v1/vault/delete', {
+  method: 'POST',
+  ...json({ confirmDelete })
+}).then(parseSyncDeletionState);
+
+export const restoreCloudDeletion: WebSyncApi['restoreCloudDeletion'] = () => request<void>('/api/sync/v1/vault/restore', {
+  method: 'POST',
+  ...json({})
+});
 
 export const issueRecoveryKey: WebSyncApi['issueRecoveryKey'] = () => request<unknown>('/api/sync/v1/recovery-key/issue', { method: 'POST' }).then(parseRecoveryKeyIssue);
 

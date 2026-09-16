@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { AppError } from '@shared/errors';
-import type { AccountSession, DeviceDescriptor, SyncState } from '@shared/core/models';
-import { describeAccountSyncState } from '@shared/core/account-sync';
+import type { AccountDeletionState, AccountSession, DeviceDescriptor, SyncState } from '@shared/core/models';
+import { ACCOUNT_DELETION_CONFIRMATION, CLOUD_SYNC_DELETION_CONFIRMATION, describeAccountSyncState } from '@shared/core/account-sync';
 import { type CapabilitySet } from '@shared/core/capabilities';
 import type { AccountSessionPort, DeviceTrustPort, SyncPort } from '@shared/core/ports';
 
@@ -19,6 +19,7 @@ export interface AccountMenuProps {
 }
 
 type AuthMode = 'sign-in' | 'register';
+type DestructiveAction = 'account-delete' | 'account-restore' | 'cloud-delete' | 'cloud-restore';
 
 const messageFromError = (error: unknown, fallback: string): string => (
   error instanceof AppError || error instanceof Error ? error.message : fallback
@@ -38,6 +39,51 @@ const maskEmail = (email: string): string => {
   const local = email.slice(0, separator);
   const domain = email.slice(separator + 1);
   return `${local.slice(0, 1)}***@${domain}`;
+};
+
+const formatDeletionRemaining = (remainingMs: number): string => {
+  const days = Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1_000)));
+  return `约 ${days} 天`;
+};
+
+const syncStateFromStatus = (current: SyncState | null, next: Awaited<ReturnType<SyncPort['status']>>): SyncState => {
+  const nextState: SyncState = {
+    ...(current?.lastSyncedAt === undefined ? {} : { lastSyncedAt: current.lastSyncedAt }),
+    sync: next.sync,
+    head: next.head,
+    pendingCount: next.pendingCount ?? 0
+  };
+  if (next.lastErrorCode !== undefined) nextState.lastErrorCode = next.lastErrorCode;
+  if (next.recovery !== undefined) nextState.recovery = next.recovery;
+  if (next.deletion !== undefined) nextState.deletion = next.deletion;
+  return nextState;
+};
+
+const destructiveActionCopy: Record<DestructiveAction, { title: string; submit: string; confirmation: string; description: string }> = {
+  'account-delete': {
+    title: '确认删除账号',
+    submit: '确认删除账号',
+    confirmation: ACCOUNT_DELETION_CONFIRMATION,
+    description: '账号会进入 30 天恢复期；云端账号和同步数据将在恢复期结束后删除，本地 Vault 保留。'
+  },
+  'account-restore': {
+    title: '恢复账号删除',
+    submit: '确认恢复账号删除',
+    confirmation: 'RESTORE ACCOUNT',
+    description: '恢复账号后会继续保留本地 Vault；请重新认证以确认这是你的账号。'
+  },
+  'cloud-delete': {
+    title: '确认删除云端同步数据',
+    submit: '确认删除云端同步数据',
+    confirmation: CLOUD_SYNC_DELETION_CONFIRMATION,
+    description: '只删除云端同步数据并停止云同步；本地 Vault、账号和服务器配置保留。'
+  },
+  'cloud-restore': {
+    title: '恢复云端删除',
+    submit: '确认恢复云端删除',
+    confirmation: 'RESTORE CLOUD DATA',
+    description: '恢复云端同步后，已保留的云端数据可以继续同步；请重新认证以确认操作。'
+  }
 };
 
 export const AccountMenu = ({
@@ -61,15 +107,54 @@ export const AccountMenu = ({
   const [revokingDeviceId, setRevokingDeviceId] = useState<string | null>(null);
   const [currentAccount, setCurrentAccount] = useState<AccountSession | null>(account);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [accountDeletion, setAccountDeletion] = useState<AccountDeletionState | null>(null);
+  const [accountDeletionLoading, setAccountDeletionLoading] = useState(false);
+  const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
+  const [destructivePassword, setDestructivePassword] = useState('');
+  const [destructiveConfirmation, setDestructiveConfirmation] = useState('');
+  const [destructiveSubmitting, setDestructiveSubmitting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const accountAvailable = capabilities.supports('account.auth') && accountPort !== undefined;
-  const syncAvailable = capabilities.supports('sync.encrypted') && syncPort !== undefined && onOpenSync !== undefined;
+  const syncAvailable = capabilities.supports('sync.encrypted') && syncPort !== undefined;
+  const canOpenSync = syncAvailable && onOpenSync !== undefined;
   const syncDescription = describeAccountSyncState(currentAccount?.state ?? 'signed-out', sync?.sync ?? 'local-only');
+  const canRequestAccountDeletion = typeof accountPort?.reauthenticate === 'function'
+    && (accountDeletion ? typeof accountPort?.restoreDeletion === 'function' : typeof accountPort?.requestDeletion === 'function');
+  const canManageCloudDeletion = syncAvailable
+    && typeof accountPort?.reauthenticate === 'function'
+    && (sync?.deletion ? typeof syncPort?.restoreCloudDeletion === 'function' : typeof syncPort?.requestCloudDeletion === 'function');
+  const activeDestructiveCopy = destructiveAction ? destructiveActionCopy[destructiveAction] : null;
 
   useEffect(() => {
     setCurrentAccount(account);
-    if (!account) setAccountEmail(null);
+    setAccountDeletion(null);
+    if (!account) {
+      setAccountEmail(null);
+      setDestructiveAction(null);
+    }
   }, [account]);
+
+  useEffect(() => {
+    if (!open || !currentAccount || !accountPort?.getDeletion) {
+      setAccountDeletionLoading(false);
+      if (!currentAccount) setAccountDeletion(null);
+      return;
+    }
+    let cancelled = false;
+    setAccountDeletionLoading(true);
+    void accountPort.getDeletion()
+      .then((deletion) => {
+        if (!cancelled) setAccountDeletion(deletion);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(messageFromError(reason, '账号删除状态暂时无法加载'));
+      })
+      .finally(() => {
+        if (!cancelled) setAccountDeletionLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [accountPort, currentAccount, open]);
 
   useEffect(() => {
     if (!open || !currentAccount || !devicesPort || !capabilities.supports('device.trust')) {
@@ -116,6 +201,8 @@ export const AccountMenu = ({
       form.reset();
       setCurrentAccount(nextAccount);
       setAccountEmail(maskEmail(email));
+      setAccountDeletion(null);
+      setNotice(null);
       onAccountChange?.(nextAccount);
       setOpen(true);
     } catch (reason: unknown) {
@@ -133,6 +220,10 @@ export const AccountMenu = ({
       await accountPort.signOut();
       setCurrentAccount(null);
       setAccountEmail(null);
+      setAccountDeletion(null);
+      setNotice(null);
+      clearDestructiveInputs();
+      setDestructiveAction(null);
       onAccountChange?.(null);
       onSyncChange?.(null);
       setDevices([]);
@@ -156,6 +247,118 @@ export const AccountMenu = ({
       setRevokingDeviceId(null);
     }
   };
+
+  const clearDestructiveInputs = (): void => {
+    setDestructivePassword('');
+    setDestructiveConfirmation('');
+  };
+
+  const closeDestructiveAction = (): void => {
+    if (destructiveSubmitting) return;
+    setDestructiveAction(null);
+    clearDestructiveInputs();
+  };
+
+  const openDestructiveAction = (action: DestructiveAction): void => {
+    setError(null);
+    setNotice(null);
+    clearDestructiveInputs();
+    setDestructiveAction(action);
+  };
+
+  const refreshSync = async (): Promise<void> => {
+    if (!syncPort) {
+      onSyncChange?.(null);
+      return;
+    }
+    const next = await syncPort.status();
+    onSyncChange?.(syncStateFromStatus(sync, next));
+  };
+
+  const submitDestructiveAction = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (!destructiveAction || destructiveSubmitting) return;
+    const copy = destructiveActionCopy[destructiveAction];
+    if (!destructivePassword) {
+      setError('请输入账号密码');
+      return;
+    }
+    if (destructiveConfirmation !== copy.confirmation) {
+      setError(`请输入确认文本：${copy.confirmation}`);
+      return;
+    }
+    if (!accountPort?.reauthenticate) {
+      setError('当前客户端不支持重新认证');
+      return;
+    }
+    if (destructiveAction === 'account-delete' && !accountPort.requestDeletion) {
+      setError('当前客户端不支持账号删除');
+      return;
+    }
+    if (destructiveAction === 'account-restore' && !accountPort.restoreDeletion) {
+      setError('当前客户端不支持恢复账号删除');
+      return;
+    }
+    if ((destructiveAction === 'cloud-delete' && (!syncPort || !syncPort.requestCloudDeletion))
+      || (destructiveAction === 'cloud-restore' && (!syncPort || !syncPort.restoreCloudDeletion))) {
+      setError('当前客户端不支持云端删除管理');
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setDestructiveSubmitting(true);
+    try {
+      await accountPort.reauthenticate(destructivePassword);
+      if (destructiveAction === 'account-delete') {
+        await accountPort.requestDeletion!(ACCOUNT_DELETION_CONFIRMATION);
+        setCurrentAccount(null);
+        setAccountDeletion(null);
+        setAccountEmail(null);
+        setDevices([]);
+        onAccountChange?.(null);
+        onSyncChange?.(null);
+        setNotice('账号删除已计划，本地 Vault 保留');
+      } else if (destructiveAction === 'account-restore') {
+        await accountPort.restoreDeletion!();
+        setAccountDeletion(null);
+        if (currentAccount) onAccountChange?.(currentAccount);
+        await refreshSync();
+        setNotice('账号删除已恢复');
+      } else if (destructiveAction === 'cloud-delete') {
+        const deletion = await syncPort!.requestCloudDeletion!(CLOUD_SYNC_DELETION_CONFIRMATION);
+        const nextSync: SyncState = {
+          sync: 'local-only',
+          head: null,
+          pendingCount: 0,
+          ...(sync?.recovery === undefined ? {} : { recovery: sync.recovery }),
+          deletion
+        };
+        onSyncChange?.(nextSync);
+        setNotice('云端同步数据已计划删除，本地 Vault 保留');
+      } else {
+        await syncPort!.restoreCloudDeletion!();
+        await refreshSync();
+        setNotice('云端同步数据删除已恢复');
+      }
+      setDestructiveAction(null);
+      clearDestructiveInputs();
+    } catch (reason: unknown) {
+      clearDestructiveInputs();
+      setError(messageFromError(reason, '操作失败，请稍后重试'));
+    } finally {
+      setDestructiveSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!destructiveAction) return;
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') closeDestructiveAction();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [destructiveAction, destructiveSubmitting]);
 
   return (
     <div className="account-menu">
@@ -184,6 +387,7 @@ export const AccountMenu = ({
           <span className="status-dot" />
           <span>{currentAccount ? syncDescription.label : '仅本地，不同步'}</span>
         </div>
+        {notice && <p className="form-success" role="status">{notice}</p>}
 
         {!currentAccount && !accountAvailable && <p className="account-menu-copy">账号服务未启用，当前只使用本地加密 Vault。</p>}
 
@@ -216,7 +420,35 @@ export const AccountMenu = ({
             {sync?.pendingCount ? <span>待同步变更：{sync.pendingCount}</span> : null}
           </div>
           {error && <p className="form-error" role="alert">{error}</p>}
-          {syncAvailable && <button className="button button-primary button-wide" type="button" onClick={onOpenSync}>打开同步中心</button>}
+          {canOpenSync && <button className="button button-primary button-wide" type="button" onClick={onOpenSync}>打开同步中心</button>}
+          <section className="account-security" aria-labelledby="account-security-title">
+            <div className="account-section-heading"><strong id="account-security-title">账号安全</strong>{accountDeletionLoading && <span>加载中…</span>}</div>
+            {accountDeletion ? <>
+              <p className="account-menu-copy"><strong>账号将在{formatDeletionRemaining(accountDeletion.remainingMs)}后删除</strong>；恢复期内可撤销，<strong>本地 Vault 保留</strong>。</p>
+              {canRequestAccountDeletion
+                ? <button className="button button-ghost button-wide" type="button" onClick={() => openDestructiveAction('account-restore')}>恢复账号删除</button>
+                : <p className="account-menu-copy">当前客户端暂不支持恢复账号删除。</p>}
+            </> : <>
+              <p className="account-menu-copy">删除账号会进入 30 天恢复期；本地 Vault 和本地服务器配置不会删除。</p>
+              {canRequestAccountDeletion
+                ? <button className="button button-danger button-wide" type="button" onClick={() => openDestructiveAction('account-delete')}>删除账号</button>
+                : <p className="account-menu-copy">当前客户端暂不支持账号删除。</p>}
+            </>}
+          </section>
+          {syncAvailable && <section className="account-security" aria-labelledby="cloud-security-title">
+            <div className="account-section-heading"><strong id="cloud-security-title">云端同步数据</strong></div>
+            {sync?.deletion ? <>
+              <p className="account-menu-copy"><strong>云端同步数据将在{formatDeletionRemaining(sync.deletion.remainingMs)}后删除</strong>；已停止云同步，本地 Vault 保留。</p>
+              {canManageCloudDeletion
+                ? <button className="button button-ghost button-wide" type="button" onClick={() => openDestructiveAction('cloud-restore')}>恢复云端删除</button>
+                : <p className="account-menu-copy">当前客户端暂不支持恢复云端删除。</p>}
+            </> : <>
+              <p className="account-menu-copy">只删除云端同步副本，不影响账号、本地 Vault 或服务器配置。</p>
+              {canManageCloudDeletion
+                ? <button className="button button-danger button-wide" type="button" onClick={() => openDestructiveAction('cloud-delete')}>删除云端同步数据</button>
+                : <p className="account-menu-copy">当前客户端暂不支持云端同步数据删除。</p>}
+            </>}
+          </section>}
           <button className="button button-ghost button-wide" type="button" disabled={submitting} onClick={() => void signOut()}>退出登录</button>
 
           {devicesPort && capabilities.supports('device.trust') && <section className="account-devices" aria-labelledby="account-devices-title">
@@ -232,6 +464,46 @@ export const AccountMenu = ({
           </section>}
         </>}
       </section>}
+
+      {destructiveAction && activeDestructiveCopy && <div
+        className="modal-backdrop account-destructive-backdrop"
+        role="presentation"
+        onMouseDown={(event) => { if (event.target === event.currentTarget) closeDestructiveAction(); }}
+      >
+        <section className="account-destructive-dialog" role="dialog" aria-modal="true" aria-labelledby="account-destructive-title" onMouseDown={(event) => event.stopPropagation()}>
+          <div className="account-menu-heading">
+            <div><p className="eyebrow">CONFIRM ACTION</p><h2 id="account-destructive-title">{activeDestructiveCopy.title}</h2></div>
+            <button className="icon-button" type="button" aria-label="取消危险操作" title="取消危险操作" onClick={closeDestructiveAction}>×</button>
+          </div>
+          <p className="account-menu-copy">{activeDestructiveCopy.description}</p>
+          <form className="account-security-form" onSubmit={(event) => void submitDestructiveAction(event)} noValidate>
+            <label htmlFor="account-destructive-password">重新输入账号密码</label>
+            <input
+              id="account-destructive-password"
+              type="password"
+              autoComplete="current-password"
+              autoFocus
+              value={destructivePassword}
+              onChange={(event) => setDestructivePassword(event.target.value)}
+            />
+            <label htmlFor="account-destructive-confirmation">输入确认文本</label>
+            <input
+              id="account-destructive-confirmation"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              value={destructiveConfirmation}
+              onChange={(event) => setDestructiveConfirmation(event.target.value)}
+            />
+            <p className="field-help">请输入：<code>{activeDestructiveCopy.confirmation}</code></p>
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <div className="dialog-actions">
+              <button className="button button-danger" type="submit" disabled={destructiveSubmitting}>{destructiveSubmitting ? '处理中…' : activeDestructiveCopy.submit}</button>
+              <button className="button button-ghost" type="button" disabled={destructiveSubmitting} onClick={closeDestructiveAction}>取消</button>
+            </div>
+          </form>
+        </section>
+      </div>}
     </div>
   );
 };

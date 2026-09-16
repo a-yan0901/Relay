@@ -286,4 +286,27 @@ describe('SyncCenter', () => {
     expect(screen.getByText('设备已撤销，仅保留本地数据')).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/password|token|privateKey|command/iu);
   });
+
+  it('renders cloud deletion as local-only and hides misleading enable/retry controls', () => {
+    const syncPort = createSyncPort();
+    renderCenter({
+      sync: 'local-only',
+      head: null,
+      pendingCount: 0,
+      deletion: { kind: 'cloud-sync', requestedAt: '2026-09-17T00:00:00.000Z', deleteAfter: '2026-10-17T00:00:00.000Z', remainingMs: 2_592_000_000 }
+    }, syncPort);
+
+    expect(screen.getByText(/云端同步数据将在约 30 天后删除/u)).toBeInTheDocument();
+    expect(screen.getByText(/已停止云同步/u)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '启用加密同步' })).not.toBeInTheDocument();
+    expect(syncPort.enable).not.toHaveBeenCalled();
+  });
+
+  it('renders account deletion pending state without offering sync operations', () => {
+    const syncPort = createSyncPort();
+    renderCenter({ sync: 'local-only', head: null, pendingCount: 0, lastErrorCode: 'ACCOUNT_DELETION_PENDING' }, syncPort);
+
+    expect(screen.getByText(/账号删除待恢复/u)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '启用加密同步' })).not.toBeInTheDocument();
+  });
 });

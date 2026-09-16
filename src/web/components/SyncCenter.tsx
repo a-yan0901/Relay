@@ -40,6 +40,11 @@ const formatDate = (value: string | undefined): string => {
   return Number.isFinite(timestamp) ? new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(timestamp) : '时间未知';
 };
 
+const formatDeletionRemaining = (remainingMs: number): string => {
+  const days = Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1_000)));
+  return '约 ' + days + ' 天';
+};
+
 const withHead = (sync: SyncState, head: SyncHead): SyncState => ({
   ...sync,
   sync: 'synced',
@@ -94,6 +99,7 @@ export const SyncCenter = ({
   const available = accountSignedIn && capabilities.supports('sync.encrypted') && syncPort !== undefined;
   const visibleStatus = vaultLocked && accountSignedIn ? 'needs-unlock' : current.sync;
   const description = describeAccountSyncState(account?.state ?? 'signed-out', visibleStatus);
+  const deletionPending = current.deletion !== undefined || current.lastErrorCode === 'ACCOUNT_DELETION_PENDING';
 
   useEffect(() => {
     setCurrent(sync);
@@ -242,7 +248,8 @@ export const SyncCenter = ({
         head: next.head,
         ...(next.pendingCount === undefined ? {} : { pendingCount: next.pendingCount }),
         ...(next.lastErrorCode === undefined ? {} : { lastErrorCode: next.lastErrorCode }),
-        ...(next.recovery === undefined ? {} : { recovery: next.recovery })
+        ...(next.recovery === undefined ? {} : { recovery: next.recovery }),
+        ...(next.deletion === undefined ? {} : { deletion: next.deletion })
       });
     } catch (reason: unknown) {
       setError(messageFromError(reason, '同步重试失败，请稍后重试'));
@@ -348,6 +355,14 @@ export const SyncCenter = ({
         {!accountSignedIn && <p className="dialog-warning">请先登录账号，才能查看云端同步状态。</p>}
         {accountSignedIn && vaultLocked && <p className="dialog-warning"><strong>请先解锁 Vault</strong>；主密码只在本地用于解密和生成同步内容。</p>}
         {!available && accountSignedIn && !vaultLocked && <p className="dialog-warning">当前客户端或服务端未启用加密同步。</p>}
+        {current.deletion && <section className="sync-deletion-notice" role="status">
+          <strong>云端同步数据将在{formatDeletionRemaining(current.deletion.remainingMs)}后删除</strong>
+          <span>已停止云同步；请在账号菜单中重新认证后恢复。</span>
+        </section>}
+        {current.lastErrorCode === 'ACCOUNT_DELETION_PENDING' && <section className="sync-deletion-notice" role="status">
+          <strong>账号删除待恢复</strong>
+          <span>同步已暂停；请在账号菜单中重新认证并恢复账号。</span>
+        </section>}
         {error && <p className="form-error" role="alert">{error}</p>}
         {resolved && <p className="sync-resolved" role="status">{resolved}</p>}
 
@@ -358,7 +373,7 @@ export const SyncCenter = ({
         </dl>
         {current.lastErrorCode && <p className="sync-reason">原因：{current.lastErrorCode}</p>}
 
-        {available && !vaultLocked && current.sync !== 'local-only' && <section className="sync-recovery" aria-labelledby="sync-recovery-title">
+        {available && !vaultLocked && current.sync !== 'local-only' && !deletionPending && <section className="sync-recovery" aria-labelledby="sync-recovery-title">
           <div className="account-section-heading"><strong id="sync-recovery-title">恢复密钥</strong>{recovery.status === 'configured' && <span>版本 {recovery.activeKeyVersion}</span>}</div>
           {recoveryIssue ? <>
             <p className="dialog-copy"><strong>请离线保存新的恢复密钥</strong>；关闭此窗口后不会再次显示。它不能通过账号密码重置恢复。</p>
@@ -387,9 +402,9 @@ export const SyncCenter = ({
         </section>}
 
         <div className="sync-center-actions">
-          {visibleStatus === 'local-only' && <button className="button button-primary" type="button" disabled={!available || vaultLocked || busy} onClick={() => void enableSync()}>启用加密同步</button>}
+          {visibleStatus === 'local-only' && !deletionPending && <button className="button button-primary" type="button" disabled={!available || vaultLocked || busy} onClick={() => void enableSync()}>启用加密同步</button>}
           {visibleStatus === 'needs-unlock' && <button className="button button-primary" type="button" disabled>{vaultLocked ? '解锁后继续' : '解锁 Vault'}</button>}
-          {(visibleStatus === 'pending' || visibleStatus === 'offline') && <button className="button button-primary" type="button" disabled={!available || busy} onClick={() => void retrySync()}>{busy ? '重试中…' : '重试同步'}</button>}
+          {(visibleStatus === 'pending' || visibleStatus === 'offline') && !deletionPending && <button className="button button-primary" type="button" disabled={!available || busy} onClick={() => void retrySync()}>{busy ? '重试中…' : '重试同步'}</button>}
           {visibleStatus === 'syncing' && <span className="sync-progress" role="status">同步中…</span>}
         </div>
 
