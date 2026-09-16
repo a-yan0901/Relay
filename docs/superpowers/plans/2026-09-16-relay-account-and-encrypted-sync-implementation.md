@@ -818,13 +818,13 @@ export interface WebSyncApi {
 
   Evidence (2026-09-17): migration `SCHEMA_VERSION = 13`; full Vitest `105 files / 464 tests` passed; `npm run build` passed; default Playwright `4/4` passed. The responsive gate initially found a 1px short-viewport topbar overflow (`39px > 38px`); `23d0bdd` constrained the compact account trigger and the focused host journey plus the default `4/4` E2E gate passed again. Account-enabled `npm run test:e2e -- tests/e2e/account-sync.spec.ts` passed `2/2`.
 
-- [ ] **Step 4: Update evidence and roadmap status.**
+- [x] **Step 4: Update evidence and roadmap status.**
 
-  已更新 spec、cross-platform 和 README，明确“核心 Web/自托管切片已实现、完整 M5 仍在进行”，并记录当前 server trust boundary/optional provider。路线图仍待用户关闭 Vim 后写入，且必须保留 recovery key/rotation、独立新设备恢复 UI、真实 re-auth、export-both 和账号删除闭环等证据缺口；README 不宣称团队同步、零知识 Relay execution、Desktop/Android native UI 或离线 SSH 已交付。
+  已更新 spec、cross-platform、README 和路线图，明确“核心 Web/自托管切片已实现、完整 M5 仍在进行”，并记录当前 server trust boundary/optional provider。路线图保留 recovery key/rotation、独立新设备恢复 UI、真实 re-auth、export-both 和账号删除闭环等证据缺口；README 不宣称团队同步、零知识 Relay execution、Desktop/Android native UI 或离线 SSH 已交付。
 
   当前审计结论：`secret_persistence_findings = 0`（扫描命中仅为一次性输入参数/类型、HttpOnly cookie 名称、加密实现字段和明确的 negative assertions；浏览器持久化仅保存主题、字号和非敏感终端 descriptor）；尚未交付的恢复/轮换/删除闭环不得按“测试全绿”推断为已满足。
 
-- [ ] **Step 5: Inspect task-only diff and commit release evidence.**
+- [x] **Step 5: Inspect task-only diff and commit release evidence.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
