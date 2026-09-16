@@ -6,7 +6,7 @@ Relay 当前以 Web app 为核心客户端，服务端负责 SSH、SFTP、批量
 
 本轮 review 后，统一核心已经形成可执行边界：`src/shared/core` 固定模型、校验、错误码、状态机、分组/连接继承、目标快照、`CoreRuntime` 和 ports；Web 只实现第一套 adapter。桌面和 Android 仍不做 UI，但可以替换 adapter 而不复制领域规则和用户任务语义；原生端仍需按各自生命周期和交互范式实现 UI。X-01 已将 capability 协商、Web/native-like contract 和规模回归落地：Web adapter 与 desktop/android native-like fake 运行同一套 shared contract，证明扩展点不依赖 DOM 或 HTTP。
 
-剩余风险已收敛为明确的后置能力，而不是架构债务：原生客户端、个人账号/加密同步、团队 Vault、更多协议和更大规模 pane 分别通过 capability、数据归属和生命周期 spec 管理；个人账号/加密同步的边界见 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md)，平台 shell 的设计草案见 [`relay-platform-shell-design.md`](../superpowers/specs/2026-09-16-relay-platform-shell-design.md)。两份文档都不是当前 Web 已交付能力的声明。
+剩余风险已收敛为明确的后置能力，而不是架构债务：原生客户端、个人账号/加密同步、团队 Vault、更多协议和更大规模 pane 分别通过 capability、数据归属和生命周期 spec 管理；个人账号/加密同步的边界见 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md)，平台 shell 的设计草案见 [`relay-platform-shell-design.md`](../superpowers/specs/2026-09-16-relay-platform-shell-design.md)，端口转发与协议边界见 [`relay-forwarding-and-protocol-boundaries.md`](../superpowers/specs/2026-09-16-relay-forwarding-and-protocol-boundaries.md)。这些文档都不是当前 Web 已交付能力的声明。
 
 ## 核心边界与依赖方向
 
@@ -173,6 +173,14 @@ Web 侧的 PWA 子项目已按上述边界落地，具体计划和验证记录�
 - 网络断开保留工作区并暂停/等待会话恢复；恢复后只提示“正在检查会话状态”，以真实 session/task 状态为准。
 
 PWA 交付不代表账号同步、Desktop/Android 原生 shell、local SSH 或后台常驻连接已交付；这些仍需各自的 implementation plan、安全评审和设备验证。
+
+## X-03 端口转发与协议能力边界
+
+X-03 的安全边界见 [`relay-forwarding-and-protocol-boundaries.md`](../superpowers/specs/2026-09-16-relay-forwarding-and-protocol-boundaries.md)。文档目前是待安全评审的 capability/security spec，不代表端口转发、Agent Forwarding、Mosh、Serial、Telnet、RDP/VNC 或 X11 已实现。
+
+设计默认值是：local/remote/dynamic SOCKS 分开建模；forwarding 绑定 owner、连接路径和生命周期；V1 只允许显式 loopback bind、严格目标策略和幂等停止；Web 不创建本机 TCP listener，也不提供 URL proxy 或开放 SOCKS。每一跳仍复用 Host Key policy、ProxyJump 路径校验、Vault/权限检查和脱敏审计。
+
+当前 `ForwardingManager` 仍是预留接口，`forwarding.local` 仍未加入 Web capability 广告列表。安全评审和后续 implementation plan 完成前，服务端不新增 forwarding route/data channel，Web 主导航也不增加入口。
 
 ## X-01 规模回归基线
 

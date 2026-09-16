@@ -1075,7 +1075,7 @@ export interface TargetSelectionSnapshot {
 
 ## Task X-03: 端口转发、Agent Forwarding 和协议能力分层
 
-**Status:** Ready（先做 capability/security spec）
+**Status:** In Progress（spec 草案已提交，待安全评审）
 **Priority:** P2
 **Milestone:** M4
 **Depends on:** X-01；R-01 的生命周期；S-01 的安全确认。
@@ -1093,13 +1093,13 @@ export interface TargetSelectionSnapshot {
 - Agent Forwarding、Mosh、Serial、Telnet、RDP/VNC、X11 分别拥有 capability、adapter、权限和平台兼容性；不把协议实现直接塞进当前 SSH core。
 - Forwarding UI 显示监听端口、目标 Host/跳板、启动状态、创建者和停止动作；不提供无确认的公网绑定。
 
-- [ ] **Step 1: 写威胁模型、数据流和错误矩阵。**
+- [x] **Step 1: 写威胁模型、数据流和错误矩阵。**
 
-  覆盖绑定地址、端口抢占、跳板失败、凭据/Agent 暴露、服务重启、锁定和审计；明确不可用时的 `CAPABILITY_UNAVAILABLE`。
+  已在 [`relay-forwarding-and-protocol-boundaries.md`](../specs/2026-09-16-relay-forwarding-and-protocol-boundaries.md) 覆盖绑定地址、端口抢占、跳板失败、凭据/Agent 暴露、服务重启、锁定、浏览器 tunnel、协议隔离和审计；并明确不可用时的 `CAPABILITY_UNAVAILABLE`。
 
 - [ ] **Step 2: 写失败的 capability/route 测试。**
 
-  断言跨 owner、无权限、环路、无 Host Key 信任和不支持平台均拒绝；成功 forwarding 有可取消/可停止的生命周期。
+  待安全评审和 implementation plan 批准后执行。断言跨 owner、无权限、环路、无 Host Key 信任、bind/target policy 和不支持平台均拒绝；成功 forwarding 有可取消/可停止的生命周期。本轮不提前创建 route 或测试假实现，避免把未批准能力变成可用入口。
 
 - [ ] **Step 3: 评审 spec，再为批准能力建立独立 implementation plan。**
 
@@ -1108,6 +1108,8 @@ export interface TargetSelectionSnapshot {
 **Acceptance:** 每个协议或转发能力都有独立边界、权限、审计、错误和平台矩阵；未批准的能力不会出现在当前产品 UI。
 
 **Verification:** capability/route focused tests、威胁模型和数据流评审；批准前只验证 spec，不把未实现协议加入导航或发布说明。
+
+**Progress record (2026-09-16):** 已创建并链接 forwarding/protocol boundary spec；本轮完成文档结构、关联链接和差异检查。capability/route tests、ForwardingManager implementation 和 Web UI 入口均等待安全评审后的独立 implementation plan。
 
 ---
 
