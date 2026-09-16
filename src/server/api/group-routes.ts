@@ -6,10 +6,12 @@ import { parseGroupMutationInput, parseGroupPatchInput, type GroupMutationInput,
 import { requireUnlockedSession } from './route-helpers.js';
 import { SessionStore } from '../auth/session-store.js';
 import { GroupRepository } from '../db/repositories.js';
+import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export interface GroupRouteDependencies {
   groupRepository: GroupRepository;
   sessionStore: SessionStore;
+  syncCoordinator?: SyncCoordinatorPort;
 }
 
 const routeId = (params: unknown): string => {
@@ -42,19 +44,24 @@ export const registerGroupRoutes = async (
     requireUnlockedSession(request, dependencies.sessionStore);
     const input: GroupMutationInput = parseGroupMutationInput(request.body);
 
-    reply.code(201).send(dependencies.groupRepository.create(input));
+    const created = dependencies.groupRepository.create(input);
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, 'default');
+    reply.code(201).send(created);
   });
 
   app.patch('/api/groups/:id', async (request, reply) => {
     requireUnlockedSession(request, dependencies.sessionStore);
     const patch: GroupPatchInput = parseGroupPatchInput(request.body);
 
-    reply.send(dependencies.groupRepository.update(routeId(request.params), patch));
+    const updated = dependencies.groupRepository.update(routeId(request.params), patch);
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, 'default');
+    reply.send(updated);
   });
 
   app.delete('/api/groups/:id', async (request, reply) => {
     requireUnlockedSession(request, dependencies.sessionStore);
     dependencies.groupRepository.delete(routeId(request.params));
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, 'default');
     reply.code(204).send();
   });
 };

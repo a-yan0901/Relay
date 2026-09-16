@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { FastifyRequest } from 'fastify';
+
 import type {
   SyncDescriptor,
   SyncEnvelope,
@@ -7,27 +9,81 @@ import type {
   SyncPreview,
   SyncResolution,
   SyncState,
+  SyncStatus,
   VaultUnlockEnvelope
 } from '../../shared/core/models.js';
 import { AppError } from '../../shared/errors.js';
+import { getAccountSessionId } from '../auth/account-cookie.js';
+import { getSessionId } from '../auth/session-cookie.js';
+import { AccountService } from '../account/account-service.js';
+import { AppConfigRepository } from '../db/repositories.js';
+import { SessionStore } from '../auth/session-store.js';
 import { createSyncKey, decryptSyncPayload, encryptSyncPayload, unwrapSyncKey, wrapSyncKey } from './sync-crypto.js';
-import { BlindSyncRepository, type BlindSyncStore } from './sync-repository.js';
+import { BlindSyncRepository, type BlindSyncStore, type SyncClientState, type SyncDeleteRequest } from './sync-repository.js';
 import { SyncSnapshotService } from './sync-snapshot.js';
 import type { VaultConfig } from '../vault/types.js';
 
 export interface SyncServiceContract {
   status(accountId: string): SyncState;
+  getDescriptor(accountId: string): SyncDescriptor | null;
+  getEnvelope(accountId: string): SyncEnvelope | null;
   enable(accountId: string, ownerId: string, deviceId: string, vaultKey: Buffer, vaultConfig: VaultConfig): Promise<SyncHead>;
+  prepareEnvelope(accountId: string, ownerId: string, deviceId: string, vaultKey: Buffer): Promise<SyncEnvelope>;
   pull(accountId: string): SyncEnvelope | null;
   push(accountId: string, envelope: SyncEnvelope, idempotencyKey: string): SyncHead;
   previewPull(accountId: string, ownerId: string, vaultKey: Buffer): Promise<SyncPreview>;
   resolveConflict(accountId: string, ownerId: string, vaultKey: Buffer, conflictId: string, resolution: SyncResolution): Promise<void>;
+  getClientState(accountId: string): SyncClientState | null;
+  savePending(accountId: string, envelope: SyncEnvelope | null, status: Extract<SyncStatus, 'pending' | 'offline' | 'conflict' | 'needs-unlock' | 'device-revoked'>, errorCode?: string | null): void;
+  markSynced(accountId: string): void;
+  requestDeletion(accountId: string): SyncDeleteRequest;
+  getDeleteRequest(accountId: string): SyncDeleteRequest | null;
+  restoreDeletion(accountId: string): void;
 }
 
 export interface SyncServiceOptions {
   store: BlindSyncStore;
   snapshotService: SyncSnapshotService;
+  now?: () => number;
 }
+
+export interface SyncMutationContext {
+  accountId: string;
+  deviceId: string;
+  ownerId: string;
+  vaultSessionId: string;
+  vaultKey: Buffer;
+  requestId: string;
+}
+
+export interface SyncTransport {
+  push(accountId: string, envelope: SyncEnvelope, idempotencyKey: string): Promise<SyncHead> | SyncHead;
+}
+
+export interface SyncCoordinatorOptions {
+  syncService: SyncServiceContract;
+  accountService: AccountService;
+  sessionStore: SessionStore;
+  appConfigRepository: AppConfigRepository;
+  transport?: SyncTransport;
+  retryBaseDelayMs?: number;
+  retryMaxDelayMs?: number;
+}
+
+export interface SyncCoordinatorPort {
+  markDirtyFromRequest(request: FastifyRequest, ownerId: string): void;
+  markDirty(context: SyncMutationContext): void;
+  retry(accountId: string): Promise<void>;
+  flush(accountId: string): Promise<void>;
+  cancelAccount(accountId: string): void;
+  cancelAll(): void;
+  close(): void;
+}
+
+const SYNC_DELETE_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_RETRY_BASE_DELAY_MS = 1_000;
+const DEFAULT_RETRY_MAX_DELAY_MS = 60_000;
+const MAX_RETRY_ATTEMPTS = 8;
 
 const toVaultUnlockEnvelope = (vaultConfig: VaultConfig): VaultUnlockEnvelope => ({
   version: vaultConfig.version,
@@ -35,22 +91,77 @@ const toVaultUnlockEnvelope = (vaultConfig: VaultConfig): VaultUnlockEnvelope =>
   wrappedVaultKey: vaultConfig.wrappedVaultKey
 });
 
+export const syncEnvelopeIdempotencyKey = (accountId: string, envelope: SyncEnvelope): string => (
+  `sync:${accountId}:${envelope.revision}:${envelope.payloadHash}`
+);
+
+const errorCodeOf = (error: unknown): string => (
+  error instanceof AppError ? error.code : 'SYNC_PROVIDER_UNAVAILABLE'
+);
+
+const isPermanentFailure = (error: unknown): boolean => error instanceof AppError && [
+  'SYNC_CONFLICT',
+  'SYNC_PAYLOAD_INVALID',
+  'SYNC_KEY_VERSION_UNSUPPORTED',
+  'ACCOUNT_DEVICE_REVOKED',
+  'SYNC_NOT_ENABLED',
+  'SYNC_NOT_FOUND'
+].includes(error.code);
+
 export class SyncService implements SyncServiceContract {
   private readonly store: BlindSyncStore;
   private readonly snapshotService: SyncSnapshotService;
+  private readonly clock: () => number;
 
   constructor(options: SyncServiceOptions) {
     this.store = options.store;
     this.snapshotService = options.snapshotService;
+    this.clock = options.now ?? Date.now;
   }
 
   status(accountId: string): SyncState {
+    this.store.purgeExpiredVault(accountId, new Date(this.clock()).toISOString());
     const descriptor = this.store.getDescriptor(accountId);
     if (!descriptor) return { sync: 'local-only', head: null, pendingCount: 0 };
+
     const head = this.store.getHead(accountId);
-    return head
-      ? { sync: 'synced', head, pendingCount: 0, lastSyncedAt: head.updatedAt }
-      : { sync: 'pending', head: null, pendingCount: 1 };
+    const clientState = this.store.getClientState(accountId);
+    const persistedStatus = clientState?.status === 'syncing' ? 'pending' : clientState?.status;
+    const pendingCount = clientState?.pendingEnvelope ? 1 : 0;
+    let sync: SyncStatus;
+    if (persistedStatus && persistedStatus !== 'synced' && persistedStatus !== 'local-only') {
+      sync = persistedStatus;
+    } else if (head) {
+      sync = 'synced';
+    } else {
+      sync = 'pending';
+    }
+
+    const deletion = this.store.getDeleteRequest(accountId);
+    const state: SyncState = {
+      sync,
+      head,
+      pendingCount,
+      ...(clientState?.errorCode === null || clientState?.errorCode === undefined ? {} : { lastErrorCode: clientState.errorCode }),
+      ...(head ? { lastSyncedAt: head.updatedAt } : {}),
+      ...(deletion ? {
+        deletion: {
+          ...deletion,
+          remainingMs: Math.max(0, Date.parse(deletion.deleteAfter) - this.clock())
+        }
+      } : {})
+    };
+    return state;
+  }
+
+  getDescriptor(accountId: string): SyncDescriptor | null {
+    this.store.purgeExpiredVault(accountId, new Date(this.clock()).toISOString());
+    return this.store.getDescriptor(accountId);
+  }
+
+  getEnvelope(accountId: string): SyncEnvelope | null {
+    this.store.purgeExpiredVault(accountId, new Date(this.clock()).toISOString());
+    return this.store.getEnvelope(accountId);
   }
 
   async enable(
@@ -67,6 +178,7 @@ export class SyncService implements SyncServiceContract {
       const current = this.store.getHead(accountId);
       if (current) {
         syncKey.fill(0);
+        this.store.clearClientState(accountId);
         return current;
       }
     } else {
@@ -93,7 +205,32 @@ export class SyncService implements SyncServiceContract {
         plaintext
       });
       this.store.saveDescriptor(accountId, descriptor);
-      return this.store.putEnvelope(accountId, envelope, `enable:${accountId}:${descriptor.vaultId}`);
+      const head = this.store.putEnvelope(accountId, envelope, `enable:${accountId}:${descriptor.vaultId}`);
+      this.store.clearClientState(accountId);
+      return head;
+    } finally {
+      plaintext?.fill(0);
+      syncKey.fill(0);
+    }
+  }
+
+  async prepareEnvelope(accountId: string, ownerId: string, deviceId: string, vaultKey: Buffer): Promise<SyncEnvelope> {
+    const descriptor = this.store.getDescriptor(accountId);
+    if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
+    const current = this.store.getHead(accountId);
+    const syncKey = unwrapSyncKey(vaultKey, descriptor.vaultId, descriptor.keyVersion, descriptor.wrappedSyncKey);
+    let plaintext: Buffer | undefined;
+    try {
+      plaintext = await this.snapshotService.create(ownerId, vaultKey);
+      return encryptSyncPayload({
+        syncKey,
+        vaultId: descriptor.vaultId,
+        revision: (current?.revision ?? 0) + 1,
+        parentRevision: current?.revision ?? null,
+        deviceId,
+        keyVersion: descriptor.keyVersion,
+        plaintext
+      });
     } finally {
       plaintext?.fill(0);
       syncKey.fill(0);
@@ -101,23 +238,37 @@ export class SyncService implements SyncServiceContract {
   }
 
   pull(accountId: string): SyncEnvelope | null {
-    return this.store.getEnvelope(accountId);
+    return this.getEnvelope(accountId);
   }
 
   push(accountId: string, envelope: SyncEnvelope, idempotencyKey: string): SyncHead {
-    return this.store.putEnvelope(accountId, envelope, idempotencyKey);
+    const head = this.store.putEnvelope(accountId, envelope, idempotencyKey);
+    this.store.clearClientState(accountId);
+    return head;
   }
 
   async previewPull(accountId: string, ownerId: string, vaultKey: Buffer): Promise<SyncPreview> {
-    const descriptor = this.store.getDescriptor(accountId);
+    const descriptor = this.getDescriptor(accountId);
     if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
-    const remote = this.store.getEnvelope(accountId);
+    const remote = this.getEnvelope(accountId);
     if (!remote) throw new AppError('SYNC_NOT_FOUND');
     const syncKey = unwrapSyncKey(vaultKey, descriptor.vaultId, descriptor.keyVersion, descriptor.wrappedSyncKey);
     let plaintext: Buffer | undefined;
     try {
       plaintext = decryptSyncPayload(syncKey, remote);
       const preview = await this.snapshotService.previewApply(ownerId, vaultKey, plaintext);
+      const pending = this.store.getClientState(accountId)?.pendingEnvelope;
+      if (pending && pending.payloadHash !== remote.payloadHash && pending.parentRevision !== remote.revision) {
+        const conflictId = this.store.saveConflict(accountId, pending, remote);
+        this.savePending(accountId, pending, 'conflict', 'SYNC_CONFLICT');
+        return {
+          ...preview,
+          conflictId,
+          localRevision: pending.revision,
+          remoteRevision: remote.revision,
+          localBackupRevision: pending.revision
+        };
+      }
       return {
         ...preview,
         localRevision: remote.parentRevision ?? 0,
@@ -141,10 +292,11 @@ export class SyncService implements SyncServiceContract {
     if (!conflict) throw new AppError('SYNC_NOT_FOUND');
     if (resolution === 'export-both') throw new AppError('SYNC_CONFLICT', '请先导出本地和远端副本');
     if (resolution === 'keep-local') {
+      this.savePending(accountId, conflict.local, 'pending');
       this.store.resolveConflict(accountId, conflictId);
       return;
     }
-    const descriptor = this.store.getDescriptor(accountId);
+    const descriptor = this.getDescriptor(accountId);
     if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
     const syncKey = unwrapSyncKey(vaultKey, descriptor.vaultId, descriptor.keyVersion, descriptor.wrappedSyncKey);
     let plaintext: Buffer | undefined;
@@ -152,10 +304,243 @@ export class SyncService implements SyncServiceContract {
       plaintext = decryptSyncPayload(syncKey, conflict.remote);
       await this.snapshotService.apply(ownerId, vaultKey, plaintext, 'use-remote');
       this.store.resolveConflict(accountId, conflictId);
+      this.store.clearClientState(accountId);
     } finally {
       plaintext?.fill(0);
       syncKey.fill(0);
     }
+  }
+
+  getClientState(accountId: string): SyncClientState | null {
+    return this.store.getClientState(accountId);
+  }
+
+  savePending(
+    accountId: string,
+    envelope: SyncEnvelope | null,
+    status: Extract<SyncStatus, 'pending' | 'offline' | 'conflict' | 'needs-unlock' | 'device-revoked'>,
+    errorCode: string | null = null
+  ): void {
+    this.store.saveClientState(accountId, {
+      pendingEnvelope: envelope,
+      status,
+      errorCode,
+      updatedAt: new Date(this.clock()).toISOString()
+    });
+  }
+
+  markSynced(accountId: string): void {
+    this.store.clearClientState(accountId);
+  }
+
+  requestDeletion(accountId: string): SyncDeleteRequest {
+    if (!this.getDescriptor(accountId)) throw new AppError('SYNC_NOT_ENABLED');
+    const existing = this.store.getDeleteRequest(accountId);
+    if (existing) return existing;
+    const deleteAfter = new Date(this.clock() + SYNC_DELETE_GRACE_MS).toISOString();
+    this.store.deleteAccountVault(accountId, deleteAfter);
+    const request = this.store.getDeleteRequest(accountId);
+    if (!request) throw new AppError('INTERNAL_ERROR');
+    return request;
+  }
+
+  getDeleteRequest(accountId: string): SyncDeleteRequest | null {
+    return this.store.getDeleteRequest(accountId);
+  }
+
+  restoreDeletion(accountId: string): void {
+    this.store.restoreDeleteRequest(accountId);
+  }
+}
+
+export class SyncCoordinator implements SyncCoordinatorPort {
+  private readonly syncService: SyncServiceContract;
+  private readonly accountService: AccountService;
+  private readonly sessionStore: SessionStore;
+  private readonly appConfigRepository: AppConfigRepository;
+  private readonly transport: SyncTransport;
+  private readonly retryBaseDelayMs: number;
+  private readonly retryMaxDelayMs: number;
+  private readonly queues = new Map<string, Promise<void>>();
+  private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly retryAttempts = new Map<string, number>();
+  private readonly requestIds = new Map<string, Set<string>>();
+  private readonly generations = new Map<string, number>();
+  private readonly dirtyAccounts = new Set<string>();
+  private stopped = false;
+
+  constructor(options: SyncCoordinatorOptions) {
+    this.syncService = options.syncService;
+    this.accountService = options.accountService;
+    this.sessionStore = options.sessionStore;
+    this.appConfigRepository = options.appConfigRepository;
+    this.transport = options.transport ?? { push: (accountId, envelope, idempotencyKey) => this.syncService.push(accountId, envelope, idempotencyKey) };
+    this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
+    this.retryMaxDelayMs = options.retryMaxDelayMs ?? DEFAULT_RETRY_MAX_DELAY_MS;
+    if (!Number.isSafeInteger(this.retryBaseDelayMs) || this.retryBaseDelayMs < 1 || !Number.isSafeInteger(this.retryMaxDelayMs) || this.retryMaxDelayMs < this.retryBaseDelayMs) {
+      throw new AppError('SYNC_PAYLOAD_INVALID');
+    }
+  }
+
+  markDirtyFromRequest(request: FastifyRequest, ownerId: string): void {
+    const accountSessionId = getAccountSessionId(request);
+    if (!accountSessionId) return;
+    const account = this.accountService.status(accountSessionId);
+    if (!account) return;
+    const vaultSessionId = getSessionId(request);
+    if (!vaultSessionId) return;
+    const vaultSession = this.sessionStore.get(vaultSessionId);
+    const appConfig = this.appConfigRepository.get();
+    if (!vaultSession || !appConfig || !this.syncService.getDescriptor(account.accountId)) return;
+    this.markDirty({
+      accountId: account.accountId,
+      deviceId: account.deviceId,
+      ownerId,
+      vaultSessionId,
+      vaultKey: vaultSession.vaultKey,
+      requestId: request.id
+    });
+  }
+
+  markDirty(context: SyncMutationContext): void {
+    if (this.stopped) return;
+    const seen = this.requestIds.get(context.accountId) ?? new Set<string>();
+    if (seen.has(context.requestId)) return;
+    seen.add(context.requestId);
+    this.requestIds.set(context.accountId, seen);
+    this.dirtyAccounts.add(context.accountId);
+    const generation = this.generations.get(context.accountId) ?? 0;
+    const prior = this.queues.get(context.accountId) ?? Promise.resolve();
+    const task = prior
+      .then(async () => {
+        if (!this.isActive(context.accountId, generation)) return;
+        await this.process(context, generation);
+      })
+      .catch((error: unknown) => {
+        if (this.isActive(context.accountId, generation)) this.recordFailure(context, error);
+      });
+    this.queues.set(context.accountId, task);
+    void task.finally(() => {
+      if (this.queues.get(context.accountId) === task) this.queues.delete(context.accountId);
+      seen.delete(context.requestId);
+      if (seen.size === 0) this.requestIds.delete(context.accountId);
+    }).catch(() => undefined);
+  }
+
+  async retry(accountId: string): Promise<void> {
+    if (this.stopped) return;
+    this.clearRetryTimer(accountId);
+    const generation = this.generations.get(accountId) ?? 0;
+    const prior = this.queues.get(accountId) ?? Promise.resolve();
+    const task = prior.then(async () => {
+      if (!this.isActive(accountId, generation)) return;
+      const state = this.syncService.getClientState(accountId);
+      if (!state?.pendingEnvelope) return;
+      try {
+        await this.transport.push(accountId, state.pendingEnvelope, syncEnvelopeIdempotencyKey(accountId, state.pendingEnvelope));
+        if (!this.isActive(accountId, generation)) return;
+        this.syncService.markSynced(accountId);
+        this.retryAttempts.delete(accountId);
+        this.dirtyAccounts.delete(accountId);
+      } catch (error) {
+        if (this.isActive(accountId, generation)) this.recordFailureForAccount(accountId, error);
+      }
+    });
+    this.queues.set(accountId, task);
+    await task.catch(() => undefined);
+    if (this.queues.get(accountId) === task) this.queues.delete(accountId);
+  }
+
+  async flush(accountId: string): Promise<void> {
+    await this.queues.get(accountId)?.catch(() => undefined);
+  }
+
+  cancelAccount(accountId: string): void {
+    this.generations.set(accountId, (this.generations.get(accountId) ?? 0) + 1);
+    this.clearRetryTimer(accountId);
+    const state = this.syncService.getClientState(accountId);
+    if (this.dirtyAccounts.has(accountId) && !state?.pendingEnvelope) {
+      this.syncService.savePending(accountId, null, 'needs-unlock', state?.errorCode ?? 'SESSION_INVALID');
+    } else if (state?.status === 'syncing') {
+      this.syncService.savePending(accountId, state.pendingEnvelope, 'pending', state.errorCode);
+    }
+    this.dirtyAccounts.delete(accountId);
+  }
+
+  cancelAll(): void {
+    for (const accountId of new Set([...this.queues.keys(), ...this.requestIds.keys(), ...this.generations.keys(), ...this.dirtyAccounts])) {
+      this.cancelAccount(accountId);
+    }
+  }
+
+  close(): void {
+    this.stopped = true;
+    for (const timer of this.retryTimers.values()) clearTimeout(timer);
+    this.retryTimers.clear();
+    this.cancelAll();
+  }
+
+  private async process(context: SyncMutationContext, generation: number): Promise<void> {
+    if (!this.isActive(context.accountId, generation)) return;
+    if (!this.sessionStore.get(context.vaultSessionId)) {
+      const state = this.syncService.getClientState(context.accountId);
+      this.syncService.savePending(context.accountId, state?.pendingEnvelope ?? null, 'needs-unlock', state?.errorCode ?? 'SESSION_INVALID');
+      return;
+    }
+    const envelope = await this.syncService.prepareEnvelope(context.accountId, context.ownerId, context.deviceId, context.vaultKey);
+    if (!this.isActive(context.accountId, generation)) return;
+    this.syncService.savePending(context.accountId, envelope, 'pending');
+    await this.transport.push(context.accountId, envelope, syncEnvelopeIdempotencyKey(context.accountId, envelope));
+    if (!this.isActive(context.accountId, generation)) return;
+    this.syncService.markSynced(context.accountId);
+    this.retryAttempts.delete(context.accountId);
+    this.dirtyAccounts.delete(context.accountId);
+  }
+
+  private recordFailure(context: SyncMutationContext, error: unknown): void {
+    this.recordFailureForAccount(context.accountId, error, context.vaultSessionId);
+  }
+
+  private recordFailureForAccount(accountId: string, error: unknown, vaultSessionId?: string): void {
+    const code = errorCodeOf(error);
+    if (code === 'SYNC_NOT_ENABLED' || code === 'SYNC_NOT_FOUND') {
+      this.dirtyAccounts.delete(accountId);
+      return;
+    }
+    const existing = this.syncService.getClientState(accountId)?.pendingEnvelope ?? null;
+    if (vaultSessionId && !this.sessionStore.get(vaultSessionId)) {
+      if (existing) this.syncService.savePending(accountId, existing, 'needs-unlock', code);
+      return;
+    }
+    const status = code === 'ACCOUNT_DEVICE_REVOKED'
+      ? 'device-revoked'
+      : code === 'SYNC_CONFLICT' ? 'conflict' : isPermanentFailure(error) ? 'pending' : 'offline';
+    this.syncService.savePending(accountId, existing, status, code);
+    if (status === 'offline') this.scheduleRetry(accountId);
+  }
+
+  private scheduleRetry(accountId: string): void {
+    if (this.stopped || this.retryTimers.has(accountId)) return;
+    const attempt = (this.retryAttempts.get(accountId) ?? 0) + 1;
+    this.retryAttempts.set(accountId, attempt);
+    if (attempt > MAX_RETRY_ATTEMPTS) return;
+    const delay = Math.min(this.retryMaxDelayMs, this.retryBaseDelayMs * (2 ** (attempt - 1)));
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(accountId);
+      void this.retry(accountId);
+    }, delay);
+    timer.unref?.();
+    this.retryTimers.set(accountId, timer);
+  }
+
+  private clearRetryTimer(accountId: string): void {
+    const timer = this.retryTimers.get(accountId);
+    if (timer) clearTimeout(timer);
+    this.retryTimers.delete(accountId);
+  }
+
+  private isActive(accountId: string, generation: number): boolean {
+    return !this.stopped && (this.generations.get(accountId) ?? 0) === generation;
   }
 }
 

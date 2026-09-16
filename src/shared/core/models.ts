@@ -105,6 +105,11 @@ export interface SyncState {
   pendingCount: number;
   lastErrorCode?: string;
   lastSyncedAt?: string;
+  deletion?: {
+    deleteAfter: string;
+    requestedAt: string;
+    remainingMs: number;
+  };
 }
 
 export interface ReconnectPolicy {

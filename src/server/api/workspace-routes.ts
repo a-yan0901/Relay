@@ -6,12 +6,14 @@ import { SessionStore } from '../auth/session-store.js';
 import { AuditRepository } from '../db/repositories.js';
 import { WorkspaceService } from '../workspace/workspace-service.js';
 import { requireUnlockedSession } from './route-helpers.js';
+import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export interface WorkspaceRouteDependencies {
   ownerId: string;
   workspaceService: WorkspaceService;
   sessionStore: SessionStore;
   auditRepository: AuditRepository;
+  syncCoordinator?: SyncCoordinatorPort;
 }
 
 const saveSchema = z.object({
@@ -41,6 +43,7 @@ export const registerWorkspaceRoutes = async (app: FastifyInstance, dependencies
     const body = parseBody(saveSchema, request.body);
     const saved = dependencies.workspaceService.save(dependencies.ownerId, body.expectedVersion, body.state as WorkspaceState);
     dependencies.auditRepository.insert({ eventType: 'workspace_saved', requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.send(saved.state);
   });
 
@@ -54,6 +57,7 @@ export const registerWorkspaceRoutes = async (app: FastifyInstance, dependencies
     const body = parseBody(templateSchema, request.body);
     const created = dependencies.workspaceService.createTemplate(dependencies.ownerId, body.name, body.state as WorkspaceState);
     dependencies.auditRepository.insert({ eventType: 'workspace_template_created', requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.code(201).send(created);
   });
 
@@ -63,6 +67,7 @@ export const registerWorkspaceRoutes = async (app: FastifyInstance, dependencies
     if (!params.success) throw new AppError('NOT_FOUND');
     dependencies.workspaceService.deleteTemplate(dependencies.ownerId, params.data.id);
     dependencies.auditRepository.insert({ eventType: 'workspace_template_deleted', requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.code(204).send();
   });
 };

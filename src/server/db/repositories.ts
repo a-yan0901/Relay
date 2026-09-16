@@ -257,7 +257,7 @@ const parseStringArray = (value: string): string[] => {
   }
 };
 
-const AUDIT_METADATA_KEYS = new Set(['runId', 'transferId', 'accountId', 'deviceId', 'action', 'status', 'targetCount', 'successCount', 'failureCount', 'cancelledCount', 'interruptedCount', 'anomalyCount', 'truncatedCount', 'durationMs']);
+const AUDIT_METADATA_KEYS = new Set(['runId', 'transferId', 'accountId', 'deviceId', 'vaultId', 'action', 'resolution', 'reason', 'status', 'targetCount', 'successCount', 'failureCount', 'cancelledCount', 'interruptedCount', 'anomalyCount', 'truncatedCount', 'durationMs', 'revision']);
 
 const AUDIT_STATUS_SQL = `CASE
   WHEN json_extract(metadata_json, '$.status') IN ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted') THEN json_extract(metadata_json, '$.status')

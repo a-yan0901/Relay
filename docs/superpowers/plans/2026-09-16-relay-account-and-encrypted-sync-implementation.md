@@ -587,11 +587,11 @@ POST /api/sync/v1/retry
 POST /api/sync/v1/vault/delete
 ```
 
-- [ ] **Step 1: Write failing route/lifecycle tests.**
+- [x] **Step 1: Write failing route/lifecycle tests.**
 
   覆盖：未登录/设备撤销/未开启 capability 拒绝；登录未解锁只能读 account/sync opaque metadata，不能 enable、preview/apply 或访问本地 snapshot；enable 后 envelope 云端只含密文；断网/模拟 provider 5xx 进入 `offline`/`pending` 且本地 Host mutation 仍成功；网络恢复只按 idempotency 上传一次；lock/logout/restart 不保持虚假 `syncing`；删除窗口需要二次确认字段且不删除本地 Vault。
 
-- [ ] **Step 2: Run sync integration tests to verify failure.**
+- [x] **Step 2: Run sync integration tests to verify failure.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -600,19 +600,19 @@ POST /api/sync/v1/vault/delete
 
   Expected: FAIL because routes and mutation hooks are absent.
 
-- [ ] **Step 3: Implement authenticated sync routes.**
+- [x] **Step 3: Implement authenticated sync routes.**
 
   所有 routes 验证 account cookie、device 未撤销、capability 和 request schema；`state/head/descriptor/envelope` 只返回 opaque DTO。`PUT` 强制 `parentRevision`/idempotency，冲突返回 `SYNC_CONFLICT`；preview/apply 另外要求当前 `webssh_session` 解锁并从 session 获取 Vault key。任何 route 不接受 master password、plaintext snapshot 或 owner/account 字段。
 
-- [ ] **Step 4: Add non-blocking dirty marking and retry.**
+- [x] **Step 4: Add non-blocking dirty marking and retry.**
 
   创建 `SyncCoordinator`（放在 `sync-service.ts` 或独立同目录文件）维护 per-account serial queue：在 Host/Group/Identity/Workspace/Snippet/Import/Vault mutation 成功响应后，仅在 account signed-in + Vault unlocked 时异步生成 snapshot；先写加密 pending envelope，再调用 blind store；SSH/SFTP/command 请求不等待 queue。队列按 request id 去重、指数退避、永久错误停止重试并保存错误码；lock/logout/revoke/服务重启取消内存句柄并恢复为 `pending`/`needs-unlock`。
 
-- [ ] **Step 5: Add deletion/recovery semantics.**
+- [x] **Step 5: Add deletion/recovery semantics.**
 
   delete route 要求当前 account session、重新认证标记和 `confirmDelete === 'DELETE MY CLOUD VAULT'`；写入 `deleteAfter = now + 30 days`，期间 GET 返回 countdown metadata，恢复操作撤销删除；到期清理只删除远端 envelope/account metadata，不删除本地 Host/Vault。审计只记录 opaque account/vault id、revision、status、reason 和 request id。
 
-- [ ] **Step 6: Run lifecycle focused tests.**
+- [x] **Step 6: Run lifecycle focused tests.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -621,7 +621,7 @@ POST /api/sync/v1/vault/delete
 
   Expected: PASS; normal local mutations and existing restart semantics remain green.
 
-- [ ] **Step 7: Commit sync route/lifecycle slice.**
+- [x] **Step 7: Commit sync route/lifecycle slice.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

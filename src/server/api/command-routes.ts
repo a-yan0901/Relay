@@ -7,6 +7,7 @@ import { AuditRepository } from '../db/repositories.js';
 import { CommandRunner } from '../automation/command-runner.js';
 import { SnippetService } from '../automation/snippet-service.js';
 import { requireUnlockedSession } from './route-helpers.js';
+import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export interface CommandRouteDependencies {
   ownerId: string;
@@ -14,6 +15,7 @@ export interface CommandRouteDependencies {
   snippetService: SnippetService;
   commandRunner: CommandRunner;
   auditRepository: AuditRepository;
+  syncCoordinator?: SyncCoordinatorPort;
 }
 
 const idSchema = z.object({ id: z.string().min(1).max(128) }).strict();
@@ -40,6 +42,7 @@ export const registerCommandRoutes = async (app: FastifyInstance, dependencies: 
     const session = requireUnlockedSession(request, dependencies.sessionStore);
     const snippet = await dependencies.snippetService.create(request.body, session.record.vaultKey);
     dependencies.auditRepository.insert({ eventType: 'snippet_created', requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.code(201).send(snippet);
   });
 
@@ -52,6 +55,7 @@ export const registerCommandRoutes = async (app: FastifyInstance, dependencies: 
     const session = requireUnlockedSession(request, dependencies.sessionStore);
     const snippet = await dependencies.snippetService.update(parseId(request.params, 'SNIPPET_NOT_FOUND'), request.body, session.record.vaultKey);
     dependencies.auditRepository.insert({ eventType: 'snippet_updated', requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.send(snippet);
   });
 
@@ -60,6 +64,7 @@ export const registerCommandRoutes = async (app: FastifyInstance, dependencies: 
     const id = parseId(request.params, 'SNIPPET_NOT_FOUND');
     await dependencies.snippetService.delete(id);
     dependencies.auditRepository.insert({ eventType: 'snippet_deleted', requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.code(204).send();
   });
 

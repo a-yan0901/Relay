@@ -8,11 +8,13 @@ import { SessionStore } from '../auth/session-store.js';
 import { AuditRepository } from '../db/repositories.js';
 import { SshImportService } from '../workspace/ssh-import-service.js';
 import { requireUnlockedSession } from './route-helpers.js';
+import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export interface SshImportRouteDependencies {
   sessionStore: SessionStore;
   auditRepository: AuditRepository;
   sshImportService: SshImportService;
+  syncCoordinator?: SyncCoordinatorPort;
 }
 
 const applySchema = z.object({
@@ -94,6 +96,7 @@ export const registerSshImportRoutes = async (app: FastifyInstance, dependencies
     const body = parseApplyBody(request.body);
     const result = await dependencies.sshImportService.apply(session.record.vaultKey, body.previewId, body);
     dependencies.auditRepository.insert({ eventType: 'ssh_import_applied', requestId: request.id, metadata: { targetCount: body.selectedSourceIds.length, successCount: result.importedHosts } });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, 'default');
     reply.send(result);
   });
 

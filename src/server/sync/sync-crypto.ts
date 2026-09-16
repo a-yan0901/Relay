@@ -24,6 +24,8 @@ const failPayload = (): never => {
   throw new AppError('SYNC_PAYLOAD_INVALID');
 };
 
+const asString = (value: unknown): string => typeof value === 'string' ? value : failPayload();
+
 const assertKey = (key: Buffer): void => {
   if (!Buffer.isBuffer(key) || key.length !== VAULT_KEY_LENGTH) {
     throw new AppError('VAULT_CRYPTO_FAILED');
@@ -49,7 +51,7 @@ const assertKeyVersion = (value: number): void => {
 
 const decodeBase64 = (value: unknown, expectedLength?: number): Buffer => {
   if (typeof value !== 'string' || !BASE64_PATTERN.test(value)) failPayload();
-  const decoded = Buffer.from(value, 'base64');
+  const decoded = Buffer.from(value as string, 'base64');
   if (expectedLength !== undefined && decoded.length !== expectedLength) failPayload();
   return decoded;
 };
@@ -106,7 +108,13 @@ export const unwrapSyncKey = (
   assertKeyVersion(keyVersion);
   assertWrappedKeyEnvelope(wrapped);
   try {
-    const syncKey = decryptBytes(vaultKey, syncKeyAad(vaultId, keyVersion), wrapped);
+    const syncKey = decryptBytes(vaultKey, syncKeyAad(vaultId, keyVersion), {
+      version: 1,
+      nonce: wrapped.nonce,
+      ciphertext: wrapped.ciphertext,
+      authTag: wrapped.authTag,
+      aad: wrapped.aad
+    });
     assertKey(syncKey);
     return syncKey;
   } catch (error) {
@@ -184,32 +192,39 @@ export const validateSyncEnvelope = (value: unknown): SyncEnvelope => {
   if (candidate.schemaVersion !== SYNC_SCHEMA_VERSION) failPayload();
   if (!Number.isSafeInteger(candidate.revision) || (candidate.revision as number) < 1) failPayload();
   if (candidate.parentRevision !== null && (!Number.isSafeInteger(candidate.parentRevision) || (candidate.parentRevision as number) < 0)) failPayload();
-  if (typeof candidate.vaultId !== 'string' || typeof candidate.deviceId !== 'string') failPayload();
-  assertIdentifier(candidate.vaultId);
-  assertIdentifier(candidate.deviceId);
+  const vaultId = asString(candidate.vaultId);
+  const deviceId = asString(candidate.deviceId);
+  assertIdentifier(vaultId);
+  assertIdentifier(deviceId);
   if (!Number.isSafeInteger(candidate.keyVersion)) throw new AppError('SYNC_KEY_VERSION_UNSUPPORTED');
   assertKeyVersion(candidate.keyVersion as number);
-  if (!Number.isSafeInteger(candidate.byteLength) || (candidate.byteLength as number) < 0 || (candidate.byteLength as number) > SYNC_MAX_PAYLOAD_BYTES) failPayload();
-  const nonce = decodeBase64(candidate.nonce, VAULT_NONCE_LENGTH);
-  const authTag = decodeBase64(candidate.authTag, VAULT_AUTH_TAG_LENGTH);
-  const ciphertext = decodeBase64(candidate.ciphertext);
-  decodeBase64(candidate.aad);
-  if (typeof candidate.payloadHash !== 'string' || !HEX_HASH_PATTERN.test(candidate.payloadHash)) failPayload();
-  if (ciphertext.length !== candidate.byteLength) failPayload();
+  const byteLength = candidate.byteLength;
+  if (!Number.isSafeInteger(byteLength) || (byteLength as number) < 0 || (byteLength as number) > SYNC_MAX_PAYLOAD_BYTES) failPayload();
+  const nonceValue = asString(candidate.nonce);
+  const authTagValue = asString(candidate.authTag);
+  const ciphertextValue = asString(candidate.ciphertext);
+  const aadValue = asString(candidate.aad);
+  const payloadHash = asString(candidate.payloadHash);
+  const nonce = decodeBase64(nonceValue, VAULT_NONCE_LENGTH);
+  const authTag = decodeBase64(authTagValue, VAULT_AUTH_TAG_LENGTH);
+  const ciphertext = decodeBase64(ciphertextValue);
+  decodeBase64(aadValue);
+  if (!HEX_HASH_PATTERN.test(payloadHash)) failPayload();
+  if (ciphertext.length !== byteLength) failPayload();
   if (nonce.length !== VAULT_NONCE_LENGTH || authTag.length !== VAULT_AUTH_TAG_LENGTH) failPayload();
   return {
     schemaVersion: SYNC_SCHEMA_VERSION,
-    vaultId: candidate.vaultId,
+    vaultId,
     revision: candidate.revision as number,
     parentRevision: candidate.parentRevision as number | null,
-    deviceId: candidate.deviceId,
+    deviceId,
     keyVersion: candidate.keyVersion as number,
-    nonce: candidate.nonce as string,
-    ciphertext: candidate.ciphertext as string,
-    authTag: candidate.authTag as string,
-    aad: candidate.aad as string,
-    payloadHash: candidate.payloadHash,
-    byteLength: candidate.byteLength as number
+    nonce: nonceValue,
+    ciphertext: ciphertextValue,
+    authTag: authTagValue,
+    aad: aadValue,
+    payloadHash,
+    byteLength: byteLength as number
   };
 };
 

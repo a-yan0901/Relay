@@ -11,6 +11,7 @@ import type { AppRuntimeConfig } from '../config.js';
 import type { AccountService } from '../account/account-service.js';
 import { getAccountSessionId } from '../auth/account-cookie.js';
 import { ARGON2ID_PARAMS, VAULT_VERSION, type VaultConfig } from '../vault/types.js';
+import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export type { AppRuntimeConfig } from '../config.js';
 
@@ -21,6 +22,7 @@ export interface SetupRouteDependencies {
   config: AppRuntimeConfig;
   sshSessionManager?: SshSessionManagerPort;
   accountService?: AccountService;
+  syncCoordinator?: SyncCoordinatorPort;
 }
 
 const masterPasswordSchema = z.object({
@@ -174,6 +176,7 @@ export const registerSetupRoutes = async (
   app.post('/api/session/lock', async (request, reply) => {
     const sessionId = requireSession(request, dependencies);
     dependencies.sessionStore.revoke(sessionId);
+    dependencies.syncCoordinator?.cancelAll();
     dependencies.sshSessionManager?.closeAll?.();
     clearSessionCookie(reply, { secure: dependencies.config.nodeEnv === 'production' });
     reply.code(204).send();

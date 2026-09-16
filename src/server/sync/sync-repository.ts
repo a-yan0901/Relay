@@ -4,6 +4,7 @@ import type {
   SyncDescriptor,
   SyncEnvelope,
   SyncHead,
+  SyncStatus,
   VaultUnlockEnvelope,
   WrappedKeyEnvelope
 } from '../../shared/core/models.js';
@@ -21,6 +22,24 @@ export interface BlindSyncStore {
   getConflict(accountId: string, conflictId: string): { local: SyncEnvelope; remote: SyncEnvelope } | null;
   resolveConflict(accountId: string, conflictId: string): void;
   deleteAccountVault(accountId: string, deleteAfter: string): void;
+  getDeleteRequest(accountId: string): SyncDeleteRequest | null;
+  restoreDeleteRequest(accountId: string): void;
+  purgeExpiredVault(accountId: string, now?: string): boolean;
+  getClientState(accountId: string): SyncClientState | null;
+  saveClientState(accountId: string, state: SyncClientState): void;
+  clearClientState(accountId: string): void;
+}
+
+export interface SyncDeleteRequest {
+  deleteAfter: string;
+  requestedAt: string;
+}
+
+export interface SyncClientState {
+  pendingEnvelope: SyncEnvelope | null;
+  status: SyncStatus;
+  errorCode: string | null;
+  updatedAt: string;
 }
 
 interface SyncEnvelopeSqlRow {
@@ -51,10 +70,25 @@ interface ConflictSqlRow {
   remote_envelope_json: string;
 }
 
+interface DeleteRequestSqlRow {
+  delete_after: string;
+  requested_at: string;
+}
+
+interface ClientStateSqlRow {
+  pending_envelope_json: string | null;
+  status: SyncStatus;
+  error_code: string | null;
+  updated_at: string;
+}
+
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 256;
 const SYNC_KEY_VERSION_MIN = 1;
 const SYNC_KEY_VERSION_MAX = 32;
+const SYNC_STATUSES: readonly SyncStatus[] = [
+  'local-only', 'needs-unlock', 'syncing', 'synced', 'pending', 'offline', 'conflict', 'device-revoked'
+];
 
 const assertId = (value: string): void => {
   if (typeof value !== 'string' || !SAFE_ID.test(value)) throw new AppError('SYNC_PAYLOAD_INVALID');
@@ -88,19 +122,26 @@ const parseJsonObject = (value: string): Record<string, unknown> => {
 };
 
 const parseWrappedKey = (value: unknown): WrappedKeyEnvelope => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new AppError('SYNC_PAYLOAD_INVALID');
+  }
+  const candidate = value as Record<string, unknown>;
   if (
-    typeof value !== 'object' ||
-    value === null ||
-    Array.isArray(value) ||
-    value.version !== 1 ||
-    typeof value.nonce !== 'string' ||
-    typeof value.ciphertext !== 'string' ||
-    typeof value.authTag !== 'string' ||
-    typeof value.aad !== 'string'
+    candidate.version !== 1 ||
+    typeof candidate.nonce !== 'string' ||
+    typeof candidate.ciphertext !== 'string' ||
+    typeof candidate.authTag !== 'string' ||
+    typeof candidate.aad !== 'string'
   ) {
     throw new AppError('SYNC_PAYLOAD_INVALID');
   }
-  return value as unknown as WrappedKeyEnvelope;
+  return {
+    version: 1,
+    nonce: candidate.nonce as string,
+    ciphertext: candidate.ciphertext as string,
+    authTag: candidate.authTag as string,
+    aad: candidate.aad as string
+  };
 };
 
 const parseUnlockEnvelope = (value: unknown): VaultUnlockEnvelope => {
@@ -142,6 +183,11 @@ const parseUnlockEnvelope = (value: unknown): VaultUnlockEnvelope => {
       ? {}
       : { recoveryWrappedVaultKey: parseWrappedKey(candidate.recoveryWrappedVaultKey) })
   };
+};
+
+const parseClientStatus = (value: string): SyncStatus => {
+  if (!(SYNC_STATUSES as readonly string[]).includes(value)) throw new AppError('SYNC_PAYLOAD_INVALID');
+  return value as SyncStatus;
 };
 
 const parseDescriptor = (row: DescriptorSqlRow): SyncDescriptor => {
@@ -407,6 +453,99 @@ export class BlindSyncRepository implements BlindSyncStore {
       VALUES (@accountId, @deleteAfter, @requestedAt, NULL)
       ON CONFLICT(account_id) DO UPDATE SET delete_after = excluded.delete_after, requested_at = excluded.requested_at, restored_at = NULL
     `).run({ accountId, deleteAfter: new Date(Date.parse(deleteAfter)).toISOString(), requestedAt: new Date().toISOString() });
+  }
+
+  getDeleteRequest(accountId: string): SyncDeleteRequest | null {
+    assertAccount(accountId);
+    const row = this.database.prepare(`
+      SELECT delete_after, requested_at
+      FROM sync_delete_requests
+      WHERE account_id = @accountId AND restored_at IS NULL
+    `).get({ accountId }) as DeleteRequestSqlRow | undefined;
+    if (!row) return null;
+    if (!Number.isFinite(Date.parse(row.delete_after)) || !Number.isFinite(Date.parse(row.requested_at))) {
+      throw new AppError('SYNC_PAYLOAD_INVALID');
+    }
+    return { deleteAfter: new Date(row.delete_after).toISOString(), requestedAt: new Date(row.requested_at).toISOString() };
+  }
+
+  restoreDeleteRequest(accountId: string): void {
+    assertAccount(accountId);
+    const result = this.database.prepare(`
+      UPDATE sync_delete_requests
+      SET restored_at = @restoredAt
+      WHERE account_id = @accountId AND restored_at IS NULL
+    `).run({ accountId, restoredAt: new Date().toISOString() });
+    if (result.changes === 0) throw new AppError('SYNC_NOT_FOUND');
+  }
+
+  purgeExpiredVault(accountId: string, now = new Date().toISOString()): boolean {
+    assertAccount(accountId);
+    if (!Number.isFinite(Date.parse(now))) throw new AppError('SYNC_PAYLOAD_INVALID');
+    const operation = this.database.transaction(() => {
+      const request = this.database.prepare(`
+        SELECT account_id FROM sync_delete_requests
+        WHERE account_id = @accountId AND restored_at IS NULL AND delete_after <= @now
+      `).get({ accountId, now: new Date(Date.parse(now)).toISOString() });
+      if (!request) return false;
+      this.database.prepare('DELETE FROM sync_client_state WHERE account_id = @accountId').run({ accountId });
+      this.database.prepare('DELETE FROM sync_conflicts WHERE account_id = @accountId').run({ accountId });
+      this.database.prepare('DELETE FROM sync_envelopes WHERE account_id = @accountId').run({ accountId });
+      this.database.prepare('DELETE FROM sync_vaults WHERE account_id = @accountId').run({ accountId });
+      this.database.prepare('DELETE FROM sync_delete_requests WHERE account_id = @accountId').run({ accountId });
+      return true;
+    });
+    return operation();
+  }
+
+  getClientState(accountId: string): SyncClientState | null {
+    assertAccount(accountId);
+    const row = this.database.prepare(`
+      SELECT pending_envelope_json, status, error_code, updated_at
+      FROM sync_client_state
+      WHERE account_id = @accountId
+    `).get({ accountId }) as ClientStateSqlRow | undefined;
+    if (!row) return null;
+    const pendingEnvelope = row.pending_envelope_json === null
+      ? null
+      : validateSyncEnvelope(JSON.parse(row.pending_envelope_json) as unknown);
+    if (!Number.isFinite(Date.parse(row.updated_at))) throw new AppError('SYNC_PAYLOAD_INVALID');
+    return {
+      pendingEnvelope,
+      status: parseClientStatus(row.status),
+      errorCode: row.error_code,
+      updatedAt: new Date(row.updated_at).toISOString()
+    };
+  }
+
+  saveClientState(accountId: string, state: SyncClientState): void {
+    assertAccount(accountId);
+    const account = this.database.prepare('SELECT id FROM accounts WHERE id = @accountId').get({ accountId });
+    if (!account) throw new AppError('SYNC_NOT_FOUND');
+    const status = parseClientStatus(state.status);
+    const pendingEnvelope = state.pendingEnvelope === null ? null : validateSyncEnvelope(state.pendingEnvelope);
+    if (!Number.isFinite(Date.parse(state.updatedAt))) throw new AppError('SYNC_PAYLOAD_INVALID');
+    if (state.errorCode !== null && (typeof state.errorCode !== 'string' || state.errorCode.length > 128)) throw new AppError('SYNC_PAYLOAD_INVALID');
+    this.database.prepare(`
+      INSERT INTO sync_client_state (account_id, pending_envelope_json, status, error_code, updated_at)
+      VALUES (@accountId, @pendingEnvelope, @status, @errorCode, @updatedAt)
+      ON CONFLICT(account_id) DO UPDATE SET
+        pending_envelope_json = excluded.pending_envelope_json,
+        status = excluded.status,
+        error_code = excluded.error_code,
+        updated_at = excluded.updated_at
+    `).run({
+      accountId,
+      pendingEnvelope: pendingEnvelope === null ? null : JSON.stringify(pendingEnvelope),
+      status,
+      errorCode: state.errorCode,
+      updatedAt: new Date(Date.parse(state.updatedAt)).toISOString()
+    });
+  }
+
+  clearClientState(accountId: string): void {
+    assertAccount(accountId);
+    this.database.prepare('DELETE FROM sync_client_state WHERE account_id = @accountId').run({ accountId });
   }
 
   private vaultIdFor(accountId: string): string {

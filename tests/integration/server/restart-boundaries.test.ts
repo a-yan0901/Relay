@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createServerApp, type ServerHandle } from '../../../src/server/index.js';
+import { BlindSyncRepository } from '../../../src/server/sync/sync-repository.js';
 
 const MASTER_PASSWORD = 'correct horse battery staple';
 const EXPORT_PASSWORD = 'separate export password';
@@ -18,6 +19,7 @@ const configFor = (dataDir: string) => ({
   trustedOrigins: ['http://localhost:4173'],
   sessionIdleTimeoutMs: 60_000,
   maxSessions: 4,
+  accountSyncEnabled: true,
   logLevel: 'silent' as const
 });
 
@@ -86,5 +88,50 @@ describe('restart and lock boundaries', () => {
     const preview = await second.app.inject({ method: 'POST', url: '/api/vault/import/preview', headers: { cookie: secondCookie }, payload: { exportPassword: EXPORT_PASSWORD, bundle: exported.json().bundle } });
     expect(preview.statusCode).toBe(200);
     expect((await second.app.inject({ method: 'POST', url: '/api/vault/import/apply', headers: { cookie: secondCookie }, payload: { previewId: preview.json().previewId, resolution: { hostConflicts: 'skip', groupConflicts: 'reuse' } } })).statusCode).toBe(200);
+  });
+
+  it('restores a persisted sync queue as pending rather than false syncing after restart', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'webssh-sync-restart-'));
+    dataDirectories.push(dataDir);
+    const first = await createServerApp(configFor(dataDir));
+    handles.push(first);
+
+    const setup = await first.app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const vaultCookie = cookieFrom(setup);
+    const registered = await first.app.inject({
+      method: 'POST',
+      url: '/api/account/register',
+      payload: { email: 'restart-sync@example.com', password: 'long enough password' }
+    });
+    const accountCookie = cookieFrom(registered);
+    const enabled = await first.app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/enable',
+      headers: { cookie: `${accountCookie}; ${vaultCookie}` }
+    });
+    expect(enabled.statusCode).toBe(201);
+
+    const accountId = (first.database.prepare('SELECT id FROM accounts WHERE email = ?').get('restart-sync@example.com') as { id: string }).id;
+    const pendingEnvelope = new BlindSyncRepository(first.database).getEnvelope(accountId);
+    expect(pendingEnvelope).not.toBeNull();
+    first.database.prepare(`
+      INSERT INTO sync_client_state (account_id, pending_envelope_json, status, error_code, updated_at)
+      VALUES (?, ?, 'syncing', NULL, ?)
+      ON CONFLICT(account_id) DO UPDATE SET pending_envelope_json = excluded.pending_envelope_json, status = excluded.status, error_code = NULL, updated_at = excluded.updated_at
+    `).run(accountId, JSON.stringify(pendingEnvelope), new Date().toISOString());
+    await first.close();
+
+    const second = await createServerApp(configFor(dataDir));
+    handles.push(second);
+    const signedIn = await second.app.inject({
+      method: 'POST',
+      url: '/api/account/session',
+      payload: { email: 'restart-sync@example.com', password: 'long enough password' }
+    });
+    const secondAccountCookie = cookieFrom(signedIn);
+    const state = await second.app.inject({ method: 'GET', url: '/api/sync/v1/state', headers: { cookie: secondAccountCookie } });
+    expect(state.statusCode).toBe(200);
+    expect(state.json()).toEqual(expect.objectContaining({ sync: 'pending', pendingCount: 1 }));
+    expect(state.json().sync).not.toBe('syncing');
   });
 });

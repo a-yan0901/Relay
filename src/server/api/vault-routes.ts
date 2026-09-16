@@ -5,12 +5,14 @@ import { SessionStore } from '../auth/session-store.js';
 import { AuditRepository } from '../db/repositories.js';
 import { VaultBundleService, type ImportResolution } from '../workspace/vault-bundle-service.js';
 import { requireUnlockedSession } from './route-helpers.js';
+import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export interface VaultRouteDependencies {
   ownerId: string;
   vaultBundleService: VaultBundleService;
   sessionStore: SessionStore;
   auditRepository: AuditRepository;
+  syncCoordinator?: SyncCoordinatorPort;
 }
 
 const exportSchema = z.object({ exportPassword: z.string().min(1).max(4096) }).strict();
@@ -52,6 +54,7 @@ export const registerVaultRoutes = async (app: FastifyInstance, dependencies: Va
     const body = parseBody(applySchema, request.body);
     const result = await dependencies.vaultBundleService.applyImport(session.record.vaultKey, body.previewId, body.resolution as ImportResolution);
     dependencies.auditRepository.insert({ eventType: 'vault_import_applied', requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.send(result);
   });
 };

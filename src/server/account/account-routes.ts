@@ -10,6 +10,7 @@ import {
   setAccountSessionCookie
 } from '../auth/account-cookie.js';
 import { AuditRepository } from '../db/repositories.js';
+import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export interface AccountRouteDependencies {
   accountService: AccountService;
@@ -17,6 +18,7 @@ export interface AccountRouteDependencies {
   auditRepository: AuditRepository;
   enabled: boolean;
   secureCookie: boolean;
+  syncCoordinator?: SyncCoordinatorPort;
 }
 
 const authBodySchema = z.object({
@@ -91,6 +93,7 @@ export const registerAccountRoutes = async (
     const sessionId = getAccountSessionId(request);
     const session = sessionId ? dependencies.accountService.status(sessionId) : null;
     if (sessionId) await dependencies.accountService.signOut(sessionId);
+    if (session) dependencies.syncCoordinator?.cancelAccount(session.accountId);
     if (session) audit('account_signed_out', request.id, session.accountId, session.deviceId);
     clearAccountSessionCookie(reply, { secure: dependencies.secureCookie });
     reply.code(204).send();
@@ -112,6 +115,7 @@ export const registerAccountRoutes = async (
     const session = dependencies.accountService.status(sessionId);
     if (!session) throw new AppError('ACCOUNT_SESSION_INVALID');
     await dependencies.accountService.revokeDevice(sessionId, parsed.data.deviceId);
+    dependencies.syncCoordinator?.cancelAccount(session.accountId);
     audit('account_device_revoked', request.id, session.accountId, parsed.data.deviceId);
     if (session.deviceId === parsed.data.deviceId) {
       clearAccountSessionCookie(reply, { secure: dependencies.secureCookie });

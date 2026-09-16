@@ -14,7 +14,9 @@ import {
   AccountRepository,
   AuditRepository,
   GroupRepository,
-  HostRepository
+  HostRepository,
+  IdentityRepository,
+  SnippetRepository
 } from './db/repositories.js';
 import { registerSetupRoutes, type AppRuntimeConfig } from './api/setup-routes.js';
 import { registerGroupRoutes } from './api/group-routes.js';
@@ -51,6 +53,14 @@ import { CommandRunner } from './automation/command-runner.js';
 import { AuditService } from './audit/audit-service.js';
 import { IdentityService } from './identity/identity-service.js';
 import { registerIdentityRoutes } from './api/identity-routes.js';
+import { registerSyncRoutes } from './sync/sync-routes.js';
+import {
+  SyncCoordinator,
+  SyncService,
+  createDefaultBlindSyncStore
+} from './sync/sync-service.js';
+import type { SyncCoordinatorPort, SyncServiceContract, SyncTransport } from './sync/sync-service.js';
+import { SyncSnapshotService } from './sync/sync-snapshot.js';
 
 export interface AppDependencies {
   database: SqliteDatabase;
@@ -76,6 +86,9 @@ export interface AppDependencies {
   commandRunner?: CommandRunner;
   auditService?: AuditService;
   identityService?: IdentityService;
+  syncService?: SyncServiceContract;
+  syncCoordinator?: SyncCoordinatorPort;
+  syncTransport?: SyncTransport;
 }
 
 export interface BuiltAppDependencies {
@@ -88,6 +101,8 @@ export interface BuiltAppDependencies {
   groupRepository: GroupRepository;
   auditRepository: AuditRepository;
   identityService: IdentityService;
+  syncService: SyncServiceContract;
+  syncCoordinator: SyncCoordinatorPort;
 }
 
 const isMutatingMethod = (method: string): boolean => ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method);
@@ -109,7 +124,8 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   const auditRepository = dependencies.auditRepository ?? new AuditRepository(dependencies.database, 'default');
   const auditService = dependencies.auditService ?? new AuditService(auditRepository);
   const identityService = dependencies.identityService ?? new IdentityService({ database: dependencies.database, vaultService });
-  const workspaceService = dependencies.workspaceService ?? new WorkspaceService(new WorkspaceRepository(dependencies.database));
+  const workspaceRepository = new WorkspaceRepository(dependencies.database);
+  const workspaceService = dependencies.workspaceService ?? new WorkspaceService(workspaceRepository);
   const vaultBundleService = dependencies.vaultBundleService ?? new VaultBundleService({
     ownerId: 'default',
     database: dependencies.database,
@@ -160,6 +176,30 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   });
   const transferManager = dependencies.transferManager ?? new TransferManager({ resourceProvider: sftpResourceProvider, ownerId: 'default', database: dependencies.database });
   const snippetService = dependencies.snippetService ?? new SnippetService({ ownerId: 'default', database: dependencies.database, vaultService });
+  const syncSnapshotService = new SyncSnapshotService({
+    ownerId: 'default',
+    database: dependencies.database,
+    bundleService: vaultBundleService,
+    workspaceService,
+    workspaceRepository,
+    snippetService,
+    snippetRepository: new SnippetRepository(dependencies.database, 'default'),
+    hostRepository,
+    groupRepository,
+    identityRepository: new IdentityRepository(dependencies.database, 'default'),
+    vaultService
+  });
+  const syncService = dependencies.syncService ?? new SyncService({
+    store: createDefaultBlindSyncStore(dependencies.database),
+    snapshotService: syncSnapshotService
+  });
+  const syncCoordinator = dependencies.syncCoordinator ?? new SyncCoordinator({
+    syncService,
+    accountService,
+    sessionStore,
+    appConfigRepository,
+    transport: dependencies.syncTransport
+  });
   const commandRunner = dependencies.commandRunner ?? new CommandRunner({
     ownerId: 'default',
     hostLookup: { get: (hostId, ownerId) => ownerId === 'default' ? hostRepository.getForConnection(hostId) : null },
@@ -177,7 +217,9 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     hostRepository,
     groupRepository,
     auditRepository,
-    identityService
+    identityService,
+    syncService,
+    syncCoordinator
   };
 
   const app = Fastify({
@@ -194,6 +236,10 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
         res: (response) => ({ statusCode: response.statusCode })
       }
     }
+  });
+
+  app.addHook('onClose', async () => {
+    syncCoordinator.close();
   });
 
   await app.register(cookie);
@@ -275,13 +321,25 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     accountSessionStore,
     auditRepository,
     enabled: dependencies.config.accountSyncEnabled === true,
-    secureCookie: dependencies.config.nodeEnv === 'production'
+    secureCookie: dependencies.config.nodeEnv === 'production',
+    syncCoordinator
+  });
+  await registerSyncRoutes(app, {
+    enabled: dependencies.config.accountSyncEnabled === true,
+    ownerId: 'default',
+    accountService,
+    appConfigRepository,
+    sessionStore,
+    syncService,
+    syncCoordinator,
+    auditRepository
   });
   await registerGroupRoutes(app, {
     groupRepository,
-    sessionStore
+    sessionStore,
+    syncCoordinator
   });
-  await registerIdentityRoutes(app, { ownerId: 'default', sessionStore, identityService });
+  await registerIdentityRoutes(app, { ownerId: 'default', sessionStore, identityService, syncCoordinator });
   await registerHostRoutes(app, {
     ownerId: 'default',
     hostRepository,
@@ -290,23 +348,26 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     vaultService,
     auditRepository,
     identityService,
-    sshSessionManager
+    sshSessionManager,
+    syncCoordinator
   });
   await registerWorkspaceRoutes(app, {
     ownerId: 'default',
     workspaceService,
     sessionStore,
-    auditRepository
+    auditRepository,
+    syncCoordinator
   });
   await registerVaultRoutes(app, {
     ownerId: 'default',
     vaultBundleService,
     sessionStore,
-    auditRepository
+    auditRepository,
+    syncCoordinator
   });
-  await registerSshImportRoutes(app, { sessionStore, auditRepository, sshImportService });
+  await registerSshImportRoutes(app, { sessionStore, auditRepository, sshImportService, syncCoordinator });
   await registerSftpRoutes(app, { ownerId: 'default', sessionStore, sftpService, transferManager, operationBus, auditRepository });
-  await registerCommandRoutes(app, { ownerId: 'default', sessionStore, snippetService, commandRunner, auditRepository });
+  await registerCommandRoutes(app, { ownerId: 'default', sessionStore, snippetService, commandRunner, auditRepository, syncCoordinator });
   await registerAuditRoutes(app, { sessionStore, auditService });
   await registerOperationGateway(app, { ownerId: 'default', config: dependencies.config, sessionStore, eventBus: operationBus });
   await registerTerminalGateway(app, {

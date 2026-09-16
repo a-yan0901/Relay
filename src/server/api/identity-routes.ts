@@ -5,11 +5,13 @@ import { identityCreateSchema, identityUpdateSchema } from '../../shared/validat
 import { requireUnlockedSession } from './route-helpers.js';
 import { SessionStore } from '../auth/session-store.js';
 import { IdentityService } from '../identity/identity-service.js';
+import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export interface IdentityRouteDependencies {
   ownerId: string;
   sessionStore: SessionStore;
   identityService: IdentityService;
+  syncCoordinator?: SyncCoordinatorPort;
 }
 
 const idFromParams = (params: unknown): string => {
@@ -37,6 +39,7 @@ export const registerIdentityRoutes = async (app: FastifyInstance, dependencies:
     const parsed = identityCreateSchema.safeParse(request.body);
     if (!parsed.success) throw new AppError('HOST_VALIDATION_FAILED');
     const created = await dependencies.identityService.create(dependencies.ownerId, parsed.data, session.record.vaultKey);
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.code(201).send(created);
   });
 
@@ -45,12 +48,14 @@ export const registerIdentityRoutes = async (app: FastifyInstance, dependencies:
     const parsed = identityUpdateSchema.safeParse(request.body);
     if (!parsed.success) throw new AppError('HOST_VALIDATION_FAILED');
     const updated = await dependencies.identityService.update(dependencies.ownerId, idFromParams(request.params), parsed.data, session.record.vaultKey);
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.send(updated);
   });
 
   app.delete('/api/identities/:id', async (request, reply) => {
     requireUnlockedSession(request, dependencies.sessionStore);
     await dependencies.identityService.delete(dependencies.ownerId, idFromParams(request.params));
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.code(204).send();
   });
 };

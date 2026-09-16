@@ -71,6 +71,8 @@ const failSnapshot = (): never => {
   throw new AppError('SYNC_PAYLOAD_INVALID');
 };
 
+const asString = (value: unknown): string => typeof value === 'string' ? value : failSnapshot();
+
 const parseJson = (plaintext: Buffer): Record<string, unknown> => {
   if (!Buffer.isBuffer(plaintext) || plaintext.length > 32 * 1024 * 1024) failSnapshot();
   try {
@@ -78,7 +80,7 @@ const parseJson = (plaintext: Buffer): Record<string, unknown> => {
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) failSnapshot();
     return parsed as Record<string, unknown>;
   } catch {
-    failSnapshot();
+    return failSnapshot();
   }
 };
 
@@ -102,16 +104,19 @@ const parseSnapshotSnippet = (value: unknown): SyncSnapshotSnippet => {
     command: candidate.command,
     variables: candidate.variables
   });
-  if (!parsed.success) failSnapshot();
+  const parsedData = parsed.success && parsed.data !== undefined ? parsed.data : failSnapshot();
+  const id = asString(candidate.id);
+  const createdAt = asString(candidate.createdAt);
+  const updatedAt = asString(candidate.updatedAt);
   return {
-    id: candidate.id,
-    name: parsed.data.name,
-    description: parsed.data.description ?? null,
-    tags: [...parsed.data.tags],
-    command: parsed.data.command,
-    variables: [...parsed.data.variables],
-    createdAt: new Date(candidate.createdAt).toISOString(),
-    updatedAt: new Date(candidate.updatedAt).toISOString()
+    id,
+    name: parsedData.name,
+    description: parsedData.description ?? null,
+    tags: [...parsedData.tags],
+    command: parsedData.command,
+    variables: [...parsedData.variables],
+    createdAt: new Date(createdAt).toISOString(),
+    updatedAt: new Date(updatedAt).toISOString()
   };
 };
 
@@ -157,27 +162,30 @@ export class SyncSnapshotService {
     const candidate = parseJson(plaintext);
     const keys = Object.keys(candidate);
     if (keys.length !== SNAPSHOT_KEYS.size || keys.some((key) => !SNAPSHOT_KEYS.has(key))) failSnapshot();
-    if (candidate.schemaVersion !== SYNC_SNAPSHOT_SCHEMA_VERSION || !Array.isArray(candidate.snippets)) failSnapshot();
-    if (candidate.snippets.length > 10_000) failSnapshot();
-    let bundle: BundlePayload;
-    try {
-      bundle = parsePayload({
-        groups: candidate.groups,
-        hosts: candidate.hosts,
-        identities: candidate.identities
-      });
-    } catch {
-      failSnapshot();
-    }
+    const snippetValues: unknown[] = candidate.schemaVersion === SYNC_SNAPSHOT_SCHEMA_VERSION && Array.isArray(candidate.snippets)
+      ? candidate.snippets
+      : failSnapshot();
+    if (snippetValues.length > 10_000) failSnapshot();
+    const bundle = (() => {
+      try {
+        return parsePayload({
+          groups: candidate.groups,
+          hosts: candidate.hosts,
+          identities: candidate.identities
+        });
+      } catch {
+        return failSnapshot();
+      }
+    })();
     const workspaceResult = workspaceStateSchema.safeParse(candidate.workspace);
-    if (!workspaceResult.success) failSnapshot();
-    const snippets = candidate.snippets.map(parseSnapshotSnippet);
+    const workspace = workspaceResult.success && workspaceResult.data !== undefined ? workspaceResult.data : failSnapshot();
+    const snippets = snippetValues.map((snippet) => parseSnapshotSnippet(snippet));
     if (new Set(snippets.map((snippet) => snippet.id)).size !== snippets.length) failSnapshot();
     return {
       schemaVersion: SYNC_SNAPSHOT_SCHEMA_VERSION,
       ...bundle,
       snippets,
-      workspace: workspaceResult.data
+      workspace
     };
   }
 

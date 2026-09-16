@@ -27,6 +27,7 @@ import { HostKeyPolicy } from '../ssh/host-key-policy.js';
 import { IdentityService } from '../identity/identity-service.js';
 import { requireUnlockedSession, toHostMetadataDto } from './route-helpers.js';
 import type { IdentityMetadata } from '../../shared/core/models.js';
+import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export interface HostRouteDependencies {
   ownerId: string;
@@ -37,6 +38,7 @@ export interface HostRouteDependencies {
   auditRepository: AuditRepository;
   identityService?: IdentityService;
   sshSessionManager?: SshSessionManagerPort;
+  syncCoordinator?: SyncCoordinatorPort;
 }
 
 const hostListQuerySchema = z.object({
@@ -273,6 +275,7 @@ export const registerHostRoutes = async (
       lastConnectedAt: null
     });
     dependencies.auditRepository.insert({ eventType: 'host_created', hostId: id, requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.code(201).send(await enrichHostMetadata(dependencies, created));
   });
 
@@ -329,6 +332,7 @@ export const registerHostRoutes = async (
 
     const updated = dependencies.hostRepository.updateHost(id, patch);
     dependencies.auditRepository.insert({ eventType: 'host_updated', hostId: id, requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.send(await enrichHostMetadata(dependencies, updated));
   });
 
@@ -339,6 +343,7 @@ export const registerHostRoutes = async (
     dependencies.hostRepository.deleteHost(id);
     dependencies.sshSessionManager?.closeForHost?.(id);
     dependencies.auditRepository.insert({ eventType: 'host_deleted', requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.code(204).send();
   });
 
@@ -348,6 +353,7 @@ export const registerHostRoutes = async (
     readHost(dependencies, id);
     dependencies.hostRepository.clearHostKey(id);
     dependencies.auditRepository.insert({ eventType: 'host_key_cleared', hostId: id, requestId: request.id });
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
     reply.code(204).send();
   });
 
@@ -389,6 +395,7 @@ export const registerHostRoutes = async (
     }
 
     if (result.ok) {
+      dependencies.syncCoordinator?.markDirtyFromRequest(request, dependencies.ownerId);
       reply.send({ ok: true });
       return;
     }
