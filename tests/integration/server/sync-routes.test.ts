@@ -511,6 +511,125 @@ describe('blind sync storage and snapshot bridge', () => {
     expect(state.json()).toEqual(expect.objectContaining({ sync: 'pending', pendingCount: 1 }));
   });
 
+  it('issues, confirms, and safely rotates a recovery key without persisting the plaintext', async () => {
+    const { app, database } = await makeApp();
+    const registered = await app.inject({
+      method: 'POST',
+      url: '/api/account/register',
+      headers: { origin: ORIGIN },
+      payload: { email: 'recovery-key@example.com', password: ACCOUNT_PASSWORD }
+    });
+    const accountCookie = cookieFrom(registered, 'relay_account_session');
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', headers: { origin: ORIGIN }, payload: { masterPassword: MASTER_PASSWORD } });
+    const vaultCookie = cookieFrom(setup, 'webssh_session');
+    const cookies = `${accountCookie}; ${vaultCookie}`;
+    expect((await app.inject({ method: 'POST', url: '/api/sync/v1/enable', headers: { origin: ORIGIN, cookie: cookies } })).statusCode).toBe(201);
+
+    const issued = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/recovery-key/issue',
+      headers: { origin: ORIGIN, cookie: cookies }
+    });
+    expect(issued.statusCode).toBe(201);
+    expect(issued.headers['cache-control']).toBe('no-store');
+    const first = issued.json() as { recoveryKey: string; keyVersion: number; status: string; recovery: unknown };
+    expect(first).toEqual(expect.objectContaining({
+      recoveryKey: expect.stringMatching(/^RLY-RK1(?:-[A-Z2-7]{4})+$/u),
+      keyVersion: 1,
+      status: 'pending-confirmation'
+    }));
+    expect(first.recovery).toEqual({ status: 'pending-confirmation', activeKeyVersion: null, pendingKeyVersion: 1 });
+    const accountId = (registered.json() as { account: { accountId: string } }).account.accountId;
+    const rawDescriptor = database.prepare('SELECT vault_unlock_envelope_json FROM sync_vaults WHERE account_id = ?').get(accountId) as { vault_unlock_envelope_json: string };
+    expect(rawDescriptor.vault_unlock_envelope_json).toContain('pendingRecoveryWrappedVaultKey');
+    expect(rawDescriptor.vault_unlock_envelope_json).not.toContain(first.recoveryKey);
+
+    const wrong = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/recovery-key/confirm',
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { recoveryKey: `${first.recoveryKey.slice(0, -1)}A` }
+    });
+    expect(wrong.statusCode).toBe(401);
+    expect(wrong.json().error.code).toBe('VAULT_UNLOCK_FAILED');
+    expect((await app.inject({ method: 'GET', url: '/api/sync/v1/state', headers: { cookie: accountCookie } })).json()).toEqual(expect.objectContaining({
+      recovery: { status: 'pending-confirmation', activeKeyVersion: null, pendingKeyVersion: 1 }
+    }));
+
+    const confirmed = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/recovery-key/confirm',
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { recoveryKey: first.recoveryKey }
+    });
+    expect(confirmed.statusCode).toBe(200);
+    expect(confirmed.json()).toEqual({ status: 'configured', activeKeyVersion: 1, pendingKeyVersion: null });
+
+    const configuredDescriptor = JSON.parse((database.prepare('SELECT vault_unlock_envelope_json FROM sync_vaults WHERE account_id = ?').get(accountId) as { vault_unlock_envelope_json: string }).vault_unlock_envelope_json) as {
+      recoveryWrappedVaultKey: { ciphertext: string };
+      pendingRecoveryWrappedVaultKey?: unknown;
+    };
+    const oldCiphertext = configuredDescriptor.recoveryWrappedVaultKey.ciphertext;
+    expect(configuredDescriptor.pendingRecoveryWrappedVaultKey).toBeUndefined();
+
+    const rotated = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/recovery-key/issue',
+      headers: { origin: ORIGIN, cookie: cookies }
+    });
+    expect(rotated.statusCode).toBe(201);
+    const second = rotated.json() as { recoveryKey: string; keyVersion: number; status: string };
+    expect(second.keyVersion).toBe(2);
+    expect(second.status).toBe('pending-confirmation');
+    const pendingDescriptor = JSON.parse((database.prepare('SELECT vault_unlock_envelope_json FROM sync_vaults WHERE account_id = ?').get(accountId) as { vault_unlock_envelope_json: string }).vault_unlock_envelope_json) as {
+      recoveryWrappedVaultKey: { ciphertext: string };
+      pendingRecoveryWrappedVaultKey: { ciphertext: string };
+    };
+    expect(pendingDescriptor.recoveryWrappedVaultKey.ciphertext).toBe(oldCiphertext);
+    expect(pendingDescriptor.pendingRecoveryWrappedVaultKey.ciphertext).not.toBe(oldCiphertext);
+
+    const replaced = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/recovery-key/issue',
+      headers: { origin: ORIGIN, cookie: cookies }
+    });
+    expect(replaced.statusCode).toBe(201);
+    const third = replaced.json() as { recoveryKey: string; keyVersion: number; status: string };
+    expect(third.keyVersion).toBe(3);
+    expect(third.status).toBe('pending-confirmation');
+
+    const stale = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/recovery-key/confirm',
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { recoveryKey: second.recoveryKey }
+    });
+    expect(stale.statusCode).toBe(401);
+    expect(stale.json().error.code).toBe('VAULT_UNLOCK_FAILED');
+    expect((await app.inject({ method: 'GET', url: '/api/sync/v1/state', headers: { cookie: accountCookie } })).json()).toEqual(expect.objectContaining({
+      recovery: { status: 'pending-confirmation', activeKeyVersion: 1, pendingKeyVersion: 3 }
+    }));
+
+    const confirmedRotation = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/recovery-key/confirm',
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { recoveryKey: third.recoveryKey }
+    });
+    expect(confirmedRotation.statusCode).toBe(200);
+    expect(confirmedRotation.headers['cache-control']).toBe('no-store');
+    expect(confirmedRotation.json()).toEqual({ status: 'configured', activeKeyVersion: 3, pendingKeyVersion: null });
+
+    const noPending = await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/recovery-key/confirm',
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { recoveryKey: third.recoveryKey }
+    });
+    expect(noPending.statusCode).toBe(409);
+    expect(noPending.json().error.code).toBe('SYNC_RECOVERY_KEY_NOT_READY');
+  });
+
   it('requires explicit deletion confirmation, supports recovery, and preserves local Vault data', async () => {
     const { app, database } = await makeApp();
     const registered = await app.inject({

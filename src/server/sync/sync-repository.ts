@@ -144,6 +144,13 @@ const parseWrappedKey = (value: unknown): WrappedKeyEnvelope => {
   };
 };
 
+const parseRecoveryVersion = (value: unknown): number => {
+  if (!Number.isSafeInteger(value) || (value as number) < SYNC_KEY_VERSION_MIN || (value as number) > SYNC_KEY_VERSION_MAX) {
+    throw new AppError('SYNC_KEY_VERSION_UNSUPPORTED');
+  }
+  return value as number;
+};
+
 const parseUnlockEnvelope = (value: unknown): VaultUnlockEnvelope => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new AppError('SYNC_PAYLOAD_INVALID');
   const candidate = value as Record<string, unknown>;
@@ -168,6 +175,33 @@ const parseUnlockEnvelope = (value: unknown): VaultUnlockEnvelope => {
   ) {
     throw new AppError('SYNC_PAYLOAD_INVALID');
   }
+  const recoveryWrapped = candidate.recoveryWrappedVaultKey === undefined
+    ? undefined
+    : parseWrappedKey(candidate.recoveryWrappedVaultKey);
+  const pendingRecoveryWrapped = candidate.pendingRecoveryWrappedVaultKey === undefined
+    ? undefined
+    : parseWrappedKey(candidate.pendingRecoveryWrappedVaultKey);
+  if (candidate.recoveryKeyVersion !== undefined && recoveryWrapped === undefined) {
+    throw new AppError('SYNC_PAYLOAD_INVALID');
+  }
+  if (candidate.pendingRecoveryKeyVersion !== undefined && pendingRecoveryWrapped === undefined) {
+    throw new AppError('SYNC_PAYLOAD_INVALID');
+  }
+  if (pendingRecoveryWrapped !== undefined && candidate.pendingRecoveryKeyVersion === undefined) {
+    throw new AppError('SYNC_PAYLOAD_INVALID');
+  }
+  const recoveryKeyVersion = recoveryWrapped === undefined
+    ? undefined
+    : candidate.recoveryKeyVersion === undefined ? 1 : parseRecoveryVersion(candidate.recoveryKeyVersion);
+  const pendingRecoveryKeyVersion = pendingRecoveryWrapped === undefined
+    ? undefined
+    : parseRecoveryVersion(candidate.pendingRecoveryKeyVersion);
+  if (
+    recoveryKeyVersion !== undefined && pendingRecoveryKeyVersion !== undefined &&
+    pendingRecoveryKeyVersion <= recoveryKeyVersion
+  ) {
+    throw new AppError('SYNC_PAYLOAD_INVALID');
+  }
   return {
     version: 1,
     kdf: {
@@ -179,9 +213,14 @@ const parseUnlockEnvelope = (value: unknown): VaultUnlockEnvelope => {
       hashLength: params.hashLength as number
     },
     wrappedVaultKey: parseWrappedKey(candidate.wrappedVaultKey),
-    ...(candidate.recoveryWrappedVaultKey === undefined
-      ? {}
-      : { recoveryWrappedVaultKey: parseWrappedKey(candidate.recoveryWrappedVaultKey) })
+    ...(recoveryWrapped === undefined ? {} : {
+      recoveryKeyVersion,
+      recoveryWrappedVaultKey: recoveryWrapped
+    }),
+    ...(pendingRecoveryWrapped === undefined ? {} : {
+      pendingRecoveryKeyVersion,
+      pendingRecoveryWrappedVaultKey: pendingRecoveryWrapped
+    })
   };
 };
 

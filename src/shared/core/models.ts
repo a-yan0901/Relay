@@ -28,6 +28,14 @@ export interface AccountSession {
   expiresAt: string;
 }
 
+export type RecoveryKeyStatus = 'not-configured' | 'pending-confirmation' | 'configured';
+
+export interface RecoveryKeyState {
+  status: RecoveryKeyStatus;
+  activeKeyVersion: number | null;
+  pendingKeyVersion: number | null;
+}
+
 export interface DeviceDescriptor {
   id: string;
   label: string;
@@ -64,7 +72,10 @@ export interface VaultUnlockEnvelope {
     hashLength: number;
   };
   wrappedVaultKey: WrappedKeyEnvelope;
+  recoveryKeyVersion?: number;
   recoveryWrappedVaultKey?: WrappedKeyEnvelope;
+  pendingRecoveryKeyVersion?: number;
+  pendingRecoveryWrappedVaultKey?: WrappedKeyEnvelope;
 }
 
 export interface SyncDescriptor {
@@ -105,6 +116,7 @@ export interface SyncState {
   pendingCount: number;
   lastErrorCode?: string;
   lastSyncedAt?: string;
+  recovery?: RecoveryKeyState;
   deletion?: {
     deleteAfter: string;
     requestedAt: string;

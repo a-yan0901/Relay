@@ -46,7 +46,7 @@ import type {
   VaultBundlePreview,
   VaultBundleResolution
 } from '../import/types.js';
-import type { WorkspaceState, WorkspaceTemplate, WorkspaceTemplateInput, VaultStatus } from './models.js';
+import type { RecoveryKeyState, WorkspaceState, WorkspaceTemplate, WorkspaceTemplateInput, VaultStatus } from './models.js';
 
 export type SecretRef =
   | { kind: 'host'; id: string }
@@ -146,14 +146,22 @@ export interface DeviceTrustPort {
   revokeDevice(deviceId: string): Promise<void>;
 }
 
+/**
+ * Delivers a recovery key exactly once to the active UI/secure presentation.
+ * The key is intentionally not part of any shared state or DTO.
+ */
+export type RecoveryKeyReveal = (recoveryKey: string, keyVersion: number) => void;
+
 export interface SyncPort {
-  status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string }>;
+  status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string; recovery?: RecoveryKeyState }>;
   descriptor(): Promise<SyncDescriptor | null>;
   pull(): Promise<SyncEnvelope | null>;
   push(envelope: SyncEnvelope, idempotencyKey: string): Promise<SyncHead>;
   previewPull(): Promise<SyncPreview>;
   resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void>;
   enable(): Promise<SyncHead>;
+  issueRecoveryKey(reveal: RecoveryKeyReveal): Promise<RecoveryKeyState>;
+  confirmRecoveryKey(recoveryKey: string): Promise<RecoveryKeyState>;
   retry(): Promise<void>;
 }
 

@@ -8,6 +8,7 @@ import type {
   ConnectionProfile,
   GroupNode,
   IdentityMetadata,
+  RecoveryKeyState,
   SftpEntry,
   SyncDescriptor,
   SyncEnvelope,
@@ -25,6 +26,7 @@ import type {
   CommandTransport,
   DeviceTrustPort,
   FileTransport,
+  RecoveryKeyReveal,
   SessionHandle,
   SessionTransport,
   SyncPort
@@ -212,6 +214,7 @@ export const createInMemoryAccountSyncPorts = (): InMemoryAccountSyncPorts => {
   let descriptor: SyncDescriptor | null = null;
   let envelope: SyncEnvelope | null = null;
   let syncState: SyncState = { sync: 'local-only', head: null, pendingCount: 0 };
+  let recoveryState: RecoveryKeyState = { status: 'not-configured', activeKeyVersion: null, pendingKeyVersion: null };
   const revokedDeviceIds = new Set<string>();
   const deviceRows = [
     { id: CONTRACT_DEVICE_ID, label: 'Contract device', platform: 'desktop' as const },
@@ -288,7 +291,7 @@ export const createInMemoryAccountSyncPorts = (): InMemoryAccountSyncPorts => {
     }
   };
   const syncPort: SyncPort = {
-    async status() { return { ...syncState }; },
+    async status() { return { ...syncState, recovery: recoveryState }; },
     async descriptor() { return descriptor; },
     async pull() { return envelope ? { ...envelope } : null; },
     async push(nextEnvelope) {
@@ -315,6 +318,15 @@ export const createInMemoryAccountSyncPorts = (): InMemoryAccountSyncPorts => {
       const head = headFor(envelope);
       syncState = { sync: 'synced', head, pendingCount: 0, lastSyncedAt: CONTRACT_TIMESTAMP };
       return head;
+    },
+    async issueRecoveryKey(reveal: RecoveryKeyReveal): Promise<RecoveryKeyState> {
+      recoveryState = { status: 'pending-confirmation', activeKeyVersion: recoveryState.activeKeyVersion, pendingKeyVersion: (recoveryState.activeKeyVersion ?? 0) + 1 };
+      reveal('RLY-RK1-CONTRACT-RECOVERY-KEY', recoveryState.pendingKeyVersion!);
+      return recoveryState;
+    },
+    async confirmRecoveryKey(): Promise<RecoveryKeyState> {
+      recoveryState = { status: 'configured', activeKeyVersion: recoveryState.pendingKeyVersion ?? 1, pendingKeyVersion: null };
+      return recoveryState;
     },
     async retry() {
       syncState = { ...syncState, sync: 'synced', pendingCount: 0 };

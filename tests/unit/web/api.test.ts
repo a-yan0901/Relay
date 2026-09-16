@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getAccountSession, getSetupStatus, getSyncState, signIn } from '../../../src/web/api';
+import { confirmRecoveryKey, getAccountSession, getSetupStatus, getSyncState, issueRecoveryKey, signIn } from '../../../src/web/api';
 
 describe('web API request lifecycle', () => {
   afterEach(() => {
@@ -57,5 +57,33 @@ describe('web API request lifecycle', () => {
 
     await expect(getAccountSession()).rejects.toMatchObject({ code: 'PROTOCOL_INVALID_MESSAGE' });
     await expect(getSyncState()).rejects.toMatchObject({ code: 'PROTOCOL_INVALID_MESSAGE' });
+  });
+
+  it('validates recovery key issue and safe recovery state responses', async () => {
+    const fetchMock = vi.fn(async (input: string) => {
+      if (input.endsWith('/recovery-key/issue')) {
+        return new Response(JSON.stringify({ recoveryKey: 'RLY-RK1-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA', keyVersion: 1, status: 'pending-confirmation', recovery: { status: 'pending-confirmation', activeKeyVersion: null, pendingKeyVersion: 1 } }), { status: 201 });
+      }
+      if (input.endsWith('/recovery-key/confirm')) {
+        return new Response(JSON.stringify({ status: 'configured', activeKeyVersion: 1, pendingKeyVersion: null }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        sync: 'synced',
+        head: null,
+        pendingCount: 0,
+        recovery: { status: 'pending-confirmation', activeKeyVersion: null, pendingKeyVersion: 1 }
+      }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(issueRecoveryKey()).resolves.toEqual(expect.objectContaining({ keyVersion: 1, status: 'pending-confirmation' }));
+    await expect(getSyncState()).resolves.toEqual(expect.objectContaining({
+      recovery: { status: 'pending-confirmation', activeKeyVersion: null, pendingKeyVersion: 1 }
+    }));
+    await expect(confirmRecoveryKey('RLY-RK1-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA')).resolves.toEqual({
+      status: 'configured',
+      activeKeyVersion: 1,
+      pendingKeyVersion: null
+    });
   });
 });

@@ -16,7 +16,7 @@ Relay 采用“可选账号 + 端到端加密同步”的方案：
 - 桌面/Android 如果采用本地 SSH，可以在本地 OS keychain/Keystore 解密并使用凭据；如果继续使用 server-mediated transport，则沿用现有受信执行端边界。
 - 个人同步与团队 Vault、RBAC、实时协作和 Agent/MCP 分开建模，分别进入后续里程碑。
 
-> 实现边界（2026-09-17）：当前代码已经交付 Web 端可选的账号会话、设备列表/撤销、opaque encrypted snapshot、revision 冲突、pending/retry、登出和云端删除恢复窗口；`ACCOUNT_SYNC_ENABLED` 默认为关闭。该切片通过当前的 focused/full 技术验证，但不等同于完整 M5 安全发布：recovery key 的生成/轮换、独立本地 Vault 的新设备恢复 UI、真实 re-auth、冲突“导出两份”和账号删除闭环仍需后续实现与评审。
+> 实现边界（2026-09-17）：当前代码已经交付 Web 端可选的账号会话、设备列表/撤销、opaque encrypted snapshot、revision 冲突、pending/retry、登出、云端删除恢复窗口，以及 recovery key 的一次展示、离线确认、错误输入保护和包装轮换；`ACCOUNT_SYNC_ENABLED` 默认为关闭。该切片通过当前的 focused/full 技术验证，但不等同于完整 M5 安全发布：独立本地 Vault 的新设备恢复 UI、真实 re-auth、冲突“导出两份”和账号删除闭环仍需后续实现与评审。
 
 ## 2. 目标与非目标
 
@@ -134,6 +134,14 @@ export type SyncStatus =
   | 'conflict'
   | 'device-revoked';
 
+export type RecoveryKeyStatus = 'not-configured' | 'pending-confirmation' | 'configured';
+
+export interface RecoveryKeyState {
+  status: RecoveryKeyStatus;
+  activeKeyVersion: number | null;
+  pendingKeyVersion: number | null;
+}
+
 export interface AccountSession {
   accountId: string;
   deviceId: string;
@@ -177,7 +185,10 @@ export interface VaultUnlockEnvelope {
     hashLength: number;
   };
   wrappedVaultKey: WrappedKeyEnvelope;
+  recoveryKeyVersion?: number;
   recoveryWrappedVaultKey?: WrappedKeyEnvelope;
+  pendingRecoveryKeyVersion?: number;
+  pendingRecoveryWrappedVaultKey?: WrappedKeyEnvelope;
 }
 
 export interface SyncDescriptor {
@@ -212,16 +223,20 @@ export interface DeviceTrustPort {
   revokeDevice(deviceId: string): Promise<void>;
 }
 
+export type RecoveryKeyReveal = (recoveryKey: string, keyVersion: number) => void;
+
 export interface SyncPort {
-  status(): Promise<{ sync: SyncStatus; head: SyncHead | null }>;
+  status(): Promise<{ sync: SyncStatus; head: SyncHead | null; recovery?: RecoveryKeyState }>;
   descriptor(): Promise<SyncDescriptor | null>;
   pull(): Promise<SyncEnvelope | null>;
   push(envelope: SyncEnvelope, idempotencyKey: string): Promise<SyncHead>;
   resolveConflict(conflictId: string, resolution: 'keep-local' | 'use-remote' | 'export-both'): Promise<void>;
+  issueRecoveryKey(reveal: RecoveryKeyReveal): Promise<RecoveryKeyState>;
+  confirmRecoveryKey(recoveryKey: string): Promise<RecoveryKeyState>;
 }
 ```
 
-以上 DTO 不包含 session token、主密码、私钥、passphrase、解锁后的凭据或终端内容。`SyncPort` 是可选扩展；未协商 `account.auth`/`sync.encrypted` capability 时，UI 隐藏同步操作并保持 Local 模式。
+以上 DTO 不包含 session token、主密码、私钥、passphrase、recovery key、解锁后的凭据或终端内容。`SyncPort` 是可选扩展；recovery key 只通过一次性 reveal callback 交给当前 UI，不进入 shared state/DTO。未协商 `account.auth`/`sync.encrypted` capability 时，UI 隐藏同步操作并保持 Local 模式。
 
 ## 5. 加密与密钥管理
 
@@ -255,7 +270,7 @@ K_sync -- AEAD --> encrypted sync snapshot/change set
 - 新设备下载的只是 `VaultConfig`/key envelope 和加密同步载荷；用户必须输入原 Vault 主密码，或使用本地生成并离线保存的 recovery key，才能得到 `K_vault`/`K_sync`。
 - 账号登录成功但无法解锁 Vault 时，只能显示设备和同步元数据，不能恢复 Host 凭据或打开 SSH。
 - 账号密码重置只恢复账号访问，不恢复 Vault；产品文案必须在注册、开启同步和重置密码时反复明确这一点。
-- 开启同步时生成一次展示、可轮换的 recovery key，并用它包装 Vault key；页面要求用户确认已离线保存后才允许完成绑定，服务端只保存包装后的密文，不保存可解密的 recovery key。
+- 开启同步后可生成一次展示、可轮换的 recovery key，并用它包装 Vault key；页面要求用户勾选离线保存并重新输入完全匹配后才允许完成 recovery 绑定，服务端只保存包装后的密文，不保存可解密的 recovery key。重新生成会让旧的待确认 key 失效；关闭/刷新页面不会再次显示已生成的明文。
 - 丢失主密码和 recovery key 时，云端数据不可恢复；这是可验证的安全承诺，不能通过客服或管理员后门绕过。
 
 ### 5.3 密钥轮换
@@ -369,7 +384,7 @@ Blind sync store 只实现版本、大小、哈希、幂等、游标和权限，
 - 再做新设备恢复、离线队列、revision 冲突、加密备份和登出/删除语义。
 - 通过 Web、desktop-like 和 Android-like adapter contract 后，才把登录同步作为可选正式能力。
 
-当前实现只达到 M5 的核心 Web/自托管切片：账号、设备、opaque snapshot、revision conflict、offline pending/retry、登出和云端删除恢复窗口已落地；同步默认关闭，且当前 Relay server 仍是 Web-mediated SSH 的受信解密边界。recovery key 生成/轮换、独立新设备恢复交互、真实删除 re-auth、冲突“导出两份”、Desktop/Android 原生实现和安全评审仍是 M5 退出条件，不应由当前代码或测试结果推断为已完成。
+当前实现只达到 M5 的核心 Web/自托管切片：账号、设备、opaque snapshot、revision conflict、offline pending/retry、登出、云端删除恢复窗口和 recovery key 生命周期已落地；同步默认关闭，且当前 Relay server 仍是 Web-mediated SSH 的受信解密边界。独立新设备恢复交互、真实删除 re-auth、冲突“导出两份”、Desktop/Android 原生实现和安全评审仍是 M5 退出条件，不应由当前代码或测试结果推断为已完成。
 
 ### M6：团队与受控 Agent
 
@@ -399,7 +414,7 @@ Blind sync store 只实现版本、大小、哈希、幂等、游标和权限，
 - `secret_persistence_findings = 0`、冲突覆盖测试无静默覆盖、错误恢复无半应用 Vault、设备撤销测试通过。
 - 涉及核心数据模型、加密、迁移、账号权限或跨模块行为时，按 Q-01 Release gate 执行全量验证；纯 UI 文案或文档变化使用 Artifact/Focused 验证。
 
-本次实现验证记录（2026-09-17）：account/sync focused Vitest 7 files / 40 tests、`npm run typecheck`、`npm run lint`、full Vitest 105 files / 464 tests、`npm run build`、默认 E2E 4/4，以及 account-enabled `tests/e2e/account-sync.spec.ts` 2/2 均通过。技术门禁通过不代表上述未交付的 recovery/rotation/new-device/re-auth/export-both 功能已经具备发布资格。
+本次实现验证记录（2026-09-17）：X-04A focused Vitest 8 files / 65 tests、`npm run typecheck`、`npm run lint`、full Vitest 105 files / 473 tests、`npm run build`、默认 E2E 4/4，以及 account-enabled `tests/e2e/account-sync.spec.ts` 2/2 均通过；敏感数据扫描未发现 recovery key 进入浏览器持久化、审计 metadata 或普通日志。技术门禁通过不代表上述未交付的 new-device/re-auth/export-both 功能已经具备发布资格。
 
 ## 11. 明确结论
 
@@ -407,4 +422,4 @@ Blind sync store 只实现版本、大小、哈希、幂等、游标和权限，
 - “登录账号即可同步”在产品上成立，但必须以 Vault 已解锁或可用恢复密钥为前提；账号本身不能解锁 Vault。
 - 云端同步采用加密盲存储；当前 Web 的 Relay 执行端继续属于受信解密边界，不能包装成零知识服务。
 - 个人同步先采用加密 snapshot + revision conflict；团队共享、对象级合并和 Agent 权限另行设计。
-- 当前版本实现了默认关闭的 Web Account-sync 核心切片；桌面/Android 原生 UI、recovery key/rotation、独立新设备恢复、团队能力和完整 M5 安全发布仍未交付。
+- 当前版本实现了默认关闭的 Web Account-sync 核心切片和 recovery key 生命周期；桌面/Android 原生 UI、独立新设备恢复、团队能力和完整 M5 安全发布仍未交付。

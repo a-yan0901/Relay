@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 
 import type { FastifyRequest } from 'fastify';
 
@@ -7,6 +7,7 @@ import type {
   SyncEnvelope,
   SyncHead,
   SyncPreview,
+  RecoveryKeyState,
   SyncResolution,
   SyncState,
   SyncStatus,
@@ -18,7 +19,19 @@ import { getSessionId } from '../auth/session-cookie.js';
 import { AccountService } from '../account/account-service.js';
 import { AppConfigRepository } from '../db/repositories.js';
 import { SessionStore } from '../auth/session-store.js';
-import { createSyncKey, decryptSyncPayload, encryptSyncPayload, unwrapSyncKey, wrapSyncKey } from './sync-crypto.js';
+import {
+  createRecoveryKey,
+  createSyncKey,
+  decryptSyncPayload,
+  encryptSyncPayload,
+  formatRecoveryKey,
+  parseRecoveryKey,
+  RECOVERY_KEY_VERSION,
+  unwrapSyncKey,
+  unwrapVaultKeyWithRecoveryKey,
+  wrapSyncKey,
+  wrapVaultKeyWithRecoveryKey
+} from './sync-crypto.js';
 import { BlindSyncRepository, type BlindSyncStore, type SyncClientState, type SyncDeleteRequest } from './sync-repository.js';
 import { SyncSnapshotService } from './sync-snapshot.js';
 import type { VaultConfig } from '../vault/types.js';
@@ -26,8 +39,11 @@ import type { VaultConfig } from '../vault/types.js';
 export interface SyncServiceContract {
   status(accountId: string): SyncState;
   getDescriptor(accountId: string): SyncDescriptor | null;
+  getRecoveryKeyState(accountId: string): RecoveryKeyState;
   getEnvelope(accountId: string): SyncEnvelope | null;
   enable(accountId: string, ownerId: string, deviceId: string, vaultKey: Buffer, vaultConfig: VaultConfig): Promise<SyncHead>;
+  issueRecoveryKey(accountId: string, vaultKey: Buffer): RecoveryKeyIssue;
+  confirmRecoveryKey(accountId: string, vaultKey: Buffer, recoveryKey: string): RecoveryKeyState;
   prepareEnvelope(accountId: string, ownerId: string, deviceId: string, vaultKey: Buffer): Promise<SyncEnvelope>;
   pull(accountId: string): SyncEnvelope | null;
   push(accountId: string, envelope: SyncEnvelope, idempotencyKey: string): SyncHead;
@@ -84,12 +100,34 @@ const SYNC_DELETE_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_RETRY_BASE_DELAY_MS = 1_000;
 const DEFAULT_RETRY_MAX_DELAY_MS = 60_000;
 const MAX_RETRY_ATTEMPTS = 8;
+const MAX_RECOVERY_KEY_VERSION = 32;
+
+interface RecoveryKeyIssue {
+  recoveryKey: string;
+  keyVersion: number;
+  status: 'pending-confirmation';
+}
 
 const toVaultUnlockEnvelope = (vaultConfig: VaultConfig): VaultUnlockEnvelope => ({
   version: vaultConfig.version,
   kdf: { ...vaultConfig.kdf },
   wrappedVaultKey: vaultConfig.wrappedVaultKey
 });
+
+const recoveryKeyStateFromDescriptor = (descriptor: SyncDescriptor | null): RecoveryKeyState => {
+  const envelope = descriptor?.vaultUnlockEnvelope;
+  const activeKeyVersion = envelope?.recoveryWrappedVaultKey
+    ? envelope.recoveryKeyVersion ?? RECOVERY_KEY_VERSION
+    : null;
+  const pendingKeyVersion = envelope?.pendingRecoveryWrappedVaultKey
+    ? envelope.pendingRecoveryKeyVersion ?? null
+    : null;
+  return {
+    status: pendingKeyVersion !== null ? 'pending-confirmation' : activeKeyVersion !== null ? 'configured' : 'not-configured',
+    activeKeyVersion,
+    pendingKeyVersion
+  };
+};
 
 export const syncEnvelopeIdempotencyKey = (accountId: string, envelope: SyncEnvelope): string => (
   `sync:${accountId}:${envelope.revision}:${envelope.payloadHash}`
@@ -142,6 +180,7 @@ export class SyncService implements SyncServiceContract {
       sync,
       head,
       pendingCount,
+      recovery: recoveryKeyStateFromDescriptor(descriptor),
       ...(clientState?.errorCode === null || clientState?.errorCode === undefined ? {} : { lastErrorCode: clientState.errorCode }),
       ...(head ? { lastSyncedAt: head.updatedAt } : {}),
       ...(deletion ? {
@@ -157,6 +196,10 @@ export class SyncService implements SyncServiceContract {
   getDescriptor(accountId: string): SyncDescriptor | null {
     this.store.purgeExpiredVault(accountId, new Date(this.clock()).toISOString());
     return this.store.getDescriptor(accountId);
+  }
+
+  getRecoveryKeyState(accountId: string): RecoveryKeyState {
+    return recoveryKeyStateFromDescriptor(this.getDescriptor(accountId));
   }
 
   getEnvelope(accountId: string): SyncEnvelope | null {
@@ -211,6 +254,68 @@ export class SyncService implements SyncServiceContract {
     } finally {
       plaintext?.fill(0);
       syncKey.fill(0);
+    }
+  }
+
+  issueRecoveryKey(accountId: string, vaultKey: Buffer): RecoveryKeyIssue {
+    const descriptor = this.getDescriptor(accountId);
+    if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
+    const currentVersion = descriptor.vaultUnlockEnvelope.recoveryKeyVersion
+      ?? (descriptor.vaultUnlockEnvelope.recoveryWrappedVaultKey ? RECOVERY_KEY_VERSION : 0);
+    const pendingVersion = descriptor.vaultUnlockEnvelope.pendingRecoveryKeyVersion ?? 0;
+    const keyVersion = Math.max(currentVersion, pendingVersion) + 1;
+    if (keyVersion > MAX_RECOVERY_KEY_VERSION) throw new AppError('SYNC_KEY_VERSION_UNSUPPORTED');
+
+    const recoveryKey = createRecoveryKey();
+    try {
+      const pendingRecoveryWrappedVaultKey = wrapVaultKeyWithRecoveryKey(
+        vaultKey,
+        descriptor.vaultId,
+        keyVersion,
+        recoveryKey
+      );
+      const vaultUnlockEnvelope = {
+        ...descriptor.vaultUnlockEnvelope,
+        pendingRecoveryKeyVersion: keyVersion,
+        pendingRecoveryWrappedVaultKey
+      };
+      this.store.saveDescriptor(accountId, { ...descriptor, vaultUnlockEnvelope });
+      return {
+        recoveryKey: formatRecoveryKey(recoveryKey),
+        keyVersion,
+        status: 'pending-confirmation'
+      };
+    } finally {
+      recoveryKey.fill(0);
+    }
+  }
+
+  confirmRecoveryKey(accountId: string, vaultKey: Buffer, recoveryKeyValue: string): RecoveryKeyState {
+    const descriptor = this.getDescriptor(accountId);
+    if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
+    const pendingWrapped = descriptor.vaultUnlockEnvelope.pendingRecoveryWrappedVaultKey;
+    const pendingVersion = descriptor.vaultUnlockEnvelope.pendingRecoveryKeyVersion;
+    if (!pendingWrapped || pendingVersion === undefined) throw new AppError('SYNC_RECOVERY_KEY_NOT_READY');
+
+    let recoveryKey: Buffer | undefined;
+    let recoveredVaultKey: Buffer | undefined;
+    try {
+      recoveryKey = parseRecoveryKey(recoveryKeyValue);
+      recoveredVaultKey = unwrapVaultKeyWithRecoveryKey(recoveryKey, descriptor.vaultId, pendingVersion, pendingWrapped);
+      if (recoveredVaultKey.length !== vaultKey.length || !timingSafeEqual(recoveredVaultKey, vaultKey)) {
+        throw new AppError('VAULT_UNLOCK_FAILED');
+      }
+
+      const vaultUnlockEnvelope = { ...descriptor.vaultUnlockEnvelope };
+      delete vaultUnlockEnvelope.pendingRecoveryKeyVersion;
+      delete vaultUnlockEnvelope.pendingRecoveryWrappedVaultKey;
+      vaultUnlockEnvelope.recoveryKeyVersion = pendingVersion;
+      vaultUnlockEnvelope.recoveryWrappedVaultKey = pendingWrapped;
+      this.store.saveDescriptor(accountId, { ...descriptor, vaultUnlockEnvelope });
+      return recoveryKeyStateFromDescriptor({ ...descriptor, vaultUnlockEnvelope });
+    } finally {
+      recoveredVaultKey?.fill(0);
+      recoveryKey?.fill(0);
     }
   }
 

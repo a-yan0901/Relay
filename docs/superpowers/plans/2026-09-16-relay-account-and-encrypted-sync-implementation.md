@@ -128,6 +128,10 @@ export interface VaultUnlockEnvelope {
   version: number;
   kdf: { algorithm: string; salt: string; memoryCost: number; timeCost: number; parallelism: number; hashLength: number };
   wrappedVaultKey: WrappedKeyEnvelope;
+  recoveryKeyVersion?: number;
+  recoveryWrappedVaultKey?: WrappedKeyEnvelope;
+  pendingRecoveryKeyVersion?: number;
+  pendingRecoveryWrappedVaultKey?: WrappedKeyEnvelope;
 }
 
 export interface SyncDescriptor {
@@ -162,12 +166,21 @@ export interface SyncPreview {
 
 export type SyncResolution = 'keep-local' | 'use-remote' | 'export-both';
 
+export type RecoveryKeyStatus = 'not-configured' | 'pending-confirmation' | 'configured';
+
+export interface RecoveryKeyState {
+  status: RecoveryKeyStatus;
+  activeKeyVersion: number | null;
+  pendingKeyVersion: number | null;
+}
+
 export interface SyncState {
   sync: SyncStatus;
   head: SyncHead | null;
   pendingCount: number;
   lastErrorCode?: string;
   lastSyncedAt?: string;
+  recovery?: RecoveryKeyState;
 }
 
 export interface AccountSessionPort {
@@ -183,12 +196,14 @@ export interface DeviceTrustPort {
 }
 
 export interface SyncPort {
-  status(): Promise<{ sync: SyncStatus; head: SyncHead | null }>;
+  status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string; recovery?: RecoveryKeyState }>;
   descriptor(): Promise<SyncDescriptor | null>;
   pull(): Promise<SyncEnvelope | null>;
   push(envelope: SyncEnvelope, idempotencyKey: string): Promise<SyncHead>;
   previewPull(): Promise<{ conflictId: string; localRevision: number; remoteRevision: number; conflictTypes: readonly string[] }>;
   resolveConflict(conflictId: string, resolution: 'keep-local' | 'use-remote' | 'export-both'): Promise<void>;
+  issueRecoveryKey(reveal: (recoveryKey: string, keyVersion: number) => void): Promise<RecoveryKeyState>;
+  confirmRecoveryKey(recoveryKey: string): Promise<RecoveryKeyState>;
 }
 ```
 
@@ -785,7 +800,7 @@ export interface WebSyncApi {
 **Interfaces:**
 
 - Verification output must prove account/sync requirements; green unrelated tests alone are insufficient.
-- `secret_persistence_findings = 0` means no master password/private key/passphrase/recovery key/token/terminal plaintext in browser persistence, sync tables, HTTP response, audit metadata or regular logs.
+- `secret_persistence_findings = 0` means no master password/private key/passphrase/recovery key/token/terminal plaintext in browser persistence, sync tables, audit metadata or regular logs; the only permitted recovery-key plaintext is the explicit one-time issue response and transient UI memory required for offline saving.
 
 - [x] **Step 1: Run focused sensitive-data scans.**
 
@@ -794,7 +809,7 @@ export interface WebSyncApi {
   rg -n -i "localStorage|sessionStorage|masterPassword|privateKey|passphrase|recoveryKey|vaultKey|syncKey|webssh_session|relay_account_session|terminal output|command" src/web src/server/account src/server/sync tests/e2e/account-sync.spec.ts
   ```
 
-  Review every match: allowed names are input parameter/type names and explicit negative assertions only; no value may be persisted/logged/transmitted outside the intended one-time or encrypted boundary.
+  Review every match: allowed names are input parameter/type names, the explicit one-time issue response/reveal callback and negative assertions; no value may be persisted/logged/transmitted outside that one-time or encrypted boundary.
 
 - [x] **Step 2: Run account/sync focused verification.**
 
@@ -820,9 +835,9 @@ export interface WebSyncApi {
 
 - [x] **Step 4: Update evidence and roadmap status.**
 
-  已更新 spec、cross-platform、README 和路线图，明确“核心 Web/自托管切片已实现、完整 M5 仍在进行”，并记录当前 server trust boundary/optional provider。路线图保留 recovery key/rotation、独立新设备恢复 UI、真实 re-auth、export-both 和账号删除闭环等证据缺口；README 不宣称团队同步、零知识 Relay execution、Desktop/Android native UI 或离线 SSH 已交付。
+  已更新 spec、cross-platform、README 和路线图，明确“核心 Web/自托管切片与 recovery key 生命周期已实现、完整 M5 仍在进行”，并记录当前 server trust boundary/optional provider。路线图保留独立新设备恢复 UI、真实 re-auth、export-both 和账号删除闭环等证据缺口；README 不宣称团队同步、零知识 Relay execution、Desktop/Android native UI 或离线 SSH 已交付。
 
-  当前审计结论：`secret_persistence_findings = 0`（扫描命中仅为一次性输入参数/类型、HttpOnly cookie 名称、加密实现字段和明确的 negative assertions；浏览器持久化仅保存主题、字号和非敏感终端 descriptor）；尚未交付的恢复/轮换/删除闭环不得按“测试全绿”推断为已满足。
+  当前审计结论：`secret_persistence_findings = 0`（扫描命中仅为一次性输入参数/类型、Web-only reveal response、HttpOnly cookie 名称、加密实现字段和明确的 negative assertions；浏览器持久化仅保存主题、字号和非敏感终端 descriptor）；尚未交付的新设备恢复/删除闭环不得按“测试全绿”推断为已满足。
 
 - [x] **Step 5: Inspect task-only diff and commit release evidence.**
 
@@ -836,10 +851,48 @@ export interface WebSyncApi {
   git commit -m "docs: record account sync release evidence"
   ```
 
+## Task 10: X-04A recovery key lifecycle
+
+**Status:** Complete（2026-09-17）
+
+**Goal:** 在不把 recovery key 明文放入 shared state/DTO、数据库、日志或浏览器持久化的前提下，支持一次展示、离线确认和安全轮换；错误或过期 recovery key 不得改变现有 Vault wrapping。
+
+**Files:**
+
+- Modify: `src/server/sync/sync-crypto.ts`, `src/server/sync/sync-repository.ts`, `src/server/sync/sync-service.ts`, `src/server/sync/sync-routes.ts`
+- Modify: `src/shared/core/models.ts`, `src/shared/core/ports.ts`, `src/shared/errors.ts`
+- Modify: `src/web/api.ts`, `src/web/platform/web-adapters.ts`, `src/web/components/SyncCenter.tsx`, `src/web/App.tsx`, `src/web/styles.css`
+- Test: `tests/unit/server/sync-crypto.test.ts`, `tests/integration/server/sync-routes.test.ts`, `tests/unit/web/api.test.ts`, `tests/unit/web/web-adapters.test.ts`, `tests/unit/web/sync-center.dom.test.tsx`, `tests/unit/web/app.dom.test.tsx`, `tests/unit/shared/account-sync-contract.test.ts`, `tests/unit/shared/native-adapter-contract.test.ts`
+
+**Security boundary:** 服务端只持久化 recovery-wrapped `K_vault` 和 active/pending version；issue endpoint 返回一次性明文并设置 `Cache-Control: no-store`。shared core 只保存 `RecoveryKeyState`，通过一次性 `RecoveryKeyReveal` callback 将明文交给当前 UI；关闭窗口、刷新或重新打开不会再次显示，重新生成会使旧 pending key 失效。
+
+- [x] **Step 1: 写 recovery crypto 与格式化失败测试。**
+
+  覆盖 32-byte 高熵 key、可读 base32/checksum 格式、大小写/输入规范化、wrap/unwrap、错误 key/AAD 和不泄露明文。
+
+- [x] **Step 2: 实现 descriptor 的 active/pending wrapper 生命周期。**
+
+  issue 只写 pending wrapper；confirm 先解包并 constant-time 比对当前 `K_vault`，成功后才 promote，失败保持 descriptor 不变；轮换保留旧 active wrapper，重复 issue 使旧 pending key 失效。
+
+- [x] **Step 3: 接通 server route、audit 和 Web API 边界。**
+
+  增加 issue/confirm route、严格 body/response 校验、`no-store` 响应和不含明文的 audit metadata；明文响应类型只存在 Web API 模块，不进入 shared models。
+
+- [x] **Step 4: 实现 Sync Center 的一次展示、离线确认、复制和轮换交互。**
+
+  UI 要求离线保存勾选与完全匹配的二次输入；父组件状态更新不会清空当前一次性 key，重新打开只显示 pending 提示，不显示旧 key；Clipboard 继续走 platform service。
+
+- [x] **Step 5: 运行 X-04A focused/release verification 并更新路线图证据。**
+
+  至少包含 recovery crypto、sync route、Web API/adapter、DOM/跨端 contract、敏感数据扫描，以及 Q-01 Release gate；只有全部通过后将路线图 X-04A 标记完成，X-04B/X-04C/X-04D 保持未完成。
+
+  Evidence (2026-09-17): X-04A focused Vitest 8 files / 65 tests passed; full Vitest 105 files / 473 tests passed; `npm run typecheck`, `npm run lint`, `npm run build`, default E2E 4/4 and account-enabled E2E 2/2 passed. Scoped persistence/log scans found no recovery key in browser storage, audit metadata or logs; the only plaintext path is the explicit one-time issue response and reveal callback.
+
 ## Risk-based verification summary
 
 - Task 1–2：shared contract/crypto focused tests；不运行完整 UI/E2E。
 - Task 3–6：account/session/migration/sync route focused tests，另跑受影响的 Vault/restart route tests。
 - Task 7–8：Web DOM、adapter contract 和 account E2E。
 - Task 9：因涉及认证、加密、迁移、核心 ports、跨模块行为和发布边界，执行 `npm test`、`npm run build`、`npm run test:e2e`、`npm run lint`、`npm run typecheck`。
+- Task 10：因涉及 recovery key、加密 wrapper、核心 ports、server route 和一次性 UI 内存，完成 focused 验证后执行一次完整 Release gate；只修改文档/路线图证据时不重复全量验证。
 - 任一任务不得把“服务端存了 encrypted JSON”当作端到端加密完成证据；必须检查云端 fixture/table/log/response 没有明文和可直接解密的 key。

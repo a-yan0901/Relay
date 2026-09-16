@@ -436,7 +436,7 @@ export const App = ({ runtime }: AppProps) => {
         }
         void runtime.sync.status()
           .then((nextSync) => {
-            if (!cancelled) setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }) });
+            if (!cancelled) setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }), ...(nextSync.recovery === undefined ? {} : { recovery: nextSync.recovery }) });
           })
           .catch(() => {
             if (!cancelled) setSyncState({ sync: 'offline', head: null, pendingCount: 0 });
@@ -1154,7 +1154,7 @@ export const App = ({ runtime }: AppProps) => {
     setSyncState(null);
     if (!nextAccount || !capabilities.supports('sync.encrypted') || !runtime.sync) return;
     void runtime.sync.status()
-      .then((nextSync) => setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }) }))
+      .then((nextSync) => setSyncState({ sync: nextSync.sync, head: nextSync.head, pendingCount: nextSync.pendingCount ?? 0, ...(nextSync.lastErrorCode === undefined ? {} : { lastErrorCode: nextSync.lastErrorCode }), ...(nextSync.recovery === undefined ? {} : { recovery: nextSync.recovery }) }))
       .catch(() => setSyncState({ sync: 'offline', head: null, pendingCount: 0 }));
   };
 
@@ -1180,7 +1180,7 @@ export const App = ({ runtime }: AppProps) => {
   if (state.phase === 'setup') return <SetupGate onSubmit={completeSetup} errorMessage={state.errorMessage} />;
   if (state.phase === 'locked') return <>
     <UnlockView onSubmit={completeUnlock} errorMessage={state.errorMessage} headerSlot={accountMenu} />
-    {syncCenterOpen && accountSession && runtime.sync && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked syncPort={runtime.sync} devicesPort={runtime.devices} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
+    {syncCenterOpen && accountSession && runtime.sync && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked syncPort={runtime.sync} devicesPort={runtime.devices} clipboard={runtime.platformServices?.clipboard} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
   </>;
 
   return (
@@ -1346,7 +1346,7 @@ export const App = ({ runtime }: AppProps) => {
       />}
       {commandRun && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal" role="dialog" aria-modal="true" aria-labelledby="command-run-result-title"><CommandRunResults run={commandRun} hosts={state.hosts} onCancel={handleCancelCommandRun} onOpenHost={handleOpenHostFromResult} /><button className="button button-ghost" id="command-run-result-title" type="button" onClick={() => setCommandRun(null)}>关闭结果</button></section></div>}
       {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} hosts={state.hosts} filter={activityFilter} loading={activityLoading} hasMore={activityNextCursor !== undefined} diagnostics={operationDiagnostics} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} onApplyFilter={handleApplyActivityFilter} onLoadMore={handleLoadMoreActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
-      {syncCenterOpen && accountSession && runtime.sync && capabilities.supports('sync.encrypted') && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked={false} syncPort={runtime.sync} devicesPort={runtime.devices} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
+      {syncCenterOpen && accountSession && runtime.sync && capabilities.supports('sync.encrypted') && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked={false} syncPort={runtime.sync} devicesPort={runtime.devices} clipboard={runtime.platformServices?.clipboard} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
       {workspaceSettingsMode && <WorkspaceSettings
         mode={workspaceSettingsMode}
         onClose={() => setWorkspaceSettingsMode(null)}

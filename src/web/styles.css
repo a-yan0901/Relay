@@ -843,6 +843,16 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 
 .sync-devices li small { color: var(--faint); font-size: 9px; margin-top: 3px; }
 
+.sync-recovery { border-top: 1px solid var(--border); margin: 17px 0 15px; padding-top: 14px; }
+
+.sync-recovery .dialog-copy { margin: 10px 0; }
+
+.recovery-key-display { align-items: center; background: rgba(93, 168, 255, 0.07); border: 1px solid rgba(93, 168, 255, 0.2); border-radius: 8px; display: flex; gap: 8px; justify-content: space-between; margin: 10px 0; padding: 10px; }
+
+.recovery-key-display code { color: var(--text); font-size: 10px; line-height: 1.7; overflow-wrap: anywhere; }
+
+.recovery-key-confirm-field { margin-top: 10px; }
+
 .sync-center-actions { display: flex; gap: 8px; }
 
 .sync-progress, .sync-resolved { color: #a7ddc5; font-size: 11px; }

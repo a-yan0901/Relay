@@ -4,13 +4,19 @@ import { describe, expect, it } from 'vitest';
 
 import { AppError } from '../../../src/shared/errors.js';
 import {
+  RECOVERY_KEY_VERSION,
   SYNC_KEY_VERSION,
   SYNC_MAX_PAYLOAD_BYTES,
+  createRecoveryKey,
   createSyncKey,
   decryptSyncPayload,
   encryptSyncPayload,
+  formatRecoveryKey,
+  parseRecoveryKey,
+  unwrapVaultKeyWithRecoveryKey,
   unwrapSyncKey,
   validateSyncEnvelope,
+  wrapVaultKeyWithRecoveryKey,
   wrapSyncKey
 } from '../../../src/server/sync/sync-crypto.js';
 
@@ -27,6 +33,38 @@ const expectAppError = (action: () => unknown, code: string): void => {
 };
 
 describe('sync crypto', () => {
+  it('formats and parses a high-entropy recovery key without losing bytes', () => {
+    const recoveryKey = createRecoveryKey();
+    const formatted = formatRecoveryKey(recoveryKey);
+
+    expect(recoveryKey).toHaveLength(32);
+    expect(formatted).toMatch(/^RLY-RK1(?:-[A-Z2-7]{4})+$/u);
+    expect(parseRecoveryKey(formatted)).toEqual(recoveryKey);
+    expect(parseRecoveryKey(formatted.toLowerCase())).toEqual(recoveryKey);
+  });
+
+  it('wraps the Vault key with a recovery key and rejects wrong metadata or key', () => {
+    const currentVaultKey = vaultKey();
+    const recoveryKey = createRecoveryKey();
+    const wrapped = wrapVaultKeyWithRecoveryKey(
+      currentVaultKey,
+      'vault-1',
+      RECOVERY_KEY_VERSION,
+      recoveryKey
+    );
+
+    expect(wrapped.ciphertext).not.toBe(currentVaultKey.toString('base64'));
+    expect(unwrapVaultKeyWithRecoveryKey(recoveryKey, 'vault-1', RECOVERY_KEY_VERSION, wrapped)).toEqual(currentVaultKey);
+    expectAppError(
+      () => unwrapVaultKeyWithRecoveryKey(createRecoveryKey(), 'vault-1', RECOVERY_KEY_VERSION, wrapped),
+      'VAULT_UNLOCK_FAILED'
+    );
+    expectAppError(
+      () => unwrapVaultKeyWithRecoveryKey(recoveryKey, 'vault-2', RECOVERY_KEY_VERSION, wrapped),
+      'VAULT_UNLOCK_FAILED'
+    );
+  });
+
   it('wraps and unwraps a random sync key with the Vault key', () => {
     const currentVaultKey = vaultKey();
     const syncKey = createSyncKey();

@@ -14,11 +14,16 @@ import {
 
 export const SYNC_SCHEMA_VERSION = 1 as const;
 export const SYNC_KEY_VERSION = 1 as const;
+export const RECOVERY_KEY_VERSION = 1 as const;
 export const SYNC_MAX_PAYLOAD_BYTES = 32 * 1024 * 1024;
 const MAX_SYNC_KEY_VERSION = 32;
 const MAX_IDENTIFIER_LENGTH = 128;
 const HEX_HASH_PATTERN = /^[a-f0-9]{64}$/u;
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
+const RECOVERY_KEY_PREFIX = 'RLYRK1';
+const RECOVERY_KEY_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const RECOVERY_KEY_BODY_LENGTH = 52;
+const RECOVERY_KEY_CHECKSUM_LENGTH = 4;
 
 const failPayload = (): never => {
   throw new AppError('SYNC_PAYLOAD_INVALID');
@@ -60,6 +65,10 @@ const syncKeyAad = (vaultId: string, keyVersion: number): string => (
   `relay-sync:key:v1:${vaultId}:${keyVersion}`
 );
 
+const recoveryKeyAad = (vaultId: string, keyVersion: number): string => (
+  `relay-sync:recovery:v1:${vaultId}:${keyVersion}`
+);
+
 const payloadAad = (envelope: Pick<SyncEnvelope, 'vaultId' | 'revision' | 'parentRevision' | 'deviceId' | 'keyVersion'>): string => (
   `relay-sync:payload:v1:${envelope.vaultId}:${envelope.revision}:${envelope.parentRevision ?? 'root'}:${envelope.keyVersion}:${envelope.deviceId}`
 );
@@ -82,7 +91,117 @@ const assertWrappedKeyEnvelope = (value: WrappedKeyEnvelope): void => {
   decodeBase64(value.aad);
 };
 
+const failRecoveryKey = (): never => {
+  throw new AppError('VAULT_UNLOCK_FAILED');
+};
+
+const encodeRecoveryBase32 = (value: Buffer): string => {
+  let buffer = 0;
+  let bits = 0;
+  let encoded = '';
+  for (const byte of value) {
+    buffer = (buffer << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      encoded += RECOVERY_KEY_ALPHABET[(buffer >> bits) & 0x1f];
+    }
+    if (bits > 0) buffer &= (1 << bits) - 1;
+    else buffer = 0;
+  }
+  if (bits > 0) encoded += RECOVERY_KEY_ALPHABET[(buffer << (5 - bits)) & 0x1f];
+  return encoded;
+};
+
+const decodeRecoveryBase32 = (value: string): Buffer => {
+  if (!/^[A-Z2-7]+$/u.test(value)) return failRecoveryKey();
+  let buffer = 0;
+  let bits = 0;
+  const decoded: number[] = [];
+  for (const character of value) {
+    const digit = RECOVERY_KEY_ALPHABET.indexOf(character);
+    if (digit < 0) return failRecoveryKey();
+    buffer = (buffer << 5) | digit;
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      decoded.push((buffer >> bits) & 0xff);
+      if (bits > 0) buffer &= (1 << bits) - 1;
+      else buffer = 0;
+    }
+  }
+  if (bits > 0 && buffer !== 0) return failRecoveryKey();
+  const result = Buffer.from(decoded);
+  if (result.length !== VAULT_KEY_LENGTH) return failRecoveryKey();
+  return result;
+};
+
+const recoveryKeyChecksum = (key: Buffer): string => (
+  encodeRecoveryBase32(createHash('sha256').update(key).digest()).slice(0, RECOVERY_KEY_CHECKSUM_LENGTH)
+);
+
+export const createRecoveryKey = (): Buffer => randomBytes(VAULT_KEY_LENGTH);
+
+export const formatRecoveryKey = (key: Buffer): string => {
+  assertKey(key);
+  const content = `${encodeRecoveryBase32(key)}${recoveryKeyChecksum(key)}`;
+  const groups = content.match(/.{1,4}/gu) ?? [];
+  return `${RECOVERY_KEY_PREFIX.slice(0, 3)}-${RECOVERY_KEY_PREFIX.slice(3)}-${groups.join('-')}`;
+};
+
+export const parseRecoveryKey = (value: string): Buffer => {
+  if (typeof value !== 'string' || value.length > 128) return failRecoveryKey();
+  const normalized = value.replace(/[\s-]/gu, '').toUpperCase();
+  const content = normalized.startsWith(RECOVERY_KEY_PREFIX) ? normalized.slice(RECOVERY_KEY_PREFIX.length) : '';
+  if (content.length !== RECOVERY_KEY_BODY_LENGTH + RECOVERY_KEY_CHECKSUM_LENGTH) return failRecoveryKey();
+  const key = decodeRecoveryBase32(content.slice(0, RECOVERY_KEY_BODY_LENGTH));
+  if (content.slice(RECOVERY_KEY_BODY_LENGTH) !== recoveryKeyChecksum(key)) {
+    key.fill(0);
+    return failRecoveryKey();
+  }
+  return key;
+};
+
 export const createSyncKey = (): Buffer => randomBytes(VAULT_KEY_LENGTH);
+
+export const wrapVaultKeyWithRecoveryKey = (
+  vaultKey: Buffer,
+  vaultId: string,
+  keyVersion: number,
+  recoveryKey: Buffer
+): WrappedKeyEnvelope => {
+  assertKey(vaultKey);
+  assertIdentifier(vaultId);
+  assertKeyVersion(keyVersion);
+  assertKey(recoveryKey);
+  return toWrappedKeyEnvelope(encryptBytes(recoveryKey, recoveryKeyAad(vaultId, keyVersion), vaultKey));
+};
+
+export const unwrapVaultKeyWithRecoveryKey = (
+  recoveryKey: Buffer,
+  vaultId: string,
+  keyVersion: number,
+  wrapped: WrappedKeyEnvelope
+): Buffer => {
+  assertKey(recoveryKey);
+  assertIdentifier(vaultId);
+  assertKeyVersion(keyVersion);
+  assertWrappedKeyEnvelope(wrapped);
+  try {
+    const vaultKey = decryptBytes(recoveryKey, recoveryKeyAad(vaultId, keyVersion), {
+      version: 1,
+      nonce: wrapped.nonce,
+      ciphertext: wrapped.ciphertext,
+      authTag: wrapped.authTag,
+      aad: wrapped.aad
+    });
+    assertKey(vaultKey);
+    return vaultKey;
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'SYNC_KEY_VERSION_UNSUPPORTED') throw error;
+    throw new AppError('VAULT_UNLOCK_FAILED');
+  }
+};
 
 export const wrapSyncKey = (
   vaultKey: Buffer,

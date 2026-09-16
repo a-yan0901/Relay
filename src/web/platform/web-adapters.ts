@@ -13,6 +13,7 @@ import type {
   GroupNode,
   HostListFilter,
   IdentityMetadata,
+  RecoveryKeyState,
   SftpEntry,
   Snippet,
   SnippetMetadata,
@@ -43,6 +44,7 @@ import type {
   IdentityStore,
   ImportExportPort,
   PlatformServices,
+  RecoveryKeyReveal,
   SecretRef,
   SecretStore,
   SessionEvent,
@@ -154,6 +156,8 @@ export interface WebApiClient {
   pushSyncEnvelope?: typeof api.pushSyncEnvelope;
   previewPull?: typeof api.previewPull;
   resolveConflict?: typeof api.resolveConflict;
+  issueRecoveryKey?: typeof api.issueRecoveryKey;
+  confirmRecoveryKey?: typeof api.confirmRecoveryKey;
 }
 
 const requireApi = <T>(value: T | undefined): T => {
@@ -491,18 +495,19 @@ export class WebDeviceTrust implements DeviceTrustPort {
   }
 }
 
-type WebSyncClient = Pick<WebApiClient, 'getSyncState' | 'getSyncDescriptor' | 'enableSync' | 'retrySync' | 'previewPull' | 'resolveConflict'> & Partial<Pick<WebApiClient, 'getSyncEnvelope' | 'pushSyncEnvelope'>>;
+type WebSyncClient = Pick<WebApiClient, 'getSyncState' | 'getSyncDescriptor' | 'enableSync' | 'retrySync' | 'previewPull' | 'resolveConflict'> & Partial<Pick<WebApiClient, 'getSyncEnvelope' | 'pushSyncEnvelope' | 'issueRecoveryKey' | 'confirmRecoveryKey'>>;
 
 export class WebSync implements SyncPort {
   constructor(private readonly client: WebSyncClient = api) {}
 
-  async status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string }> {
+  async status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string; recovery?: RecoveryKeyState }> {
     const response = await requireApi(this.client.getSyncState)();
     return {
       sync: response.sync,
       head: response.head,
       ...(response.pendingCount === undefined ? {} : { pendingCount: response.pendingCount }),
-      ...(response.lastErrorCode === undefined && response.lastError === undefined ? {} : { lastErrorCode: response.lastErrorCode ?? response.lastError })
+      ...(response.lastErrorCode === undefined && response.lastError === undefined ? {} : { lastErrorCode: response.lastErrorCode ?? response.lastError }),
+      ...(response.recovery === undefined ? {} : { recovery: response.recovery })
     };
   }
 
@@ -528,6 +533,16 @@ export class WebSync implements SyncPort {
 
   enable(): Promise<SyncHead> {
     return requireApi(this.client.enableSync)();
+  }
+
+  async issueRecoveryKey(reveal: RecoveryKeyReveal): Promise<RecoveryKeyState> {
+    const issue = await requireApi(this.client.issueRecoveryKey)();
+    reveal(issue.recoveryKey, issue.keyVersion);
+    return issue.recovery;
+  }
+
+  async confirmRecoveryKey(recoveryKey: string): Promise<RecoveryKeyState> {
+    return requireApi(this.client.confirmRecoveryKey)(recoveryKey);
   }
 
   retry(): Promise<void> {

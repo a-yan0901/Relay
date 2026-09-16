@@ -129,6 +129,17 @@ export const assertAccountSyncContract = async (runtime: CoreRuntime): Promise<v
     authTag: expect.any(String),
     payloadHash: expect.any(String)
   }));
+  let revealedRecoveryKey: string | undefined;
+  let revealedRecoveryKeyVersion: number | undefined;
+  const recoveryState = await sync.issueRecoveryKey((recoveryKey, keyVersion) => {
+    revealedRecoveryKey = recoveryKey;
+    revealedRecoveryKeyVersion = keyVersion;
+  });
+  expect(revealedRecoveryKey).toEqual(expect.any(String));
+  expect(revealedRecoveryKeyVersion).toBe(1);
+  expect(recoveryState).toEqual({ status: 'pending-confirmation', activeKeyVersion: null, pendingKeyVersion: 1 });
+  expect((await sync.status()).recovery).toEqual({ status: 'pending-confirmation', activeKeyVersion: null, pendingKeyVersion: 1 });
+  await expect(sync.confirmRecoveryKey(revealedRecoveryKey!)).resolves.toEqual({ status: 'configured', activeKeyVersion: 1, pendingKeyVersion: null });
   const opaqueWireData = JSON.stringify({ descriptor, envelope });
   expect(opaqueWireData).not.toMatch(/opaque-account-password|master password|private key|passphrase/iu);
   await sync.push(envelope!, 'contract-idempotency-key');

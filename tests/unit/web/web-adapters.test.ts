@@ -156,7 +156,17 @@ const createWebContractApi = () => {
       return syncHead;
     },
     previewPull: async () => ({ conflictId: 'conflict-1', localRevision: 0, remoteRevision: 1, conflictTypes: ['host'] as const, localBackupRevision: 0 }),
-    resolveConflict: async () => { currentSync = { ...currentSync, sync: 'synced', pendingCount: 0 }; }
+    resolveConflict: async () => { currentSync = { ...currentSync, sync: 'synced', pendingCount: 0 }; },
+    issueRecoveryKey: async () => {
+      const recovery = { status: 'pending-confirmation' as const, activeKeyVersion: null, pendingKeyVersion: 1 };
+      currentSync = { ...currentSync, recovery };
+      return { recoveryKey: 'RLY-RK1-CONTRACT-RECOVERY-KEY', keyVersion: 1, status: 'pending-confirmation' as const, recovery };
+    },
+    confirmRecoveryKey: async () => {
+      const recovery = { status: 'configured' as const, activeKeyVersion: 1, pendingKeyVersion: null };
+      currentSync = { ...currentSync, recovery };
+      return recovery;
+    }
   };
 };
 
@@ -374,6 +384,14 @@ describe('web adapters', () => {
       previewPull: async () => { throw new Error('not used'); },
       resolveConflict: async () => undefined
     }).pull()).toThrowError(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
+    await expect(new WebSync({
+      getSyncState: async () => ({ sync: 'synced' as const, head: null }),
+      getSyncDescriptor: async () => null,
+      enableSync: async () => { throw new Error('not used'); },
+      retrySync: async () => undefined,
+      previewPull: async () => { throw new Error('not used'); },
+      resolveConflict: async () => undefined
+    }).issueRecoveryKey(() => undefined)).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
   });
 
   it('intersects a server pane limit with the Web platform upper bound', async () => {

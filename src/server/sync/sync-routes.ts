@@ -41,6 +41,7 @@ const envelopeSchema = z.object({
 
 const conflictParamsSchema = z.object({ conflictId: z.string().min(1).max(128) }).strict();
 const resolveBodySchema = z.object({ resolution: z.enum(['keep-local', 'use-remote', 'export-both']) }).strict();
+const recoveryKeyBodySchema = z.object({ recoveryKey: z.string().min(1).max(128) }).strict();
 const deleteBodySchema = z.object({
   reauthenticated: z.literal(true),
   confirmDelete: z.literal(DELETE_CONFIRMATION)
@@ -108,6 +109,34 @@ export const registerSyncRoutes = async (app: FastifyInstance, dependencies: Syn
     );
     audit(dependencies, 'sync_enabled', request.id, account, { vaultId: head.vaultId, revision: head.revision });
     reply.code(201).send(head);
+  });
+
+  app.post('/api/sync/v1/recovery-key/issue', async (request, reply) => {
+    requireEnabled(dependencies);
+    const account = requireAccount(request, dependencies);
+    const vaultSession = requireUnlockedSession(request, dependencies.sessionStore);
+    const issued = dependencies.syncService.issueRecoveryKey(account.accountId, vaultSession.record.vaultKey);
+    const recovery = dependencies.syncService.getRecoveryKeyState(account.accountId);
+    audit(dependencies, 'sync_recovery_key_issued', request.id, account, { keyVersion: issued.keyVersion });
+    reply.header('cache-control', 'no-store').code(201).send({ ...issued, recovery });
+  });
+
+  app.post('/api/sync/v1/recovery-key/confirm', async (request, reply) => {
+    requireEnabled(dependencies);
+    const account = requireAccount(request, dependencies);
+    const vaultSession = requireUnlockedSession(request, dependencies.sessionStore);
+    const parsed = recoveryKeyBodySchema.safeParse(request.body);
+    if (!parsed.success) throw new AppError('SYNC_PAYLOAD_INVALID');
+    const state = dependencies.syncService.confirmRecoveryKey(
+      account.accountId,
+      vaultSession.record.vaultKey,
+      parsed.data.recoveryKey
+    );
+    audit(dependencies, 'sync_recovery_key_confirmed', request.id, account, {
+      keyVersion: state.activeKeyVersion,
+      status: state.status
+    });
+    reply.header('cache-control', 'no-store').send(state);
   });
 
   app.get('/api/sync/v1/envelope', async (request, reply) => {

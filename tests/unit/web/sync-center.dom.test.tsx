@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 
 import type { AccountSession, SyncHead, SyncPreview, SyncState } from '../../../src/shared/core/models';
 import { createCapabilitySet } from '../../../src/shared/core/capabilities';
@@ -40,6 +41,11 @@ const createSyncPort = (overrides: Partial<SyncPort> = {}): SyncPort => ({
   } satisfies SyncPreview)),
   resolveConflict: vi.fn(async () => undefined),
   enable: vi.fn(async () => head),
+  issueRecoveryKey: vi.fn(async (reveal) => {
+    reveal('RLY-RK1-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA', 1);
+    return { status: 'pending-confirmation' as const, activeKeyVersion: null, pendingKeyVersion: 1 };
+  }),
+  confirmRecoveryKey: vi.fn(async () => ({ status: 'configured' as const, activeKeyVersion: 1, pendingKeyVersion: null })),
   retry: vi.fn(async () => undefined),
   ...overrides
 });
@@ -80,6 +86,58 @@ describe('SyncCenter', () => {
 
     expect(syncPort.enable).toHaveBeenCalledTimes(1);
     expect(await screen.findByText('已同步')).toBeInTheDocument();
+  });
+
+  it('requires offline save and matching recovery key before confirming', async () => {
+    const user = userEvent.setup();
+    const syncPort = createSyncPort();
+    renderCenter({ sync: 'synced', head, pendingCount: 0, recovery: { status: 'not-configured', activeKeyVersion: null, pendingKeyVersion: null } }, syncPort);
+
+    await user.click(screen.getByRole('button', { name: '生成恢复密钥' }));
+    expect(screen.getByText(/RLY-RK1-/u)).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: '确认已离线保存' });
+    expect(confirm).toBeDisabled();
+
+    await user.click(screen.getByRole('checkbox', { name: '我已离线保存恢复密钥' }));
+    await user.type(screen.getByRole('textbox', { name: '再次输入恢复密钥' }), 'RLY-RK1-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA');
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    expect(syncPort.confirmRecoveryKey).toHaveBeenCalledWith('RLY-RK1-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA');
+    expect(await screen.findByText('恢复密钥已配置')).toBeInTheDocument();
+  });
+
+  it('offers recovery key rotation after the current key is configured', async () => {
+    const user = userEvent.setup();
+    const syncPort = createSyncPort();
+    renderCenter({ sync: 'synced', head, pendingCount: 0, recovery: { status: 'configured', activeKeyVersion: 1, pendingKeyVersion: null } }, syncPort);
+
+    await user.click(screen.getByRole('button', { name: '轮换恢复密钥' }));
+
+    expect(syncPort.issueRecoveryKey).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('请离线保存新的恢复密钥')).toBeInTheDocument();
+  });
+
+  it('keeps a newly issued key visible when the parent accepts the sync state update', async () => {
+    const user = userEvent.setup();
+    const syncPort = createSyncPort();
+    const StatefulCenter = () => {
+      const [currentSync, setCurrentSync] = useState<SyncState>({ sync: 'synced', head, pendingCount: 0, recovery: { status: 'not-configured', activeKeyVersion: null, pendingKeyVersion: null } });
+      return <SyncCenter account={account} sync={currentSync} capabilities={capabilities} vaultLocked={false} syncPort={syncPort} onSyncChange={setCurrentSync} onClose={vi.fn()} />;
+    };
+    render(<StatefulCenter />);
+
+    await user.click(screen.getByRole('button', { name: '生成恢复密钥' }));
+
+    expect(await screen.findByText(/RLY-RK1-/u)).toBeInTheDocument();
+  });
+
+  it('does not redisplay a pending recovery key after the center is reopened', () => {
+    const syncPort = createSyncPort();
+    renderCenter({ sync: 'synced', head, pendingCount: 0, recovery: { status: 'pending-confirmation', activeKeyVersion: null, pendingKeyVersion: 1 } }, syncPort);
+
+    expect(screen.getByText('恢复密钥待确认')).toBeInTheDocument();
+    expect(screen.queryByText(/RLY-RK1-/u)).not.toBeInTheDocument();
   });
 
   it('offers retry for pending and offline states', async () => {

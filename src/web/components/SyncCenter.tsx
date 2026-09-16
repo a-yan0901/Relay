@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import { AppError } from '@shared/errors';
 import { describeAccountSyncState } from '@shared/core/account-sync';
 import type { CapabilitySet } from '@shared/core/capabilities';
-import type { AccountSession, DeviceDescriptor, SyncHead, SyncPreview, SyncResolution, SyncState } from '@shared/core/models';
-import type { DeviceTrustPort, SyncPort } from '@shared/core/ports';
+import type { AccountSession, DeviceDescriptor, RecoveryKeyState, SyncHead, SyncPreview, SyncResolution, SyncState } from '@shared/core/models';
+import type { ClipboardPort, DeviceTrustPort, SyncPort } from '@shared/core/ports';
 
 export interface SyncCenterProps {
   account: AccountSession | null;
@@ -13,6 +13,7 @@ export interface SyncCenterProps {
   vaultLocked: boolean;
   syncPort?: SyncPort;
   devicesPort?: DeviceTrustPort;
+  clipboard?: ClipboardPort;
   preview?: SyncPreview | null;
   onSyncChange?: (sync: SyncState) => void;
   onClose: () => void;
@@ -46,6 +47,18 @@ const withHead = (sync: SyncState, head: SyncHead): SyncState => ({
   lastErrorCode: undefined
 });
 
+const defaultRecoveryState = (): RecoveryKeyState => ({
+  status: 'not-configured',
+  activeKeyVersion: null,
+  pendingKeyVersion: null
+});
+
+interface RecoveryKeyIssue {
+  recoveryKey: string;
+  keyVersion: number;
+  status: 'pending-confirmation';
+}
+
 export const SyncCenter = ({
   account,
   sync,
@@ -53,6 +66,7 @@ export const SyncCenter = ({
   vaultLocked,
   syncPort,
   devicesPort,
+  clipboard,
   preview,
   onSyncChange,
   onClose
@@ -64,6 +78,11 @@ export const SyncCenter = ({
   const [resolved, setResolved] = useState<string | null>(null);
   const [devices, setDevices] = useState<readonly DeviceDescriptor[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
+  const [recovery, setRecovery] = useState<RecoveryKeyState>(sync.recovery ?? defaultRecoveryState());
+  const [recoveryIssue, setRecoveryIssue] = useState<RecoveryKeyIssue | null>(null);
+  const [recoveryInput, setRecoveryInput] = useState('');
+  const [recoverySavedOffline, setRecoverySavedOffline] = useState(false);
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
 
   const accountSignedIn = account?.state === 'signed-in';
   const available = accountSignedIn && capabilities.supports('sync.encrypted') && syncPort !== undefined;
@@ -74,6 +93,14 @@ export const SyncCenter = ({
     setCurrent(sync);
     setConflict(preview ?? null);
     setResolved(null);
+    const nextRecovery = sync.recovery ?? defaultRecoveryState();
+    setRecovery(nextRecovery);
+    if (nextRecovery.status !== 'pending-confirmation') {
+      setRecoveryIssue(null);
+      setRecoveryInput('');
+      setRecoverySavedOffline(false);
+      setRecoveryCopied(false);
+    }
   }, [preview, sync]);
 
   useEffect(() => {
@@ -120,11 +147,76 @@ export const SyncCenter = ({
     setError(null);
     try {
       const head = await syncPort.enable();
-      update(withHead(current, head));
+      const next = withHead(current, head);
+      try {
+        let revealed: RecoveryKeyIssue | undefined;
+        const nextRecovery = await syncPort.issueRecoveryKey((recoveryKey, keyVersion) => {
+          revealed = { recoveryKey, keyVersion, status: 'pending-confirmation' };
+        });
+        if (!revealed) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+        setRecoveryIssue(revealed);
+        setRecovery(nextRecovery);
+        update({ ...next, recovery: nextRecovery });
+      } catch (reason: unknown) {
+        update(next);
+        setError(`同步已启用，但恢复密钥生成失败：${messageFromError(reason, '请稍后重试')}`);
+      }
     } catch (reason: unknown) {
       setError(messageFromError(reason, '启用同步失败，请稍后重试'));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const issueRecoveryKey = async (): Promise<void> => {
+    if (!syncPort || !available || vaultLocked || current.sync === 'local-only') return;
+    setBusy(true);
+    setError(null);
+    try {
+      let revealed: RecoveryKeyIssue | undefined;
+      const nextRecovery = await syncPort.issueRecoveryKey((recoveryKey, keyVersion) => {
+        revealed = { recoveryKey, keyVersion, status: 'pending-confirmation' };
+      });
+      if (!revealed) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      setRecoveryIssue(revealed);
+      setRecoveryInput('');
+      setRecoverySavedOffline(false);
+      setRecoveryCopied(false);
+      setRecovery(nextRecovery);
+      update({ ...current, recovery: nextRecovery });
+    } catch (reason: unknown) {
+      setError(messageFromError(reason, '恢复密钥生成失败，请稍后重试'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmRecoveryKey = async (): Promise<void> => {
+    if (!syncPort || !available || vaultLocked || !recoveryIssue || !recoverySavedOffline || recoveryInput !== recoveryIssue.recoveryKey) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const nextRecovery = await syncPort.confirmRecoveryKey(recoveryInput);
+      setRecovery(nextRecovery);
+      setRecoveryIssue(null);
+      setRecoveryInput('');
+      setRecoverySavedOffline(false);
+      update({ ...current, recovery: nextRecovery });
+      setResolved('恢复密钥已配置');
+    } catch (reason: unknown) {
+      setError(messageFromError(reason, '恢复密钥确认失败，请检查输入'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyRecoveryKey = async (): Promise<void> => {
+    if (!clipboard || !recoveryIssue) return;
+    try {
+      await clipboard.writeText(recoveryIssue.recoveryKey);
+      setRecoveryCopied(true);
+    } catch (reason: unknown) {
+      setError(messageFromError(reason, '复制失败，请手动选择并复制'));
     }
   };
 
@@ -140,7 +232,8 @@ export const SyncCenter = ({
         sync: next.sync,
         head: next.head,
         ...(next.pendingCount === undefined ? {} : { pendingCount: next.pendingCount }),
-        ...(next.lastErrorCode === undefined ? {} : { lastErrorCode: next.lastErrorCode })
+        ...(next.lastErrorCode === undefined ? {} : { lastErrorCode: next.lastErrorCode }),
+        ...(next.recovery === undefined ? {} : { recovery: next.recovery })
       });
     } catch (reason: unknown) {
       setError(messageFromError(reason, '同步重试失败，请稍后重试'));
@@ -189,6 +282,26 @@ export const SyncCenter = ({
           <div><dt>最近同步</dt><dd>{formatDate(current.lastSyncedAt ?? current.head?.updatedAt)}</dd></div>
         </dl>
         {current.lastErrorCode && <p className="sync-reason">原因：{current.lastErrorCode}</p>}
+
+        {available && !vaultLocked && current.sync !== 'local-only' && <section className="sync-recovery" aria-labelledby="sync-recovery-title">
+          <div className="account-section-heading"><strong id="sync-recovery-title">恢复密钥</strong>{recovery.status === 'configured' && <span>版本 {recovery.activeKeyVersion}</span>}</div>
+          {recoveryIssue ? <>
+            <p className="dialog-copy"><strong>请离线保存新的恢复密钥</strong>；关闭此窗口后不会再次显示。它不能通过账号密码重置恢复。</p>
+            <div className="recovery-key-display"><code>{recoveryIssue.recoveryKey}</code>{clipboard && <button className="button button-ghost button-small" type="button" onClick={() => void copyRecoveryKey()}>{recoveryCopied ? '已复制' : '复制'}</button>}</div>
+            <label className="checkbox-field"><input type="checkbox" checked={recoverySavedOffline} onChange={(event) => setRecoverySavedOffline(event.target.checked)} /> <span>我已离线保存恢复密钥</span></label>
+            <label className="field recovery-key-confirm-field"><span>再次输入恢复密钥</span><input aria-label="再次输入恢复密钥" type="text" autoComplete="off" spellCheck={false} value={recoveryInput} onChange={(event) => setRecoveryInput(event.target.value)} /></label>
+            <button className="button button-primary" type="button" disabled={busy || !recoverySavedOffline || recoveryInput !== recoveryIssue.recoveryKey} onClick={() => void confirmRecoveryKey()}>确认已离线保存</button>
+          </> : recovery.status === 'configured' ? <>
+            <p className="dialog-copy">恢复密钥已配置。请将它保存在密码管理器或离线介质中；Relay 不保存恢复密钥明文。</p>
+            <button className="button button-ghost" type="button" disabled={busy} onClick={() => void issueRecoveryKey()}>轮换恢复密钥</button>
+          </> : recovery.status === 'pending-confirmation' ? <>
+            <p className="dialog-copy"><strong>恢复密钥待确认</strong>；上次生成的 key 只显示过一次。为继续使用它，请重新生成并离线保存。</p>
+            <button className="button button-ghost" type="button" disabled={busy} onClick={() => void issueRecoveryKey()}>重新生成恢复密钥</button>
+          </> : <>
+            <p className="dialog-copy">恢复密钥用于在新设备上解锁同步 Vault；丢失主密码和恢复密钥时，云端数据不可恢复。</p>
+            <button className="button button-ghost" type="button" disabled={busy} onClick={() => void issueRecoveryKey()}>生成恢复密钥</button>
+          </>}
+        </section>}
 
         {devicesPort && capabilities.supports('device.trust') && <section className="sync-devices" aria-labelledby="sync-devices-title">
           <div className="account-section-heading"><strong id="sync-devices-title">受信任设备</strong>{devicesLoading && <span>加载中…</span>}</div>

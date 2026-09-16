@@ -1,5 +1,5 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
-import type { AccountSession, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, SftpEntry, Snippet, SnippetMetadata, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
+import type { AccountSession, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, Snippet, SnippetMetadata, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
 
@@ -43,13 +43,24 @@ export interface WebSyncStateResponse {
   lastError?: string;
   lastErrorCode?: string;
   lastSyncedAt?: string;
+  recovery?: RecoveryKeyState;
   deletion?: SyncState['deletion'];
+}
+
+/** The plaintext key is a Web-only, one-time response and never a shared DTO. */
+export interface WebRecoveryKeyIssueResponse {
+  recoveryKey: string;
+  keyVersion: number;
+  status: 'pending-confirmation';
+  recovery: RecoveryKeyState;
 }
 
 export interface WebSyncApi {
   getSyncState(): Promise<WebSyncStateResponse>;
   getSyncDescriptor(): Promise<SyncDescriptor | null>;
   enableSync(): Promise<SyncHead>;
+  issueRecoveryKey(): Promise<WebRecoveryKeyIssueResponse>;
+  confirmRecoveryKey(recoveryKey: string): Promise<RecoveryKeyState>;
   retrySync(): Promise<void>;
   previewPull(): Promise<SyncPreview>;
   resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void>;
@@ -187,6 +198,7 @@ const invalidResponse = (): never => {
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 
 const isInteger = (value: unknown): value is number => Number.isInteger(value);
+const MAX_SYNC_KEY_VERSION = 32;
 
 const isIsoDate = (value: unknown): value is string => isNonEmptyString(value) && Number.isFinite(Date.parse(value));
 
@@ -265,8 +277,12 @@ const parseWrappedKeyEnvelope = (value: unknown): boolean => isRecord(value)
   && isNonEmptyString(value.aad);
 
 const parseVaultUnlockEnvelope = (value: unknown): boolean => {
+  const allowedKeys = new Set(['version', 'kdf', 'wrappedVaultKey', 'recoveryKeyVersion', 'recoveryWrappedVaultKey', 'pendingRecoveryKeyVersion', 'pendingRecoveryWrappedVaultKey']);
   if (!isRecord(value)
-    || !hasExactKeys(value, ['version', 'kdf', 'wrappedVaultKey']) && !hasExactKeys(value, ['version', 'kdf', 'wrappedVaultKey', 'recoveryWrappedVaultKey'])
+    || Object.keys(value).some((key) => !allowedKeys.has(key))
+    || !Object.prototype.hasOwnProperty.call(value, 'version')
+    || !Object.prototype.hasOwnProperty.call(value, 'kdf')
+    || !Object.prototype.hasOwnProperty.call(value, 'wrappedVaultKey')
     || !isInteger(value.version)
     || !isRecord(value.kdf)
     || !hasExactKeys(value.kdf, ['algorithm', 'salt', 'memoryCost', 'timeCost', 'parallelism', 'hashLength'])
@@ -277,7 +293,16 @@ const parseVaultUnlockEnvelope = (value: unknown): boolean => {
     || !isInteger(value.kdf.parallelism)
     || !isInteger(value.kdf.hashLength)
     || !parseWrappedKeyEnvelope(value.wrappedVaultKey)) return false;
-  return value.recoveryWrappedVaultKey === undefined || parseWrappedKeyEnvelope(value.recoveryWrappedVaultKey);
+  const hasRecoveryWrapper = value.recoveryWrappedVaultKey !== undefined;
+  const hasRecoveryVersion = value.recoveryKeyVersion !== undefined;
+  const hasPendingWrapper = value.pendingRecoveryWrappedVaultKey !== undefined;
+  const hasPendingVersion = value.pendingRecoveryKeyVersion !== undefined;
+  if (hasRecoveryWrapper !== hasRecoveryVersion || hasPendingWrapper !== hasPendingVersion) return false;
+  if (hasRecoveryVersion && (!isInteger(value.recoveryKeyVersion) || value.recoveryKeyVersion < 1 || value.recoveryKeyVersion > MAX_SYNC_KEY_VERSION)) return false;
+  if (hasPendingVersion && (!isInteger(value.pendingRecoveryKeyVersion) || value.pendingRecoveryKeyVersion < 1 || value.pendingRecoveryKeyVersion > MAX_SYNC_KEY_VERSION)) return false;
+  if (hasRecoveryVersion && hasPendingVersion && (value.pendingRecoveryKeyVersion as number) <= (value.recoveryKeyVersion as number)) return false;
+  if (hasRecoveryWrapper && !parseWrappedKeyEnvelope(value.recoveryWrappedVaultKey)) return false;
+  return !hasPendingWrapper || parseWrappedKeyEnvelope(value.pendingRecoveryWrappedVaultKey);
 };
 
 const parseSyncDescriptor = (value: unknown): SyncDescriptor => {
@@ -294,15 +319,35 @@ const syncStatuses: readonly SyncStatus[] = ['local-only', 'needs-unlock', 'sync
 
 const isSyncStatus = (value: unknown): value is SyncStatus => typeof value === 'string' && syncStatuses.includes(value as SyncStatus);
 
+const parseRecoveryKeyState = (value: unknown): RecoveryKeyState => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['status', 'activeKeyVersion', 'pendingKeyVersion'])
+    || !['not-configured', 'pending-confirmation', 'configured'].includes(value.status as string)
+    || (value.activeKeyVersion !== null && (!isInteger(value.activeKeyVersion) || value.activeKeyVersion < 1))
+    || (value.activeKeyVersion !== null && value.activeKeyVersion > MAX_SYNC_KEY_VERSION)
+    || (value.pendingKeyVersion !== null && (!isInteger(value.pendingKeyVersion) || value.pendingKeyVersion < 1))
+    || (value.pendingKeyVersion !== null && value.pendingKeyVersion > MAX_SYNC_KEY_VERSION)
+    || (value.status === 'not-configured' && (value.activeKeyVersion !== null || value.pendingKeyVersion !== null))
+    || (value.status === 'configured' && (value.activeKeyVersion === null || value.pendingKeyVersion !== null))
+    || (value.status === 'pending-confirmation' && value.pendingKeyVersion === null)
+    || (value.activeKeyVersion !== null && value.pendingKeyVersion !== null && value.pendingKeyVersion <= value.activeKeyVersion)) return invalidResponse();
+  return {
+    status: value.status as RecoveryKeyState['status'],
+    activeKeyVersion: value.activeKeyVersion as number | null,
+    pendingKeyVersion: value.pendingKeyVersion as number | null
+  };
+};
+
 const parseSyncStateResponse = (value: unknown): WebSyncStateResponse => {
   if (!isRecord(value)
-    || !hasExactKeys(value, ['sync', 'head', 'pendingCount', 'lastError', 'lastErrorCode', 'lastSyncedAt', 'deletion'].filter((key) => value[key] !== undefined))
+    || !hasExactKeys(value, ['sync', 'head', 'pendingCount', 'lastError', 'lastErrorCode', 'lastSyncedAt', 'recovery', 'deletion'].filter((key) => value[key] !== undefined))
     || !isSyncStatus(value.sync)
     || (value.head !== null && !isRecord(value.head))) return invalidResponse();
   const pendingCount = value.pendingCount === undefined ? undefined : isInteger(value.pendingCount) && value.pendingCount >= 0 ? value.pendingCount : invalidResponse();
   if (value.lastError !== undefined && typeof value.lastError !== 'string') return invalidResponse();
   if (value.lastErrorCode !== undefined && typeof value.lastErrorCode !== 'string') return invalidResponse();
   if (value.lastSyncedAt !== undefined && !isIsoDate(value.lastSyncedAt)) return invalidResponse();
+  const recovery = value.recovery === undefined ? undefined : parseRecoveryKeyState(value.recovery);
   const head = value.head === null ? null : parseSyncHead(value.head);
   let deletion: SyncState['deletion'] | undefined;
   if (value.deletion !== undefined) {
@@ -322,7 +367,26 @@ const parseSyncStateResponse = (value: unknown): WebSyncStateResponse => {
     ...(value.lastError === undefined ? {} : { lastError: value.lastError }),
     ...(value.lastErrorCode === undefined ? {} : { lastErrorCode: value.lastErrorCode }),
     ...(value.lastSyncedAt === undefined ? {} : { lastSyncedAt: value.lastSyncedAt }),
+    ...(recovery === undefined ? {} : { recovery }),
     ...(deletion === undefined ? {} : { deletion })
+  };
+};
+
+const parseRecoveryKeyIssue = (value: unknown): WebRecoveryKeyIssueResponse => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['recoveryKey', 'keyVersion', 'status', 'recovery'])
+    || !isNonEmptyString(value.recoveryKey)
+    || value.recoveryKey.length > 128
+    || !/^RLY-RK1(?:-[A-Z2-7]{4})+$/u.test(value.recoveryKey)
+    || !isInteger(value.keyVersion)
+    || value.keyVersion < 1
+    || value.keyVersion > MAX_SYNC_KEY_VERSION
+    || value.status !== 'pending-confirmation') return invalidResponse();
+  return {
+    recoveryKey: value.recoveryKey,
+    keyVersion: value.keyVersion,
+    status: 'pending-confirmation',
+    recovery: parseRecoveryKeyState(value.recovery)
   };
 };
 
@@ -406,6 +470,13 @@ export const getSyncState: WebSyncApi['getSyncState'] = () => request<unknown>('
 export const getSyncDescriptor: WebSyncApi['getSyncDescriptor'] = () => request<unknown>('/api/sync/v1/descriptor').then(parseSyncDescriptorResponse);
 
 export const enableSync: WebSyncApi['enableSync'] = () => request<unknown>('/api/sync/v1/enable', { method: 'POST' }).then(parseSyncHead);
+
+export const issueRecoveryKey: WebSyncApi['issueRecoveryKey'] = () => request<unknown>('/api/sync/v1/recovery-key/issue', { method: 'POST' }).then(parseRecoveryKeyIssue);
+
+export const confirmRecoveryKey: WebSyncApi['confirmRecoveryKey'] = (recoveryKey) => request<unknown>('/api/sync/v1/recovery-key/confirm', {
+  method: 'POST',
+  ...json({ recoveryKey })
+}).then(parseRecoveryKeyState);
 
 export const retrySync: WebSyncApi['retrySync'] = async () => {
   await request<unknown>('/api/sync/v1/retry', { method: 'POST' });

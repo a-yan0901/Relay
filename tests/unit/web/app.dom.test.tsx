@@ -292,4 +292,37 @@ describe('App boot recovery', () => {
     expect(within(screen.getByRole('dialog', { name: '账号与同步' })).getByText('账号已登录')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Server', exact: true })).toBeInTheDocument();
   });
+
+  it('passes recovery state through the app into the sync center', async () => {
+    const user = userEvent.setup();
+    const account = {
+      accountId: 'account-1',
+      deviceId: 'device-1',
+      state: 'signed-in' as const,
+      expiresAt: '2026-09-17T00:00:00.000Z'
+    };
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.getCapabilities.mockResolvedValue({ client: 'web', version: 1, capabilities: ['account.auth', 'device.trust', 'sync.encrypted'] });
+    apiMocks.getAccountSession.mockResolvedValue({ account: null });
+    apiMocks.signIn.mockResolvedValue({ account });
+    apiMocks.getSyncState.mockResolvedValue({
+      sync: 'synced',
+      head: { vaultId: 'vault-1', revision: 1, keyVersion: 1, payloadHash: 'a'.repeat(64), updatedAt: '2026-09-16T00:00:00.000Z' },
+      pendingCount: 0,
+      recovery: { status: 'pending-confirmation', activeKeyVersion: null, pendingKeyVersion: 1 }
+    });
+    apiMocks.listDevices.mockResolvedValue([]);
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    renderApp();
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.click(screen.getByRole('button', { name: '账号菜单' }));
+    await user.type(await screen.findByLabelText('账号邮箱'), 'user@example.com');
+    await user.type(screen.getByLabelText('账号密码'), 'account-password');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+    await user.click(screen.getByRole('button', { name: '打开同步中心' }));
+
+    expect(await screen.findByText(/恢复密钥待确认/u)).toBeInTheDocument();
+  });
 });
