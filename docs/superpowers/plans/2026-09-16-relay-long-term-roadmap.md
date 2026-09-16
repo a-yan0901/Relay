@@ -817,7 +817,7 @@ export interface TargetSelectionSnapshot {
 
 ## Task S-01: Identity、Host Key 和安全确认体验收口
 
-**Status:** Ready
+**Status:** Done（2026-09-16）
 **Priority:** P1
 **Milestone:** M3
 **Depends on:** R-01 状态/错误语义；现有 Identity、Group inheritance 和 Host Key policy。
@@ -825,9 +825,12 @@ export interface TargetSelectionSnapshot {
 **Files:**
 
 - Modify: `src/shared/core/connection-resolution.ts`, `src/shared/core/models.ts`, `src/shared/validation.ts`, `src/shared/errors.ts`
+- Modify: `src/shared/core/ports.ts`, `src/shared/protocol.ts`
 - Modify: `src/server/identity/identity-service.ts`, `src/server/ssh/host-key-policy.ts`, `src/server/ssh/connection-resource-provider.ts`, `src/server/api/identity-routes.ts`, `src/server/api/host-routes.ts`
-- Modify: `src/web/components/HostForm.tsx`, `src/web/components/HostCard.tsx`, `src/web/components/IdentityManager.tsx`, `src/web/components/IdentityEditor.tsx`, `src/web/components/HostKeyDialog.tsx`
-- Test: `tests/unit/shared/connection-resolution.test.ts`, `tests/unit/server/identity-service.test.ts`, `tests/unit/server/host-key-policy.test.ts`, `tests/integration/server/host-routes.test.ts`, `tests/unit/web/host-form.dom.test.tsx`, `tests/unit/web/host-key-dialog.dom.test.tsx`, `tests/unit/web/identity-manager.dom.test.tsx`
+- Modify: `src/server/db/repositories.ts`
+- Modify: `src/web/App.tsx`, `src/web/api.ts`, `src/web/platform/web-adapters.ts`, `src/web/hooks/use-terminal-session.ts`, `src/web/styles.css`
+- Modify: `src/web/components/HostForm.tsx`, `src/web/components/HostCard.tsx`, `src/web/components/HostList.tsx`, `src/web/components/HostWorkspace.tsx`, `src/web/components/IdentityManager.tsx`, `src/web/components/IdentityEditor.tsx`, `src/web/components/HostKeyDialog.tsx`
+- Test: `tests/unit/shared/connection-resolution.test.ts`, `tests/unit/server/identity-service.test.ts`, `tests/unit/server/host-key-policy.test.ts`, `tests/integration/server/host-routes.test.ts`, `tests/integration/server/terminal-gateway.test.ts`, `tests/unit/web/host-form.dom.test.tsx`, `tests/unit/web/host-card.dom.test.tsx`, `tests/unit/web/host-key-dialog.dom.test.tsx`, `tests/unit/web/identity-manager.dom.test.tsx`, `tests/unit/web/web-adapters.test.ts`
 
 **Interfaces and policy:**
 
@@ -835,19 +838,19 @@ export interface TargetSelectionSnapshot {
 - Host Key 变化流程展示地址、算法、旧 SHA-256 指纹、新 SHA-256 指纹和安全动作；不提供“跳过校验”按钮。
 - Identity metadata 可显示名称、用户名、类型、指纹和使用数量；password/privateKey/passphrase 只在 server Vault 密文中使用。
 
-- [ ] **Step 1: 写 username/Host Key 安全测试。**
+- [x] **Step 1: 写 username/Host Key 安全测试。**
 
   覆盖 Host/Identity/Group 三层 username 优先级、首次指纹、已知指纹变化、拒绝后重试、清除旧信任后重新确认、Identity 删除前使用量检查。
 
-- [ ] **Step 2: 实现解析和完整变更流。**
+- [x] **Step 2: 实现解析和完整变更流。**
 
   将旧/新指纹传给显式安全 Dialog；拒绝不会更新信任；清除旧信任是单独的安全操作；连接资源 provider 使用同一 `resolveConnectionConfiguration()`。
 
-- [ ] **Step 3: 优化表单和卡片信息。**
+- [x] **Step 3: 优化表单和卡片信息。**
 
   Host 卡片显示最终身份来源、环境和 Host Key 状态；表单将 inline/Identity/Group source 分组，避免用户误以为编辑 Identity 会覆盖 Host 的显式 username。
 
-- [ ] **Step 4: 运行安全 focused tests 并提交。**
+- [x] **Step 4: 运行安全 focused tests 并提交。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -860,6 +863,13 @@ export interface TargetSelectionSnapshot {
 **Acceptance:** 用户能看懂凭据/身份的最终来源；Host Key 变化不会静默放行；删除、替换和恢复信任都不会留下旧密文或错误的信任关系。
 
 **Verification:** connection-resolution、identity、Host Key policy、route 和 Dialog focused tests；覆盖拒绝/清除旧信任/重新确认路径，并执行敏感数据扫描。
+
+**Delivery evidence（2026-09-16）：**
+
+- `b3d4c8e feat: clarify identity and host key safety flows`：Host username 优先级和 Identity 默认用户名、Identity 轮换时清理旧 key metadata、Host Key algorithm/fingerprint 变化 challenge、拒绝保留旧信任、显式替换、独立清除信任 API（`DELETE /api/hosts/:id/host-key`）、非交互资源的严格 Host Key 校验，以及 Host/Identity/Group/Host Key UI 信息收口。
+- focused security suite：9 个文件、41 个测试通过；Terminal WebSocket changed-key flow 通过集成测试，覆盖旧/新指纹传递与显式替换。
+- full validation：`npm test` 93 个文件 / 381 个测试通过；`npm run build`、`npm run typecheck`、`npm run lint`、`git diff --check` 通过；敏感字段仍只在服务端 Vault 路径处理，Host/Identity metadata 和审计路径未返回凭据正文。
+- Chromium E2E：`host-to-terminal.spec.ts`、`ssh-productivity.spec.ts` 共 3/3 通过。
 
 ---
 
