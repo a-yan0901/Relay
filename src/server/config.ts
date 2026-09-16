@@ -7,6 +7,8 @@ export interface AppRuntimeConfig {
   trustedOrigins: string[];
   sessionIdleTimeoutMs: number;
   maxSessions: number;
+  /** Optional for backwards-compatible test/embedding configs; loadConfig always supplies a boolean. */
+  accountSyncEnabled?: boolean;
   rateLimitMax?: number;
   logLevel: string;
 }
@@ -41,6 +43,13 @@ const parseNodeEnv = (value: string | undefined): AppRuntimeConfig['nodeEnv'] =>
   if (value === undefined || value === '') return 'development';
   if (value === 'development' || value === 'test' || value === 'production') return value;
   throw new Error('NODE_ENV must be development, test, or production');
+};
+
+const parseAccountSyncEnabled = (value: string | undefined): boolean => {
+  if (value === undefined) return false;
+  if (value === 'true' || value === '1') return true;
+  if (value === 'false' || value === '0') return false;
+  throw new Error('ACCOUNT_SYNC_ENABLED must be true, false, 1, or 0');
 };
 
 const parseDataDir = (value: string | undefined): string => {
@@ -127,6 +136,7 @@ export const loadConfig = (env: Environment = process.env): AppRuntimeConfig => 
     trustedOrigins: parseTrustedOrigins(env, nodeEnv),
     sessionIdleTimeoutMs,
     maxSessions,
+    accountSyncEnabled: parseAccountSyncEnabled(env.ACCOUNT_SYNC_ENABLED),
     rateLimitMax,
     logLevel
   };

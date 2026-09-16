@@ -11,6 +11,7 @@ describe('loadConfig', () => {
       sessionIdleTimeoutMs: 86_400_000,
       maxSessions: 8,
       rateLimitMax: 120,
+      accountSyncEnabled: false,
       logLevel: 'info'
     });
   });
@@ -42,9 +43,15 @@ describe('loadConfig', () => {
       logLevel: 'debug'
     });
 
+    expect(loadConfig({ NODE_ENV: 'test', ACCOUNT_SYNC_ENABLED: 'true' }).accountSyncEnabled).toBe(true);
+    expect(loadConfig({ NODE_ENV: 'test', ACCOUNT_SYNC_ENABLED: '1' }).accountSyncEnabled).toBe(true);
+    expect(loadConfig({ NODE_ENV: 'test', ACCOUNT_SYNC_ENABLED: 'false' }).accountSyncEnabled).toBe(false);
+    expect(loadConfig({ NODE_ENV: 'test', ACCOUNT_SYNC_ENABLED: '0' }).accountSyncEnabled).toBe(false);
+
     expect(() => loadConfig({ PORT: '0' })).toThrow('PORT');
     expect(() => loadConfig({ SESSION_IDLE_TIMEOUT: '10' })).toThrow('SESSION_IDLE_TIMEOUT');
     expect(() => loadConfig({ RATE_LIMIT_MAX: '0' })).toThrow('RATE_LIMIT_MAX');
     expect(() => loadConfig({ TRUSTED_ORIGINS: 'ssh.example' })).toThrow('TRUSTED_ORIGINS');
+    expect(() => loadConfig({ ACCOUNT_SYNC_ENABLED: 'yes' })).toThrow('ACCOUNT_SYNC_ENABLED');
   });
 });

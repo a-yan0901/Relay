@@ -427,11 +427,11 @@ DELETE /api/account/devices/:deviceId
   → 204; current device deletion also invalidates its account sessions
 ```
 
-- [ ] **Step 1: Write failing route/config tests.**
+- [x] **Step 1: Write failing route/config tests.**
 
   断言 `ACCOUNT_SYNC_ENABLED` 只接受 `true/false/1/0`，默认关闭；关闭时 account routes 和 capability 返回 `CAPABILITY_UNAVAILABLE`，且不触发 account DB 写入。开启时测试注册、登录、session cookie 属性、状态查询、登出保留 Vault session、设备列表/撤销、未登录 401、错误 Origin 403 和敏感字段不出响应。
 
-- [ ] **Step 2: Run integration tests to verify failure.**
+- [x] **Step 2: Run integration tests to verify failure.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -440,15 +440,15 @@ DELETE /api/account/devices/:deviceId
 
   Expected: FAIL because config and account routes are not wired.
 
-- [ ] **Step 3: Add feature flag and capability advertisement.**
+- [x] **Step 3: Add feature flag and capability advertisement.**
 
   `AppRuntimeConfig` 增加 `accountSyncEnabled`，`loadConfig` 默认 `false`；`GET /api/capabilities` 使用 `createWebCapabilitySet({ maxWorkspacePanes, accountSyncEnabled })`，关闭时不广告 account/device/sync。所有 account route 先检查 enabled，再验证 trusted Origin 和严格 Zod body。
 
-- [ ] **Step 4: Wire account service and routes.**
+- [x] **Step 4: Wire account service and routes.**
 
   `buildApp` 创建可注入的 `AccountService`/`AccountSessionStore`，注册 routes；路由从 cookie 读取 session，owner 不从 body 派生。register/sign-in 成功才 set account cookie；delete session 只 revoke account session，不调用 `SessionStore.revoke`，从而保持 Local-only Vault/SSH 可用。设备 revoke 统一清理被撤销设备 sessions，并在审计中只记录 account/device opaque id、动作和 request id。
 
-- [ ] **Step 5: Run route focused tests.**
+- [x] **Step 5: Run route focused tests.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -457,7 +457,7 @@ DELETE /api/account/devices/:deviceId
 
   Expected: PASS; existing setup/unlock/lock behavior remains unchanged.
 
-- [ ] **Step 6: Commit account route slice.**
+- [x] **Step 6: Commit account route slice.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

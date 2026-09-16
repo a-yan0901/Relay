@@ -260,15 +260,17 @@ describe('web adapters', () => {
     expect(runtime.snippets).toBeDefined();
     expect(runtime.activity).toBeDefined();
     expect(runtime.imports).toBeDefined();
-    await expect(runtime.refreshCapabilities()).resolves.toEqual(expect.objectContaining({ capabilities: ['workspace.persistence'] }));
+    await expect(runtime.refreshCapabilities()).resolves.toEqual(expect.objectContaining({
+      capabilities: ['workspace.persistence', 'account.auth', 'sync.encrypted']
+    }));
     expect(runtime.capabilities.supports('workspace.persistence')).toBe(true);
     expect(runtime.capabilities.supports('workspace.multi-pane')).toBe(false);
     expect(runtime.capabilities.clientCapabilities).toContain('sftp.local-files');
     expect(runtime.capabilities.serverCapabilities).toEqual(['workspace.persistence', 'account.auth', 'sync.encrypted']);
-    expect(runtime.capabilities.intersection).toEqual(['workspace.persistence']);
+    expect(runtime.capabilities.intersection).toEqual(['workspace.persistence', 'account.auth', 'sync.encrypted']);
     expect(runtime.capabilities.supports('transfer.resume')).toBe(false);
-    expect(runtime.capabilities.supports('account.auth')).toBe(false);
-    expect(runtime.capabilities.supports('sync.encrypted')).toBe(false);
+    expect(runtime.capabilities.supports('account.auth')).toBe(true);
+    expect(runtime.capabilities.supports('sync.encrypted')).toBe(true);
   });
 
   it('intersects a server pane limit with the Web platform upper bound', async () => {

@@ -1,5 +1,5 @@
 import type { CapabilitySet } from '../../shared/core/capabilities';
-import { createWebCapabilitySet, negotiateCapabilitySet } from '../../shared/core/capabilities';
+import { createWebCapabilitySet, negotiateCapabilitySet, WEB_CLIENT_CAPABILITIES } from '../../shared/core/capabilities';
 import type {
   ActivityFilter,
   ActivityPage,
@@ -61,8 +61,7 @@ const webPaneLimit = (serverLimit: number | undefined): number => {
 };
 
 const createEffectiveWebCapabilitySet = (serverCapabilities: readonly Capability[], serverLimit?: number): CapabilitySet => {
-  const clientCapabilities = createWebCapabilitySet().clientCapabilities;
-  return negotiateCapabilitySet('web', clientCapabilities, serverCapabilities, { maxWorkspacePanes: webPaneLimit(serverLimit) });
+  return negotiateCapabilitySet('web', WEB_CLIENT_CAPABILITIES, serverCapabilities, { maxWorkspacePanes: webPaneLimit(serverLimit) });
 };
 
 const emptyWorkspace = (): WorkspaceState => ({

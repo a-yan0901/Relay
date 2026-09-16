@@ -11,6 +11,7 @@ import { AppError } from '../shared/errors.js';
 import { createWebCapabilitySet } from '../shared/core/capabilities.js';
 import {
   AppConfigRepository,
+  AccountRepository,
   AuditRepository,
   GroupRepository,
   HostRepository
@@ -25,6 +26,9 @@ import { registerSftpRoutes } from './api/sftp-routes.js';
 import { registerCommandRoutes } from './api/command-routes.js';
 import { registerAuditRoutes } from './api/audit-routes.js';
 import { SessionStore } from './auth/session-store.js';
+import { AccountSessionStore } from './account/account-session-store.js';
+import { AccountService } from './account/account-service.js';
+import { registerAccountRoutes } from './account/account-routes.js';
 import type { SqliteDatabase } from './db/database.js';
 import { WorkspaceRepository } from './workspace/workspace-repository.js';
 import { WorkspaceService } from './workspace/workspace-service.js';
@@ -54,6 +58,8 @@ export interface AppDependencies {
   serviceInstanceId?: string;
   appConfigRepository?: AppConfigRepository;
   sessionStore?: SessionStore;
+  accountSessionStore?: AccountSessionStore;
+  accountService?: AccountService;
   vaultService?: VaultService;
   hostRepository?: HostRepository;
   groupRepository?: GroupRepository;
@@ -75,6 +81,8 @@ export interface AppDependencies {
 export interface BuiltAppDependencies {
   appConfigRepository: AppConfigRepository;
   sessionStore: SessionStore;
+  accountSessionStore: AccountSessionStore;
+  accountService: AccountService;
   vaultService: VaultService;
   hostRepository: HostRepository;
   groupRepository: GroupRepository;
@@ -88,6 +96,12 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   const appConfigRepository = dependencies.appConfigRepository ?? new AppConfigRepository(dependencies.database);
   const sessionStore = dependencies.sessionStore ?? new SessionStore({
     idleTimeoutMs: dependencies.config.sessionIdleTimeoutMs
+  });
+  const accountSessionStore = dependencies.accountSessionStore ?? new AccountSessionStore();
+  const accountRepository = new AccountRepository(dependencies.database);
+  const accountService = dependencies.accountService ?? new AccountService({
+    accountRepository,
+    sessionStore: accountSessionStore
   });
   const vaultService = dependencies.vaultService ?? new VaultService();
   const hostRepository = dependencies.hostRepository ?? new HostRepository(dependencies.database, 'default');
@@ -157,6 +171,8 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   const appDependencies: BuiltAppDependencies = {
     appConfigRepository,
     sessionStore,
+    accountSessionStore,
+    accountService,
     vaultService,
     hostRepository,
     groupRepository,
@@ -242,7 +258,10 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   app.get('/api/capabilities', async (_request, reply) => {
     // maxSessions is a safe server-side upper bound; the browser adapter still
     // intersects it with its own local rendering limit.
-    const capabilitySet = createWebCapabilitySet({ maxWorkspacePanes: dependencies.config.maxSessions });
+    const capabilitySet = createWebCapabilitySet({
+      maxWorkspacePanes: dependencies.config.maxSessions,
+      accountSyncEnabled: dependencies.config.accountSyncEnabled === true
+    });
     reply.send({ client: capabilitySet.client, version: capabilitySet.version, capabilities: capabilitySet.capabilities, limits: capabilitySet.limits });
   });
 
@@ -250,6 +269,13 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     ...appDependencies,
     config: dependencies.config,
     sshSessionManager
+  });
+  await registerAccountRoutes(app, {
+    accountService,
+    accountSessionStore,
+    auditRepository,
+    enabled: dependencies.config.accountSyncEnabled === true,
+    secureCookie: dependencies.config.nodeEnv === 'production'
   });
   await registerGroupRoutes(app, {
     groupRepository,
