@@ -565,6 +565,24 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .auth-form .button, .host-form .button { width: 100%; }
 
+.unlock-recovery-trigger { margin-top: 10px; }
+
+.sync-recovery-card { max-width: 480px; }
+
+.recovery-methods { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 0 20px; }
+
+.recovery-methods .button { min-width: 0; }
+
+.sync-recovery-preview { background: rgba(93, 168, 255, 0.06); border: 1px solid rgba(93, 168, 255, 0.16); border-radius: 10px; margin-top: 18px; padding: 14px; }
+
+.sync-recovery-preview .account-section-heading { margin-bottom: 9px; }
+
+.sync-recovery-preview .dialog-copy { color: var(--text); line-height: 1.65; margin: 0 0 12px; }
+
+.sync-recovery-preview .dialog-warning { font-size: 12px; line-height: 1.6; margin-bottom: 12px; }
+
+.sync-recovery-preview .security-note { margin: 0 0 14px; }
+
 .auth-error, .form-error { background: rgba(255, 125, 125, 0.08); border: 1px solid rgba(255, 125, 125, 0.2); border-radius: 7px; color: #ffb1b1; font-size: 12px; line-height: 1.55; margin: 0; padding: 10px 11px; }
 
 .auth-note { border-top: 1px solid var(--border); color: var(--faint); font-size: 11px; line-height: 1.7; margin: 25px 0 0; padding-top: 16px; }

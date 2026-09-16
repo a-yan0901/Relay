@@ -15,6 +15,7 @@ import type {
   SessionTransport,
   SnippetStore,
   SyncPort,
+  VaultRecoveryPort,
   VaultSessionPort,
   WorkspaceStore
 } from './ports.js';
@@ -31,6 +32,8 @@ export interface CoreRuntime {
    */
   negotiateCapabilities(): Promise<CapabilitySet>;
   vault: VaultSessionPort;
+  /** Optional new-device recovery; Local-only runtimes do not need it. */
+  vaultRecovery?: VaultRecoveryPort;
   hosts: HostStore;
   connection: ConnectionProbe;
   identities: IdentityStore;

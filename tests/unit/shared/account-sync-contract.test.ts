@@ -5,7 +5,7 @@ import {
   describeAccountSyncState,
   isSafeSyncEnvelopeMetadata
 } from '../../../src/shared/core/account-sync.js';
-import type { AccountSession, SyncEnvelope } from '../../../src/shared/core/models.js';
+import type { AccountSession, SyncEnvelope, VaultRecoveryPreview } from '../../../src/shared/core/models.js';
 import { createInMemoryCoreRuntime } from '../../fixtures/native-runtime.js';
 
 describe('account and sync shared contract', () => {
@@ -74,5 +74,25 @@ describe('account and sync shared contract', () => {
     expect(runtime.sync).toBeUndefined();
     expect(runtime.vault).toBeDefined();
     expect(runtime.sessions).toBeDefined();
+  });
+
+  it('keeps new-device recovery preview metadata safe and bounded', () => {
+    const preview: VaultRecoveryPreview = {
+      previewId: 'preview-1',
+      vaultId: 'vault-1',
+      revision: 2,
+      payloadHash: 'a'.repeat(64),
+      hostCount: 3,
+      groupCount: 1,
+      identityCount: 1,
+      snippetCount: 2,
+      workspaceIncluded: true,
+      conflictTypes: ['host-key'],
+      expiresAt: '2026-09-17T10:00:00.000Z'
+    };
+
+    expect(JSON.stringify(preview)).not.toMatch(/secret|masterPassword|recoveryKey|token|plaintext/iu);
+    expect(preview.hostCount + preview.groupCount + preview.identityCount + preview.snippetCount).toBe(7);
+    expect(preview.conflictTypes).toEqual(['host-key']);
   });
 });

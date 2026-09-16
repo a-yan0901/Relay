@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { confirmRecoveryKey, getAccountSession, getSetupStatus, getSyncState, issueRecoveryKey, signIn } from '../../../src/web/api';
+import { applySyncRecovery, confirmRecoveryKey, getAccountSession, getSetupStatus, getSyncState, issueRecoveryKey, previewSyncRecovery, signIn } from '../../../src/web/api';
 
 describe('web API request lifecycle', () => {
   afterEach(() => {
@@ -85,5 +85,37 @@ describe('web API request lifecycle', () => {
       activeKeyVersion: 1,
       pendingKeyVersion: null
     });
+  });
+
+  it('keeps new-device recovery payloads strict and sends secrets only in the explicit request', async () => {
+    const preview = {
+      previewId: 'preview-1',
+      vaultId: 'vault-1',
+      revision: 2,
+      payloadHash: 'a'.repeat(64),
+      hostCount: 1,
+      groupCount: 0,
+      identityCount: 0,
+      snippetCount: 2,
+      workspaceIncluded: true,
+      conflictTypes: [],
+      expiresAt: '2026-09-17T00:10:00.000Z'
+    };
+    const fetchMock = vi.fn(async (input: string) => {
+      if (input.endsWith('/preview')) return new Response(JSON.stringify(preview), { status: 200 });
+      return new Response(JSON.stringify({ initialized: true, locked: false }), { status: 201 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(previewSyncRecovery({ method: 'recovery-key', secret: 'one-time-recovery-key' })).resolves.toEqual(preview);
+    await expect(applySyncRecovery('preview-1', { method: 'recovery-key', secret: 'one-time-recovery-key' })).resolves.toEqual({ initialized: true, locked: false });
+    expect(JSON.parse((fetchMock.mock.calls[0]?.[1] as { body?: string }).body as string)).toEqual({ method: 'recovery-key', secret: 'one-time-recovery-key' });
+    expect(JSON.parse((fetchMock.mock.calls[1]?.[1] as { body?: string }).body as string)).toEqual({ previewId: 'preview-1', method: 'recovery-key', secret: 'one-time-recovery-key' });
+
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ ...preview, secret: 'must-not-cross-boundary' }), { status: 200 }));
+    await expect(previewSyncRecovery({ method: 'master-password', secret: 'master-password' })).rejects.toMatchObject({ code: 'PROTOCOL_INVALID_MESSAGE' });
+
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ ...preview, conflictTypes: ['host', 'group', 'identity', 'snippet', 'workspace', 'host-key', 'host'] }), { status: 200 }));
+    await expect(previewSyncRecovery({ method: 'master-password', secret: 'master-password' })).rejects.toMatchObject({ code: 'PROTOCOL_INVALID_MESSAGE' });
   });
 });

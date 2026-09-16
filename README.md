@@ -19,7 +19,7 @@ docker compose up -d --build
 
 服务端默认按来源限制每分钟 120 个请求；只有在明确评估部署流量后才调整 `RATE_LIMIT_MAX`，不要用它替代反向代理和身份认证层的限流。
 
-账号与加密同步默认关闭。部署者明确设置 `ACCOUNT_SYNC_ENABLED=true` 后，用户才能注册/登录账号、管理受信设备并同步加密 Vault 快照；未登录时不会请求账号或同步接口。账号密码与 Vault 主密码相互独立，登录后仍必须先解锁本地 Vault 才能启用同步。同步只包含加密的 Host、Identity、Group、Snippet 和 Workspace 快照，不包含 live Shell、终端内容、SFTP 文件、传输任务、批量执行或默认活动输出。
+账号与加密同步默认关闭。部署者明确设置 `ACCOUNT_SYNC_ENABLED=true` 后，用户才能注册/登录账号、管理受信设备并同步加密 Vault 快照；未登录时不会请求账号或同步接口。账号密码与 Vault 主密码相互独立，登录后仍必须先解锁本地 Vault 才能启用同步；新设备可在登录账号后用原 Vault 主密码或已确认的 recovery key 预览并恢复本地 Vault。同步只包含加密的 Host、Identity、Group、Snippet 和 Workspace 快照，不包含 live Shell、终端内容、SFTP 文件、传输任务、批量执行或默认活动输出。
 
 ## 工作区使用
 
@@ -104,6 +104,6 @@ npm run build
 
 ## 威胁模型边界
 
-此版本仍是单 Vault、单实例产品，已包含 SFTP、ProxyJump、工作区恢复、批量命令、脱敏活动摘要、可选的个人账号/加密快照同步核心切片（默认关闭）以及 recovery key 的一次展示、离线确认和包装轮换；独立新设备恢复 UI、完整账号删除 re-auth、团队 RBAC、SSO、端口转发、RDP/VNC/X11、Telnet、串口或其他远程协议仍未交付。同步服务保存的是 opaque 加密 envelope，但当前 Web-mediated Relay 仍是解密 Vault 并执行 SSH/SFTP/命令的受信边界，不宣称零知识。数据库和备份只得到静态加密保护；能够控制一个已解锁容器、Node 进程或其运行用户的攻击者，可能读取活动会话正在使用的凭据。因此应保护宿主机、Docker socket、`/data` 备份和反向代理管理面，并在离开设备时锁定 Vault。
+此版本仍是单 Vault、单实例产品，已包含 SFTP、ProxyJump、工作区恢复、批量命令、脱敏活动摘要、可选的个人账号/加密快照同步核心切片（默认关闭）、recovery key 的一次展示/离线确认/包装轮换，以及 Web 新设备恢复的预览与事务应用；完整账号删除 re-auth、冲突加密导出、团队 RBAC、SSO、端口转发、RDP/VNC/X11、Telnet、串口或其他远程协议仍未交付。同步服务保存的是 opaque 加密 envelope，但当前 Web-mediated Relay 仍是解密 Vault 并执行 SSH/SFTP/命令的受信边界，不宣称零知识。数据库和备份只得到静态加密保护；能够控制一个已解锁容器、Node 进程或其运行用户的攻击者，可能读取活动会话正在使用的凭据。因此应保护宿主机、Docker socket、`/data` 备份和反向代理管理面，并在离开设备时锁定 Vault。
 
-应用日志和活动页只记录脱敏的请求、连接状态、SFTP 生命周期和批量任务摘要，不记录终端输入输出、完整 WebSocket 消息、展开后的变量值或认证材料。批量输出按主机隔离并在 TTL 后清理；短暂浏览器断线可在会话保留窗口内重连；应用进程重启不承诺远程 shell 或内存任务继续存在。当前交付为 Web-first；桌面版以及 Windows、Linux、Android 客户端通过 shared core、可选 account/sync ports 和 adapter contract 预留，尚未交付原生 UI。账号同步核心切片已通过技术门禁，但完整 M5 安全发布仍待独立新设备恢复、冲突导出、删除 re-auth 和账号删除闭环。
+应用日志和活动页只记录脱敏的请求、连接状态、SFTP 生命周期和批量任务摘要，不记录终端输入输出、完整 WebSocket 消息、展开后的变量值或认证材料。批量输出按主机隔离并在 TTL 后清理；短暂浏览器断线可在会话保留窗口内重连；应用进程重启不承诺远程 shell 或内存任务继续存在。当前交付为 Web-first；桌面版以及 Windows、Linux、Android 客户端通过 shared core、可选 account/sync ports 和 adapter contract 预留，尚未交付原生 UI。账号同步与 Web 新设备恢复核心切片已通过技术门禁，但完整 M5 安全发布仍待冲突导出、删除 re-auth 和账号删除闭环。

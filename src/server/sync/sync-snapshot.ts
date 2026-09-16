@@ -32,6 +32,14 @@ export interface SyncSnapshot extends BundlePayload {
   workspace: WorkspaceState;
 }
 
+export interface SyncSnapshotSummary {
+  hostCount: number;
+  groupCount: number;
+  identityCount: number;
+  snippetCount: number;
+  workspaceIncluded: boolean;
+}
+
 export interface SyncSnapshotServiceOptions {
   ownerId: string;
   database: SqliteDatabase;
@@ -189,6 +197,17 @@ export class SyncSnapshotService {
     };
   }
 
+  describe(plaintext: Buffer): SyncSnapshotSummary {
+    const snapshot = this.validate(plaintext);
+    return {
+      hostCount: snapshot.hosts.length,
+      groupCount: snapshot.groups.length,
+      identityCount: snapshot.identities?.length ?? 0,
+      snippetCount: snapshot.snippets.length,
+      workspaceIncluded: true
+    };
+  }
+
   async previewApply(ownerId: string, _vaultKey: Buffer, plaintext: Buffer): Promise<SyncPreview> {
     this.assertOwner(ownerId);
     const snapshot = this.validate(plaintext);
@@ -219,7 +238,7 @@ export class SyncSnapshotService {
     };
   }
 
-  async apply(ownerId: string, vaultKey: Buffer, plaintext: Buffer, resolution: SyncResolution): Promise<void> {
+  async apply(ownerId: string, vaultKey: Buffer, plaintext: Buffer, resolution: SyncResolution, afterApply?: () => void): Promise<void> {
     this.assertOwner(ownerId);
     const snapshot = this.validate(plaintext);
     if (resolution === 'keep-local' || resolution === 'export-both') return;
@@ -257,6 +276,7 @@ export class SyncSnapshotService {
           else this.options.snippetRepository.create(row);
         }
         this.options.workspaceRepository.replaceWithinTransaction(ownerId, snapshot.workspace);
+        afterApply?.();
       }
     );
   }

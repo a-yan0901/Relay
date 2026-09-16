@@ -143,7 +143,7 @@ Web 的 `SecretStore` 不在浏览器中保存主密码、服务器凭据、导�
 - 同步对象包括加密的 Host/Identity/Group/Snippet/Workspace 数据；不包括 live Shell、terminal/session id、TransferJob、CommandRun、终端原始内容、SFTP 文件内容和默认 Activity 输出。
 - 首版采用 encrypted snapshot + revision conflict；服务端 revision 冲突时拒绝覆盖，客户端保留两侧加密副本并要求用户在“保留本地/使用远端”之间选择，不能静默最后写入覆盖 Host Key、凭据、ProxyJump 或 Snippet command；“导出两份”仍待独立加密导出流程。
 - 登出或设备撤销停止同步但保留本地数据；同步服务离线时本地 SSH/SFTP/批量能力继续工作，状态显示 `offline`/`pending`。
-- 当前已提供 `/api/setup/from-sync` 的 master-password bootstrap-only 后端边界，并已交付 recovery key 的一次展示、离线确认、错误输入保护和包装轮换；尚无独立本地 Vault 的新设备恢复 UI，真实删除 re-auth 和完整账号删除闭环也未交付，不能把账号登录误认为可以自动恢复 Vault。
+- 当前已提供 `/api/setup/from-sync` 的 master-password bootstrap-only 兼容边界，以及 `/api/setup/from-sync/preview` + `/api/setup/from-sync/apply` 的 Web 新设备恢复流程：账号登录后，用户可用原 Vault 主密码或 active recovery key 预览加密快照，确认后在事务中创建本地 Vault。恢复预览 token 只保存在服务端内存并短时过期，输入不进入 shared state、浏览器持久化、日志或响应；真实删除 re-auth、冲突加密导出和完整账号删除闭环仍未交付，不能把账号登录误认为可以自动恢复 Vault。
 
 共享 DTO/可选 ports 只保存 account/device/sync 状态和密文 envelope，不把 session token、主密码、私钥、passphrase、recovery key 或解锁后的凭据放入 shared state/DTO；Web recovery key 只通过一次性 reveal callback 进入当前 UI 内存。Web 使用 HttpOnly Secure session；桌面/Android 使用 OS keychain/Keystore。具体账号 provider 可以替换，但不能把 provider-specific auth 字段传播到 shared core。Desktop/Android 仍只有 native-like contract 覆盖，没有原生 UI、系统密钥存储或真实生命周期交付证据。
 

@@ -399,12 +399,11 @@ export const App = ({ runtime }: AppProps) => {
         dispatch({ type: 'setup', initialized: status.phase !== 'uninitialized', locked: status.phase !== 'unlocked' });
         if (status.phase === 'unlocked') {
           void loadWorkspace();
-        } else if (status.phase === 'locked') {
+        } else {
+          if (status.phase === 'uninitialized') clearTerminalDescriptors();
           void runtime.negotiateCapabilities().then((nextCapabilities) => {
             if (!cancelled) setCapabilities(nextCapabilities);
           }).catch(() => undefined);
-        } else if (status.phase === 'uninitialized') {
-          clearTerminalDescriptors();
         }
       })
       .catch((error: unknown) => {
@@ -484,6 +483,12 @@ export const App = ({ runtime }: AppProps) => {
       dispatch({ type: 'error', message: messageFromError(error) });
       throw error;
     }
+  };
+
+  const completeSyncRecovery = async (): Promise<void> => {
+    dispatch({ type: 'setup', initialized: true, locked: false });
+    lockedFromCurrentAppRef.current = false;
+    await loadWorkspace({ openTerminalView: false });
   };
 
   const handleCreateHost = async (input: HostCreateInput): Promise<void> => {
@@ -1177,9 +1182,16 @@ export const App = ({ runtime }: AppProps) => {
   }, [state.phase, syncState]);
 
   if (state.phase === 'loading') return <LoadingView errorMessage={state.errorMessage} onRetry={retryBoot} />;
-  if (state.phase === 'setup') return <SetupGate onSubmit={completeSetup} errorMessage={state.errorMessage} />;
+  if (state.phase === 'setup') return <SetupGate onSubmit={completeSetup} errorMessage={state.errorMessage} headerSlot={accountMenu} account={accountSession} recoveryPort={runtime.vaultRecovery} onRecovered={completeSyncRecovery} />;
   if (state.phase === 'locked') return <>
-    <UnlockView onSubmit={completeUnlock} errorMessage={state.errorMessage} headerSlot={accountMenu} />
+    <UnlockView
+      onSubmit={completeUnlock}
+      errorMessage={state.errorMessage}
+      headerSlot={accountMenu}
+      account={accountSession}
+      recoveryPort={runtime.vaultRecovery}
+      onRecovered={completeSyncRecovery}
+    />
     {syncCenterOpen && accountSession && runtime.sync && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked syncPort={runtime.sync} devicesPort={runtime.devices} clipboard={runtime.platformServices?.clipboard} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
   </>;
 

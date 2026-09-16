@@ -23,6 +23,7 @@ import type {
   SyncPreview,
   SyncResolution,
   SyncStatus,
+  VaultRecoveryPreview,
   TransferJob,
   TransferResumeRequest,
   TransferRequest,
@@ -52,6 +53,8 @@ import type {
   SessionTransport,
   SnippetStore,
   SyncPort,
+  VaultRecoveryInput,
+  VaultRecoveryPort,
   VaultSessionPort,
   WorkspaceStore,
   OpenShellRequest
@@ -158,6 +161,8 @@ export interface WebApiClient {
   resolveConflict?: typeof api.resolveConflict;
   issueRecoveryKey?: typeof api.issueRecoveryKey;
   confirmRecoveryKey?: typeof api.confirmRecoveryKey;
+  previewSyncRecovery?: typeof api.previewSyncRecovery;
+  applySyncRecovery?: typeof api.applySyncRecovery;
 }
 
 const requireApi = <T>(value: T | undefined): T => {
@@ -190,6 +195,10 @@ const hasSyncApi = (client: WebApiClient): boolean => (
   && hasFunction(client, 'retrySync')
   && hasFunction(client, 'previewPull')
   && hasFunction(client, 'resolveConflict')
+);
+
+const hasVaultRecoveryApi = (client: WebApiClient): boolean => (
+  hasFunction(client, 'previewSyncRecovery') && hasFunction(client, 'applySyncRecovery')
 );
 
 export const createWorkspaceWebAdapter = (client: WebApiClient = api): WorkspaceWebAdapter => ({
@@ -577,6 +586,21 @@ export class WebVaultSession implements VaultSessionPort {
   }
 }
 
+type WebVaultRecoveryClient = Partial<Pick<WebApiClient, 'previewSyncRecovery' | 'applySyncRecovery'>>;
+
+export class WebVaultRecovery implements VaultRecoveryPort {
+  constructor(private readonly client: WebVaultRecoveryClient = api) {}
+
+  async preview(input: VaultRecoveryInput): Promise<VaultRecoveryPreview> {
+    return requireApi(this.client.previewSyncRecovery)(input);
+  }
+
+  async apply(previewId: string, input: VaultRecoveryInput): Promise<{ phase: 'unlocked' }> {
+    await requireApi(this.client.applySyncRecovery)(previewId, input);
+    return { phase: 'unlocked' };
+  }
+}
+
 export class WebConnectionProbe implements ConnectionProbe {
   constructor(private readonly client: Pick<WebApiClient, 'testConnection'> = api) {}
 
@@ -833,6 +857,7 @@ export const createWebAdapters = (options: {
   const accountAdapter = hasAccountApi(client) ? new WebAccountSession(client) : undefined;
   const deviceAdapter = hasDeviceApi(client) ? new WebDeviceTrust(client) : undefined;
   const syncAdapter = hasSyncApi(client) ? new WebSync(client) : undefined;
+  const vaultRecoveryAdapter = hasVaultRecoveryApi(client) ? new WebVaultRecovery(client) : undefined;
   const browserSystemServices = createBrowserSystemServices();
   const platformServices = options.platformServices ?? {
     clipboard: browserSystemServices.capabilities.clipboardRead && browserSystemServices.capabilities.clipboardWrite
@@ -845,6 +870,7 @@ export const createWebAdapters = (options: {
     capabilities: createWebCapabilitySet({ maxWorkspacePanes: WEB_PLATFORM_MAX_PANES }),
     platformServices,
     vault: new WebVaultSession(client as Pick<WebApiClient, 'getSetupStatus'>),
+    vaultRecovery: undefined,
     connection: new WebConnectionProbe(client as Pick<WebApiClient, 'testConnection'>),
     workspace: createWorkspaceWebAdapter(client),
     sessions: new WebSessionTransport({ webSocketFactory: options.webSocketFactory }),
@@ -866,6 +892,7 @@ export const createWebAdapters = (options: {
       runtime.account = runtime.capabilities.supports('account.auth') ? accountAdapter : undefined;
       runtime.devices = runtime.capabilities.supports('device.trust') ? deviceAdapter : undefined;
       runtime.sync = runtime.capabilities.supports('sync.encrypted') ? syncAdapter : undefined;
+      runtime.vaultRecovery = runtime.capabilities.supports('sync.encrypted') ? vaultRecoveryAdapter : undefined;
       return runtime.capabilities;
     },
     refreshCapabilities: async (): Promise<CapabilitySet> => runtime.negotiateCapabilities()

@@ -888,6 +888,152 @@ export interface WebSyncApi {
 
   Evidence (2026-09-17): X-04A focused Vitest 8 files / 65 tests passed; full Vitest 105 files / 473 tests passed; `npm run typecheck`, `npm run lint`, `npm run build`, default E2E 4/4 and account-enabled E2E 2/2 passed. Scoped persistence/log scans found no recovery key in browser storage, audit metadata or logs; the only plaintext path is the explicit one-time issue response and reveal callback.
 
+## Task 11: X-04B independent new-device recovery
+
+**Status:** Complete（2026-09-17；X-04B release gate passed）
+
+**Goal:** 让已登录账号的新设备在不把主密码或 recovery key 写入账号服务、盲同步存储或持久化日志的前提下，用原 Vault 主密码或已确认的 recovery key 解开远端 envelope，先预览同步内容，再一次性创建本地 Vault 并事务应用快照；错误输入、过期预览、密文篡改和应用失败均不得改变本地数据。当前 Web 通过受信 Relay 执行端完成这一步，桌面/Android 后续可替换为本地安全存储 adapter。
+
+**Architecture:** 服务端的 preview token 只保存 account/device、远端 revision/hash 和过期时间，不保存明文密码、recovery key、Vault key 或快照 plaintext。preview/apply 两次请求分别提交短时内存中的解锁输入；服务端在 apply 时重新派生 `K_vault`，校验 preview 对应的远端 envelope 未变化，并把 `app_config` 创建放入既有 VaultBundle/Snapshot transaction。Web 仅提供可选的 `VaultRecoveryPort` 和锁定页交互，桌面/Android 后续可替换同一 port，不把浏览器对象或密钥规则放入 shared core。
+
+**Files:**
+
+- Additional focused test: tests/unit/web/api.test.ts covers strict recovery request/response boundaries.
+
+- Modify: `src/shared/core/models.ts`, `src/shared/core/ports.ts`, `src/shared/core/runtime.ts`
+- Modify: `src/server/sync/sync-snapshot.ts`, `src/server/sync/sync-service.ts`, `src/server/api/setup-routes.ts`, `src/server/app.ts`
+- Modify: `src/web/api.ts`, `src/web/platform/web-adapters.ts`, `src/web/App.tsx`, `src/web/components/UnlockView.tsx`
+- Modify: `src/web/components/SetupGate.tsx`
+- Create: `src/web/components/SyncRecoveryView.tsx`
+- Test: `tests/integration/server/sync-routes.test.ts`, `tests/unit/server/sync-crypto.test.ts`, `tests/unit/shared/account-sync-contract.test.ts`, `tests/unit/web/web-adapters.test.ts`, `tests/unit/web/sync-recovery.dom.test.tsx`, `tests/unit/web/app.dom.test.tsx`, `tests/e2e/account-sync.spec.ts`
+- Modify: `README.md`, `docs/architecture/cross-platform.md`, `docs/superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md`, `docs/superpowers/plans/2026-09-16-relay-long-term-roadmap.md`
+
+**Interfaces:**
+
+```ts
+export interface VaultRecoveryPreview {
+  previewId: string;
+  vaultId: string;
+  revision: number;
+  payloadHash: string;
+  hostCount: number;
+  groupCount: number;
+  identityCount: number;
+  snippetCount: number;
+  workspaceIncluded: boolean;
+  conflictTypes: readonly ('host' | 'group' | 'identity' | 'snippet' | 'workspace' | 'host-key')[];
+  expiresAt: string;
+}
+
+export type VaultRecoveryInput =
+  | { method: 'master-password'; secret: string }
+  | { method: 'recovery-key'; secret: string };
+
+export interface VaultRecoveryPort {
+  preview(input: VaultRecoveryInput): Promise<VaultRecoveryPreview>;
+  apply(previewId: string, input: VaultRecoveryInput): Promise<VaultStatus>;
+}
+
+export interface CoreRuntime {
+  // existing fields remain unchanged
+  vaultRecovery?: VaultRecoveryPort;
+}
+```
+
+- [x] **Step 1: 写 shared recovery contract 和 Web parser 的失败测试。**
+
+  在 `account-sync-contract.test.ts` 断言 recovery preview 只包含计数、revision/hash、冲突类型和过期时间，不含 `secret`、`masterPassword`、`recoveryKey`、token 或 plaintext 字段；在 `web-adapters.test.ts` 断言 `preview`/`apply` 将输入原样交给 API、返回 `VaultStatus`，缺少可选 API 时抛出 `CAPABILITY_UNAVAILABLE`。在 `sync-recovery.dom.test.tsx` 覆盖锁定页/初始化页的“使用同步恢复”、未登录提示、预览前不能应用、预览后显示数据范围和“创建本地 Vault”按钮。
+
+  Evidence (2026-09-17): contract、Web API/adapter 和 recovery DOM 测试已实现并纳入 focused suite；实际新设备入口同时覆盖 `SetupGate` 和 `UnlockView`。
+
+- [x] **Step 2: 运行 shared/Web focused 测试确认失败。**
+
+  ```bash
+  export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  npm test -- --run tests/unit/shared/account-sync-contract.test.ts tests/unit/web/web-adapters.test.ts tests/unit/web/sync-recovery.dom.test.tsx
+  ```
+
+  Historical red phase: the first run failed because `VaultRecoveryPreview`/`VaultRecoveryPort`, Web API methods and recovery UI did not exist; the implementation phase then turned the same focused scope green.
+
+- [x] **Step 3: 实现 shared recovery port、严格 Web API 和 adapter。**
+
+  在 `models.ts` 增加上述安全 preview 类型，在 `ports.ts`/`runtime.ts` 增加可选 `vaultRecovery`；在 `api.ts` 增加 `previewSyncRecovery` 和 `applySyncRecovery`，请求体只允许 `{ method, secret }` 与 `{ previewId, method, secret }`，response 严格校验 preview 的 exact keys、计数上限、revision/hash、冲突类型和 ISO expiry。`WebVaultRecovery` 只在两个 API 函数都存在时注入；成功 apply 后由 adapter 返回 `{ phase: 'unlocked' }`，不把输入放进 shared state、localStorage 或 URL。
+
+- [x] **Step 4: 运行 Web focused 测试确认 port/解析器通过。**
+
+  ```bash
+  export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  npm test -- --run tests/unit/shared/account-sync-contract.test.ts tests/unit/web/web-adapters.test.ts tests/unit/web/sync-recovery.dom.test.tsx
+  ```
+
+  Evidence (2026-09-17): shared contract, strict parser, capability-gated adapter and recovery DOM focused coverage passed; server route coverage was added in the next step.
+
+- [x] **Step 5: 写服务端 recovery preview/apply、错误原子性和版本竞争测试。**
+
+  在 `sync-routes.test.ts` 覆盖：已登录且未初始化的设备可以用 active recovery wrapper preview；正确 master password 也可 preview；错误输入、未登录、额外字段、远端 hash 变化、过期 preview 和重复 token 的拒绝路径；preview 返回安全计数且不回显输入；apply 后恢复 Host 并创建本地 Vault。保留现有 legacy `/api/setup/from-sync` master-password 测试，确保兼容行为不被破坏。没有 active wrapper、更多事务故障注入和 provider-separated 物理数据卷仍作为后续加强项，不在本次证据中虚报覆盖。
+
+  Evidence (2026-09-17): integration suite 已加入 wrong-input、strict-body、expiry、remote-hash-conflict、successful apply 和 consumed-token cases；错误与冲突路径断言本地仍未初始化。
+
+- [x] **Step 6: 实现 server-side key derivation、snapshot preview 和原子 bootstrap。**
+
+  在 `setup-routes.ts` 中从当前 account session 取 descriptor；master-password 使用现有 `VaultService.unlock`，recovery-key 只使用 active `recoveryWrappedVaultKey`、`parseRecoveryKey` 和 `unwrapVaultKeyWithRecoveryKey`，pending wrapper 不可用于新设备恢复。新增 `/api/setup/from-sync/preview` 与 `/api/setup/from-sync/apply`：两条路由都要求 account session、同步开启和本地未初始化；preview 只派生临时 `vaultKey` 并在 finally 清零；apply 重新派生并调用 sync service。
+
+  在 `sync-service.ts` 增加短 TTL 的 server-only preview registry，记录 `{ accountId, deviceId, vaultId, revision, payloadHash, expiresAt }`，不记录任何 secret/key/plaintext；preview 解密并验证 snapshot 后返回安全计数/冲突类型，apply 再次比较 descriptor/envelope 的 vaultId、revision、payloadHash 并解密。扩展 `SyncSnapshotService.apply(..., afterApply?)`，让 `AppConfigRepository.create(vaultConfig)` 在同一个 SQLite transaction callback 内执行；只有 snapshot、app config 全部成功后才创建 `webssh_session`，失败时清零 Buffer、保留 token 可重试且数据库回滚。
+
+- [x] **Step 7: 运行服务端 focused recovery 验证。**
+
+  ```bash
+  export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  npm test -- --run tests/integration/server/sync-routes.test.ts tests/unit/server/sync-crypto.test.ts tests/unit/server/vault.test.ts
+  npm run typecheck
+  ```
+
+  Evidence (2026-09-17): server recovery route, Vault and crypto focused scope passed; wrong/expired/tampered recovery paths leave the local setup state unchanged. Final release-gate counts are recorded below after the complete run.
+
+- [x] **Step 8: 实现锁定页恢复交互和 App boot integration。**
+
+  `SyncRecoveryView` 提供主密码/恢复密钥两种方式、输入校验、preview 阶段、对象计数/冲突风险、过期后重新预览、apply busy/error 状态；只有 preview 成功后才启用应用按钮。输入只存在组件内存，成功/关闭/卸载时清空；文案明确“账号密码不能替代 Vault 主密码”“恢复密钥丢失不可恢复”。`SetupGate`/`UnlockView` 在 account signed-in 且 `runtime.vaultRecovery` 可用时显示入口；未登录只显示先登录提示，不发起 recovery 请求。`App` apply 成功后走现有 `dispatch({ type: 'setup' ... })` + `loadWorkspace()`，不改变 Local-only setup/unlock 路径。
+
+- [x] **Step 9: 运行 Web DOM focused 验证。**
+
+  ```bash
+  export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  npm test -- --run tests/unit/web/sync-recovery.dom.test.tsx tests/unit/web/app.dom.test.tsx tests/unit/web/web-adapters.test.ts
+  ```
+
+  Evidence (2026-09-17): recovery DOM and App boot integration passed together with existing master-password unlock, locked Sync Center and Local-only account fallback coverage.
+
+- [x] **Step 10: 增加跨独立数据卷 E2E。**
+
+  account-enabled E2E 通过清除本地新设备数据卷的 `app_config`/资源表、保留 account/sync 元数据来模拟独立新设备；登录后使用原 Vault 主密码，先预览再应用并恢复 Server/Host。物理 provider-separated 数据卷、网络 response/log 密文排查和刷新/关闭 preview 的浏览器 E2E 仍是后续加强项；default Local-only E2E 继续保持无 account 请求。
+
+- [x] **Step 11: 更新文档和 X-04B 证据。**
+
+  记录 preview token 的内存/TTL 边界、active recovery wrapper、事务 bootstrap 和当前 server-mediated trust boundary；同步范围继续排除 live Shell、TransferJob、CommandRun、终端输出和 SFTP 内容。路线图仅在 focused、typecheck、完整 E2E 和安全扫描通过后把 X-04B 标记完成，X-04C/X-04D 保持未完成。
+
+  Evidence (2026-09-17): browser persistence、普通日志、audit metadata、recovery response 和同步表的 scoped scan 未发现未授权 secret 持久化；允许命中仅为显式输入参数、一次性 issue response、UI 内存状态和 negative assertions。secret_persistence_findings = 0 仅适用于当前 X-04B 范围，不覆盖尚未交付的 re-auth/export-both/账号删除闭环。
+
+- [x] **Step 12: 执行重大变更 release gate 并提交。**
+
+  ```bash
+  export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin
+  npm test
+  npm run typecheck
+  npm run lint
+  npm run build
+  npm run test:e2e
+  ACCOUNT_SYNC_E2E=true npm run test:e2e -- tests/e2e/account-sync.spec.ts
+  git status --short
+  git diff --check
+  git add README.md docs/architecture/cross-platform.md docs/superpowers/plans/2026-09-16-relay-account-and-encrypted-sync-implementation.md docs/superpowers/plans/2026-09-16-relay-long-term-roadmap.md docs/superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md src/server/api/setup-routes.ts src/server/app.ts src/server/sync/sync-service.ts src/server/sync/sync-snapshot.ts src/shared/core/models.ts src/shared/core/ports.ts src/shared/core/runtime.ts src/web/App.tsx src/web/api.ts src/web/components/SetupGate.tsx src/web/components/SyncRecoveryView.tsx src/web/components/UnlockView.tsx src/web/platform/web-adapters.ts src/web/styles.css tests/e2e/account-sync.spec.ts tests/integration/server/sync-routes.test.ts tests/unit/shared/account-sync-contract.test.ts tests/unit/web/api.test.ts tests/unit/web/app.dom.test.tsx tests/unit/web/sync-recovery.dom.test.tsx tests/unit/web/web-adapters.test.ts
+  git diff --cached --check
+  git commit -m "feat: add independent sync recovery"
+  ```
+
+  完成前额外扫描 browser persistence、普通日志、audit metadata、response body 和同步表；允许的 secret 命中只能是输入参数/一次性请求与 negative assertion，不能把绿色旧测试结果当作 X-04B 证据。
+
+  Evidence (2026-09-17): focused recovery suite 9 files / 73 tests passed; full Vitest 106 files / 483 tests passed; npm run typecheck, npm run lint, npm run build, default E2E 4/4 and account-enabled E2E 3/3 passed. Build retains the existing Web bundle >500 kB warning only. Security scans found no unauthorized secret persistence; provider-separated physical data volumes remain a follow-up boundary.
+
 ## Risk-based verification summary
 
 - Task 1–2：shared contract/crypto focused tests；不运行完整 UI/E2E。

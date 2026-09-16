@@ -8,6 +8,7 @@ import type {
   SyncHead,
   SyncPreview,
   RecoveryKeyState,
+  VaultRecoveryPreview,
   SyncResolution,
   SyncState,
   SyncStatus,
@@ -48,6 +49,8 @@ export interface SyncServiceContract {
   pull(accountId: string): SyncEnvelope | null;
   push(accountId: string, envelope: SyncEnvelope, idempotencyKey: string): SyncHead;
   previewPull(accountId: string, ownerId: string, vaultKey: Buffer): Promise<SyncPreview>;
+  previewRecovery(accountId: string, deviceId: string, ownerId: string, vaultKey: Buffer): Promise<VaultRecoveryPreview>;
+  applyRecovery(accountId: string, deviceId: string, ownerId: string, vaultKey: Buffer, previewId: string, afterApply?: () => void): Promise<void>;
   resolveConflict(accountId: string, ownerId: string, vaultKey: Buffer, conflictId: string, resolution: SyncResolution): Promise<void>;
   getClientState(accountId: string): SyncClientState | null;
   savePending(accountId: string, envelope: SyncEnvelope | null, status: Extract<SyncStatus, 'pending' | 'offline' | 'conflict' | 'needs-unlock' | 'device-revoked'>, errorCode?: string | null): void;
@@ -101,11 +104,24 @@ const DEFAULT_RETRY_BASE_DELAY_MS = 1_000;
 const DEFAULT_RETRY_MAX_DELAY_MS = 60_000;
 const MAX_RETRY_ATTEMPTS = 8;
 const MAX_RECOVERY_KEY_VERSION = 32;
+const RECOVERY_PREVIEW_TTL_MS = 10 * 60 * 1000;
+const MAX_RECOVERY_PREVIEWS = 64;
 
 interface RecoveryKeyIssue {
   recoveryKey: string;
   keyVersion: number;
   status: 'pending-confirmation';
+}
+
+interface PendingRecoveryPreview {
+  accountId: string;
+  deviceId: string;
+  ownerId: string;
+  vaultId: string;
+  revision: number;
+  keyVersion: number;
+  payloadHash: string;
+  expiresAt: number;
 }
 
 const toVaultUnlockEnvelope = (vaultConfig: VaultConfig): VaultUnlockEnvelope => ({
@@ -150,6 +166,8 @@ export class SyncService implements SyncServiceContract {
   private readonly store: BlindSyncStore;
   private readonly snapshotService: SyncSnapshotService;
   private readonly clock: () => number;
+  private readonly recoveryPreviews = new Map<string, PendingRecoveryPreview>();
+  private readonly applyingRecoveryPreviews = new Set<string>();
 
   constructor(options: SyncServiceOptions) {
     this.store = options.store;
@@ -386,6 +404,96 @@ export class SyncService implements SyncServiceContract {
     }
   }
 
+  async previewRecovery(accountId: string, deviceId: string, ownerId: string, vaultKey: Buffer): Promise<VaultRecoveryPreview> {
+    this.pruneRecoveryPreviews();
+    const descriptor = this.getDescriptor(accountId);
+    if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
+    const remote = this.getEnvelope(accountId);
+    if (!remote) throw new AppError('SYNC_NOT_FOUND');
+    if (remote.vaultId !== descriptor.vaultId) throw new AppError('SYNC_PAYLOAD_INVALID');
+    const syncKey = unwrapSyncKey(vaultKey, descriptor.vaultId, descriptor.keyVersion, descriptor.wrappedSyncKey);
+    let plaintext: Buffer | undefined;
+    try {
+      plaintext = decryptSyncPayload(syncKey, remote);
+      const preview = await this.snapshotService.previewApply(ownerId, vaultKey, plaintext);
+      const summary = this.snapshotService.describe(plaintext);
+      const previewId = randomUUID();
+      const expiresAt = this.clock() + RECOVERY_PREVIEW_TTL_MS;
+      this.recoveryPreviews.set(previewId, {
+        accountId,
+        deviceId,
+        ownerId,
+        vaultId: remote.vaultId,
+        revision: remote.revision,
+        keyVersion: remote.keyVersion,
+        payloadHash: remote.payloadHash,
+        expiresAt
+      });
+      this.pruneRecoveryPreviews();
+      return {
+        previewId,
+        vaultId: remote.vaultId,
+        revision: remote.revision,
+        payloadHash: remote.payloadHash,
+        ...summary,
+        conflictTypes: preview.conflictTypes,
+        expiresAt: new Date(expiresAt).toISOString()
+      };
+    } finally {
+      plaintext?.fill(0);
+      syncKey.fill(0);
+    }
+  }
+
+  async applyRecovery(
+    accountId: string,
+    deviceId: string,
+    ownerId: string,
+    vaultKey: Buffer,
+    previewId: string,
+    afterApply?: () => void
+  ): Promise<void> {
+    this.pruneRecoveryPreviews();
+    const pending = this.recoveryPreviews.get(previewId);
+    if (!pending || pending.accountId !== accountId || pending.deviceId !== deviceId || pending.ownerId !== ownerId) {
+      throw new AppError('SYNC_NOT_FOUND');
+    }
+    if (this.applyingRecoveryPreviews.has(previewId)) throw new AppError('SYNC_CONFLICT');
+    this.applyingRecoveryPreviews.add(previewId);
+
+    try {
+      const descriptor = this.getDescriptor(accountId);
+      const remote = this.getEnvelope(accountId);
+      if (!descriptor || !remote) {
+        this.recoveryPreviews.delete(previewId);
+        throw new AppError('SYNC_NOT_FOUND');
+      }
+      if (
+        remote.vaultId !== pending.vaultId ||
+        remote.revision !== pending.revision ||
+        remote.keyVersion !== pending.keyVersion ||
+        remote.payloadHash !== pending.payloadHash ||
+        descriptor.vaultId !== pending.vaultId
+      ) {
+        this.recoveryPreviews.delete(previewId);
+        throw new AppError('SYNC_CONFLICT');
+      }
+
+      const syncKey = unwrapSyncKey(vaultKey, descriptor.vaultId, descriptor.keyVersion, descriptor.wrappedSyncKey);
+      let plaintext: Buffer | undefined;
+      try {
+        plaintext = decryptSyncPayload(syncKey, remote);
+        await this.snapshotService.apply(ownerId, vaultKey, plaintext, 'use-remote', afterApply);
+        this.recoveryPreviews.delete(previewId);
+      } finally {
+        plaintext?.fill(0);
+        syncKey.fill(0);
+      }
+    } finally {
+      this.applyingRecoveryPreviews.delete(previewId);
+    }
+  }
+
   async resolveConflict(
     accountId: string,
     ownerId: string,
@@ -455,6 +563,18 @@ export class SyncService implements SyncServiceContract {
 
   restoreDeletion(accountId: string): void {
     this.store.restoreDeleteRequest(accountId);
+  }
+
+  private pruneRecoveryPreviews(): void {
+    const now = this.clock();
+    for (const [id, preview] of this.recoveryPreviews) {
+      if (preview.expiresAt <= now) this.recoveryPreviews.delete(id);
+    }
+    while (this.recoveryPreviews.size > MAX_RECOVERY_PREVIEWS) {
+      const first = this.recoveryPreviews.keys().next().value;
+      if (typeof first !== 'string') return;
+      this.recoveryPreviews.delete(first);
+    }
   }
 }
 

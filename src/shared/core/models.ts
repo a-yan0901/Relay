@@ -108,6 +108,20 @@ export interface SyncPreview {
   localBackupRevision: number;
 }
 
+export interface VaultRecoveryPreview {
+  previewId: string;
+  vaultId: string;
+  revision: number;
+  payloadHash: string;
+  hostCount: number;
+  groupCount: number;
+  identityCount: number;
+  snippetCount: number;
+  workspaceIncluded: boolean;
+  conflictTypes: readonly ('host' | 'group' | 'identity' | 'snippet' | 'workspace' | 'host-key')[];
+  expiresAt: string;
+}
+
 export type SyncResolution = 'keep-local' | 'use-remote' | 'export-both';
 
 export interface SyncState {

@@ -1,6 +1,9 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 
 import { AppError } from '@shared/errors';
+import type { AccountSession } from '@shared/core/models';
+import type { VaultRecoveryPort } from '@shared/core/ports';
+import { SyncRecoveryView } from './SyncRecoveryView';
 
 const MASTER_PASSWORD_MIN_LENGTH = 8;
 
@@ -8,12 +11,16 @@ export interface UnlockViewProps {
   onSubmit: (masterPassword: string) => Promise<void>;
   errorMessage?: string | null;
   headerSlot?: ReactNode;
+  account?: AccountSession | null;
+  recoveryPort?: VaultRecoveryPort;
+  onRecovered?: () => Promise<void>;
 }
 
-export const UnlockView = ({ onSubmit, errorMessage, headerSlot }: UnlockViewProps) => {
+export const UnlockView = ({ onSubmit, errorMessage, headerSlot, account = null, recoveryPort, onRecovered }: UnlockViewProps) => {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
 
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -33,6 +40,20 @@ export const UnlockView = ({ onSubmit, errorMessage, headerSlot }: UnlockViewPro
     }
   };
 
+  if (recoveryOpen && recoveryPort && onRecovered) {
+    return (
+      <main className="auth-stage">
+        {headerSlot && <div className="auth-header-slot">{headerSlot}</div>}
+        <SyncRecoveryView
+          account={account}
+          recoveryPort={recoveryPort}
+          onRecovered={onRecovered}
+          onBack={() => setRecoveryOpen(false)}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="auth-stage">
       {headerSlot && <div className="auth-header-slot">{headerSlot}</div>}
@@ -47,6 +68,7 @@ export const UnlockView = ({ onSubmit, errorMessage, headerSlot }: UnlockViewPro
           {(error ?? errorMessage) && <p className="form-error" role="alert">{error ?? errorMessage}</p>}
           <button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? '解锁中…' : '解锁 Vault'}</button>
         </form>
+        {recoveryPort && onRecovered && <button className="button button-ghost button-wide unlock-recovery-trigger" type="button" onClick={() => setRecoveryOpen(true)}>使用同步恢复</button>}
       </section>
     </main>
   );

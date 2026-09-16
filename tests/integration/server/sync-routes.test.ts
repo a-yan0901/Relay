@@ -24,6 +24,7 @@ const apps: Array<{ close: () => Promise<unknown> }> = [];
 const ORIGIN = 'http://localhost:4173';
 const ACCOUNT_PASSWORD = 'long enough password';
 const MASTER_PASSWORD = 'correct horse battery staple';
+const wrongRecoveryKey = (recoveryKey: string): string => `${recoveryKey.slice(0, -1)}${recoveryKey.endsWith('A') ? 'B' : 'A'}`;
 
 afterEach(async () => {
   for (const app of apps.splice(0)) await app.close();
@@ -39,7 +40,8 @@ const createDatabase = () => {
 
 const makeApp = async (
   syncTransportFactory?: (database: ReturnType<typeof openDatabase>) => SyncTransport,
-  accountSyncEnabled = true
+  accountSyncEnabled = true,
+  syncClock?: () => number
 ) => {
   const database = createDatabase();
   const syncTransport = syncTransportFactory?.(database);
@@ -55,7 +57,8 @@ const makeApp = async (
       accountSyncEnabled,
       logLevel: 'silent'
     },
-    syncTransport
+    syncTransport,
+    syncClock
   });
   apps.push(app);
   return { app, database };
@@ -346,6 +349,183 @@ describe('blind sync storage and snapshot bridge', () => {
     expect(session.json()).toEqual({ initialized: true, locked: false });
   });
 
+  it('previews and atomically restores an independent local Vault with master password or recovery key', async () => {
+    let syncNow = Date.now();
+    const { app, database } = await makeApp(undefined, true, () => syncNow);
+    const registered = await app.inject({
+      method: 'POST',
+      url: '/api/account/register',
+      headers: { origin: ORIGIN },
+      payload: { email: 'new-device@example.com', password: ACCOUNT_PASSWORD, deviceLabel: 'Original device' }
+    });
+    const originalAccountCookie = cookieFrom(registered, 'relay_account_session');
+    const originalSetup = await app.inject({
+      method: 'POST',
+      url: '/api/setup',
+      headers: { origin: ORIGIN },
+      payload: { masterPassword: MASTER_PASSWORD }
+    });
+    const originalVaultCookie = cookieFrom(originalSetup, 'webssh_session');
+    const originalCookies = `${originalAccountCookie}; ${originalVaultCookie}`;
+    const createdHost = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { origin: ORIGIN, cookie: originalCookies },
+      payload: { name: 'Recovered host', address: '10.0.0.42', username: 'deploy', auth: { type: 'password', password: 'recovered-host-secret' } }
+    });
+    expect(createdHost.statusCode).toBe(201);
+    expect((await app.inject({ method: 'POST', url: '/api/sync/v1/enable', headers: { origin: ORIGIN, cookie: originalCookies } })).statusCode).toBe(201);
+    const issued = await app.inject({ method: 'POST', url: '/api/sync/v1/recovery-key/issue', headers: { origin: ORIGIN, cookie: originalCookies } });
+    expect(issued.statusCode).toBe(201);
+    const recoveryKey = (issued.json() as { recoveryKey: string }).recoveryKey;
+    expect((await app.inject({
+      method: 'POST',
+      url: '/api/sync/v1/recovery-key/confirm',
+      headers: { origin: ORIGIN, cookie: originalCookies },
+      payload: { recoveryKey }
+    })).statusCode).toBe(200);
+
+    const secondAccount = await app.inject({
+      method: 'POST',
+      url: '/api/account/session',
+      headers: { origin: ORIGIN },
+      payload: { email: 'new-device@example.com', password: ACCOUNT_PASSWORD, deviceLabel: 'Independent device' }
+    });
+    expect(secondAccount.statusCode).toBe(200);
+    const secondAccountCookie = cookieFrom(secondAccount, 'relay_account_session');
+
+    await app.inject({ method: 'POST', url: '/api/session/lock', headers: { origin: ORIGIN, cookie: originalCookies } });
+    database.exec('DELETE FROM audit_events; DELETE FROM hosts; DELETE FROM groups; DELETE FROM identities; DELETE FROM snippets; DELETE FROM workspace_snapshots; DELETE FROM app_config;');
+    expect((await app.inject('/api/setup/status')).json()).toEqual({ initialized: false, locked: true });
+
+    const unauthenticatedRecovery = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/preview',
+      headers: { origin: ORIGIN },
+      payload: { method: 'master-password', secret: MASTER_PASSWORD }
+    });
+    expect(unauthenticatedRecovery.statusCode).toBe(401);
+    expect(unauthenticatedRecovery.json().error.code).toBe('ACCOUNT_SESSION_INVALID');
+
+    const invalidRecoveryInput = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/preview',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { method: 'recovery-key', secret: recoveryKey, extra: 'must-not-cross-boundary' }
+    });
+    expect(invalidRecoveryInput.statusCode).toBe(422);
+    expect(invalidRecoveryInput.json().error.code).toBe('SYNC_PAYLOAD_INVALID');
+
+    const wrongRecovery = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/preview',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { method: 'recovery-key', secret: wrongRecoveryKey(recoveryKey) }
+    });
+    expect(wrongRecovery.statusCode).toBe(401);
+    expect(wrongRecovery.json().error.code).toBe('VAULT_UNLOCK_FAILED');
+
+    const masterPreview = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/preview',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { method: 'master-password', secret: MASTER_PASSWORD }
+    });
+    expect(masterPreview.statusCode).toBe(200);
+    expect(masterPreview.headers['cache-control']).toContain('no-store');
+    expect(masterPreview.json()).toEqual(expect.objectContaining({
+      vaultId: expect.any(String),
+      revision: 1,
+      hostCount: 1,
+      groupCount: 0,
+      identityCount: 0,
+      snippetCount: 0,
+      workspaceIncluded: true,
+      conflictTypes: [],
+      previewId: expect.any(String),
+      expiresAt: expect.any(String)
+    }));
+
+    const recoveryPreview = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/preview',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { method: 'recovery-key', secret: recoveryKey }
+    });
+    expect(recoveryPreview.statusCode).toBe(200);
+    const preview = recoveryPreview.json() as { previewId: string };
+    expect(recoveryPreview.body).not.toContain(recoveryKey);
+    expect(recoveryPreview.body).not.toContain(MASTER_PASSWORD);
+
+    syncNow += 10 * 60 * 1000 + 1;
+    const expiredApply = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/apply',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { previewId: preview.previewId, method: 'recovery-key', secret: recoveryKey }
+    });
+    expect(expiredApply.statusCode).toBe(404);
+    expect(expiredApply.json().error.code).toBe('SYNC_NOT_FOUND');
+    expect((await app.inject('/api/setup/status')).json()).toEqual({ initialized: false, locked: true });
+
+    const freshRecoveryPreview = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/preview',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { method: 'recovery-key', secret: recoveryKey }
+    });
+    expect(freshRecoveryPreview.statusCode).toBe(200);
+    const freshPreview = freshRecoveryPreview.json() as { previewId: string; payloadHash: string };
+
+    database.prepare('UPDATE sync_envelopes SET payload_hash = ?').run('b'.repeat(64));
+    const changedRemoteApply = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/apply',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { previewId: freshPreview.previewId, method: 'recovery-key', secret: recoveryKey }
+    });
+    expect(changedRemoteApply.statusCode).toBe(409);
+    expect(changedRemoteApply.json().error.code).toBe('SYNC_CONFLICT');
+    expect((await app.inject('/api/setup/status')).json()).toEqual({ initialized: false, locked: true });
+
+    database.prepare('UPDATE sync_envelopes SET payload_hash = ?').run(freshPreview.payloadHash);
+    const finalRecoveryPreview = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/preview',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { method: 'recovery-key', secret: recoveryKey }
+    });
+    expect(finalRecoveryPreview.statusCode).toBe(200);
+    const finalPreview = finalRecoveryPreview.json() as { previewId: string };
+
+    const applied = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/apply',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { previewId: finalPreview.previewId, method: 'recovery-key', secret: recoveryKey }
+    });
+    expect(applied.statusCode).toBe(201);
+    expect(applied.json()).toEqual({ initialized: true, locked: false });
+    expect(applied.body).not.toContain(recoveryKey);
+    expect(applied.body).not.toContain('recovered-host-secret');
+    const restoredVaultCookie = cookieFrom(applied, 'webssh_session');
+    const restoredHost = await app.inject({ method: 'GET', url: '/api/hosts', headers: { cookie: restoredVaultCookie } });
+    expect(restoredHost.statusCode).toBe(200);
+    expect(restoredHost.json()).toEqual([expect.objectContaining({ name: 'Recovered host', address: '10.0.0.42' })]);
+
+    // The route normally rejects a replay after local initialization. Remove only
+    // the marker here so the one-time preview token itself is exercised.
+    database.exec('DELETE FROM app_config;');
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/api/setup/from-sync/apply',
+      headers: { origin: ORIGIN, cookie: secondAccountCookie },
+      payload: { previewId: finalPreview.previewId, method: 'recovery-key', secret: recoveryKey }
+    });
+    expect(replay.statusCode).toBe(404);
+    expect(replay.json().error.code).toBe('SYNC_NOT_FOUND');
+  });
+
   it('exposes opaque sync routes while keeping preview and enable behind the local Vault session', async () => {
     const { app } = await makeApp();
     const registered = await app.inject({
@@ -548,7 +728,7 @@ describe('blind sync storage and snapshot bridge', () => {
       method: 'POST',
       url: '/api/sync/v1/recovery-key/confirm',
       headers: { origin: ORIGIN, cookie: cookies },
-      payload: { recoveryKey: `${first.recoveryKey.slice(0, -1)}A` }
+      payload: { recoveryKey: wrongRecoveryKey(first.recoveryKey) }
     });
     expect(wrong.statusCode).toBe(401);
     expect(wrong.json().error.code).toBe('VAULT_UNLOCK_FAILED');

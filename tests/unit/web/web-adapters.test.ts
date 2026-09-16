@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { assertAccountSyncContract, assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
-import type { AccountSession, DeviceDescriptor, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest } from '../../../src/shared/core/models.js';
+import type { AccountSession, DeviceDescriptor, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest, VaultRecoveryPreview } from '../../../src/shared/core/models.js';
 import type { HostMetadata } from '../../../src/shared/validation.js';
-import { createWebAdapters, WebAccountSession, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync } from '../../../src/web/platform/web-adapters.js';
+import { createWebAdapters, WebAccountSession, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync, WebVaultRecovery } from '../../../src/web/platform/web-adapters.js';
 import type { TerminalSocketLike } from '../../../src/web/hooks/use-terminal-session.js';
 
 const host: HostMetadata = {
@@ -55,7 +55,7 @@ const createWebContractApi = () => {
     payloadHash: 'a'.repeat(64),
     updatedAt: '2026-09-16T00:00:00.000Z'
   };
-  const syncEnvelope: SyncEnvelope = {
+    const syncEnvelope: SyncEnvelope = {
     schemaVersion: 1,
     vaultId: syncHead.vaultId,
     revision: syncHead.revision,
@@ -67,7 +67,20 @@ const createWebContractApi = () => {
     authTag: 'opaque-auth-tag',
     aad: 'opaque-aad',
     payloadHash: syncHead.payloadHash,
-    byteLength: 64
+      byteLength: 64
+    };
+  const recoveryPreview: VaultRecoveryPreview = {
+    previewId: 'recovery-preview-1',
+    vaultId: syncHead.vaultId,
+    revision: syncHead.revision,
+    payloadHash: syncHead.payloadHash,
+    hostCount: 1,
+    groupCount: 0,
+    identityCount: 0,
+    snippetCount: 0,
+    workspaceIncluded: true,
+    conflictTypes: [],
+    expiresAt: '2026-09-17T00:10:00.000Z'
   };
   const syncDescriptor: SyncDescriptor = {
     vaultId: syncHead.vaultId,
@@ -166,7 +179,9 @@ const createWebContractApi = () => {
       const recovery = { status: 'configured' as const, activeKeyVersion: 1, pendingKeyVersion: null };
       currentSync = { ...currentSync, recovery };
       return recovery;
-    }
+    },
+    previewSyncRecovery: async () => recoveryPreview,
+    applySyncRecovery: async () => ({ initialized: true, locked: false })
   };
 };
 
@@ -357,12 +372,14 @@ describe('web adapters', () => {
     expect(runtime.account).toBeUndefined();
     expect(runtime.devices).toBeUndefined();
     expect(runtime.sync).toBeUndefined();
+    expect(runtime.vaultRecovery).toBeUndefined();
 
     await runtime.refreshCapabilities();
 
     expect(runtime.account).toBeDefined();
     expect(runtime.devices).toBeDefined();
     expect(runtime.sync).toBeDefined();
+    expect(runtime.vaultRecovery).toBeDefined();
     await expect(runtime.account?.status()).resolves.toMatchObject({ accountId: 'account-1' });
     await expect(runtime.devices?.listDevices()).resolves.toHaveLength(2);
     await expect(runtime.sync?.status()).resolves.toMatchObject({ sync: 'synced', head: expect.objectContaining({ revision: 1 }) });
@@ -392,6 +409,43 @@ describe('web adapters', () => {
       previewPull: async () => { throw new Error('not used'); },
       resolveConflict: async () => undefined
     }).issueRecoveryKey(() => undefined)).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
+  });
+
+  it('keeps new-device recovery behind an optional platform port', async () => {
+    const preview: VaultRecoveryPreview = {
+      previewId: 'preview-1',
+      vaultId: 'vault-1',
+      revision: 1,
+      payloadHash: 'a'.repeat(64),
+      hostCount: 2,
+      groupCount: 1,
+      identityCount: 0,
+      snippetCount: 1,
+      workspaceIncluded: true,
+      conflictTypes: [],
+      expiresAt: '2026-09-17T00:00:00.000Z'
+    };
+    const previewSyncRecovery = vi.fn(async (input) => {
+      expect(input).toEqual({ method: 'recovery-key', secret: 'recovery-secret' });
+      return preview;
+    });
+    const applySyncRecovery = vi.fn(async (previewId: string, input) => {
+      expect(previewId).toBe('preview-1');
+      expect(input).toEqual({ method: 'recovery-key', secret: 'recovery-secret' });
+      return { initialized: true, locked: false };
+    });
+    const recovery = new WebVaultRecovery({ previewSyncRecovery, applySyncRecovery });
+
+    await expect(recovery.preview({ method: 'recovery-key', secret: 'recovery-secret' })).resolves.toEqual(preview);
+    await expect(recovery.apply('preview-1', { method: 'recovery-key', secret: 'recovery-secret' })).resolves.toEqual({ phase: 'unlocked' });
+    expect(previewSyncRecovery).toHaveBeenCalledTimes(1);
+    expect(applySyncRecovery).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps missing new-device recovery APIs to CAPABILITY_UNAVAILABLE', async () => {
+    const recovery = new WebVaultRecovery({});
+    await expect(recovery.preview({ method: 'master-password', secret: 'master-secret' })).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
+    await expect(recovery.apply('preview-1', { method: 'master-password', secret: 'master-secret' })).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
   });
 
   it('intersects a server pane limit with the Web platform upper bound', async () => {

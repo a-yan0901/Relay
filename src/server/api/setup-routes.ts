@@ -6,12 +6,15 @@ import { AppConfigRepository } from '../db/repositories.js';
 import { clearSessionCookie, getSessionId, setSessionCookie } from '../auth/session-cookie.js';
 import { SessionStore } from '../auth/session-store.js';
 import { VaultService } from '../vault/vault-service.js';
+import { parseRecoveryKey, unwrapVaultKeyWithRecoveryKey } from '../sync/sync-crypto.js';
 import type { SshSessionManagerPort } from '../ssh/types.js';
 import type { AppRuntimeConfig } from '../config.js';
 import type { AccountService } from '../account/account-service.js';
 import { getAccountSessionId } from '../auth/account-cookie.js';
 import { ARGON2ID_PARAMS, VAULT_VERSION, type VaultConfig } from '../vault/types.js';
-import type { SyncCoordinatorPort } from '../sync/sync-service.js';
+import type { SyncCoordinatorPort, SyncServiceContract } from '../sync/sync-service.js';
+import type { AccountSession, SyncDescriptor } from '../../shared/core/models.js';
+import type { VaultRecoveryInput } from '../../shared/core/ports.js';
 
 export type { AppRuntimeConfig } from '../config.js';
 
@@ -23,6 +26,7 @@ export interface SetupRouteDependencies {
   sshSessionManager?: SshSessionManagerPort;
   accountService?: AccountService;
   syncCoordinator?: SyncCoordinatorPort;
+  syncService?: SyncServiceContract;
 }
 
 const masterPasswordSchema = z.object({
@@ -53,6 +57,13 @@ const fromSyncSchema = z.object({
   }).strict()
 }).strict();
 
+const recoveryInputSchema = z.discriminatedUnion('method', [
+  z.object({ method: z.literal('master-password'), secret: z.string().min(1).max(4096) }).strict(),
+  z.object({ method: z.literal('recovery-key'), secret: z.string().min(1).max(128) }).strict()
+]);
+
+const recoveryApplySchema = z.object({ previewId: z.string().min(1).max(128) }).and(recoveryInputSchema);
+
 const parseMasterPassword = (body: unknown): string => {
   try {
     return masterPasswordSchema.parse(body).masterPassword;
@@ -60,6 +71,21 @@ const parseMasterPassword = (body: unknown): string => {
     throw new AppError('MASTER_PASSWORD_INVALID');
   }
 };
+
+const vaultConfigFromEnvelope = (envelope: SyncDescriptor['vaultUnlockEnvelope']): VaultConfig => ({
+  version: VAULT_VERSION,
+  kdf: {
+    ...ARGON2ID_PARAMS,
+    salt: envelope.kdf.salt
+  },
+  wrappedVaultKey: {
+    version: VAULT_VERSION,
+    nonce: envelope.wrappedVaultKey.nonce,
+    ciphertext: envelope.wrappedVaultKey.ciphertext,
+    authTag: envelope.wrappedVaultKey.authTag,
+    aad: envelope.wrappedVaultKey.aad
+  }
+});
 
 const parseFromSyncBody = (body: unknown): { masterPassword: string; vaultConfig: VaultConfig } => {
   const parsed = fromSyncSchema.safeParse(body);
@@ -71,6 +97,21 @@ const parseFromSyncBody = (body: unknown): { masterPassword: string; vaultConfig
       kdf: parsed.data.vaultUnlockEnvelope.kdf,
       wrappedVaultKey: parsed.data.vaultUnlockEnvelope.wrappedVaultKey
     }
+  };
+};
+
+const parseRecoveryInput = (body: unknown): VaultRecoveryInput => {
+  const parsed = recoveryInputSchema.safeParse(body);
+  if (!parsed.success) throw new AppError('SYNC_PAYLOAD_INVALID');
+  return parsed.data;
+};
+
+const parseRecoveryApply = (body: unknown): { previewId: string; input: VaultRecoveryInput } => {
+  const parsed = recoveryApplySchema.safeParse(body);
+  if (!parsed.success) throw new AppError('SYNC_PAYLOAD_INVALID');
+  return {
+    previewId: parsed.data.previewId,
+    input: { method: parsed.data.method, secret: parsed.data.secret }
   };
 };
 
@@ -86,10 +127,41 @@ const requireSession = (request: FastifyRequest, dependencies: SetupRouteDepende
   return sessionId;
 };
 
-const requireAccountSession = (request: FastifyRequest, dependencies: SetupRouteDependencies): void => {
+const requireAccountSession = (request: FastifyRequest, dependencies: SetupRouteDependencies): AccountSession => {
   const accountSessionId = getAccountSessionId(request);
-  if (!dependencies.accountService || !accountSessionId || !dependencies.accountService.status(accountSessionId)) {
+  const session = dependencies.accountService && accountSessionId ? dependencies.accountService.status(accountSessionId) : null;
+  if (!session) {
     throw new AppError('ACCOUNT_SESSION_INVALID');
+  }
+  return session;
+};
+
+const requireSyncService = (dependencies: SetupRouteDependencies): SyncServiceContract => {
+  if (!dependencies.syncService) throw new AppError('CAPABILITY_UNAVAILABLE');
+  return dependencies.syncService;
+};
+
+const deriveRecoveryVaultKey = async (
+  input: VaultRecoveryInput,
+  descriptor: SyncDescriptor,
+  vaultService: VaultService
+): Promise<Buffer> => {
+  if (input.method === 'master-password') {
+    return vaultService.unlock(input.secret, vaultConfigFromEnvelope(descriptor.vaultUnlockEnvelope));
+  }
+
+  const recoveryVersion = descriptor.vaultUnlockEnvelope.recoveryKeyVersion;
+  const recoveryWrapper = descriptor.vaultUnlockEnvelope.recoveryWrappedVaultKey;
+  if (recoveryVersion === undefined || recoveryWrapper === undefined) {
+    throw new AppError('SYNC_RECOVERY_KEY_NOT_READY');
+  }
+
+  let recoveryKey: Buffer | undefined;
+  try {
+    recoveryKey = parseRecoveryKey(input.secret);
+    return unwrapVaultKeyWithRecoveryKey(recoveryKey, descriptor.vaultId, recoveryVersion, recoveryWrapper);
+  } finally {
+    recoveryKey?.fill(0);
   }
 };
 
@@ -139,6 +211,50 @@ export const registerSetupRoutes = async (
       sessionTransferred = true;
       setSessionCookie(reply, sessionId, { secure: dependencies.config.nodeEnv === 'production' });
       reply.code(201).send({ initialized: true, locked: false });
+    } finally {
+      if (!sessionTransferred) vaultKey.fill(0);
+    }
+  });
+
+  app.post('/api/setup/from-sync/preview', async (request, reply) => {
+    if (dependencies.config.accountSyncEnabled !== true) throw new AppError('CAPABILITY_UNAVAILABLE');
+    if (dependencies.appConfigRepository.get() !== null) throw new AppError('SETUP_ALREADY_COMPLETE');
+    const account = requireAccountSession(request, dependencies);
+    const syncService = requireSyncService(dependencies);
+    const descriptor = syncService.getDescriptor(account.accountId);
+    if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
+    const input = parseRecoveryInput(request.body);
+    const vaultKey = await deriveRecoveryVaultKey(input, descriptor, dependencies.vaultService);
+    try {
+      reply.header('cache-control', 'no-store').send(await syncService.previewRecovery(account.accountId, account.deviceId, 'default', vaultKey));
+    } finally {
+      vaultKey.fill(0);
+    }
+  });
+
+  app.post('/api/setup/from-sync/apply', async (request, reply) => {
+    if (dependencies.config.accountSyncEnabled !== true) throw new AppError('CAPABILITY_UNAVAILABLE');
+    if (dependencies.appConfigRepository.get() !== null) throw new AppError('SETUP_ALREADY_COMPLETE');
+    const account = requireAccountSession(request, dependencies);
+    const syncService = requireSyncService(dependencies);
+    const descriptor = syncService.getDescriptor(account.accountId);
+    if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
+    const { previewId, input } = parseRecoveryApply(request.body);
+    const vaultKey = await deriveRecoveryVaultKey(input, descriptor, dependencies.vaultService);
+    let sessionTransferred = false;
+    try {
+      await syncService.applyRecovery(
+        account.accountId,
+        account.deviceId,
+        'default',
+        vaultKey,
+        previewId,
+        () => { dependencies.appConfigRepository.create(vaultConfigFromEnvelope(descriptor.vaultUnlockEnvelope)); }
+      );
+      const sessionId = dependencies.sessionStore.create(vaultKey);
+      sessionTransferred = true;
+      setSessionCookie(reply, sessionId, { secure: dependencies.config.nodeEnv === 'production' });
+      reply.header('cache-control', 'no-store').code(201).send({ initialized: true, locked: false });
     } finally {
       if (!sessionTransferred) vaultKey.fill(0);
     }

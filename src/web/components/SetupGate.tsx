@@ -1,19 +1,27 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 
 import { AppError } from '@shared/errors';
+import type { AccountSession } from '@shared/core/models';
+import type { VaultRecoveryPort } from '@shared/core/ports';
+import { SyncRecoveryView } from './SyncRecoveryView';
 
 const MASTER_PASSWORD_MIN_LENGTH = 8;
 
 export interface SetupGateProps {
   onSubmit: (masterPassword: string) => Promise<void>;
   errorMessage?: string | null;
+  headerSlot?: ReactNode;
+  account?: AccountSession | null;
+  recoveryPort?: VaultRecoveryPort;
+  onRecovered?: () => Promise<void>;
 }
 
-export const SetupGate = ({ onSubmit, errorMessage }: SetupGateProps) => {
+export const SetupGate = ({ onSubmit, errorMessage, headerSlot, account = null, recoveryPort, onRecovered }: SetupGateProps) => {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
 
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -38,8 +46,23 @@ export const SetupGate = ({ onSubmit, errorMessage }: SetupGateProps) => {
     }
   };
 
+  if (recoveryOpen && recoveryPort && onRecovered) {
+    return (
+      <main className="auth-stage">
+        {headerSlot && <div className="auth-header-slot">{headerSlot}</div>}
+        <SyncRecoveryView
+          account={account}
+          recoveryPort={recoveryPort}
+          onRecovered={onRecovered}
+          onBack={() => setRecoveryOpen(false)}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="auth-stage">
+      {headerSlot && <div className="auth-header-slot">{headerSlot}</div>}
       <section className="auth-card" aria-labelledby="setup-title">
         <div className="brand-mark">W</div>
         <p className="eyebrow">WEB SSH WORKSPACE</p>
@@ -54,6 +77,7 @@ export const SetupGate = ({ onSubmit, errorMessage }: SetupGateProps) => {
           <button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? '创建中…' : '创建 Vault'}</button>
         </form>
         <p className="security-note">主密码不会上传或落库。遗失后无法恢复已保存凭据。</p>
+        {recoveryPort && onRecovered && <button className="button button-ghost button-wide unlock-recovery-trigger" type="button" onClick={() => setRecoveryOpen(true)}>使用同步恢复</button>}
       </section>
     </main>
   );

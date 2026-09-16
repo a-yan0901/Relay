@@ -1,7 +1,7 @@
 # Relay 账号、设备与端到端加密同步设计
 
 日期：2026-09-16
-状态：M5 核心 Web/自托管切片已实现（可选、默认关闭）；完整跨端正式发布仍待恢复与密钥安全闭环
+状态：M5 核心 Web/自托管切片已实现（可选、默认关闭）；完整跨端正式发布仍待冲突导出、删除 re-auth 与账号删除安全闭环
 适用范围：个人账号、跨设备同步、Web/桌面/Android 的同步边界；不包含团队协作和 Agent 实现。
 
 ## 1. 决策摘要
@@ -16,14 +16,14 @@ Relay 采用“可选账号 + 端到端加密同步”的方案：
 - 桌面/Android 如果采用本地 SSH，可以在本地 OS keychain/Keystore 解密并使用凭据；如果继续使用 server-mediated transport，则沿用现有受信执行端边界。
 - 个人同步与团队 Vault、RBAC、实时协作和 Agent/MCP 分开建模，分别进入后续里程碑。
 
-> 实现边界（2026-09-17）：当前代码已经交付 Web 端可选的账号会话、设备列表/撤销、opaque encrypted snapshot、revision 冲突、pending/retry、登出、云端删除恢复窗口，以及 recovery key 的一次展示、离线确认、错误输入保护和包装轮换；`ACCOUNT_SYNC_ENABLED` 默认为关闭。该切片通过当前的 focused/full 技术验证，但不等同于完整 M5 安全发布：独立本地 Vault 的新设备恢复 UI、真实 re-auth、冲突“导出两份”和账号删除闭环仍需后续实现与评审。
+> 实现边界（2026-09-17）：当前代码已经交付 Web 端可选的账号会话、设备列表/撤销、opaque encrypted snapshot、revision 冲突、pending/retry、登出、云端删除恢复窗口、recovery key 生命周期，以及新设备恢复的 preview/apply 流程；`ACCOUNT_SYNC_ENABLED` 默认为关闭。该切片通过当前的 focused/full 技术验证，但不等同于完整 M5 安全发布：真实 re-auth、冲突“导出两份”、完整账号删除闭环和 Desktop/Android 原生实现仍需后续实现与评审。
 
 ## 2. 目标与非目标
 
 ### 2.1 目标
 
 1. Local 模式不依赖账号、云服务、网络或第三方身份提供商。
-2. 用户登录账号后，可以在另一台受信设备恢复同一个 Vault，而不上传主密码、私钥、passphrase 或明文配置。
+2. 用户登录账号后，可以在另一台受信设备恢复同一个 Vault，而不把主密码、私钥、passphrase 或明文配置写入账号服务、盲同步存储或持久化日志。当前 Web server-mediated 路径会通过受保护请求把一次性解锁输入提交给受信 Relay 执行端；桌面/Android 的 local-SSH provider 后续可将派生过程留在本地安全存储。
 3. Web、Windows/Linux 桌面和 Android 共享账号/同步语义，但平台可以使用不同的认证、密钥存储、文件和 SSH transport adapter。
 4. 离线期间本地工作不被同步服务阻塞；网络恢复后可重试、可解释、幂等地同步。
 5. 设备撤销、账号登出、主密码遗失、同步冲突、删除恢复和云端不可用都有明确结果。
@@ -59,7 +59,7 @@ Local 模式的 UI 必须明确显示“仅本地，不同步”，不能用灰�
 3. 如果当前 Vault 已解锁，系统展示一次同步范围、设备列表和加密说明，然后自动进入同步。
 4. 如果 Vault 未初始化或仍锁定，账号可以登录，但 Sync 状态为 `needs-unlock`；解锁后才读取或上传 Vault 内容。
 5. 首次绑定已有本地 Vault 时，系统先创建本地加密备份，再比较远端 revision；若本地和远端都已有数据，必须进入预览/冲突流程，不能静默覆盖。
-6. 新设备没有本地 Vault 时，下载加密的 Vault key envelope 和同步快照；用户输入 Vault 主密码或离线恢复密钥后，在本地创建 Vault 并事务性应用。
+6. 新设备没有本地 Vault 时，下载加密的 Vault key envelope 和同步快照；用户输入 Vault 主密码或离线恢复密钥后，在对应平台的受信执行边界内创建 Vault 并事务性应用。当前 Web 由 Relay server-mediated adapter 执行这一步，不把输入写入账号/盲同步存储。
 
 默认同步的不是“登录后把所有运行状态上传”，而是“登录并解锁后自动同步允许的持久化数据”。首次登录仍需一次明确范围确认，之后沿用该选择。
 
@@ -272,6 +272,7 @@ K_sync -- AEAD --> encrypted sync snapshot/change set
 - 账号密码重置只恢复账号访问，不恢复 Vault；产品文案必须在注册、开启同步和重置密码时反复明确这一点。
 - 开启同步后可生成一次展示、可轮换的 recovery key，并用它包装 Vault key；页面要求用户勾选离线保存并重新输入完全匹配后才允许完成 recovery 绑定，服务端只保存包装后的密文，不保存可解密的 recovery key。重新生成会让旧的待确认 key 失效；关闭/刷新页面不会再次显示已生成的明文。
 - 丢失主密码和 recovery key 时，云端数据不可恢复；这是可验证的安全承诺，不能通过客服或管理员后门绕过。
+- 新设备恢复必须先完成账号登录，再在未初始化的本地 Vault 上预览同步范围；预览 token 只在服务端内存保留 10 分钟，apply 时重新派生 Vault key 并校验远端 revision/hash 未变化，快照与本地 `app_config` 在同一事务中成功后才建立本地会话。
 
 ### 5.3 密钥轮换
 
@@ -384,7 +385,7 @@ Blind sync store 只实现版本、大小、哈希、幂等、游标和权限，
 - 再做新设备恢复、离线队列、revision 冲突、加密备份和登出/删除语义。
 - 通过 Web、desktop-like 和 Android-like adapter contract 后，才把登录同步作为可选正式能力。
 
-当前实现只达到 M5 的核心 Web/自托管切片：账号、设备、opaque snapshot、revision conflict、offline pending/retry、登出、云端删除恢复窗口和 recovery key 生命周期已落地；同步默认关闭，且当前 Relay server 仍是 Web-mediated SSH 的受信解密边界。独立新设备恢复交互、真实删除 re-auth、冲突“导出两份”、Desktop/Android 原生实现和安全评审仍是 M5 退出条件，不应由当前代码或测试结果推断为已完成。
+当前实现只达到 M5 的核心 Web/自托管切片：账号、设备、opaque snapshot、revision conflict、offline pending/retry、登出、云端删除恢复窗口、recovery key 生命周期和 Web 新设备恢复已落地；同步默认关闭，且当前 Relay server 仍是 Web-mediated SSH 的受信解密边界。真实删除 re-auth、冲突“导出两份”、完整账号删除闭环、Desktop/Android 原生实现和安全评审仍是 M5 退出条件，不应由当前代码或测试结果推断为已完成。
 
 ### M6：团队与受控 Agent
 
@@ -414,7 +415,7 @@ Blind sync store 只实现版本、大小、哈希、幂等、游标和权限，
 - `secret_persistence_findings = 0`、冲突覆盖测试无静默覆盖、错误恢复无半应用 Vault、设备撤销测试通过。
 - 涉及核心数据模型、加密、迁移、账号权限或跨模块行为时，按 Q-01 Release gate 执行全量验证；纯 UI 文案或文档变化使用 Artifact/Focused 验证。
 
-本次实现验证记录（2026-09-17）：X-04A focused Vitest 8 files / 65 tests、`npm run typecheck`、`npm run lint`、full Vitest 105 files / 473 tests、`npm run build`、默认 E2E 4/4，以及 account-enabled `tests/e2e/account-sync.spec.ts` 2/2 均通过；敏感数据扫描未发现 recovery key 进入浏览器持久化、审计 metadata 或普通日志。技术门禁通过不代表上述未交付的 new-device/re-auth/export-both 功能已经具备发布资格。
+本次实现验证记录（2026-09-17）：X-04A focused Vitest 8 files / 65 tests 和历史 release gate 已通过；X-04B focused Vitest 9 files / 73 tests、当前 full Vitest 106 files / 483 tests、`npm run typecheck`、`npm run lint`、`npm run build`、默认 E2E 4/4，以及 account-enabled `tests/e2e/account-sync.spec.ts` 3/3 均通过。当前 Web E2E 通过保留 blind sync 表、清除本地 app_config/资源表来模拟独立新设备；真实 provider-separated 多数据卷仍需后续架构验证。敏感数据扫描未发现 recovery key 进入浏览器持久化、审计 metadata 或普通日志；技术门禁通过不代表尚未交付的 re-auth/export-both 功能已经具备发布资格。
 
 ## 11. 明确结论
 
@@ -422,4 +423,4 @@ Blind sync store 只实现版本、大小、哈希、幂等、游标和权限，
 - “登录账号即可同步”在产品上成立，但必须以 Vault 已解锁或可用恢复密钥为前提；账号本身不能解锁 Vault。
 - 云端同步采用加密盲存储；当前 Web 的 Relay 执行端继续属于受信解密边界，不能包装成零知识服务。
 - 个人同步先采用加密 snapshot + revision conflict；团队共享、对象级合并和 Agent 权限另行设计。
-- 当前版本实现了默认关闭的 Web Account-sync 核心切片和 recovery key 生命周期；桌面/Android 原生 UI、独立新设备恢复、团队能力和完整 M5 安全发布仍未交付。
+- 当前版本实现了默认关闭的 Web Account-sync 核心切片、recovery key 生命周期和 Web 独立新设备恢复；桌面/Android 原生 UI、团队能力和完整 M5 安全发布仍未交付。

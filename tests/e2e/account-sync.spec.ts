@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import BetterSqlite3 from 'better-sqlite3';
 
 import { startE2eSshFixture, type E2eSshFixture } from './ssh-fixture';
 
@@ -69,6 +70,16 @@ const readJson = async <T>(page: Page, url: string): Promise<{ status: number; b
     return { status: response.status, body: body as T, raw };
   }, url)
 );
+
+const resetLocalVaultForNewDevice = (): void => {
+  const database = new BetterSqlite3('.tmp-e2e-account-data/webssh.sqlite');
+  try {
+    database.pragma('foreign_keys = ON');
+    database.exec('DELETE FROM audit_events; DELETE FROM hosts; DELETE FROM groups; DELETE FROM identities; DELETE FROM snippets; DELETE FROM workspace_snapshots; DELETE FROM app_config;');
+  } finally {
+    database.close();
+  }
+};
 
 test.describe('account and encrypted sync boundaries', () => {
   let fixture: E2eSshFixture;
@@ -208,5 +219,30 @@ test.describe('account and encrypted sync boundaries', () => {
     } finally {
       await secondContext.close();
     }
+  });
+
+  test('restores a reset local Vault through the new-device preview flow', async ({ page }) => {
+    test.setTimeout(120_000);
+    resetLocalVaultForNewDevice();
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: '建立你的 Server Vault' })).toBeVisible({ timeout: 15_000 });
+    const menu = await openAccountMenu(page);
+    await menu.getByLabel('账号邮箱').fill(ACCOUNT_EMAIL);
+    await menu.getByLabel('账号密码').fill(ACCOUNT_PASSWORD);
+    await menu.getByRole('button', { name: '登录' }).click();
+    await expect(menu).toContainText('账号已登录');
+
+    await page.getByRole('button', { name: '使用同步恢复' }).click();
+    await expect(page.getByRole('heading', { name: '恢复云端 Vault' })).toBeVisible();
+    await page.getByRole('button', { name: '原 Vault 主密码' }).click();
+    await page.getByLabel('恢复密钥或原 Vault 主密码').fill(MASTER_PASSWORD);
+    await page.getByRole('button', { name: '预览恢复内容' }).click();
+    await expect(page.locator('.sync-recovery-preview')).toContainText('将恢复 2 台 Server');
+    await page.getByRole('button', { name: '创建本地 Vault 并应用' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Account sync local host', { exact: true })).toBeVisible();
+    await expect(page.getByText('Account sync revision host', { exact: true })).toBeVisible();
   });
 });

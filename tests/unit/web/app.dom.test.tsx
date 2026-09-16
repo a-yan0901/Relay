@@ -14,6 +14,7 @@ const apiMocks = vi.hoisted(() => ({
   getSetupStatus: vi.fn(),
   listGroups: vi.fn(),
   listHosts: vi.fn(),
+  listIdentities: vi.fn(),
   lockVault: vi.fn(),
   setupVault: vi.fn(),
   unlockVault: vi.fn(),
@@ -36,7 +37,9 @@ const apiMocks = vi.hoisted(() => ({
   getSyncEnvelope: vi.fn(),
   pushSyncEnvelope: vi.fn(),
   previewPull: vi.fn(),
-  resolveConflict: vi.fn()
+  resolveConflict: vi.fn(),
+  previewSyncRecovery: vi.fn(),
+  applySyncRecovery: vi.fn()
 }));
 
 vi.mock('../../../src/web/api', () => apiMocks);
@@ -48,7 +51,7 @@ const renderApp = (platformServices?: PlatformServices) => render(<App runtime={
 
 describe('App boot recovery', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   afterEach(() => cleanup());
@@ -65,6 +68,48 @@ describe('App boot recovery', () => {
 
     expect(await screen.findByRole('heading', { name: '建立你的 Server Vault' })).toBeInTheDocument();
     expect(apiMocks.getSetupStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('opens new-device recovery from the uninitialized Vault and returns to the workspace', async () => {
+    const user = userEvent.setup();
+    const account = {
+      accountId: 'account-1',
+      deviceId: 'device-2',
+      state: 'signed-in' as const,
+      expiresAt: '2026-09-17T00:00:00.000Z'
+    };
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: false, locked: true });
+    apiMocks.getCapabilities.mockResolvedValue({ client: 'web', version: 1, capabilities: ['workspace.persistence', 'account.auth', 'device.trust', 'sync.encrypted'] });
+    apiMocks.getAccountSession.mockResolvedValue({ account });
+    apiMocks.getSyncState.mockResolvedValue({ sync: 'synced', head: null, pendingCount: 0 });
+    apiMocks.previewSyncRecovery.mockResolvedValue({
+      previewId: 'preview-1',
+      vaultId: 'vault-1',
+      revision: 1,
+      payloadHash: 'a'.repeat(64),
+      hostCount: 1,
+      groupCount: 0,
+      identityCount: 0,
+      snippetCount: 0,
+      workspaceIncluded: true,
+      conflictTypes: [],
+      expiresAt: '2026-09-17T00:10:00.000Z'
+    });
+    apiMocks.applySyncRecovery.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    apiMocks.listIdentities.mockResolvedValue([]);
+    renderApp();
+
+    await user.click(await screen.findByRole('button', { name: '使用同步恢复' }));
+    await user.type(screen.getByLabelText('恢复密钥或原 Vault 主密码'), 'recovery-secret');
+    await user.click(screen.getByRole('button', { name: '预览恢复内容' }));
+    expect(await screen.findByText(/将恢复 1 台 Server/u)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '创建本地 Vault 并应用' }));
+    expect(apiMocks.previewSyncRecovery).toHaveBeenCalledWith({ method: 'recovery-key', secret: 'recovery-secret' });
+    expect(apiMocks.applySyncRecovery).toHaveBeenCalledWith('preview-1', { method: 'recovery-key', secret: 'recovery-secret' });
+    expect(await screen.findByRole('heading', { name: 'Server', exact: true })).toBeInTheDocument();
   });
 
   it('applies theme and font preferences from the workspace settings', async () => {

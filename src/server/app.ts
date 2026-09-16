@@ -89,6 +89,8 @@ export interface AppDependencies {
   syncService?: SyncServiceContract;
   syncCoordinator?: SyncCoordinatorPort;
   syncTransport?: SyncTransport;
+  /** Injectable clock for sync lifecycle tests and embedded hosts. */
+  syncClock?: () => number;
 }
 
 export interface BuiltAppDependencies {
@@ -191,7 +193,8 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   });
   const syncService = dependencies.syncService ?? new SyncService({
     store: createDefaultBlindSyncStore(dependencies.database),
-    snapshotService: syncSnapshotService
+    snapshotService: syncSnapshotService,
+    now: dependencies.syncClock
   });
   const syncCoordinator = dependencies.syncCoordinator ?? new SyncCoordinator({
     syncService,

@@ -46,7 +46,7 @@ import type {
   VaultBundlePreview,
   VaultBundleResolution
 } from '../import/types.js';
-import type { RecoveryKeyState, WorkspaceState, WorkspaceTemplate, WorkspaceTemplateInput, VaultStatus } from './models.js';
+import type { RecoveryKeyState, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate, WorkspaceTemplateInput, VaultStatus } from './models.js';
 
 export type SecretRef =
   | { kind: 'host'; id: string }
@@ -132,6 +132,15 @@ export interface VaultSessionPort {
   setup(masterPassword: string): Promise<VaultStatus>;
   unlock(masterPassword: string): Promise<VaultStatus>;
   lock(): Promise<void>;
+}
+
+export type VaultRecoveryInput =
+  | { method: 'master-password'; secret: string }
+  | { method: 'recovery-key'; secret: string };
+
+export interface VaultRecoveryPort {
+  preview(input: VaultRecoveryInput): Promise<VaultRecoveryPreview>;
+  apply(previewId: string, input: VaultRecoveryInput): Promise<VaultStatus>;
 }
 
 export interface AccountSessionPort {

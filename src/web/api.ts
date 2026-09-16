@@ -1,7 +1,8 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
-import type { AccountSession, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, Snippet, SnippetMetadata, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
+import type { AccountSession, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, Snippet, SnippetMetadata, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
+import type { VaultRecoveryInput } from '@shared/core/ports';
 
 export interface SetupStatus {
   initialized: boolean;
@@ -64,6 +65,11 @@ export interface WebSyncApi {
   retrySync(): Promise<void>;
   previewPull(): Promise<SyncPreview>;
   resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void>;
+}
+
+export interface WebVaultRecoveryApi {
+  previewSyncRecovery(input: VaultRecoveryInput): Promise<VaultRecoveryPreview>;
+  applySyncRecovery(previewId: string, input: VaultRecoveryInput): Promise<SetupStatus>;
 }
 
 export type GroupSummaryResponse = GroupNode;
@@ -409,6 +415,45 @@ const parseSyncPreview = (value: unknown): SyncPreview => {
   };
 };
 
+const recoveryConflictTypes: readonly VaultRecoveryPreview['conflictTypes'][number][] = ['host', 'group', 'identity', 'snippet', 'workspace', 'host-key'];
+
+const parseVaultRecoveryPreview = (value: unknown): VaultRecoveryPreview => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['previewId', 'vaultId', 'revision', 'payloadHash', 'hostCount', 'groupCount', 'identityCount', 'snippetCount', 'workspaceIncluded', 'conflictTypes', 'expiresAt'])
+    || !isNonEmptyString(value.previewId) || value.previewId.length > 128
+    || !isNonEmptyString(value.vaultId) || value.vaultId.length > 128
+    || !isInteger(value.revision)
+    || value.revision < 1
+    || typeof value.payloadHash !== 'string'
+    || !/^[a-f0-9]{64}$/iu.test(value.payloadHash)
+    || !isInteger(value.hostCount) || value.hostCount < 0 || value.hostCount > 10_000
+    || !isInteger(value.groupCount) || value.groupCount < 0 || value.groupCount > 10_000
+    || !isInteger(value.identityCount) || value.identityCount < 0 || value.identityCount > 10_000
+    || !isInteger(value.snippetCount) || value.snippetCount < 0 || value.snippetCount > 10_000
+    || typeof value.workspaceIncluded !== 'boolean'
+    || !Array.isArray(value.conflictTypes) || value.conflictTypes.length > recoveryConflictTypes.length
+    || value.conflictTypes.some((type) => !recoveryConflictTypes.includes(type as VaultRecoveryPreview['conflictTypes'][number]))
+    || !isIsoDate(value.expiresAt)) return invalidResponse();
+  return {
+    previewId: value.previewId,
+    vaultId: value.vaultId,
+    revision: value.revision,
+    payloadHash: value.payloadHash,
+    hostCount: value.hostCount,
+    groupCount: value.groupCount,
+    identityCount: value.identityCount,
+    snippetCount: value.snippetCount,
+    workspaceIncluded: value.workspaceIncluded,
+    conflictTypes: value.conflictTypes as VaultRecoveryPreview['conflictTypes'],
+    expiresAt: value.expiresAt
+  };
+};
+
+const parseSetupStatus = (value: unknown): SetupStatus => {
+  if (!isRecord(value) || !hasExactKeys(value, ['initialized', 'locked']) || typeof value.initialized !== 'boolean' || typeof value.locked !== 'boolean') return invalidResponse();
+  return { initialized: value.initialized, locked: value.locked };
+};
+
 const parseSyncDescriptorResponse = (value: unknown): SyncDescriptor | null => {
   if (!isRecord(value) || !hasExactKeys(value, ['descriptor']) || (value.descriptor !== null && value.descriptor !== undefined && !isRecord(value.descriptor))) return invalidResponse();
   return value.descriptor === null || value.descriptor === undefined ? null : parseSyncDescriptor(value.descriptor);
@@ -496,6 +541,16 @@ export const resolveConflict: WebSyncApi['resolveConflict'] = (conflictId, resol
   method: 'POST',
   ...json({ resolution })
 });
+
+export const previewSyncRecovery: WebVaultRecoveryApi['previewSyncRecovery'] = (input) => request<unknown>('/api/setup/from-sync/preview', {
+  method: 'POST',
+  ...json({ method: input.method, secret: input.secret })
+}).then(parseVaultRecoveryPreview);
+
+export const applySyncRecovery: WebVaultRecoveryApi['applySyncRecovery'] = (previewId, input) => request<unknown>('/api/setup/from-sync/apply', {
+  method: 'POST',
+  ...json({ previewId, method: input.method, secret: input.secret })
+}).then(parseSetupStatus);
 
 export const setupVault = (masterPassword: string): Promise<SetupStatus> => request<SetupStatus>('/api/setup', {
   method: 'POST',
