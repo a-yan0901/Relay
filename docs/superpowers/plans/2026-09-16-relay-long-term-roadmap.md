@@ -602,7 +602,7 @@ export interface BroadcastTargetSnapshot {
 
 ## Task U-03: 上下文 SFTP、双栏文件视图和 Transfer Center
 
-**Status:** Ready
+**Status:** Done（2026-09-16）
 **Priority:** P0/P1
 **Milestone:** M1（传输可靠性）→ M2（交互体验）
 **Depends on:** R-02 的 streaming/resume；U-01 的 Host/Workspace 上下文。
@@ -610,8 +610,8 @@ export interface BroadcastTargetSnapshot {
 **Files:**
 
 - Create: `src/web/components/SftpWorkspace.tsx`, `src/web/components/LocalFilePanel.tsx`, `src/web/components/TransferCenter.tsx`
-- Modify: `src/web/components/SftpPanel.tsx`, `src/web/components/SftpBreadcrumbs.tsx`, `src/web/components/TransferQueue.tsx`, `src/web/App.tsx`, `src/web/platform/web-adapters.ts`, `src/web/styles.css`
-- Test: `tests/unit/web/sftp-panel.dom.test.tsx`, `tests/unit/web/transfer-center.dom.test.tsx`, `tests/unit/web/web-adapters.test.ts`, `tests/e2e/ssh-productivity.spec.ts`
+- Modify: `src/shared/core/models.ts`, `src/shared/core/ports.ts`, `src/shared/core/state-machines.ts`, `src/shared/protocol.ts`, `src/server/sftp/transfer-manager.ts`, `src/server/api/sftp-routes.ts`, `src/server/db/migrations.ts`, `src/server/db/repositories.ts`, `src/web/components/SftpPanel.tsx`, `src/web/components/SftpBreadcrumbs.tsx`, `src/web/components/TransferQueue.tsx`, `src/web/components/ActivityPanel.tsx`, `src/web/App.tsx`, `src/web/api.ts`, `src/web/platform/web-adapters.ts`, `src/web/styles.css`
+- Test: `tests/unit/shared/core-state-machines.test.ts`, `tests/unit/shared/protocol.test.ts`, `tests/unit/server/transfer-manager.test.ts`, `tests/unit/server/migrations.test.ts`, `tests/integration/server/sftp-routes.test.ts`, `tests/unit/web/local-file-panel.dom.test.tsx`, `tests/unit/web/sftp-panel.dom.test.tsx`, `tests/unit/web/sftp-workspace.dom.test.tsx`, `tests/unit/web/terminal-workspace.dom.test.tsx`, `tests/unit/web/transfer-center.dom.test.tsx`, `tests/unit/web/web-adapters.test.ts`, `tests/e2e/ssh-productivity.spec.ts`
 
 **Interfaces:**
 
@@ -619,30 +619,32 @@ export interface BroadcastTargetSnapshot {
 - `TransferCenter` 只消费 `TransferJob` 和 `onCancel/onRetry/onResume`，并显示 host alias、remote path、status、progress、checkpoint 和 error code。
 - 例行文件操作使用面板；删除、批量覆盖、Host Key 和 Broadcast 使用 Dialog；错误文案给出路径、权限、连接状态和下一步，不展示堆栈或凭据。
 
-- [ ] **Step 1: 写 SFTP 上下文和操作测试。**
+- [x] **Step 1: 写 SFTP 上下文和操作测试。**
 
-  覆盖从终端打开 SFTP、切换 Host 后路径隔离、面包屑、选择/多选、拖放命中当前目录、隐藏文件、权限错误、返回终端和传输中心保留状态。
+  覆盖从终端打开 SFTP、切换 Host 后路径隔离、面包屑、选择/多选、拖放命中当前目录、隐藏文件、权限错误、返回终端和传输中心保留状态；增加暂停检查点、迁移保留检查点和 pause API 路由测试。
 
-- [ ] **Step 2: 运行 DOM 测试确认失败。**
+- [x] **Step 2: 运行 DOM 测试确认失败。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   npm test -- --run tests/unit/web/sftp-panel.dom.test.tsx tests/unit/web/transfer-center.dom.test.tsx tests/unit/web/web-adapters.test.ts
   ```
 
-- [ ] **Step 3: 实现同一 Host/Workspace 的上下文面板。**
+  实现前新增组件导入、受控路径和终端组合断言按预期失败；实现后同范围聚焦回归通过。
 
-  终端、Remote Files、Activity 和 Snippet 面板共享当前 Host/Workspace 标识；离开 Server 列表不卸载 live session；在不支持本地文件系统的 Web 环境中使用文件选择器作为降级路径。
+- [x] **Step 3: 实现同一 Host/Workspace 的上下文面板。**
 
-- [ ] **Step 4: 实现双栏/拖放和 Transfer Center。**
+  终端、Remote Files、Activity 和 Snippet 面板共享当前 Host/Workspace 标识；SFTP path 按 Host 隔离并由父级控制；离开 Server 列表不卸载 live session；Web 环境使用多选文件选择器作为本地文件系统降级路径。
 
-  左侧本地、右侧远端；上传/下载进入 Transfer Center；支持暂停、恢复、重试、取消、异常聚合和回到原路径；拖放失败显示命中目录和恢复入口。
+- [x] **Step 4: 实现双栏/拖放和 Transfer Center。**
 
-- [ ] **Step 5: 运行浏览器和窄屏验证。**
+  左侧本地、右侧远端；上传/下载进入 Transfer Center；支持暂停、从 checkpoint 恢复、重试、取消、异常聚合和回到原路径；拖放失败显示命中目录、权限/连接原因和下一步。TransferManager、协议、SQLite schema v11 和 API 增加可恢复 paused 生命周期。
 
-  使用 Chromium 检查桌面双栏、390px 单栏、短视口和键盘焦点；验证横向滚动只出现在明确的文件列表容器，不出现在页面根节点。
+- [x] **Step 5: 运行浏览器和窄屏验证。**
 
-- [ ] **Step 6: 提交 UI slice。**
+  使用 Chromium 检查桌面双栏、390px 单栏、短视口、SFTP 上传/下载和既有恢复路径；验证文件列表内部滚动和页面根节点无横向溢出。文件行在窄侧栏保持可见，超长列表只在明确的文件列表容器内滚动。
+
+- [x] **Step 6: 提交 UI slice。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -652,9 +654,19 @@ export interface BroadcastTargetSnapshot {
   git commit -m "feat: add contextual sftp workspace and transfer center"
   ```
 
+  Feature commit：`81150cb`（`feat: add contextual sftp workspace and transfer center`）。
+
 **Acceptance:** 用户可以在当前 Workspace 中完成“看终端 → 找文件 → 拖放/传输 → 查看恢复 → 回到终端”；大文件状态不丢失；面板切换不让用户重新选择 Host 和路径。
 
-**Verification:** SFTP DOM、transfer focused tests、OpenSSH fixture、Chromium 文件路径和 320/390px 窄屏走查；可靠传输部分在 M1、交互部分在 M2 分别验收。
+**Verification:**
+
+- [x] 聚焦回归：暂停/继续、迁移、TransferManager、SFTP route、协议和 Web adapter 共 9 个文件、51 个测试通过；UI 受影响文件共 6 个、35 个测试通过。
+- [x] 全量回归：`npm test`，89 个测试文件、353 个测试全部通过，包含现有 OpenSSH fixture。
+- [x] 静态检查：`npm run typecheck`、`npm run lint` 通过。
+- [x] 生产构建：`npm run build` 通过；仅有既有前端 chunk 超过 500 kB 的提示。
+- [x] Chromium：`npm run test:e2e -- --project=chromium tests/e2e/ssh-productivity.spec.ts`，2/2 通过；覆盖桌面双栏、390px 单栏、根节点无横向溢出、SFTP 上传/下载和恢复路径。
+- [x] `git diff --check` 通过；代码 feature commit：`81150cb`。
+- [ ] 证据缺口：真实浏览器原生拖放事件和没有 File System Access API 时的多选文件降级已分别由 DOM/Chromium 路径覆盖，但跨设备原生文件选择器和完整的移动端触控拖放仍留给 X-02/U-04；上传源文件不持久化，服务重启后需用户重新选择源文件才能继续上传。
 
 ---
 
