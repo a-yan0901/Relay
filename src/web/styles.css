@@ -809,9 +809,30 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 .command-run-controls > label { flex: 1; }
 .command-run-results { min-width: 0; }
 .command-run-results h2 { font-size: 17px; margin: 0; }
+.command-run-meta { color: var(--faint); font-size: 9px; margin: 5px 0 0; }
+.command-run-meta code { color: var(--blue); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.command-run-snapshot-summary { color: var(--faint); font-size: 10px; }
+.command-result-summary { align-items: center; background: rgba(93, 168, 255, 0.07); border: 1px solid rgba(93, 168, 255, 0.16); border-radius: 7px; color: var(--muted); display: flex; flex-wrap: wrap; font-size: 10px; gap: 12px; margin-top: 12px; padding: 8px 10px; }
+.command-result-filters { align-items: end; display: grid; gap: 8px; grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(100px, 1fr)); margin-top: 12px; }
+.command-result-filters label { color: var(--muted); display: grid; font-size: 10px; gap: 5px; }
+.command-result-filters input, .command-result-filters select { background: var(--panel-soft); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font: inherit; min-height: 32px; min-width: 0; padding: 7px 8px; }
+.command-output-diff { border: 1px solid rgba(86, 201, 165, 0.28); border-radius: 8px; margin-top: 13px; padding: 10px; }
+.command-output-diff-heading { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; }
+.command-output-diff h3 { font-size: 12px; margin: 0; }
+.command-output-diff-heading > span, .command-output-diff article > strong { color: var(--faint); font-size: 9px; }
+.command-output-diff article { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+.command-output-diff pre { background: rgba(5, 15, 28, 0.48); border-radius: 6px; font-size: 10px; margin: 7px 0 0; max-height: 220px; overflow: auto; padding: 8px; white-space: pre-wrap; }
+.command-diff-added { color: #86dfbb; display: block; }
+.command-diff-removed { color: #f0a6a6; display: block; }
+.command-diff-same { color: var(--muted); display: block; }
 .command-target { border-top: 1px solid var(--border); padding: 12px 0; }
+.command-target-heading { align-items: flex-start; display: flex; gap: 10px; }
+.command-target-heading > div:last-child { min-width: 0; }
+.command-target-select { align-items: center; color: var(--faint); display: inline-flex; flex: 0 0 auto; font-size: 9px; gap: 4px; padding-top: 1px; }
 .command-target strong, .command-target small { display: block; }
 .command-target small { color: var(--faint); font-size: 10px; margin-top: 3px; }
+.command-target-actions { align-items: center; display: flex; gap: 8px; justify-content: space-between; margin-top: 7px; }
+.command-target-actions > span { color: var(--faint); font-size: 9px; }
 .command-target pre { background: rgba(5, 15, 28, 0.48); border-radius: 6px; color: var(--text); font-size: 10px; margin: 8px 0 0; max-height: 180px; overflow: auto; padding: 9px; white-space: pre-wrap; }
 .activity-item { align-items: center; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: space-between; padding: 11px 0; }
 .activity-item strong, .activity-item small { display: block; }

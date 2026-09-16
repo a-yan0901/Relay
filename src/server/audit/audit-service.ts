@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 
 import { AppError } from '../../shared/errors.js';
 import type { CommandRun } from '../../shared/core/models.js';
+import { summarizeCommandTargets } from '../../shared/core/command-results.js';
 import type { AuditEventInput, AuditEventRow, AuditListFilter, AuditMetadata } from '../db/types.js';
 import { AuditRepository } from '../db/repositories.js';
 
@@ -23,7 +24,7 @@ export interface PaginatedAuditEvents {
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const EVENT_PATTERN = /^[a-z][a-z0-9._-]{1,63}$/u;
-const ALLOWED_METADATA = new Set(['runId', 'transferId', 'targetCount', 'successCount', 'failureCount', 'durationMs']);
+const ALLOWED_METADATA = new Set(['runId', 'transferId', 'targetCount', 'successCount', 'failureCount', 'cancelledCount', 'interruptedCount', 'anomalyCount', 'truncatedCount', 'durationMs']);
 
 const assertId = (value: string): void => {
   if (!ID_PATTERN.test(value)) throw new AppError('AUDIT_METADATA_INVALID');
@@ -90,13 +91,22 @@ export class AuditService {
   }
 
   async recordCommandSummary(run: CommandRun): Promise<AuditEventRow> {
-    const successCount = run.targets.filter((target) => target.status === 'completed').length;
-    const failureCount = run.targets.filter((target) => target.status === 'failed').length;
+    const summary = summarizeCommandTargets(run.targets);
     const durationMs = run.finishedAt === undefined ? 0 : Math.max(0, Date.parse(run.finishedAt) - Date.parse(run.createdAt));
     return this.record({
       eventType: 'command_run_summary',
-      requestId: run.id,
-      metadata: { runId: run.id, targetCount: run.targets.length, successCount, failureCount, durationMs }
+      requestId: run.requestId ?? run.id,
+      metadata: {
+        runId: run.id,
+        targetCount: summary.total,
+        successCount: summary.completed,
+        failureCount: summary.failed,
+        cancelledCount: summary.cancelled,
+        interruptedCount: summary.interrupted,
+        anomalyCount: summary.anomalyCount,
+        truncatedCount: summary.truncatedCount,
+        durationMs
+      }
     });
   }
 }

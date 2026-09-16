@@ -13,7 +13,18 @@ const RISK_PATTERNS: readonly [RegExp, string][] = [
   [/:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}/u, '资源耗尽命令']
 ];
 
+const commandVariablePattern = /\{\{([^{}]+)\}\}/gu;
+const sensitiveVariablePattern = /(?:pass(?:word|phrase)?|secret|token|private|credential|api[_-]?key)/iu;
+
 export const assessCommandRisk = (command: string): CommandRiskAssessment => {
   const reasons = RISK_PATTERNS.filter(([pattern]) => pattern.test(command)).map(([, reason]) => reason);
   return { command, requiresConfirmation: reasons.length > 0, reasons };
 };
+
+/** Keeps ordinary preview values useful while preventing common secret variables from being echoed. */
+export const redactCommandPreview = (
+  command: string,
+  variables: Readonly<Record<string, string>>
+): string => command.replace(commandVariablePattern, (match, name: string) => (
+  sensitiveVariablePattern.test(name) ? '••••' : variables[name] ?? match
+));

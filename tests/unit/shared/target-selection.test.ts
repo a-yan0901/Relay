@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GroupNode, TargetSelection } from '../../../src/shared/core/models.js';
-import { createBroadcastTargetSnapshot, dedupeTargetHostIds, groupHostIds, snapshotTargetSelection } from '../../../src/shared/core/target-selection.js';
+import { createBroadcastTargetSnapshot, createTargetSelectionSnapshot, dedupeTargetHostIds, groupHostIds, snapshotTargetSelection } from '../../../src/shared/core/target-selection.js';
 
 const groups: GroupNode[] = [
   { id: 'prod', name: 'Production', parentId: null, sortOrder: 0, defaultIdentityId: null, connectionProfile: null },
@@ -46,5 +46,27 @@ describe('target selection snapshot', () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.tabIds)).toBe(true);
     expect(Object.isFrozen(snapshot.hostIds)).toBe(true);
+  });
+
+  it('captures the active source and display names without trusting later host-list changes', () => {
+    const snapshot = createTargetSelectionSnapshot(
+      { hostIds: ['host-1', 'host-1'], groupIds: [], favoriteOnly: false, query: '', source: 'favorites' },
+      [
+        { id: 'host-1', name: 'Production API', groupId: null, isFavorite: true },
+        { id: 'host-2', name: 'Staging API', groupId: null, isFavorite: false }
+      ],
+      [],
+      '2026-09-16T09:00:00.000Z'
+    );
+
+    expect(snapshot).toEqual({
+      hostIds: ['host-1'],
+      source: 'favorites',
+      capturedAt: '2026-09-16T09:00:00.000Z',
+      displayNames: ['Production API']
+    });
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.hostIds)).toBe(true);
+    expect(Object.isFrozen(snapshot.displayNames)).toBe(true);
   });
 });

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../../shared/errors.js';
 import { operationNextAction } from '../../shared/core/state-machines.js';
-import type { CommandRun, CommandTargetResult, OperationDiagnostic } from '../../shared/core/models.js';
+import type { CommandRun, CommandTargetResult, OperationDiagnostic, TargetSelectionSnapshot } from '../../shared/core/models.js';
 import { assessCommandRisk } from '../../shared/core/command-safety.js';
 import { expandCommandTemplate as expandTemplate, parseCommandRunRequest } from '../../shared/validation.js';
 import type { HostMetadata } from '../../shared/validation.js';
@@ -12,7 +12,7 @@ import { CommandRunStore } from './command-run-store.js';
 
 export const expandCommandTemplate = expandTemplate;
 
-export { assessCommandRisk, type CommandRiskAssessment } from '../../shared/core/command-safety.js';
+export { assessCommandRisk, redactCommandPreview, type CommandRiskAssessment } from '../../shared/core/command-safety.js';
 
 export interface CommandConnectionLease {
   resource: Pick<SshConnectionResource, 'exec'>;
@@ -65,6 +65,17 @@ const openResource = async (provider: CommandResourceProvider, hostId: string, s
   sessionKey === undefined ? provider.open(hostId) : provider.open(hostId, sessionKey)
 );
 
+const sameTargetIds = (left: readonly string[], right: readonly string[]): boolean => (
+  left.length === right.length && left.every((hostId) => right.includes(hostId))
+);
+
+const cloneTargetSelection = (snapshot: TargetSelectionSnapshot): TargetSelectionSnapshot => ({
+  hostIds: [...snapshot.hostIds],
+  source: snapshot.source,
+  capturedAt: snapshot.capturedAt,
+  displayNames: [...snapshot.displayNames]
+});
+
 export class CommandRunner {
   private readonly store: CommandRunStore;
   private readonly operationBus?: CommandRunEventPublisher;
@@ -83,8 +94,11 @@ export class CommandRunner {
     if (!Number.isInteger(this.defaultConcurrency) || this.defaultConcurrency < 1 || this.defaultConcurrency > 16) throw new AppError('COMMAND_RUN_VALIDATION_FAILED');
   }
 
-  async start(input: unknown, sessionKey?: Buffer): Promise<CommandRun> {
+  async start(input: unknown, sessionKey?: Buffer, requestId?: string): Promise<CommandRun> {
     const request = parseCommandRunRequest(input);
+    if (request.targetSelection && !sameTargetIds(request.hostIds, request.targetSelection.hostIds)) {
+      throw new AppError('COMMAND_RUN_VALIDATION_FAILED', '目标主机列表已变化，请重新确认后再执行');
+    }
     const hosts: HostMetadata[] = [];
     for (const hostId of request.hostIds) {
       const host = this.options.hostLookup.get(hostId, this.options.ownerId);
@@ -99,12 +113,14 @@ export class CommandRunner {
     const timestamp = nowIso(this.now);
     const run: CommandRun = {
       id: randomUUID(),
+      requestId: requestId ?? randomUUID(),
       command,
       hostIds: hosts.map((host) => host.id),
       persistOutput: request.persistOutput,
       status: 'queued',
       targets: hosts.map((host) => ({ hostId: host.id, status: 'queued', exitCode: null, output: '', outputBytes: 0, truncated: false })),
-      createdAt: timestamp
+      createdAt: timestamp,
+      ...(request.targetSelection === undefined ? {} : { targetSelection: cloneTargetSelection(request.targetSelection) })
     };
     await this.store.create(run, sessionKey);
     const control: RunControl = { cancelRequested: false, controllers: new Map(), sessionKey, promise: Promise.resolve() };

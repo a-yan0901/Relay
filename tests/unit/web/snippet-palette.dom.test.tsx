@@ -25,4 +25,13 @@ describe('SnippetPalette', () => {
     await user.click(screen.getByRole('option', { name: '使用片段 发布状态' }));
     expect(onSelect).toHaveBeenCalledWith('snippet-2');
   });
+
+  it('uses token-based fuzzy search shared with the quick switcher', async () => {
+    const user = userEvent.setup();
+    render(<SnippetPalette snippets={snippets} onSelect={vi.fn()} onClose={vi.fn()} />);
+
+    await user.type(screen.getByLabelText('搜索命令片段'), '发布 态');
+    expect(screen.getByRole('option', { name: '使用片段 发布状态' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '使用片段 健康检查' })).not.toBeInTheDocument();
+  });
 });

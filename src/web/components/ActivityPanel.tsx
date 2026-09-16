@@ -10,10 +10,14 @@ export interface ActivityPanelProps {
 
 const eventLabel = (event: AuditEvent): string => {
   if (event.eventType === 'command_run_summary') {
-    const targetCount = event.metadata.targetCount ?? 0;
-    const successCount = event.metadata.successCount ?? 0;
-    const failureCount = event.metadata.failureCount ?? 0;
-    return `批量任务 · ${targetCount} 台主机 · ${successCount} 成功 / ${failureCount} 失败`;
+    const numericMetadata = (key: string): number => typeof event.metadata[key] === 'number' ? event.metadata[key] as number : 0;
+    const targetCount = numericMetadata('targetCount');
+    const successCount = numericMetadata('successCount');
+    const failureCount = numericMetadata('failureCount');
+    const cancelledCount = numericMetadata('cancelledCount');
+    const interruptedCount = numericMetadata('interruptedCount');
+    const anomaly = cancelledCount + interruptedCount;
+    return `批量任务 · ${targetCount} 台主机 · ${successCount} 成功 / ${failureCount} 失败${anomaly > 0 ? ` · ${anomaly} 异常` : ''}`;
   }
   if (event.eventType.startsWith('connection_')) return event.eventType === 'connection_succeeded' ? '连接成功' : '连接失败';
   if (event.eventType.startsWith('sftp_')) return event.eventType.replaceAll('_', ' ');
@@ -51,7 +55,7 @@ export const ActivityPanel = ({ events, expiredRunIds = new Set<string>(), onOpe
             <li key={event.id} className="activity-item">
               <div>
                 <strong>{eventLabel(event)}</strong>
-                <small>{new Date(event.createdAt).toLocaleString()}{diagnosticDetail(diagnostic)}</small>
+                <small>{new Date(event.createdAt).toLocaleString()} · 请求 {event.requestId}{diagnosticDetail(diagnostic)}</small>
               </div>
               {runId && <button className="button button-ghost button-small" type="button" onClick={() => onOpenRun?.(runId)}>{expired ? '结果已过期，需要重新执行' : '查看结果'}</button>}
             </li>

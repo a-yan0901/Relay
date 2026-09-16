@@ -202,7 +202,7 @@ const parseStringArray = (value: string): string[] => {
   }
 };
 
-const AUDIT_METADATA_KEYS = new Set(['runId', 'transferId', 'targetCount', 'successCount', 'failureCount', 'durationMs']);
+const AUDIT_METADATA_KEYS = new Set(['runId', 'transferId', 'targetCount', 'successCount', 'failureCount', 'cancelledCount', 'interruptedCount', 'anomalyCount', 'truncatedCount', 'durationMs']);
 
 const parseAuditMetadata = (value: string): AuditMetadata => {
   try {

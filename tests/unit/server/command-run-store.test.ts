@@ -72,4 +72,42 @@ describe('CommandRunStore', () => {
     expect(repository.getRun('run-1')).toBeNull();
     expect(repository.listTargets('run-1')).toEqual([]);
   });
+
+  it('restores the request id and fixed target snapshot from encrypted run metadata', async () => {
+    const database = openDatabase(':memory:');
+    migrate(database);
+    databases.push(database);
+    const vault = await VaultService.create('correct horse battery staple');
+    const repository = new CommandRunRepository(database, 'owner-a');
+    const run: CommandRun = {
+      id: 'run-snapshot',
+      requestId: 'request-1',
+      command: 'uname -a',
+      hostIds: ['host-1', 'host-2'],
+      persistOutput: false,
+      status: 'completed',
+      targets: [
+        { hostId: 'host-1', status: 'completed', exitCode: 0, output: '', outputBytes: 0 },
+        { hostId: 'host-2', status: 'completed', exitCode: 0, output: '', outputBytes: 0 }
+      ],
+      targetSelection: {
+        hostIds: ['host-1', 'host-2'],
+        source: 'group',
+        capturedAt: '2026-09-16T09:00:00.000Z',
+        displayNames: ['Production 1', 'Production 2']
+      },
+      createdAt: new Date(0).toISOString(),
+      finishedAt: new Date(0).toISOString()
+    };
+
+    const firstStore = new CommandRunStore({ ownerId: 'owner-a', repository, vaultService: new VaultService(), now: () => 0 });
+    await firstStore.create(run, vault.vaultKey);
+    const restartedStore = new CommandRunStore({ ownerId: 'owner-a', repository, vaultService: new VaultService(), now: () => 1_000 });
+
+    await expect(restartedStore.get(run.id, vault.vaultKey)).resolves.toMatchObject({
+      requestId: 'request-1',
+      targetSelection: run.targetSelection,
+      summary: expect.objectContaining({ total: 2, completed: 2 })
+    });
+  });
 });

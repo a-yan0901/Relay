@@ -52,5 +52,25 @@ describe('command routes', () => {
     });
     expect(missingHost.statusCode).toBe(404);
     expect(JSON.parse(missingHost.body).error.code).toBe('HOST_NOT_FOUND');
+
+    const createdHost = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: { name: 'Batch target', address: '127.0.0.1', username: 'deploy', auth: { type: 'password', password: 'not-stored-in-response' } }
+    });
+    expect(createdHost.statusCode).toBe(201);
+    const hostId = JSON.parse(createdHost.body).id as string;
+    const queued = await app.inject({
+      method: 'POST',
+      url: '/api/command-runs',
+      headers: { cookie },
+      payload: {
+        command: 'uname -a', hostIds: [hostId], variables: {}, concurrency: 1, timeoutMs: 1_000, persistOutput: false, confirmed: true,
+        targetSelection: { hostIds: [hostId], source: 'servers', capturedAt: '2026-09-16T09:00:00.000Z', displayNames: ['Batch target'] }
+      }
+    });
+    expect(queued.statusCode).toBe(202);
+    expect(JSON.parse(queued.body)).toEqual(expect.objectContaining({ requestId: expect.stringMatching(/^req_/u), targetSelection: expect.objectContaining({ source: 'servers', displayNames: ['Batch target'] }) }));
   });
 });

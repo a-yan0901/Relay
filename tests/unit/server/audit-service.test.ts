@@ -62,4 +62,19 @@ describe('AuditService', () => {
     expect(JSON.stringify(events)).not.toContain('secret-value');
     expect(JSON.stringify(events)).not.toContain('private-key');
   });
+
+  it('records request identity and non-secret anomaly counts for batch review', async () => {
+    const { service } = makeService();
+    await service.recordCommandSummary({
+      id: 'run-2', requestId: 'request-2', command: 'uname -a', hostIds: ['host-1', 'host-2', 'host-3'], persistOutput: false, status: 'failed',
+      targets: [
+        { hostId: 'host-1', status: 'completed', exitCode: 0, output: '', outputBytes: 0 },
+        { hostId: 'host-2', status: 'failed', exitCode: 1, output: '', outputBytes: 0 },
+        { hostId: 'host-3', status: 'cancelled', exitCode: null, output: '', outputBytes: 0, truncated: true }
+      ], createdAt: '2026-09-15T00:00:00.000Z', finishedAt: '2026-09-15T00:00:01.000Z'
+    });
+    const event = (await service.list({})).items[0];
+    expect(event.requestId).toBe('request-2');
+    expect(event.metadata).toEqual(expect.objectContaining({ targetCount: 3, successCount: 1, failureCount: 1, cancelledCount: 1, anomalyCount: 2, truncatedCount: 1 }));
+  });
 });

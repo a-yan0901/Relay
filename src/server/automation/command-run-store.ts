@@ -1,5 +1,6 @@
 import { AppError } from '../../shared/errors.js';
-import type { CommandRun, CommandTargetResult } from '../../shared/core/models.js';
+import type { CommandRun, CommandTargetResult, TargetSelectionSnapshot } from '../../shared/core/models.js';
+import { summarizeCommandTargets } from '../../shared/core/command-results.js';
 import { CommandRunRepository } from '../db/repositories.js';
 import type { SqliteDatabase } from '../db/database.js';
 import { VAULT_KEY_LENGTH, type EncryptedJson } from '../vault/types.js';
@@ -28,11 +29,26 @@ const cloneTarget = (target: CommandTargetResult): CommandTargetResult => ({
   ...(target.truncated === undefined ? {} : { truncated: target.truncated })
 });
 
+const cloneTargetSelection = (snapshot: TargetSelectionSnapshot): TargetSelectionSnapshot => ({
+  hostIds: [...snapshot.hostIds],
+  source: snapshot.source,
+  capturedAt: snapshot.capturedAt,
+  displayNames: [...snapshot.displayNames]
+});
+
 const cloneRun = (run: CommandRun, targets: Map<string, CommandTargetResult>): CommandRun => ({
   ...run,
+  ...(run.targetSelection === undefined ? {} : { targetSelection: cloneTargetSelection(run.targetSelection) }),
   hostIds: [...run.hostIds],
-  targets: run.hostIds.map((hostId) => cloneTarget(targets.get(hostId) as CommandTargetResult))
+  targets: run.hostIds.map((hostId) => cloneTarget(targets.get(hostId) as CommandTargetResult)),
+  summary: summarizeCommandTargets(run.hostIds.map((hostId) => targets.get(hostId) as CommandTargetResult))
 });
+
+interface CommandRunPayload {
+  command: string;
+  requestId?: string;
+  targetSelection?: TargetSelectionSnapshot;
+}
 
 function assertSessionKey(key: Buffer | undefined): asserts key is Buffer {
   if (!key || !Buffer.isBuffer(key) || key.length !== VAULT_KEY_LENGTH) throw new AppError('VAULT_LOCKED');
@@ -59,7 +75,11 @@ export class CommandRunStore {
     if (this.repository) {
       assertSessionKey(sessionKey);
       if (!this.vaultService) throw new AppError('VAULT_CRYPTO_FAILED');
-      const commandCiphertext = await this.encryptCommand(run.id, run.command, sessionKey);
+      const commandCiphertext = await this.encryptCommand(run.id, {
+        command: run.command,
+        ...(run.requestId === undefined ? {} : { requestId: run.requestId }),
+        ...(run.targetSelection === undefined ? {} : { targetSelection: run.targetSelection })
+      }, sessionKey);
       this.repository.createRun({
         ownerId: this.options.ownerId,
         id: run.id,
@@ -104,7 +124,7 @@ export class CommandRunStore {
     if (!row) return null;
     assertSessionKey(sessionKey);
     if (!this.vaultService) throw new AppError('VAULT_CRYPTO_FAILED');
-    const command = await this.decryptCommand(row.id, row.commandCiphertext, sessionKey);
+    const payload = await this.decryptCommand(row.id, row.commandCiphertext, sessionKey);
     const targets = new Map<string, CommandTargetResult>();
     for (const target of this.repository.listTargets(row.id)) {
       const output = row.persistOutput && target.outputCiphertext
@@ -127,12 +147,14 @@ export class CommandRunStore {
     }
     const run: CommandRun = {
       id: row.id,
-      command,
+      ...(payload.requestId === undefined ? {} : { requestId: payload.requestId }),
+      command: payload.command,
       hostIds: [...row.hostIds],
       persistOutput: row.persistOutput,
       status: row.status,
       targets: [],
       createdAt: row.createdAt,
+      ...(payload.targetSelection === undefined ? {} : { targetSelection: payload.targetSelection }),
       ...(row.finishedAt === null ? {} : { finishedAt: row.finishedAt })
     };
     const restored: StoredRun = { run, targets, updatedAt: Date.parse(row.finishedAt ?? row.createdAt) || this.now() };
@@ -184,13 +206,13 @@ export class CommandRunStore {
     this.repository?.deleteRun(id);
   }
 
-  private async encryptCommand(id: string, command: string, sessionKey: Buffer): Promise<string> {
+  private async encryptCommand(id: string, payload: CommandRunPayload, sessionKey: Buffer): Promise<string> {
     if (!this.vaultService) throw new AppError('VAULT_CRYPTO_FAILED');
-    const encrypted = await this.vaultService.encryptJson(sessionKey, commandAad(id), { command });
+    const encrypted = await this.vaultService.encryptJson(sessionKey, commandAad(id), payload);
     return JSON.stringify(encrypted);
   }
 
-  private async decryptCommand(id: string, ciphertext: string, sessionKey: Buffer): Promise<string> {
+  private async decryptCommand(id: string, ciphertext: string, sessionKey: Buffer): Promise<CommandRunPayload> {
     if (!this.vaultService) throw new AppError('VAULT_CRYPTO_FAILED');
     let encrypted: EncryptedJson;
     try {
@@ -198,9 +220,9 @@ export class CommandRunStore {
     } catch {
       throw new AppError('VAULT_CRYPTO_FAILED');
     }
-    const payload = await this.vaultService.decryptJson<{ command?: unknown }>(sessionKey, commandAad(id), encrypted);
+    const payload = await this.vaultService.decryptJson<CommandRunPayload>(sessionKey, commandAad(id), encrypted);
     if (typeof payload.command !== 'string') throw new AppError('VAULT_CRYPTO_FAILED');
-    return payload.command;
+    return payload;
   }
 
   private async decryptOutput(runId: string, hostId: string, ciphertext: string, sessionKey: Buffer): Promise<string> {

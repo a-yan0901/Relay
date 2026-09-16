@@ -42,14 +42,14 @@ export const HostTargetPicker = ({ hosts, groups, selection, onChange }: HostTar
   const clearViewFilters = (): void => {
     setRecentOnly(false);
     setSelectedTag(null);
-    onChange({ ...selection, groupIds: [], favoriteOnly: false });
+    onChange({ ...selection, groupIds: [], favoriteOnly: false, source: 'servers' });
   };
 
   const toggleHost = (hostId: string, checked: boolean): void => {
     const hostIds = checked
       ? [...new Set([...selection.hostIds, hostId])]
       : selection.hostIds.filter((id) => id !== hostId);
-    onChange({ ...selection, hostIds });
+    onChange({ ...selection, hostIds, source: 'servers' });
   };
 
   const toggleGroup = (groupId: string): void => {
@@ -61,18 +61,18 @@ export const HostTargetPicker = ({ hosts, groups, selection, onChange }: HostTar
     const groupIds = selected
       ? selection.groupIds.filter((id) => id !== groupId)
       : [...new Set([...selection.groupIds, groupId])];
-    onChange({ ...selection, hostIds, groupIds, favoriteOnly: false });
+    onChange({ ...selection, hostIds, groupIds, favoriteOnly: false, source: 'group' });
   };
 
   return (
     <section className="target-picker" aria-label="批量目标">
       <div className="target-picker-heading"><div><strong>目标主机</strong><small>{selection.hostIds.length} 台已选择</small></div><span className="target-picker-snapshot">提交时固定目标快照</span></div>
-      <label className="search-field target-picker-search" htmlFor="target-picker-search"><span aria-hidden="true">⌕</span><span className="visually-hidden">搜索目标</span><input id="target-picker-search" aria-label="搜索目标" value={selection.query} onChange={(event) => onChange({ ...selection, query: event.target.value })} placeholder="搜索名称、IP、用户名或标签" /></label>
+      <label className="search-field target-picker-search" htmlFor="target-picker-search"><span aria-hidden="true">⌕</span><span className="visually-hidden">搜索目标</span><input id="target-picker-search" aria-label="搜索目标" value={selection.query} onChange={(event) => onChange({ ...selection, query: event.target.value, source: 'servers' })} placeholder="搜索名称、IP、用户名或标签" /></label>
       <div className="target-picker-filters" role="toolbar" aria-label="目标筛选">
         <button className={`target-filter ${selection.groupIds.length === 0 && !selection.favoriteOnly && !recentOnly && selectedTag === null ? 'is-active' : ''}`} type="button" onClick={clearViewFilters}>全部</button>
-        <button className={`target-filter ${recentOnly ? 'is-active' : ''}`} type="button" aria-pressed={recentOnly} onClick={() => { setRecentOnly(true); setSelectedTag(null); onChange({ ...selection, groupIds: [], favoriteOnly: false }); }}>最近</button>
-        <button className={`target-filter ${selection.favoriteOnly ? 'is-active' : ''}`} type="button" aria-pressed={selection.favoriteOnly} aria-label="仅显示收藏" onClick={() => { setRecentOnly(false); setSelectedTag(null); onChange({ ...selection, favoriteOnly: !selection.favoriteOnly, groupIds: [] }); }}>收藏</button>
-        {tags.map((tag) => <button className={`target-filter ${selectedTag === tag ? 'is-active' : ''}`} type="button" key={tag} aria-label={`按标签 ${tag}`} aria-pressed={selectedTag === tag} onClick={() => { setRecentOnly(false); setSelectedTag(tag); onChange({ ...selection, groupIds: [], favoriteOnly: false }); }}>{tag}</button>)}
+        <button className={`target-filter ${recentOnly ? 'is-active' : ''}`} type="button" aria-pressed={recentOnly} onClick={() => { setRecentOnly(true); setSelectedTag(null); onChange({ ...selection, groupIds: [], favoriteOnly: false, source: 'recent' }); }}>最近</button>
+        <button className={`target-filter ${selection.favoriteOnly ? 'is-active' : ''}`} type="button" aria-pressed={selection.favoriteOnly} aria-label="仅显示收藏" onClick={() => { setRecentOnly(false); setSelectedTag(null); onChange({ ...selection, favoriteOnly: !selection.favoriteOnly, groupIds: [], source: selection.favoriteOnly ? 'servers' : 'favorites' }); }}>收藏</button>
+        {tags.map((tag) => <button className={`target-filter ${selectedTag === tag ? 'is-active' : ''}`} type="button" key={tag} aria-label={`按标签 ${tag}`} aria-pressed={selectedTag === tag} onClick={() => { setRecentOnly(false); setSelectedTag(tag); onChange({ ...selection, groupIds: [], favoriteOnly: false, source: 'tag' }); }}>{tag}</button>)}
         {groups.map((group) => {
           const ids = groupHostIds(group.id, hosts, groups);
           const selected = ids.length > 0 && ids.every((id) => selection.hostIds.includes(id));

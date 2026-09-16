@@ -36,7 +36,7 @@ describe('HostTargetPicker', () => {
     render(<Harness />);
 
     await user.click(screen.getByRole('button', { name: '选择分组 Production' }));
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ groupIds: ['prod'], hostIds: ['host-1', 'host-2'] }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ groupIds: ['prod'], hostIds: ['host-1', 'host-2'], source: 'group' }));
 
     await user.click(screen.getByRole('button', { name: '仅显示收藏' }));
     expect(screen.getByRole('checkbox', { name: '选择目标 Production Shell' })).toBeChecked();

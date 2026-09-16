@@ -65,7 +65,7 @@ export const registerCommandRoutes = async (app: FastifyInstance, dependencies: 
 
   app.post('/api/command-runs', async (request, reply) => {
     const session = requireUnlockedSession(request, dependencies.sessionStore);
-    const run = await dependencies.commandRunner.start(request.body, session.record.vaultKey);
+    const run = await dependencies.commandRunner.start(request.body, session.record.vaultKey, request.id);
     dependencies.auditRepository.insert({ eventType: 'command_run_queued', requestId: request.id });
     reply.code(202).send(run);
   });

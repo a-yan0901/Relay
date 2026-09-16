@@ -73,6 +73,20 @@ const fuzzyIncludes = (needle: string, haystack: string): boolean => {
   return false;
 };
 
+export const snippetSearchableText = (snippet: SnippetMetadata): string => [snippet.name, snippet.description ?? '', ...snippet.tags].join(' ').toLocaleLowerCase();
+
+export const filterSnippetMetadata = (
+  snippets: readonly SnippetMetadata[],
+  query: string
+): readonly SnippetMetadata[] => {
+  const tokens = normalized(query).split(/\s+/u).filter(Boolean);
+  if (tokens.length === 0) return snippets;
+  return snippets.filter((snippet) => {
+    const text = snippetSearchableText(snippet);
+    return tokens.every((token) => fuzzyIncludes(token, text));
+  });
+};
+
 const itemSearchText = (item: QuickSwitcherItem): string => {
   if (item.type === 'host') return [item.label, item.secondary, ...item.tags].join(' ').toLocaleLowerCase();
   return [item.label, item.secondary, item.type === 'tab' ? item.status : ''].join(' ').toLocaleLowerCase();

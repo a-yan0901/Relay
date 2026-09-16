@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 
 import type { SnippetMetadata } from '../../shared/core/models';
+import { filterSnippetMetadata } from '../state/navigation-state';
 import { Dialog } from './Dialog';
 
 export interface SnippetPaletteProps {
@@ -11,10 +12,7 @@ export interface SnippetPaletteProps {
 
 export const SnippetPalette = ({ snippets, onSelect, onClose }: SnippetPaletteProps) => {
   const [query, setQuery] = useState('');
-  const visibleSnippets = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return snippets.filter((snippet) => !normalized || [snippet.name, snippet.description ?? '', ...snippet.tags].join(' ').toLowerCase().includes(normalized));
-  }, [query, snippets]);
+  const visibleSnippets = useMemo(() => filterSnippetMetadata(snippets, query), [query, snippets]);
 
   return (
     <Dialog title="命令片段" onClose={onClose} initialFocusSelector="#snippet-palette-search" className="snippet-palette-dialog">

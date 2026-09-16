@@ -412,6 +412,15 @@ const variableNameSchema = z.string().min(1).max(64).regex(/^[a-z][a-z0-9_]*$/u)
 const variableMapSchema = z.record(variableNameSchema, z.string().max(4096))
   .refine((values) => Object.keys(values).length <= 64);
 
+const targetSelectionSnapshotSchema = z.object({
+  hostIds: z.array(identifierSchema).min(1).max(256).refine((ids) => new Set(ids).size === ids.length),
+  source: z.enum(['servers', 'workspace', 'group', 'tag', 'favorites', 'recent']),
+  capturedAt: z.string().min(1).max(64).refine((value) => Number.isFinite(Date.parse(value))),
+  displayNames: z.array(z.string().min(1).max(MAX_HOST_NAME_LENGTH)).min(1).max(256)
+}).strict().superRefine((snapshot, context) => {
+  if (snapshot.hostIds.length !== snapshot.displayNames.length) context.addIssue({ code: 'custom', path: ['displayNames'], message: 'display names must match target count' });
+});
+
 export const snippetSchema = z.object({
   name: nameSchema,
   description: z.string().max(500).nullable().optional(),
@@ -431,7 +440,8 @@ export const commandRunRequestSchema = z.object({
   concurrency: z.number().int().min(1).max(16).default(4),
   timeoutMs: z.number().int().min(1_000).max(10 * 60_000).default(60_000),
   persistOutput: z.boolean().default(false),
-  confirmed: z.boolean().default(false)
+  confirmed: z.boolean().default(false),
+  targetSelection: targetSelectionSnapshotSchema.optional()
 }).strict();
 
 export type CommandRunRequestInput = z.infer<typeof commandRunRequestSchema>;

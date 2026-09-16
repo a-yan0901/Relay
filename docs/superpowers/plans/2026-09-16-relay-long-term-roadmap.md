@@ -746,17 +746,17 @@ export interface ShortcutDefinition {
 
 ## Task O-01: Snippet、批量命令和目标选择器的生产力闭环
 
-**Status:** Ready
+**Status:** Done（2026-09-16）
 **Priority:** P1
 **Milestone:** M3
 **Depends on:** U-01 Quick Switcher、U-02 Broadcast 目标快照、R-01 任务终态。
 
 **Files:**
 
-- Modify: `src/shared/core/target-selection.ts`, `src/shared/core/command-safety.ts`, `src/shared/core/models.ts`, `src/shared/validation.ts`
+- Modify: `src/shared/core/target-selection.ts`, `src/shared/core/command-safety.ts`, `src/shared/core/command-results.ts`, `src/shared/core/models.ts`, `src/shared/validation.ts`
 - Modify: `src/server/automation/command-runner.ts`, `src/server/automation/command-run-store.ts`, `src/server/api/command-routes.ts`, `src/server/audit/audit-service.ts`
 - Modify: `src/web/components/HostTargetPicker.tsx`, `src/web/components/CommandRunDialog.tsx`, `src/web/components/CommandRunResults.tsx`, `src/web/components/SnippetPalette.tsx`, `src/web/components/SnippetPicker.tsx`, `src/web/components/ActivityPanel.tsx`, `src/web/App.tsx`
-- Test: `tests/unit/shared/target-selection.test.ts`, `tests/unit/shared/validation.test.ts`, `tests/unit/server/command-runner.test.ts`, `tests/unit/server/command-run-store.test.ts`, `tests/integration/server/command-routes.test.ts`, `tests/unit/web/host-target-picker.dom.test.tsx`, `tests/unit/web/command-run-dialog.dom.test.tsx`, `tests/unit/web/snippet-palette.dom.test.tsx`, `tests/unit/web/activity-panel.dom.test.tsx`
+- Test: `tests/unit/shared/target-selection.test.ts`, `tests/unit/shared/validation.test.ts`, `tests/unit/shared/command-results.test.ts`, `tests/unit/server/command-runner.test.ts`, `tests/unit/server/command-run-store.test.ts`, `tests/unit/server/audit-service.test.ts`, `tests/integration/server/command-routes.test.ts`, `tests/unit/web/host-target-picker.dom.test.tsx`, `tests/unit/web/command-run-dialog.dom.test.tsx`, `tests/unit/web/command-run-results.dom.test.tsx`, `tests/unit/web/snippet-palette.dom.test.tsx`, `tests/unit/web/activity-panel.dom.test.tsx`
 
 **Interfaces:**
 
@@ -773,27 +773,27 @@ export interface TargetSelectionSnapshot {
 - Snippet 选择后只能进入现有批量预览，不得直接执行；缺失变量、额外变量和高风险命令必须阻止提交或二次确认。
 - 结果视图提供按主机、状态、错误码筛选，并保留 request id；原始输出只有用户明确保存时才进入加密存储。
 
-- [ ] **Step 1: 写目标漂移、变量和结果测试。**
+- [x] **Step 1: 写目标漂移、变量和结果测试。**
 
   覆盖从 Server/Group/Recent/Tag 选择、重复 Host 去重、执行前列表变化、缺失/多余变量、高风险命令、单台失败、多台部分成功、取消、TTL 过期。
 
-- [ ] **Step 2: 实现固定目标快照和结果模型。**
+- [x] **Step 2: 实现固定目标快照和结果模型。**
 
   从当前筛选生成 `TargetSelectionSnapshot`；服务端重新解析并拒绝跨 owner/不存在 Host；结果以 hostId 隔离，不让 UI 自己合并退出码或输出。
 
-- [ ] **Step 3: 打通 Snippet palette 到预览。**
+- [x] **Step 3: 打通 Snippet palette 到预览。**
 
   `Ctrl/Cmd+Shift+P` 与 Quick Switcher 共享搜索和标签语义；选中后填充命令/变量，预览显示实际目标、展开后的非敏感摘要和确认要求。
 
-- [ ] **Step 4: 增加结果筛选、异常聚合和输出 diff。**
+- [x] **Step 4: 增加结果筛选、异常聚合和输出 diff。**
 
   只对用户主动选择的主机/结果做横向对比；长输出分页或按主机加载，默认不把所有主机输出同时塞入 DOM。
 
-- [ ] **Step 5: 运行聚焦测试并提交。**
+- [x] **Step 5: 运行聚焦测试并提交。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-  npm test -- --run tests/unit/shared/target-selection.test.ts tests/unit/shared/validation.test.ts tests/unit/server/command-runner.test.ts tests/unit/server/command-run-store.test.ts tests/integration/server/command-routes.test.ts tests/unit/web/host-target-picker.dom.test.tsx tests/unit/web/command-run-dialog.dom.test.tsx tests/unit/web/snippet-palette.dom.test.tsx tests/unit/web/activity-panel.dom.test.tsx
+  npm test -- --run tests/unit/shared/target-selection.test.ts tests/unit/shared/validation.test.ts tests/unit/shared/command-results.test.ts tests/unit/server/command-runner.test.ts tests/unit/server/command-run-store.test.ts tests/unit/server/audit-service.test.ts tests/integration/server/command-routes.test.ts tests/unit/web/host-target-picker.dom.test.tsx tests/unit/web/command-run-dialog.dom.test.tsx tests/unit/web/command-run-results.dom.test.tsx tests/unit/web/snippet-palette.dom.test.tsx tests/unit/web/activity-panel.dom.test.tsx
   git add src/shared/core/target-selection.ts src/shared/core/command-safety.ts src/shared/core/models.ts src/shared/validation.ts src/server/automation/command-runner.ts src/server/automation/command-run-store.ts src/server/api/command-routes.ts src/server/audit/audit-service.ts src/web/components/HostTargetPicker.tsx src/web/components/CommandRunDialog.tsx src/web/components/CommandRunResults.tsx src/web/components/SnippetPalette.tsx src/web/components/SnippetPicker.tsx src/web/components/ActivityPanel.tsx src/web/App.tsx tests/unit/shared/target-selection.test.ts tests/unit/shared/validation.test.ts tests/unit/server/command-runner.test.ts tests/unit/server/command-run-store.test.ts tests/integration/server/command-routes.test.ts tests/unit/web/host-target-picker.dom.test.tsx tests/unit/web/command-run-dialog.dom.test.tsx tests/unit/web/snippet-palette.dom.test.tsx tests/unit/web/activity-panel.dom.test.tsx
   git diff --cached --check
   git commit -m "feat: improve snippet and multi-host task workflow"
@@ -802,6 +802,15 @@ export interface TargetSelectionSnapshot {
 **Acceptance:** 不打开终端也能安全选择目标；目标在提交时固定；每台 Host 的状态和输出可独立查看；Snippet 不能绕过变量校验和人工确认。
 
 **Verification:** shared target snapshot、snippet/batch server、Web picker/results tests 和多 Host Chromium E2E；发布前执行敏感输出/变量脱敏扫描。
+
+**Delivery evidence（2026-09-16）:**
+
+- 新增 `TargetSelectionSnapshot`，保留 source、capturedAt、去重后的 hostIds 和 displayNames；CommandRunner 在入队前校验请求 hostIds 与快照一致，并按 owner 重新解析 Host。
+- CommandRun 加入 requestId、目标快照和服务端计算的独立目标汇总；快照和 requestId 随命令密文恢复，输出仍只在 `persistOutput=true` 时进入 Vault 密文。
+- Snippet palette 与 Quick Switcher 共用 token/fuzzy 搜索；Snippet 进入批量预览，提交时回传模板和变量，由 server 再次校验缺失/多余变量；常见敏感变量只在预览中遮罩。
+- 结果页加入主机/状态/错误码筛选、异常聚合、请求 ID、按主机展开输出和显式主机选择后的 line diff；默认不同时渲染所有主机输出。
+- Focused 验证：12 个相关 test files、52 项测试通过；Chromium `tests/e2e/ssh-productivity.spec.ts` 2/2 通过；`npm run typecheck`、`npm run lint` 通过；完整测试和生产构建在提交前执行。
+- 变更文件：`src/shared/core/command-results.ts`、target selection/validation/command safety、CommandRunner/Store/routes/audit、HostTargetPicker/CommandRunDialog/CommandRunResults/SnippetPalette/ActivityPanel/App/navigation state/styles，以及对应 shared/server/Web 测试和 SSH fixture E2E。
 
 ---
 

@@ -7,6 +7,7 @@ import {
   assessCommandRisk,
   CommandRunner,
   expandCommandTemplate,
+  redactCommandPreview,
   type CommandConnectionLease,
   type CommandResourceProvider
 } from '../../../src/server/automation/command-runner.js';
@@ -67,6 +68,7 @@ describe('CommandRunner', () => {
     expect(() => expandCommandTemplate(command, { service: 'api' })).toThrowError(new AppError('COMMAND_RUN_VALIDATION_FAILED'));
     expect(assessCommandRisk('rm -rf /tmp/cache')).toEqual(expect.objectContaining({ requiresConfirmation: true }));
     expect(assessCommandRisk('rm -rf /tmp/cache').command).toBe('rm -rf /tmp/cache');
+    expect(redactCommandPreview('deploy --service={{service}} --token={{token}}', { service: 'api', token: 'secret-value' })).toBe('deploy --service=api --token=••••');
   });
 
   it('requires explicit confirmation for multi-host and destructive runs', async () => {
@@ -145,5 +147,27 @@ describe('CommandRunner', () => {
     const finished = await runner.waitFor(initial.id);
     expect(finished.status).toBe('failed');
     expect(finished.targets[0]).toEqual(expect.objectContaining({ status: 'failed', errorCode: 'COMMAND_RUN_TIMEOUT' }));
+  });
+
+  it('keeps the request id and target snapshot while rechecking the submitted target set', async () => {
+    const next = resource(async () => ({ exitCode: 0 }));
+    const runner = runnerFor(['host-1', 'host-2'], providerFor(new Map([['host-1', next], ['host-2', next]])));
+    const snapshot = {
+      hostIds: ['host-1', 'host-2'],
+      source: 'workspace' as const,
+      capturedAt: '2026-09-16T09:00:00.000Z',
+      displayNames: ['Server host-1', 'Server host-2']
+    };
+
+    const initial = await runner.start({
+      command: 'uname -a', hostIds: ['host-1', 'host-2'], variables: {}, concurrency: 2, timeoutMs: 1_000,
+      persistOutput: false, confirmed: true, targetSelection: snapshot
+    }, undefined, 'request-1');
+    expect(initial).toMatchObject({ requestId: 'request-1', targetSelection: snapshot });
+
+    await expect(runner.start({
+      command: 'uname -a', hostIds: ['host-1'], variables: {}, concurrency: 1, timeoutMs: 1_000,
+      persistOutput: false, confirmed: true, targetSelection: { ...snapshot, hostIds: ['host-2'], displayNames: ['Server host-2'] }
+    })).rejects.toMatchObject({ code: 'COMMAND_RUN_VALIDATION_FAILED' });
   });
 });

@@ -1,4 +1,4 @@
-import type { BroadcastTargetSnapshot, GroupNode, TargetSelection } from './models.js';
+import type { BroadcastTargetSnapshot, GroupNode, TargetSelection, TargetSelectionSnapshot, TargetSelectionSource } from './models.js';
 import { descendantGroupIds } from './group-tree.js';
 
 export interface TargetHostLike {
@@ -9,6 +9,7 @@ export interface TargetHostLike {
   address?: string;
   username?: string;
   tags?: readonly string[];
+  lastConnectedAt?: string | null;
 }
 
 const dedupeIds = (ids: readonly string[]): string[] => [...new Set(ids)];
@@ -32,8 +33,31 @@ export const snapshotTargetSelection = (
   hostIds: dedupeTargetHostIds([...selection.hostIds, ...selection.groupIds.flatMap((groupId) => groupHostIds(groupId, hosts, groups))]),
   groupIds: dedupeTargetHostIds(selection.groupIds),
   favoriteOnly: selection.favoriteOnly,
-  query: selection.query
+  query: selection.query,
+  ...(selection.source === undefined ? {} : { source: selection.source })
 });
+
+const inferredSource = (selection: TargetSelection): TargetSelectionSource => (
+  selection.source ?? (selection.groupIds.length > 0 ? 'group' : selection.favoriteOnly ? 'favorites' : 'servers')
+);
+
+export const createTargetSelectionSnapshot = (
+  selection: TargetSelection,
+  hosts: readonly TargetHostLike[],
+  groups: readonly GroupNode[],
+  capturedAt = new Date().toISOString()
+): TargetSelectionSnapshot => {
+  const resolved = snapshotTargetSelection(selection, hosts, groups);
+  const hostById = new Map(hosts.map((host) => [host.id, host]));
+  const hostIds = dedupeTargetHostIds(resolved.hostIds);
+  const displayNames = hostIds.map((hostId) => hostById.get(hostId)?.name ?? hostId);
+  return Object.freeze({
+    hostIds: Object.freeze(hostIds),
+    source: inferredSource(selection),
+    capturedAt,
+    displayNames: Object.freeze(displayNames)
+  });
+};
 
 export const createBroadcastTargetSnapshot = (input: {
   workspaceId: string | null;

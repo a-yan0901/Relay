@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react';
 
-import type { CommandRunRequest, GroupNode, TargetSelection } from '../../shared/core/models';
-import { assessCommandRisk } from '../../shared/core/command-safety';
+import type { CommandRunRequest, GroupNode, TargetSelection, TargetSelectionSource } from '../../shared/core/models';
+import { assessCommandRisk, redactCommandPreview } from '../../shared/core/command-safety';
 import type { Snippet, SnippetMetadata } from '../../shared/core/models';
 import type { HostMetadata } from '../../shared/validation';
 import { expandCommandTemplate, extractCommandVariables } from '../../shared/validation';
 import { SnippetPicker } from './SnippetPicker';
 import { HostTargetPicker } from './HostTargetPicker';
-import { dedupeTargetHostIds, snapshotTargetSelection } from '../state/target-selection';
+import { createTargetSelectionSnapshot, dedupeTargetHostIds } from '../state/target-selection';
 import { Dialog } from './Dialog';
 
 export interface CommandRunDialogProps {
   hosts: readonly HostMetadata[];
   hostIds: readonly string[];
+  initialTargetSource?: TargetSelectionSource;
   groups?: readonly GroupNode[];
   initialCommand?: string;
   initialVariables?: Readonly<Record<string, string>>;
@@ -27,6 +28,7 @@ const formatSeconds = (milliseconds: number): number => Math.round(milliseconds 
 export const CommandRunDialog = ({
   hosts,
   hostIds,
+  initialTargetSource = 'servers',
   groups = [],
   initialCommand = '',
   initialVariables = {},
@@ -41,8 +43,8 @@ export const CommandRunDialog = ({
   const [timeoutMs, setTimeoutMs] = useState(60_000);
   const [persistOutput, setPersistOutput] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [selection, setSelection] = useState<TargetSelection>(() => ({ hostIds: dedupeTargetHostIds(hostIds), groupIds: [], favoriteOnly: false, query: '' }));
-  const targetSnapshot = useMemo(() => snapshotTargetSelection(selection, hosts, groups), [groups, hosts, selection]);
+  const [selection, setSelection] = useState<TargetSelection>(() => ({ hostIds: dedupeTargetHostIds(hostIds), groupIds: [], favoriteOnly: false, query: '', source: initialTargetSource }));
+  const targetSnapshot = useMemo(() => createTargetSelectionSnapshot(selection, hosts, groups), [groups, hosts, selection]);
   const uniqueHostIds = useMemo(() => dedupeTargetHostIds(targetSnapshot.hostIds), [targetSnapshot.hostIds]);
   const variableNames = useMemo(() => {
     try { return extractCommandVariables(command); } catch { return []; }
@@ -50,6 +52,8 @@ export const CommandRunDialog = ({
   const expanded = useMemo(() => {
     try { return expandCommandTemplate(command, variables); } catch { return null; }
   }, [command, variables]);
+  const previewCommand = useMemo(() => redactCommandPreview(command, variables), [command, variables]);
+  const requestVariables = useMemo(() => Object.fromEntries(variableNames.map((name) => [name, variables[name] ?? ''])), [variableNames, variables]);
   const risk = assessCommandRisk(expanded ?? command);
   const selectedHosts = uniqueHostIds.map((id) => hosts.find((host) => host.id === id)).filter((host): host is HostMetadata => host !== undefined);
   const canSubmit = expanded !== null && expanded.trim().length > 0 && selectedHosts.length === uniqueHostIds.length && !submitting;
@@ -58,7 +62,7 @@ export const CommandRunDialog = ({
     if (!canSubmit || expanded === null) return;
     setSubmitting(true);
     try {
-      await onConfirm({ command: expanded, hostIds: uniqueHostIds, variables: {}, concurrency, timeoutMs, persistOutput, confirmed: true });
+      await onConfirm({ command, hostIds: uniqueHostIds, variables: requestVariables, concurrency, timeoutMs, persistOutput, confirmed: true, targetSelection: targetSnapshot });
     } finally {
       setSubmitting(false);
     }
@@ -79,7 +83,8 @@ export const CommandRunDialog = ({
         {variableNames.length > 0 && <div className="command-variable-fields"><p>参数</p>{variableNames.map((name) => <label key={name} htmlFor={`command-variable-${name}`}><span>{`{{${name}}}`}</span><input id={`command-variable-${name}`} value={variables[name] ?? ''} onChange={(event) => setVariables((current) => ({ ...current, [name]: event.target.value }))} /></label>)}</div>}
         <div className="command-run-preview" aria-label="执行预览">
           <div><strong>目标主机</strong><ul>{selectedHosts.map((host) => <li key={host.id}>{host.name} · {host.address}</li>)}</ul></div>
-          <div><strong>展开命令</strong><code>{expanded ?? '请补全所有参数'}</code></div>
+          <div><strong>目标快照</strong><span className="command-run-snapshot-summary">{targetSnapshot.source} · {targetSnapshot.hostIds.length} 台 · 提交时重新校验</span></div>
+          <div><strong>展开命令预览</strong><code>{expanded === null ? '请补全所有参数' : previewCommand}</code></div>
           <div className="command-run-settings"><span>并发 {concurrency}</span><span>超时 {formatSeconds(timeoutMs)} 秒</span><label><input type="checkbox" checked={persistOutput} onChange={(event) => setPersistOutput(event.target.checked)} /> 保存输出</label></div>
           {risk.requiresConfirmation && <p className="form-warning" role="alert">高风险命令：{risk.reasons.join('、')}。请确认影响范围。</p>}
         </div>

@@ -38,7 +38,8 @@ describe('CommandRunDialog', () => {
 
     await user.click(screen.getByRole('button', { name: '确认执行' }));
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
-      command: 'systemctl status api', hostIds: ['host-1', 'host-2'], confirmed: true
+      command: 'systemctl status {{service}}', hostIds: ['host-1', 'host-2'], variables: { service: 'api' }, confirmed: true,
+      targetSelection: expect.objectContaining({ source: 'servers', hostIds: ['host-1', 'host-2'], displayNames: ['Production API', 'Staging API'] })
     }));
   });
 

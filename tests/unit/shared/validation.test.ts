@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseHostCreateInput } from '@shared/validation';
+import { expandCommandTemplate, parseCommandRunRequest, parseHostCreateInput } from '@shared/validation';
 
 const baseHost = {
   name: 'Production API',
@@ -63,6 +63,43 @@ describe('parseHostCreateInput', () => {
     expect(() => parseHostCreateInput({
       ...baseHost,
       tags: Array.from({ length: 21 }, (_, index) => `tag-${index}`)
+    })).toThrow();
+  });
+});
+
+describe('command run validation', () => {
+  it('rejects missing and extra variables before a command can be queued', () => {
+    expect(() => expandCommandTemplate('systemctl status {{service}}', {})).toThrow();
+    expect(() => expandCommandTemplate('systemctl status {{service}}', { service: 'api', token: 'secret' })).toThrow();
+    expect(expandCommandTemplate('systemctl status {{service}}', { service: 'api' })).toBe('systemctl status api');
+  });
+
+  it('accepts a fixed target snapshot and rejects mismatched display metadata', () => {
+    const request = parseCommandRunRequest({
+      command: 'uname -a',
+      hostIds: ['host-1', 'host-2'],
+      variables: {},
+      concurrency: 2,
+      timeoutMs: 1_000,
+      persistOutput: false,
+      targetSelection: {
+        hostIds: ['host-1', 'host-2'],
+        source: 'workspace',
+        capturedAt: '2026-09-16T09:00:00.000Z',
+        displayNames: ['Production', 'Staging']
+      }
+    });
+    expect(request.targetSelection?.source).toBe('workspace');
+    expect(() => parseCommandRunRequest({
+      command: 'uname -a',
+      hostIds: ['host-1'],
+      variables: {},
+      targetSelection: {
+        hostIds: ['host-1'],
+        source: 'servers',
+        capturedAt: '2026-09-16T09:00:00.000Z',
+        displayNames: []
+      }
     })).toThrow();
   });
 });

@@ -49,11 +49,21 @@ export interface HostListFilter {
 
 export type IdentitySource = 'host' | 'group' | 'none';
 
+export type TargetSelectionSource = 'servers' | 'workspace' | 'group' | 'tag' | 'favorites' | 'recent';
+
 export interface TargetSelection {
   hostIds: readonly string[];
   groupIds: readonly string[];
   favoriteOnly: boolean;
   query: string;
+  source?: TargetSelectionSource;
+}
+
+export interface TargetSelectionSnapshot {
+  hostIds: readonly string[];
+  source: TargetSelectionSource;
+  capturedAt: string;
+  displayNames: readonly string[];
 }
 
 export interface BroadcastTargetSnapshot {
@@ -205,9 +215,22 @@ export interface CommandRunRequest {
   timeoutMs: number;
   persistOutput: boolean;
   confirmed?: boolean;
+  targetSelection?: TargetSelectionSnapshot;
 }
 
 export type CommandTargetStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+
+export interface CommandRunSummary {
+  total: number;
+  queued: number;
+  running: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  interrupted: number;
+  anomalyCount: number;
+  truncatedCount: number;
+}
 
 export interface CommandTargetResult {
  hostId: string;
@@ -223,11 +246,14 @@ export interface CommandTargetResult {
 
 export interface CommandRun {
   id: string;
+  requestId?: string;
   command: string;
   hostIds: readonly string[];
   persistOutput: boolean;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   targets: readonly CommandTargetResult[];
+  targetSelection?: TargetSelectionSnapshot;
+  summary?: CommandRunSummary;
   createdAt: string;
   finishedAt?: string;
 }

@@ -19,7 +19,7 @@ import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { ShortcutMap } from './components/ShortcutMap';
 import { BroadcastPreview } from './components/BroadcastPreview';
-import type { AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TransferJob, WorkspaceTemplate } from '../shared/core/models';
+import type { AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
 import type { BinarySource } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
@@ -186,6 +186,7 @@ export const App = ({ runtime }: AppProps) => {
   const [commandDialogOpen, setCommandDialogOpen] = useState(false);
   const [broadcastPreviewOpen, setBroadcastPreviewOpen] = useState(false);
   const [commandTargetHostIds, setCommandTargetHostIds] = useState<string[]>([]);
+  const [commandTargetSource, setCommandTargetSource] = useState<TargetSelectionSource>('servers');
   const [commandInitialCommand, setCommandInitialCommand] = useState('');
   const [commandInitialVariables, setCommandInitialVariables] = useState<Record<string, string>>({});
   const [commandRun, setCommandRun] = useState<CommandRun | null>(null);
@@ -507,12 +508,13 @@ export const App = ({ runtime }: AppProps) => {
     setTerminalView(restoreResults.length > 0);
   };
 
-  const handleOpenBatchCommand = (hostIds: readonly string[] = state.terminals.map((terminal) => terminal.hostId)): void => {
+  const handleOpenBatchCommand = (hostIds: readonly string[] = state.terminals.map((terminal) => terminal.hostId), source: TargetSelectionSource = 'servers'): void => {
     const uniqueHostIds = [...new Set(hostIds)];
     if (uniqueHostIds.length === 0) return;
     setCommandInitialCommand('');
     setCommandInitialVariables({});
     setCommandTargetHostIds(uniqueHostIds);
+    setCommandTargetSource(source);
     setCommandDialogOpen(true);
     void loadSnippets();
   };
@@ -524,6 +526,7 @@ export const App = ({ runtime }: AppProps) => {
     setCommandInitialCommand('');
     setCommandInitialVariables({});
     setCommandTargetHostIds([...snapshot.hostIds]);
+    setCommandTargetSource('workspace');
     setCommandDialogOpen(true);
     void loadSnippets();
   };
@@ -536,6 +539,7 @@ export const App = ({ runtime }: AppProps) => {
       setCommandInitialCommand(snippet.command);
       setCommandInitialVariables(Object.fromEntries(snippet.variables.map((name) => [name, ''])));
       setCommandTargetHostIds([...new Set(state.terminals.map((terminal) => terminal.hostId))]);
+      setCommandTargetSource('workspace');
       setCommandDialogOpen(true);
     }).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
   };
@@ -1013,7 +1017,7 @@ export const App = ({ runtime }: AppProps) => {
             onFavoriteToggle={(host) => void handleFavoriteToggle(host)}
             onConnect={handleOpenTerminal}
             onAddHost={openCreateHost}
-            onBatchCommand={capabilities.supports('automation.batch-exec') ? handleOpenBatchCommand : undefined}
+            onBatchCommand={capabilities.supports('automation.batch-exec') ? (hostIds) => handleOpenBatchCommand(hostIds, 'servers') : undefined}
             onImport={capabilities.supports('vault.bundle') ? () => setWorkspaceSettingsMode('import') : undefined}
             onExport={capabilities.supports('vault.bundle') ? () => setWorkspaceSettingsMode('export') : undefined}
             onEdit={openEditHost}
@@ -1031,7 +1035,7 @@ export const App = ({ runtime }: AppProps) => {
             onEditHost={openEditHost}
             onConnectHost={handleOpenTerminal}
             onStatusChange={handleTerminalStatus}
-            onOpenBatchCommand={capabilities.supports('automation.batch-exec') ? () => handleOpenBatchCommand() : undefined}
+            onOpenBatchCommand={capabilities.supports('automation.batch-exec') ? () => handleOpenBatchCommand(state.terminals.map((terminal) => terminal.hostId), 'workspace') : undefined}
             onOpenBroadcast={capabilities.supports('automation.batch-exec') && capabilities.supports('terminal.broadcast') && maxWorkspacePanes > 1 ? handleOpenBroadcast : undefined}
             onOpenSnippetPalette={capabilities.supports('automation.snippets') ? handleOpenSnippetPalette : undefined}
             onListSftp={capabilities.supports('sftp.browse') ? (hostId, path) => runtime.files.list(hostId, path) : undefined}
@@ -1087,6 +1091,7 @@ export const App = ({ runtime }: AppProps) => {
       {commandDialogOpen && <CommandRunDialog
         hosts={state.hosts}
         hostIds={commandTargetHostIds}
+        initialTargetSource={commandTargetSource}
         initialCommand={commandInitialCommand}
         initialVariables={commandInitialVariables}
         groups={state.groups.map((group) => ({
