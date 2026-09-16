@@ -6,7 +6,7 @@ Relay 当前以 Web app 为核心客户端，服务端负责 SSH、SFTP、批量
 
 本轮 review 后，统一核心已经形成可执行边界：`src/shared/core` 固定模型、校验、错误码、状态机、分组/连接继承、目标快照、`CoreRuntime` 和 ports；Web 只实现第一套 adapter。桌面和 Android 仍不做 UI，但可以替换 adapter 而不复制领域规则和用户任务语义；原生端仍需按各自生命周期和交互范式实现 UI。X-01 已将 capability 协商、Web/native-like contract 和规模回归落地：Web adapter 与 desktop/android native-like fake 运行同一套 shared contract，证明扩展点不依赖 DOM 或 HTTP。
 
-剩余风险已收敛为明确的后置能力，而不是架构债务：原生客户端、个人账号/加密同步、团队 Vault、更多协议和更大规模 pane 分别通过 capability、数据归属和生命周期 spec 管理；个人账号/加密同步的边界见 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md)，本轮不把它们伪装成已交付的 Web 能力。
+剩余风险已收敛为明确的后置能力，而不是架构债务：原生客户端、个人账号/加密同步、团队 Vault、更多协议和更大规模 pane 分别通过 capability、数据归属和生命周期 spec 管理；个人账号/加密同步的边界见 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md)，平台 shell 的设计草案见 [`relay-platform-shell-design.md`](../superpowers/specs/2026-09-16-relay-platform-shell-design.md)。两份文档都不是当前 Web 已交付能力的声明。
 
 ## 核心边界与依赖方向
 
@@ -155,6 +155,12 @@ Windows/Linux 桌面端可以使用 OS keychain 或桌面安全存储，Android 
 - 移动端后台挂起、网络切换和进程回收只能产生明确的 reconnecting/interrupted/needs-reopen 状态，不能伪造继续执行。
 
 平台差异应存在于 adapter，不应进入 shared core 或改变服务端的安全默认值。云同步不是 CoreRuntime 的必选端口；已批准的账号/同步设计通过可选 `AccountSessionPort`、`DeviceTrustPort` 和 `SyncPort` 扩展，并必须遵守 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md) 的数据归属、冲突、加密和离线语义。
+
+## X-02 平台 shell 设计草案
+
+X-02 将平台产品化边界单独固定在 [`relay-platform-shell-design.md`](../superpowers/specs/2026-09-16-relay-platform-shell-design.md)：Web/PWA 和 Android 以 server-mediated SSH 为基线，Desktop 后续才可在安全评审后增加 local SSH；三者通过统一的 `SecretStore`、`SessionTransport`、`FileTransport`、系统能力端口、capability 降级和生命周期状态接入 shared core。PWA 离线只提供 app shell、非敏感工作区意图和恢复提示；移动端不默认在后台使用未授权凭据；文件选择、下载、剪贴板和通知均停留在平台 adapter。
+
+该文档当前处于待评审草案状态，不代表 manifest、service worker、桌面/Android 工程或 proposed capability 已经实现。评审通过后，每个平台另立 implementation plan，并按真实浏览器、桌面和移动生命周期补充 contract、设备和安全验证。
 
 ## X-01 规模回归基线
 

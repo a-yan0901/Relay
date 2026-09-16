@@ -1022,7 +1022,7 @@ export interface TargetSelectionSnapshot {
 
 ## Task X-02: PWA、桌面和移动端产品化边界
 
-**Status:** Ready（先做 spec，后做独立实现计划）
+**Status:** In Progress（平台 shell spec 草案已提交，待用户审阅）
 **Priority:** P2
 **Milestone:** M4
 **Depends on:** X-01；R-03 的生命周期状态；U-04 的交互 token。
@@ -1040,15 +1040,15 @@ export interface TargetSelectionSnapshot {
 - Mobile：单 pane、底部操作栏、软键盘、后台挂起、网络切换、文件分享和生物识别。
 - 所有平台必须复用 Host Key、任务终态、SFTP 路径、批量目标、并发/超时/输出上限和审计语义。
 
-- [ ] **Step 1: 为每个平台写任务清单和威胁模型。**
+- [x] **Step 1: 为每个平台写任务清单和威胁模型。**
 
   以“找 Host → 连接 → 输入命令 → 传文件 → 锁定/恢复”为基线，不把桌面 UI 缩小到手机，不让移动后台继续使用未授权的凭据。
 
-- [ ] **Step 2: 写平台 capability/adapter contract。**
+- [x] **Step 2: 写平台 capability/adapter contract。**
 
   规定 `SecretStore`、`SessionTransport`、`FileTransport`、`NotificationPort` 和 `ClipboardPort` 的职责；明确哪些数据可离线、哪些必须在线。
 
-- [ ] **Step 3: 评审并提交 spec。**
+- [x] **Step 3: 提交 spec 并发起评审。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
