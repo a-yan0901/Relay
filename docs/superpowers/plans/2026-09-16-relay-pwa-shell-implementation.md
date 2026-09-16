@@ -235,6 +235,7 @@ export const isStandaloneDisplayMode: (environment?: PwaRegistrationEnvironment)
 **Files:**
 
 - Modify: `src/web/App.tsx`
+- Modify: `src/web/platform/web-adapters.ts`
 - Modify: `src/web/components/TerminalWorkspace.tsx`
 - Modify: `src/web/components/TerminalPanel.tsx`
 - Modify: `src/web/components/TerminalToolbar.tsx`
@@ -256,29 +257,29 @@ export const isStandaloneDisplayMode: (environment?: PwaRegistrationEnvironment)
 - 网络离线 banner 继续保留 workspace，增加明确的 offline 说明；重新 online 时显示短暂“网络已恢复，正在检查会话状态”反馈后自动消失，不能声称所有 session 已恢复。
 - 偏好设置显示通知状态：不支持/已拒绝/待授权/已启用；权限拒绝时仍说明应用内 Activity 可用。
 
-- [ ] **Step 1: Write failing DOM tests.**
+- [x] **Step 1: Write failing DOM tests.**
 
   在 App DOM test 中注入 fake `platformServices`，断言通知按钮只在点击时调用 `requestPermission`，拒绝后显示降级文案；在 TerminalPanel DOM test 中注入 clipboard fake，断言复制传入 selection、粘贴需要确认后才发送，拒绝确认或 adapter reject 均不发送文本。
 
-- [ ] **Step 2: Run focused DOM tests and observe failure.**
+- [x] **Step 2: Run focused DOM tests and observe failure.**
 
   Run: `npx vitest run tests/unit/web/app.dom.test.tsx tests/unit/web/terminal-panel.dom.test.tsx`
   Expected: FAIL，因为 UI 尚未接收 platform services 和剪贴板回调。
 
-- [ ] **Step 3: Thread optional services through the terminal workspace.**
+- [x] **Step 3: Thread optional services through the terminal workspace.**
 
   逐层传递 `ClipboardPort` 和异步回调；在 TerminalPanel 内保留 xterm `Terminal` ref，使用 `terminal.getSelection()`，粘贴前只生成 `将粘贴 ${text.length} 个字符到终端，是否继续？` 的确认文案。
 
-- [ ] **Step 4: Add notification permission and lifecycle feedback.**
+- [x] **Step 4: Add notification permission and lifecycle feedback.**
 
   App mount 时只读取 `permission()`，不请求权限；按钮点击调用 `requestPermission()` 并更新状态。command run 从 `queued/running` 进入 `completed/failed/cancelled` 时，如 permission 已是 `granted`，发送不含 Host/命令/输出的摘要通知；通知失败只留应用内状态。
 
-- [ ] **Step 5: Add responsive/accessibility styles and run focused tests.**
+- [x] **Step 5: Add responsive/accessibility styles and run focused tests.**
 
   为 system action、permission row 和 network feedback 增加现有 token 的样式；在 320px 下操作栏允许换行或折叠，不能横向溢出。Run: `npx vitest run tests/unit/web/app.dom.test.tsx tests/unit/web/terminal-panel.dom.test.tsx tests/unit/web/terminal-workspace.dom.test.tsx && npm run lint && npm run typecheck`
   Expected: PASS。
 
-- [ ] **Step 6: Commit the user-facing PWA interactions.**
+- [x] **Step 6: Commit the user-facing PWA interactions.**
 
   ```bash
   git add src/web/App.tsx src/web/components/TerminalWorkspace.tsx src/web/components/TerminalPanel.tsx src/web/components/TerminalToolbar.tsx src/web/styles.css tests/unit/web/app.dom.test.tsx tests/unit/web/terminal-panel.dom.test.tsx

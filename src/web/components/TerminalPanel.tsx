@@ -5,7 +5,9 @@ import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
 
+import { AppError } from '@shared/errors';
 import type { OperationDiagnostic } from '@shared/core/models';
+import type { ClipboardPort } from '@shared/core/ports';
 import type { TerminalCredentialRequiredEvent, TerminalStatus } from '@shared/protocol';
 import type { HostCredentialInput } from '@shared/validation';
 import type { HostMetadataState, WorkspaceRestoreStatus } from '../state/app-state';
@@ -56,6 +58,8 @@ export interface TerminalPanelToolbarState {
   diagnostic: OperationDiagnostic | null;
   onReconnect: () => void;
   onClear: () => void;
+  onCopy?: () => Promise<void>;
+  onPaste?: () => Promise<void>;
   onSearch: () => void;
   onFullscreen: () => void;
   searchActive: boolean;
@@ -69,11 +73,12 @@ export interface TerminalPanelProps {
   onEditHost?: (host: HostMetadataState) => void;
   onStatusChange?: (snapshot: TerminalSessionSnapshot) => void;
   onToolbarChange?: (terminalId: string, toolbar: TerminalPanelToolbarState | null) => void;
+  clipboard?: ClipboardPort;
   preferences?: UiPreferences;
   recoveryStatus?: WorkspaceRestoreStatus;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, preferences = DEFAULT_PREFERENCES, recoveryStatus }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, clipboard, preferences = DEFAULT_PREFERENCES, recoveryStatus }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const outputSanitizerRef = useRef(new TerminalOutputSanitizer());
@@ -82,6 +87,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
   const fitRef = useRef<(() => void) | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
+  const [clipboardFeedback, setClipboardFeedback] = useState<string | null>(null);
   const session = useTerminalSession({
     hostId: host.id,
     terminalId,
@@ -208,6 +214,35 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
 
   const clear = useCallback((): void => terminalRef.current?.clear(), []);
 
+  const copySelection = useCallback(async (): Promise<void> => {
+    const selection = terminalRef.current?.getSelection() ?? '';
+    if (!selection) {
+      setClipboardFeedback('终端当前没有选中的文本');
+      return;
+    }
+    try {
+      await clipboard?.writeText(selection);
+      setClipboardFeedback('已复制当前选中的终端文本');
+    } catch (error) {
+      setClipboardFeedback(error instanceof AppError ? error.message : '剪贴板操作失败，请检查浏览器权限');
+    }
+  }, [clipboard]);
+
+  const pasteClipboard = useCallback(async (): Promise<void> => {
+    try {
+      const text = await clipboard?.readText() ?? '';
+      if (!text) {
+        setClipboardFeedback('剪贴板中没有可粘贴的文本');
+        return;
+      }
+      if (!window.confirm(`将粘贴 ${text.length} 个字符到终端，是否继续？`)) return;
+      session.sendInput(text);
+      setClipboardFeedback(`已粘贴 ${text.length} 个字符`);
+    } catch (error) {
+      setClipboardFeedback(error instanceof AppError ? error.message : '剪贴板操作失败，请检查浏览器权限');
+    }
+  }, [clipboard, session.sendInput]);
+
   const fullscreen = useCallback((): void => {
     const element = mountRef.current?.closest('.terminal-panel');
     if (!element) return;
@@ -236,12 +271,14 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       diagnostic,
       onReconnect: session.reconnect,
       onClear: clear,
+      onCopy: clipboard ? copySelection : undefined,
+      onPaste: clipboard ? pasteClipboard : undefined,
       onSearch: toggleSearch,
       onFullscreen: fullscreen,
       searchActive: searchOpen
     });
     return () => onToolbarChange?.(terminalId, null);
-  }, [active, clear, diagnostic, displayState, fullscreen, onToolbarChange, recoveryStatus, searchOpen, session.reconnect, session.state.networkOffline, session.state.reconnectDelayMs, session.state.state, terminalId, toggleSearch]);
+  }, [active, clear, clipboard, copySelection, diagnostic, displayState, fullscreen, onToolbarChange, pasteClipboard, recoveryStatus, searchOpen, session.reconnect, session.state.networkOffline, session.state.reconnectDelayMs, session.state.state, terminalId, toggleSearch]);
 
   const errorActionButton = errorAction === 'edit-credentials'
     ? onEditHost ? <button className="button button-ghost button-small" type="button" onClick={() => onEditHost(host)}>编辑 Server 凭据</button> : null
@@ -253,6 +290,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     <section className={`terminal-panel ${active ? 'is-active' : ''}`} aria-hidden={!active}>
       {searchOpen && <div className="terminal-search"><label htmlFor={`terminal-search-${terminalId}`}>终端搜索</label><input id={`terminal-search-${terminalId}`} autoFocus value={searchValue} onChange={(event) => updateSearch(event.target.value)} placeholder="搜索终端输出" /></div>}
       <div className="terminal-canvas" ref={mountRef} />
+      {clipboardFeedback && <div className="terminal-clipboard-feedback" role="status" aria-live="polite">{clipboardFeedback}</div>}
       {recoveryStatus === 'needs-reopen' && session.state.state === 'closed' && <div className="terminal-recovery" role="status"><strong>此 Console 需要重新连接</strong><span>原来的远程 Shell 不再可用，重新打开会创建新的 Shell。</span><button className="button button-ghost button-small" type="button" onClick={session.reconnect}>重新打开</button></div>}
       {session.state.error && <div className="terminal-error" role="alert"><strong>{session.state.error.message}</strong>{errorAction !== 'none' && errorActionButton}</div>}
       {session.state.hostKey && <HostKeyDialog challenge={session.state.hostKey} onDecision={session.decideHostKey} />}

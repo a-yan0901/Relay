@@ -4,6 +4,12 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type {
+  NotificationPermission,
+  NotificationPort,
+  PlatformServices
+} from '../../../src/shared/core/ports';
+
 const apiMocks = vi.hoisted(() => ({
   getSetupStatus: vi.fn(),
   listGroups: vi.fn(),
@@ -23,7 +29,7 @@ vi.mock('../../../src/web/api', () => apiMocks);
 import { App } from '../../../src/web/App';
 import { createWebAdapters } from '../../../src/web/platform/web-adapters';
 
-const renderApp = () => render(<App runtime={createWebAdapters({ api: apiMocks })} />);
+const renderApp = (platformServices?: PlatformServices) => render(<App runtime={createWebAdapters({ api: apiMocks, platformServices })} />);
 
 describe('App boot recovery', () => {
   beforeEach(() => {
@@ -60,6 +66,29 @@ describe('App boot recovery', () => {
 
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
+  });
+
+  it('requests notification permission only after an explicit user action', async () => {
+    const user = userEvent.setup();
+    const requestPermission = vi.fn(async () => 'granted' as NotificationPermission);
+    const notifications: NotificationPort = {
+      permission: vi.fn(async () => 'default' as NotificationPermission),
+      requestPermission,
+      notify: vi.fn(async () => undefined)
+    };
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    renderApp({ notifications });
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.click(screen.getByRole('button', { name: '偏好设置' }));
+
+    expect(requestPermission).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: '启用桌面通知' }));
+
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('桌面通知已启用')).toBeInTheDocument();
   });
 
   it('opens separate import and export flows from the Vault page', async () => {

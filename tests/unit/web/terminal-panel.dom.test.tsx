@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { OperationDiagnostic } from '../../../src/shared/core/models';
+import type { ClipboardPort } from '../../../src/shared/core/ports';
 import type { HostMetadataState } from '../../../src/web/state/app-state';
 import { TerminalPanel } from '../../../src/web/components/TerminalPanel';
 
@@ -12,9 +13,11 @@ const testState = vi.hoisted(() => ({
   terminalInstances: [] as Array<{ constructorOptions: Record<string, unknown> }>,
   terminalOutputs: [] as Array<string | Uint8Array>,
   onOutput: null as ((data: Uint8Array) => void) | null,
+  selection: 'selected terminal output',
   diagnostics: [] as OperationDiagnostic[],
   credential: null as { hostId: string; authType: 'password' | 'private_key'; name: string; address: string; port: number; username: string } | null,
-  submitCredential: vi.fn()
+  submitCredential: vi.fn(),
+  sendInput: vi.fn()
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -55,6 +58,12 @@ vi.mock('@xterm/xterm', () => ({
       return { dispose: () => {} };
     }
 
+    getSelection(): string {
+      return testState.selection;
+    }
+
+    clearSelection(): void {}
+
     dispose(): void {}
   }
 }));
@@ -84,7 +93,7 @@ vi.mock('../../../src/web/hooks/use-terminal-session', () => ({
     return {
       state: { state: testState.credential ? 'awaiting-credential' : 'connected', reconnectDelayMs: 0, error: null, hostKey: null, credential: testState.credential, diagnostics: testState.diagnostics },
       resize: () => {},
-      sendInput: () => {},
+      sendInput: testState.sendInput,
       decideHostKey: () => {},
       submitCredential: testState.submitCredential,
       reconnect: () => {}
@@ -114,9 +123,11 @@ describe('TerminalPanel mobile selection', () => {
     testState.terminalInstances.length = 0;
     testState.terminalOutputs.length = 0;
     testState.onOutput = null;
+    testState.selection = 'selected terminal output';
     testState.diagnostics.length = 0;
     testState.credential = null;
     testState.submitCredential.mockReset();
+    testState.sendInput.mockReset();
     vi.stubGlobal('requestAnimationFrame', (callback: (timestamp: number) => void) => {
       callback(0);
       return 1;
@@ -203,5 +214,37 @@ describe('TerminalPanel mobile selection', () => {
     await user.type(screen.getByLabelText('密码'), 'filled-at-connect{Enter}');
 
     expect(testState.submitCredential).toHaveBeenCalledWith({ type: 'password', password: 'filled-at-connect' });
+  });
+
+  it('copies only the active terminal selection through the optional clipboard port', async () => {
+    const clipboard: ClipboardPort = {
+      readText: vi.fn(async () => ''),
+      writeText: vi.fn(async () => undefined)
+    };
+    const onToolbarChange = vi.fn();
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} onToolbarChange={onToolbarChange} />);
+    const toolbar = onToolbarChange.mock.calls[0]?.[1] as { onCopy?: () => Promise<void> };
+
+    await toolbar.onCopy?.();
+
+    expect(clipboard.writeText).toHaveBeenCalledWith('selected terminal output');
+  });
+
+  it('requires confirmation before sending clipboard text to the terminal', async () => {
+    const clipboard: ClipboardPort = {
+      readText: vi.fn(async () => 'echo from clipboard'),
+      writeText: vi.fn(async () => undefined)
+    };
+    const onToolbarChange = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} onToolbarChange={onToolbarChange} />);
+    const toolbar = onToolbarChange.mock.calls[0]?.[1] as { onPaste?: () => Promise<void> };
+
+    await toolbar.onPaste?.();
+
+    expect(clipboard.readText).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledWith('将粘贴 19 个字符到终端，是否继续？');
+    expect(testState.sendInput).toHaveBeenCalledWith('echo from clipboard');
+    confirm.mockRestore();
   });
 });

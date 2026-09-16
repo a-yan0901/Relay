@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
 import type { SftpEntry, TransferJob, WorkspaceLayout } from '../../shared/core/models';
-import type { FileTransport } from '../../shared/core/ports';
+import type { ClipboardPort, FileTransport } from '../../shared/core/ports';
 import { sftpParentPath } from '../../shared/core/sftp-path';
 import type { TerminalSessionSnapshot } from '../hooks/use-terminal-session';
 import { DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
@@ -54,6 +54,7 @@ export interface TerminalWorkspaceProps {
   sftpMutationsEnabled?: boolean;
   workspaceId?: string | null;
   onStatusChange?: (terminalId: string, snapshot: TerminalSessionSnapshot) => void;
+  clipboard?: ClipboardPort;
   preferences?: UiPreferences;
   onBackToHosts?: () => void;
   visible?: boolean;
@@ -125,6 +126,7 @@ export const TerminalWorkspace = ({
   localFilesEnabled = true,
   sftpMutationsEnabled = true,
   onStatusChange,
+  clipboard,
   onEditHost,
   preferences = DEFAULT_PREFERENCES,
   onBackToHosts,
@@ -490,6 +492,8 @@ export const TerminalWorkspace = ({
               onReconnect={activeToolbar.onReconnect}
               onClose={() => onClose(activeTerminalId)}
               onClear={activeToolbar.onClear}
+              onCopy={activeToolbar.onCopy}
+              onPaste={activeToolbar.onPaste}
               onSearch={activeToolbar.onSearch}
               onFullscreen={activeToolbar.onFullscreen}
               searchActive={activeToolbar.searchActive}
@@ -567,7 +571,7 @@ export const TerminalWorkspace = ({
                     </label>
                   </div>
                 )}
-                {host ? <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} recoveryStatus={terminal.recoveryStatus} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onStatusChange={(snapshot) => handleTerminalStatus(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} /> : paneVisible && <div className="terminal-recovery-pane" role="status"><strong>Server 已不存在</strong><p>这个工作区标签关联的 Server 已不存在。</p><button className="button button-ghost button-small" type="button" onClick={() => onClose(terminal.terminalId)}>关闭标签</button></div>}
+                {host ? <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} recoveryStatus={terminal.recoveryStatus} preferences={preferences} clipboard={clipboard} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onStatusChange={(snapshot) => handleTerminalStatus(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} /> : paneVisible && <div className="terminal-recovery-pane" role="status"><strong>Server 已不存在</strong><p>这个工作区标签关联的 Server 已不存在。</p><button className="button button-ghost button-small" type="button" onClick={() => onClose(terminal.terminalId)}>关闭标签</button></div>}
               </div>
             );
           })}

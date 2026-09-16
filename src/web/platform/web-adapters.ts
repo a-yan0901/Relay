@@ -678,10 +678,16 @@ export const createWebAdapters = (options: {
   api?: WebApiClient;
   webSocketFactory?: (url: string) => TerminalSocketLike;
   platformServices?: PlatformServices;
-} = {}): WebAdapters => {
+  } = {}): WebAdapters => {
   const client = options.api ?? api;
   const capabilityAdapter = new WebCapabilityAdapter(client as Pick<WebApiClient, 'getCapabilities'>);
-  const platformServices = options.platformServices ?? createBrowserSystemServices();
+  const browserSystemServices = createBrowserSystemServices();
+  const platformServices = options.platformServices ?? {
+    clipboard: browserSystemServices.capabilities.clipboardRead && browserSystemServices.capabilities.clipboardWrite
+      ? browserSystemServices.clipboard
+      : undefined,
+    notifications: browserSystemServices.capabilities.notifications ? browserSystemServices.notifications : undefined
+  } satisfies PlatformServices;
   const runtime = {
     platform: 'web',
     capabilities: createWebCapabilitySet({ maxWorkspacePanes: WEB_PLATFORM_MAX_PANES }),

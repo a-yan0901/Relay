@@ -21,7 +21,7 @@ import { ShortcutMap } from './components/ShortcutMap';
 import { BroadcastPreview } from './components/BroadcastPreview';
 import type { ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
-import type { BinarySource } from '../shared/core/ports';
+import type { BinarySource, NotificationPermission, NotificationPort } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
@@ -129,7 +129,16 @@ const WorkspaceHeader = ({ destination, onLock, onServers, onQuickSwitcher, onSe
   </header>
 );
 
-const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiPreferences; onChange: (preferences: UiPreferences) => void; onClose: () => void }) => {
+interface PreferencesPanelProps {
+  preferences: UiPreferences;
+  onChange: (preferences: UiPreferences) => void;
+  onClose: () => void;
+  notifications?: NotificationPort;
+  notificationPermission?: NotificationPermission;
+  onRequestNotifications?: () => Promise<void>;
+}
+
+const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notificationPermission = 'denied', onRequestNotifications }: PreferencesPanelProps) => {
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, true, onClose, '#theme-select');
 
@@ -150,6 +159,20 @@ const PreferencesPanel = ({ preferences, onChange, onClose }: { preferences: UiP
           {fontSizeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
         </select>
       </div>
+      {notifications && <section className="preferences-system-section" aria-labelledby="preferences-system-title">
+        <p className="eyebrow" id="preferences-system-title">PLATFORM</p>
+        <div className="preferences-system-row">
+          <div>
+            <strong>桌面通知</strong>
+            <span>只发送任务状态摘要，不包含命令、输出或凭据。</span>
+          </div>
+          {notificationPermission === 'granted'
+            ? <span className="preferences-system-status" role="status">桌面通知已启用</span>
+            : notificationPermission === 'denied'
+              ? <span className="preferences-system-status">浏览器未允许通知</span>
+              : <button className="button button-ghost button-small" type="button" onClick={() => void onRequestNotifications?.()}>启用桌面通知</button>}
+        </div>
+      </section>}
       <ShortcutMap />
       <p className="preferences-note">偏好只保存在当前浏览器，不包含主密码、服务器密码或私钥。</p>
     </aside>
@@ -172,8 +195,10 @@ export const App = ({ runtime }: AppProps) => {
   const [recentOnly, setRecentOnly] = useState(false);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [networkOnline, setNetworkOnline] = useState(() => globalThis.navigator?.onLine !== false);
+  const [networkRecoveryVisible, setNetworkRecoveryVisible] = useState(false);
   const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
   const [capabilities, setCapabilities] = useState<CapabilitySet>(() => runtime.capabilities);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('denied');
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(false);
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
@@ -204,6 +229,8 @@ export const App = ({ runtime }: AppProps) => {
   const refreshedHostForTerminalRef = useRef(new Set<string>());
   const lockedFromCurrentAppRef = useRef(false);
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null);
+  const networkRecoveryTimerRef = useRef<number | null>(null);
+  const previousCommandStatusRef = useRef<CommandRun['status'] | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const latestStateRef = useRef(state);
   latestStateRef.current = state;
@@ -224,14 +251,50 @@ export const App = ({ runtime }: AppProps) => {
 
   useEffect(() => {
     const handleOffline = (): void => setNetworkOnline(false);
-    const handleOnline = (): void => setNetworkOnline(true);
+    const handleOnline = (): void => {
+      setNetworkOnline(true);
+      setNetworkRecoveryVisible(true);
+      if (networkRecoveryTimerRef.current !== null) window.clearTimeout(networkRecoveryTimerRef.current);
+      networkRecoveryTimerRef.current = window.setTimeout(() => {
+        networkRecoveryTimerRef.current = null;
+        setNetworkRecoveryVisible(false);
+      }, 1_800);
+    };
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
     return () => {
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
+      if (networkRecoveryTimerRef.current !== null) window.clearTimeout(networkRecoveryTimerRef.current);
     };
   }, []);
+
+  const notifications = runtime.platformServices?.notifications;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!notifications) {
+      setNotificationPermission('denied');
+      return () => { cancelled = true; };
+    }
+    void notifications.permission()
+      .then((permission) => {
+        if (!cancelled) setNotificationPermission(permission);
+      })
+      .catch(() => {
+        if (!cancelled) setNotificationPermission('denied');
+      });
+    return () => { cancelled = true; };
+  }, [notifications]);
+
+  const requestNotificationPermission = useCallback(async (): Promise<void> => {
+    if (!notifications) return;
+    try {
+      setNotificationPermission(await notifications.requestPermission());
+    } catch {
+      setNotificationPermission('denied');
+    }
+  }, [notifications]);
 
   const terminalDescriptorsFor = (terminals: readonly { terminalId: string; hostId: string; recoveryStatus?: string; state: string }[], tabIds: Readonly<Record<string, string>>): TerminalDescriptor[] => terminals
     .filter((terminal) => {
@@ -854,6 +917,26 @@ export const App = ({ runtime }: AppProps) => {
     return () => window.clearTimeout(timer);
   }, [commandRun]);
 
+  useEffect(() => {
+    if (!commandRun) {
+      previousCommandStatusRef.current = null;
+      return;
+    }
+    const previousStatus = previousCommandStatusRef.current;
+    previousCommandStatusRef.current = commandRun.status;
+    if (!notifications || !previousStatus || previousStatus === commandRun.status || !['completed', 'failed', 'cancelled'].includes(commandRun.status)) return;
+    const message = commandRun.status === 'completed'
+      ? '批量任务已完成，请回到 Relay 查看结果。'
+      : commandRun.status === 'cancelled'
+        ? '批量任务已取消，请回到 Relay 查看结果。'
+        : '批量任务有失败目标，请回到 Relay 查看结果。';
+    void notifications.permission()
+      .then((permission) => permission === 'granted'
+        ? notifications.notify({ title: 'Relay 任务更新', body: message, tag: `command-run:${commandRun.id}` })
+        : undefined)
+      .catch(() => undefined);
+  }, [commandRun, notifications]);
+
   const handleDeleteHost = async (host: HostMetadataState): Promise<void> => {
     if (!window.confirm(`确定删除 Server「${host.name}」吗？`)) return;
     try {
@@ -1048,6 +1131,11 @@ export const App = ({ runtime }: AppProps) => {
           <span>网络已断开，终端会话将在恢复后自动重连；未提交的操作请稍后重试。</span>
         </div>
       )}
+      {networkOnline && networkRecoveryVisible && (
+        <div className="global-feedback global-feedback-info" role="status" aria-live="polite">
+          <span>网络已恢复，正在检查会话状态。</span>
+        </div>
+      )}
       {state.workspaceRecovery.some((result) => result.status !== 'restored') && (
         <div className="global-feedback global-feedback-info" role="status" aria-live="polite">
           <span>
@@ -1102,6 +1190,7 @@ export const App = ({ runtime }: AppProps) => {
             onStatusChange={handleTerminalStatus}
             onOpenBatchCommand={capabilities.supports('automation.batch-exec') ? () => handleOpenBatchCommand(state.terminals.map((terminal) => terminal.hostId), 'workspace') : undefined}
             onOpenBroadcast={capabilities.supports('automation.batch-exec') && capabilities.supports('terminal.broadcast') && maxWorkspacePanes > 1 ? handleOpenBroadcast : undefined}
+            clipboard={runtime.platformServices?.clipboard}
             onOpenSnippetPalette={capabilities.supports('automation.snippets') ? handleOpenSnippetPalette : undefined}
             onListSftp={capabilities.supports('sftp.browse') ? (hostId, path) => runtime.files.list(hostId, path) : undefined}
             onCreateDirectorySftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.createDirectory(hostId, path) : undefined}
@@ -1149,7 +1238,7 @@ export const App = ({ runtime }: AppProps) => {
           </aside>
         </div>
       )}
-      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} />}
+      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} notifications={notifications} notificationPermission={notificationPermission} onRequestNotifications={requestNotificationPermission} />}
       {identityOpen && capabilities.supports('vault.identities') && <IdentityManager identities={identities} onCreate={handleCreateIdentity} onUpdate={handleUpdateIdentity} onDelete={async (id) => { if (window.confirm('确定删除这个身份吗？')) await handleDeleteIdentity(id); }} onClose={() => setIdentityOpen(false)} />}
       {snippetManagerOpen && capabilities.supports('automation.snippet-manager') && <SnippetManager snippets={snippets} onGet={(id) => runtime.snippets.get(id)} onCreate={handleCreateSnippet} onUpdate={handleUpdateSnippet} onDelete={handleDeleteSnippet} onClose={() => setSnippetManagerOpen(false)} />}
       {snippetPaletteOpen && capabilities.supports('automation.snippets') && <SnippetPalette snippets={snippets} onSelect={handleSelectSnippetFromPalette} onClose={() => setSnippetPaletteOpen(false)} />}
