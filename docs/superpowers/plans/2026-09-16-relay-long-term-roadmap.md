@@ -294,7 +294,7 @@ export interface OperationDiagnostic {
 - Focused：15 个文件、74 个测试通过；`npm run lint`、`npm run typecheck`、`npm run build` 通过。
 - Full regression：`npm test`，81 个测试文件、297 个测试全部通过。
 - Browser：`npm run test:e2e -- --project=chromium tests/e2e/ssh-productivity.spec.ts`，2/2 通过。
-- `git diff --check` 通过；commit hash 在提交后补记。
+- `git diff --check` 通过；feature commit：`58e5bcc`（`feat: unify ssh operation lifecycle diagnostics`）。
 
 **Evidence gap / follow-up:** R-02 的断点续传与大文件 streaming、R-03 的网络切换/锁定/Workspace 恢复矩阵仍未实现；本任务只固定其依赖的终态和诊断契约。
 
