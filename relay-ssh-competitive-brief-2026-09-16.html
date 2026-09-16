@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Relay SSH 竞品与用户痛点竞争简报</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1220;
+      --panel: #111c2e;
+      --panel-2: #16243a;
+      --line: #2b3c55;
+      --text: #edf4ff;
+      --muted: #a7b7cf;
+      --blue: #74b6ff;
+      --green: #69d7a3;
+      --yellow: #f6c86d;
+      --red: #ff8f8f;
+      --purple: #c6a9ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: linear-gradient(135deg, #0b1220 0%, #0e192b 52%, #0a1423 100%);
+      color: var(--text);
+      font: 15px/1.65 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    main { max-width: 1320px; margin: 0 auto; padding: 42px 26px 72px; }
+    header { padding: 12px 0 28px; border-bottom: 1px solid var(--line); }
+    .eyebrow { color: var(--blue); font: 700 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 10px 0 8px; font-size: clamp(30px, 4vw, 50px); line-height: 1.12; letter-spacing: -.03em; }
+    h2 { margin: 42px 0 14px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 26px; line-height: 1.2; }
+    h3 { margin: 24px 0 8px; font-size: 19px; color: #fff; }
+    p { margin: 8px 0 14px; }
+    a { color: var(--blue); }
+    .lead { max-width: 980px; color: #d5e2f4; font-size: 18px; }
+    .meta, .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 15px 0 0; }
+    .chip, .status { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--muted); font-size: 12px; }
+    .chip.blue { color: var(--blue); border-color: #315e8a; }
+    .chip.green { color: var(--green); border-color: #28694f; }
+    .chip.yellow { color: var(--yellow); border-color: #765c26; }
+    .chip.red { color: var(--red); border-color: #713c45; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+    .card { grid-column: span 4; background: rgba(17, 28, 46, .88); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+    .card.wide { grid-column: span 6; }
+    .card.full { grid-column: 1 / -1; }
+    .card h3 { margin-top: 0; }
+    .card p:last-child { margin-bottom: 0; }
+    .signal { margin: 10px 0; padding: 10px 12px; border-left: 3px solid var(--blue); background: rgba(116, 182, 255, .07); }
+    .signal.user { border-left-color: var(--yellow); background: rgba(246, 200, 109, .07); }
+    .signal.infer { border-left-color: var(--purple); background: rgba(198, 169, 255, .07); }
+    .label { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+    ul { margin: 8px 0 8px 20px; padding: 0; }
+    li { margin: 4px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 14px 0 10px; background: rgba(17, 28, 46, .75); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+    th { color: #d9e8fc; background: var(--panel-2); font-size: 12px; letter-spacing: .02em; }
+    td { color: #d0dced; }
+    tr:last-child td { border-bottom: 0; }
+    .status.lead { color: var(--green); border-color: #28694f; }
+    .status.pressure { color: var(--red); border-color: #713c45; }
+    .status.mixed { color: var(--yellow); border-color: #765c26; }
+    .status.nd { color: var(--muted); }
+    .priority { display: inline-block; min-width: 42px; margin-right: 6px; padding: 2px 7px; border-radius: 5px; font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
+    .p0 { color: #160b0b; background: var(--red); }
+    .p1 { color: #191208; background: var(--yellow); }
+    .p2 { color: #0e1620; background: var(--blue); }
+    code { padding: 1px 5px; border-radius: 4px; background: #0a1423; color: #d9e8fc; }
+    .small { color: var(--muted); font-size: 13px; }
+    .source-list li { margin: 7px 0; }
+    footer { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    @media (max-width: 900px) {
+      main { padding: 28px 16px 56px; }
+      .card, .card.wide { grid-column: 1 / -1; }
+      table { display: block; overflow-x: auto; white-space: normal; }
+      th, td { min-width: 170px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Relay / Competitive Brief / 2026-09-16</div>
+    <h1>Relay SSH 竞品与用户痛点竞争简报</h1>
+    <p class="lead">比较 Termius、MobaXterm、Xshell、Netcatty、FinalShell 的产品亮点与公开用户痛点，并将结论映射到 Relay 的产品改进优先级。</p>
+    <div class="meta">
+      <span class="chip blue">范围：SSH 工作台 / 终端 / SFTP / 批量运维</span>
+      <span class="chip green">证据：官方资料 + 公开评论/Issue + Relay 仓库基线</span>
+      <span class="chip yellow">价格与功能按 2026-09-16 页面观察，可能变化</span>
+    </div>
+  </header>
+
+  <section id="overview">
+    <h2>Overview / 概览</h2>
+    <div class="grid">
+      <article class="card wide">
+        <h3>一句话结论</h3>
+        <p>SSH 客户端的竞争焦点已经从“能否连上”转向“能否在正确的主机上，以可复用、可恢复、可审计的方式完成任务”。Relay 的基础安全和任务闭环已经有差异化，但最需要补的是传输可靠性、任务上下文密度、并行协同和平台可达性。</p>
+        <div class="signal infer"><span class="label">产品推断</span><br>Relay 不应复制 MobaXterm/FinalShell 的“大而全”，而应把“自托管、local-first、可信状态、低锁定”做成明确的竞争定位。</div>
+      </article>
+      <article class="card wide">
+        <h3>竞品角色</h3>
+        <ul>
+          <li><strong>Termius：</strong>跨端、Workspace、同步与协作标杆。</li>
+          <li><strong>MobaXterm：</strong>Windows 一站式网络工程工具箱。</li>
+          <li><strong>Xshell：</strong>成熟的会话、脚本、隧道和网络设备工作流。</li>
+          <li><strong>Netcatty：</strong>现代跨平台、开源、AI/MCP 与本地/云同步。</li>
+          <li><strong>FinalShell：</strong>中文用户熟悉的 SSH + SFTP + 监控 + 加速整合。</li>
+        </ul>
+      </article>
+    </div>
+
+    <h3>证据口径</h3>
+    <p><span class="chip blue">已验证</span> 指官方产品页、定价页、官方文档或仓库中明确写出的能力；<span class="chip yellow">用户反馈</span> 指公开 App Store、TrustRadius、G2、Reddit 或 GitHub Issue 中出现的体验；<span class="chip blue">产品推断</span> 指结合这些证据与 Relay 当前代码/文档作出的判断。公开反馈是方向性信号，不是抽样满意度研究。</p>
+  </section>
+
+  <section id="seller-baseline">
+    <h2>Seller Baseline / Relay 当前基线</h2>
+    <div class="grid">
+      <article class="card">
+        <h3>Relay 已经做得好的</h3>
+        <ul>
+          <li>单 Docker 实例、单用户、单 Vault、自托管，凭据使用 Argon2id/AES-GCM 保护。</li>
+          <li>Host / Group / Identity、嵌套分组、ProxyJump、Keepalive、自动重连和 Host Key 变更阻断。</li>
+          <li>同一 SSH 上下文的 SFTP 浏览、上传/下载、目录操作、队列、取消、重试和原子上传。</li>
+          <li>Snippets、变量、批量命令、目标预览、并发/超时/输出上限、逐主机结果和脱敏活动摘要。</li>
+          <li>工作区持久化、模板、tab、分屏/四 pane、刷新后尽力恢复，以及 OpenSSH/Termius CSV/MobaXterm/Xshell/SecureCRT 导入。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>Relay 当前限制</h3>
+        <ul>
+          <li>Web-first，尚未交付桌面/Android 原生 UI；进程重启不保留远端 shell。</li>
+          <li>Web 文件适配层仍会聚合 Blob；传输重试是从头重试，不是断点续传。</li>
+          <li>尚无端口转发、Agent Forwarding、Mosh、Telnet、Serial、RDP/VNC、X11、远程编辑器和完整会话录像。</li>
+          <li>尚无团队 Vault、RBAC、SSO、云同步或实时协作。</li>
+          <li>Recent/Tags 的独立导航和保存筛选、广播输入、FinalShell/Netcatty 原生导入仍不完整。</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h3>内部基线</h3>
+        <p>Relay 的现状以仓库文档和代码为准：<a href="/root/code/ssh-tools/README.md">README.md</a>、<a href="/root/code/ssh-tools/docs/research/2026-09-16-termius-gap-review.md">Termius 差距复核</a>、<a href="/root/code/ssh-tools/docs/product/2026-09-15-ssh-productivity-release.md">SSH Productivity 交付说明</a>、<a href="/root/code/ssh-tools/docs/ssh-interoperability-guide.md">跨产品迁移说明</a>。</p>
+        <div class="signal"><span class="label">当前最佳切入点</span><br>“不用把凭据交给第三方云，也不用牺牲安全确认和迁移能力，就能在浏览器里管理多台 SSH 主机并完成文件/命令任务。”</div>
+      </article>
+    </div>
+  </section>
+
+  <section id="competitors">
+    <h2>Competitors / 竞品画像</h2>
+
+    <article class="card full">
+      <h3>Termius：跨端工作区与协作标杆</h3>
+      <p><span class="label">已验证亮点：</span>官方把 Vault、Host/Group/Identity、SFTP、Workspace、Snippets、端口转发和多端连接放在同一套资产模型里；当前公开定价显示 Starter 免费层含本地 Vault、SSH/SFTP、AI 自动补全和端口转发，Pro 为年付每月 10 美元，增加个人云 Vault、桌面/移动同步、Session Logs 和 Snippets automation；Team 为每席每月 20 美元，增加团队 Vault、实时协作和共享日志。Workspace 支持 Focus/Split，官方文档曾明确提到最多 16 个同时连接，最新介绍还加入 Broadcast 和模板恢复。</p>
+      <p><span class="label">为什么买：</span>用户不必记 IP、端口和密钥归属；从电脑切到手机仍能找到资产；Workspace 按“部署/事故/调查”等意图组织连接，而不是只堆 tab。</p>
+      <div class="signal user"><span class="label">公开用户反馈：</span>App Store 个别评论把订阅/功能分层、SFTP 改版不直观、跨设备连接丢失或被删除的经历视为主要不信任来源；这些是个体案例，不能外推为普遍故障。官方 Workspaces 文章也承认横向 tab 难以容纳大量连接，说明“连接越多，导航越难”是其持续解决的问题。</div>
+      <p><span class="label">Relay 可分离：</span>保留 local-first、自托管、可导出和不依赖厂商云的信任优势；补齐“回到同一个任务上下文”的导航和广播能力。<span class="label">Relay 缺口：</span>桌面/移动客户端、端口转发、Mosh/Agent/FIDO2、跨端同步、团队 Vault、实时协作、日志书签/录像。</p>
+      <p class="small"><a href="https://www.termius.com/">官方产品页</a> · <a href="https://www.termius.com/pricing">官方定价</a> · <a href="https://termius.com/blog/workspaces">Workspace 官方文章</a> · <a href="https://apps.apple.com/us/app/termius-modern-ssh-client/id549039908?see-all=reviews">App Store 公开评论</a></p>
+    </article>
+
+    <article class="card full">
+      <h3>MobaXterm：Windows 一站式工具箱</h3>
+      <p><span class="label">已验证亮点：</span>官方定位为 Windows 10/11 客户端，整合 tabbed SSH、SFTP、RDP、X11/XDMCP、Telnet、Serial、Mosh、跳板、隧道、多执行、宏、内置编辑器、语法高亮、网络工具、嵌入式服务器和可携带版本。官方 FAQ 还描述了分块 SFTP 断线续传，并建议多 GB 文件切换到 SCP 或 rsync。</p>
+      <p><span class="label">为什么买：</span>“一个窗口替代 PuTTY、WinSCP、Xming、RDP 和一组网络小工具”；便携版不要求管理员权限；对 Windows 网络工程、设备初始化和 X11/RDP 场景尤其有吸引力。</p>
+      <div class="signal user"><span class="label">公开用户反馈：</span>TrustRadius 汇总的负面方向包括界面/会话分组偏旧、凭据管理困难、多会话打开时卡住、更新需要手动重装、快捷键不足；Reddit 也有“功能多但界面拥挤、偶尔卡顿/延迟”和 SFTP 体验难适应的反馈。另一个现实摩擦是 Home Edition 仅限个人非商业使用，工作场景需要 Professional。</div>
+      <p><span class="label">Relay 可分离：</span>用浏览器和自托管降低安装/跨平台成本，以明确的目标确认、Host Key 和审计降低批量误操作风险。<span class="label">Relay 缺口：</span>Windows 原生设备/桌面协议、X11/RDP/Serial、远程编辑器、监控、宏/多执行、真正的大文件续传。</p>
+      <p class="small"><a href="https://www.getmobaxterm.com/">官方产品页</a> · <a href="https://www.getmobaxterm.com/faq">官方 FAQ</a> · <a href="https://www.trustradius.com/products/mobaxterm/reviews">TrustRadius 公开评论汇总</a> · <a href="https://www.reddit.com/r/networking/comments/onthyd/which_ssh_clients_are_worth_using/">Reddit 用户讨论</a></p>
+    </article>
+
+    <article class="card full">
+      <h3>Xshell：成熟会话管理、脚本和网络工程能力</h3>
+      <p><span class="label">已验证亮点：</span>官方文档列出 Session Manager、文件夹/树形会话、Authentication Profiles、继承属性、批量更新、导入/导出、Quick Commands、Triggers、Script Recording、同步输入、tab group、Jump Host、TCP/IP/SOCKS/X11 forwarding、日志、Remote File Manager、SFTP、Serial、Telnet、RDP 和多种认证方式。Xshell 8 官方定价为单用户 119 美元永久许可，含 1 年维护；Xshell + Xftp 为 139 美元。</p>
+      <p><span class="label">为什么买：</span>老牌 Windows 运维和网络设备用户可以把几十/上百个会话、登录脚本、快捷命令、日志和颜色规则固化下来；脚本与网络协议深度对专业用户很有价值。</p>
+      <div class="signal user"><span class="label">公开用户反馈：</span>公开 G2/Reddit 反馈集中在商业授权成本、Windows-only、文件传输/Remote File Manager 的发现性、快捷键/粘贴与 tmux/Vim 交互，以及少量崩溃或功能缺口。需要特别注意：官方手册确实支持 SFTP 和 Remote File Manager；更准确的说法是，部分用户觉得它不如 MobaXterm 那样在当前会话旁边直观，或需要理解 Xshell 与 Xftp 的边界。</div>
+      <p><span class="label">Relay 可分离：</span>无安装、跨系统浏览器入口和同一上下文内的 SFTP 是直接优势。<span class="label">Relay 缺口：</span>端口转发、脚本/触发器/登录脚本、会话日志与搜索、同步输入、远程文件管理的深度、Serial/RDP。</p>
+      <p class="small"><a href="https://www.xshell.com/en/xshell-all-features/">官方功能规格</a> · <a href="https://www.xshell.com/en/xshell/">官方产品与定价</a> · <a href="https://www.xshell.com/docs/Xshell8_manual.pdf">Xshell 8 官方手册</a> · <a href="https://www.g2.com/products/xshell/reviews">G2 公开评论</a> · <a href="https://www.reddit.com/r/linuxadmin/comments/1w2oy2q/xshell_questions/">Reddit 用户讨论</a></p>
+    </article>
+
+    <article class="card full">
+      <h3>Netcatty：现代跨平台、开源与 AI/MCP</h3>
+      <p><span class="label">已验证亮点：</span>官方文档覆盖 macOS/Windows/Linux、SSH/SFTP/Telnet/Serial、GUI 隧道、Vault/Identity、拖放文件、WebGL 渲染、加密同步和 keyboard-first 快捷键。其公开发布记录还显示了 Workspace、Broadcast、终端脚本、系统能力、外部 MCP/AI 工具和多种同步后端的持续建设。</p>
+      <p><span class="label">为什么买：</span>跨平台一致、现代 UI、开源可审阅、可用 GitHub Gist/Google Drive/S3/WebDAV 等做端到端加密同步，还能让 Codex/Claude/Cursor 等外部 Agent 通过受控能力目录操作终端、SFTP、Vault 和隧道。</p>
+      <div class="signal user"><span class="label">公开 Issue 方向：</span>可见问题包括特定版本 SFTP 上传过程中断开、单个/批量连接弹窗慢、终端滚动重绘卡顿和 CPU 升高、局域网/虚拟网卡连通性、PowerShell 命令包装不兼容等。官方 release notes 也反复出现传输恢复、重连、渲染、终端复制和 native module 兼容性修复，说明快速迭代带来成熟度和回归风险。</div>
+      <p><span class="label">Relay 可分离：</span>以更窄、更可控的产品范围换取稳定、清晰的安全边界和部署可预测性。<span class="label">Relay 缺口：</span>桌面端、Broadcast、端口转发、远程到远程文件操作、真正可恢复的传输、MCP/Agent、系统监控与更丰富的协议。</p>
+      <p class="small"><a href="https://netcatty.app/en/docs/introduction/">官方介绍</a> · <a href="https://netcatty.app/en/docs/cloudsync/">官方同步架构</a> · <a href="https://netcatty.app/en/docs/release-notes/">官方发布记录</a> · <a href="https://github.com/binaricat/Netcatty/issues/2973">SFTP 断开 Issue</a> · <a href="https://github.com/binaricat/Netcatty/issues/1276">连接慢 Issue</a> · <a href="https://github.com/binaricat/Netcatty/issues/1897">终端渲染/CPU Issue</a></p>
+    </article>
+
+    <article class="card full">
+      <h3>FinalShell：中文场景的整合、监控与传输</h3>
+      <p><span class="label">已验证亮点：</span>官方页面显示其支持 Windows/macOS/Linux，提供 SSH 多标签、同屏 SFTP、拖放、断点续传、在线编辑/预览、批量文件操作、CPU/内存/磁盘/网络监控、端口转发、100+ 配色和海外服务器加速；专业版增加加速传输、批量服务器操作、自定义命令片段和多窗口分屏。</p>
+      <p><span class="label">为什么买：</span>中文界面和教程降低上手门槛；连接、文件、监控、部署和跨境网络场景在一个客户端内完成，核心功能免费是个人用户的重要吸引力。</p>
+      <div class="signal user"><span class="label">公开痛点信号：</span>官方排障页直接列出传输中断/速度慢、内存数百 MB、会话较多时界面响应慢、监控空白或不准、快捷键/复制粘贴/配置丢失等排查项；华为云社区的体验文章也反馈长时间运行内存消耗和资源占用偏高。这些说明“功能整合越多，性能和数据可信度越难守住”，但不应表述为所有用户必然遇到。</div>
+      <p><span class="label">Relay 可分离：</span>用可信的 Host Key、批量目标预览、脱敏活动和自托管加密 Vault 建立安全优势。<span class="label">Relay 缺口：</span>服务器监控、加速线路、远程编辑器、成熟断点续传/并发传输、专业批量/分屏以及 FinalShell 原生导入。</p>
+      <p class="small"><a href="https://www.finalshell.net.cn/downloads">官方功能与版本对比</a> · <a href="https://www.finalshell.net.cn/download">官方跨平台下载页</a> · <a href="https://finalshell.com.cn/articles/finalshell-troubleshooting-guide">官方排障指南</a> · <a href="https://bbs.huaweicloud.com/blogs/388931">华为云社区用户体验文章</a></p>
+    </article>
+  </section>
+
+  <section id="matrix">
+    <h2>Comparison Matrix Takeaways / 对比矩阵</h2>
+    <table>
+      <thead>
+        <tr><th>比较维度</th><th>Relay 现状</th><th>主要竞品压力</th><th>判断</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>主机发现与任务上下文</td><td>搜索、分组、收藏、最近排序、Workspace 模板；标签和 Recent 的独立入口/保存筛选还不完整。</td><td>Termius 有 Workspace/Focus/Split/Command Palette；Moba/Xshell 有成熟树形会话；Netcatty 有 quick switcher；FinalShell 有连接管理和历史。</td><td><span class="status pressure">Pressure from Termius/Netcatty</span><br>优先补“按任务找主机”，而不是只补更多字段。</td></tr>
+        <tr><td>凭据、安全与迁移</td><td>自托管加密 Vault、Host Key 首次确认/变更硬失败、ProxyJump 每跳校验、外部配置预览导入。</td><td>Termius/Netcatty 提供跨端同步；Termius 有 FIDO2/生物识别/团队 Vault；Xshell 有 Authentication Profile；Moba/FinalShell 有丰富本地会话资产。</td><td><span class="status lead">Relay lead</span><br>这是 Relay 的核心差异化，但需要 OS Keychain、硬件密钥与更强恢复/迁移可解释性。</td></tr>
+        <tr><td>多窗格与批量协同</td><td>tab、左右/上下/四格布局、批量命令逐主机结果；当前没有 Workspace Broadcast。</td><td>Termius 最多 16 连接/Workspace + Broadcast；Moba 多执行；Xshell synchronized input；Netcatty Broadcast；FinalShell 专业版多窗口分屏/批量。</td><td><span class="status pressure">Pressure from all five</span><br>Broadcast 必须绑定目标快照、风险确认和部分失败语义。</td></tr>
+        <tr><td>SFTP 与大文件</td><td>浏览/CRUD、进度、取消、重试、原子上传；浏览器适配层仍偏整块，重试从 0 开始。</td><td>Moba/FinalShell 主打可视化与续传；Netcatty有双栏/远程操作并持续修复恢复；Termius有独立 SFTP tabs/队列；Xshell 强在基本传输与 Remote File Manager/Xftp 组合。</td><td><span class="status pressure">P0 pressure</span><br>可靠传输比新增协议更直接影响口碑。</td></tr>
+        <tr><td>自动化、日志与 Agent</td><td>加密 Snippets、参数化批量命令、并发/超时/输出上限、脱敏活动摘要。</td><td>Xshell 的脚本/触发器/录制最成熟；Moba 有宏；Termius 有 snippets automation/session logs；Netcatty 有 MCP/AI/脚本；FinalShell 有片段/批量。</td><td><span class="status mixed">Mixed</span><br>Relay 的安全执行语义较强，但缺少可搜索的历史、可选会话日志和受控 Agent API。</td></tr>
+        <tr><td>协议与平台广度</td><td>SSH/SFTP/Web；ProxyJump；无端口转发、Mosh、Serial、Telnet、RDP/VNC/X11；无原生客户端。</td><td>Termius/Netcatty/FinalShell跨桌面；Moba/Xshell/FinalShell覆盖更多桌面/设备/协议；Termius/Netcatty覆盖移动或跨端同步。</td><td><span class="status pressure">Pressure, but strategic</span><br>按目标用户排序补 capability，不要一次性做成“大而全”。</td></tr>
+        <tr><td>部署与信任成本</td><td>浏览器访问、单容器、数据卷可备份，不依赖厂商云；生产需 HTTPS/WSS/反向代理。</td><td>桌面客户端开箱即用；Termius/Netcatty的云同步更省跨设备配置成本，但带来账号、云和恢复信任问题。</td><td><span class="status lead">Relay lead for local-first</span><br>需要把部署检查、备份恢复和安全边界产品化，避免“自托管=自己排障”。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="guidance">
+    <h2>Guidance / Relay 改进清单</h2>
+    <p>优先级按用户感知价值、风险和 Relay 现有架构连续性排序；P0/P1 是建议进入下一轮版本，P2 是完成边界设计后再做。</p>
+    <table>
+      <thead><tr><th>优先级</th><th>改进项</th><th>具体建议</th><th>竞品依据 / 目标</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="priority p0">P0</span>可靠传输</td>
+          <td>流式上传/下载 + 真实断点续传</td>
+          <td>Web adapter 改为 chunk stream；远端临时文件增加 offset/checksum；区分“从断点继续”和“从头重试”；显示速度、ETA、已校验字节、暂停/恢复、队列优先级和失败原因。</td>
+          <td>MobaXterm、FinalShell、Netcatty 已把续传/恢复作为基础体验；Relay 需先把已有 SFTP 闭环做稳。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p0">P0</span>状态可信</td>
+          <td>连接/会话/任务生命周期统一诊断</td>
+          <td>把 DNS/TCP/跳板/Host Key/认证/PTY/SFTP 阶段做成可读时间线；每个错误明确 retryable、需要用户动作还是必须重新打开；网络切换、浏览器刷新、服务重启、锁定和取消都要有 E2E 验收。</td>
+          <td>Netcatty公开 Issue 和 FinalShell官方排障都暴露了“看似网络问题、实际是客户端状态不清”的成本；Relay 的安全定位需要把状态说清楚。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>发现效率</td>
+          <td>Recent / Tags / 保存筛选 / Quick Switcher</td>
+          <td>增加“最近”“标签”“收藏”“保存视图”一级入口；Ctrl/Cmd+K 打开模糊搜索，搜索主机、标签、分组、身份和已打开 tab；Workspace 恢复筛选条件；目标选择器与主机列表复用同一筛选语义。</td>
+          <td>直接对齐 Termius Command Palette/Workspace 和 Netcatty keyboard-first，同时保留 Relay 的轻量。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>并行协同</td>
+          <td>Capability-limited panes + Broadcast Input + 输出对比</td>
+          <td>pane 上限由 capability 决定，不在 core 硬编码 4/16；Broadcast 前展示目标快照、环境标签和风险提示；支持全部/部分成功、关闭 pane、输入长度、审计和一键停止；批量输出增加横向 diff/异常聚合。</td>
+          <td>Termius、MobaXterm、Xshell、Netcatty都证明“一次看/发多个会话”是高频价值；安全确认是 Relay 可形成的差异。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>隧道与认证</td>
+          <td>端口转发 + Agent Forwarding + OS keychain/FIDO2 边界</td>
+          <td>先做 local/remote/dynamic SOCKS 三种 forwarding；限定绑定地址、生命周期、自动启动/停止和审计；每条隧道显示 owner/目标/监听端口；能力不可用时统一返回 <code>CAPABILITY_UNAVAILABLE</code>。再评估 Agent/FIDO2/SSH certificate。</td>
+          <td>Termius、MobaXterm、Xshell、Netcatty和FinalShell都把隧道作为成熟工作流；这是从“能登录”到“能访问私网服务”的关键差距。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>文件与命令闭环</td>
+          <td>远程编辑器、会话日志与安全复盘</td>
+          <td>先做“外部编辑器/临时文件/保存回远端”的可控流程，再做内置编辑器；会话日志必须 opt-in、加密、可设 retention、默认脱敏，并明确不记录密码/私钥/原始终端内容。</td>
+          <td>MobaXterm、FinalShell、Termius、Xshell都在“文件/日志离开终端”上提供额外价值；Relay可用安全默认建立信任。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>迁移覆盖</td>
+          <td>FinalShell / Netcatty 导入与可逆导出</td>
+          <td>先定义厂商字段映射、受保护密码“需补录”、跳板链、重复冲突和原生格式法律/兼容边界；导出继续优先 OpenSSH/CSV/Relay 加密 bundle，避免伪造厂商格式。</td>
+          <td>Relay 已有 MobaXterm/Xshell/SecureCRT/Termius CSV 导入，应把迁移能力做成低锁定卖点。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p2">P2</span>平台扩展</td>
+          <td>桌面壳 / PWA / 移动生命周期</td>
+          <td>按 shared core → fake contract → adapter → UI 推进；优先 PWA/剪贴板/文件选择/下载和网络切换，再评估 Tauri/原生。禁止把 Web DOM 或浏览器 Blob 传播进 core。</td>
+          <td>Termius、Netcatty、FinalShell的跨端是明显吸引力；Relay先解决生命周期和大文件，再扩大端面。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p2">P2</span>团队与 Agent</td>
+          <td>团队 Vault/RBAC/SSO 与只读 Agent/MCP</td>
+          <td>团队能力必须先定义数据归属、最小权限、审批、审计和离线恢复；Agent 先做只读诊断/查询/预览，写入和批量执行沿用人工确认，不能静默执行。</td>
+          <td>Termius的团队 Vault/协作和 Netcatty 的 Agent/MCP 是战略压力，但不应早于可靠性和安全边界。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p2">P2</span>协议广度</td>
+          <td>Mosh、Serial、Telnet、RDP/VNC、X11</td>
+          <td>按用户分群和 capability 单独立项；每个协议都需要 adapter、权限模型、日志/审计和平台兼容性，不把协议实现塞进当前 shared core。</td>
+          <td>MobaXterm/FinalShell的“大而全”有吸引力，也会带来性能、兼容和维护成本；Relay应谨慎扩张。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>建议的版本节奏</h3>
+    <div class="grid">
+      <article class="card">
+        <h3><span class="priority p0">P0</span>可信工作台</h3>
+        <p>完成流式/断点传输、网络切换/重启/取消验收、连接诊断时间线和清晰的 interrupted/needs-reopen 语义。目标是“用户敢在生产环境用”。</p>
+      </article>
+      <article class="card">
+        <h3><span class="priority p1">P1</span>高密度工作流</h3>
+        <p>Recent/Tags/Quick Switcher、capability pane、Broadcast、输出 diff、端口转发、远程编辑和可选安全日志。目标是“少切换工具、少犯错”。</p>
+      </article>
+      <article class="card">
+        <h3><span class="priority p2">P2</span>平台与组织</h3>
+        <p>FinalShell/Netcatty 迁移、PWA/桌面/移动、团队 Vault/RBAC/SSO、只读 Agent/MCP和按需协议扩展。目标是“扩大可服务用户，而不牺牲 local-first 信任”。</p>
+      </article>
+    </div>
+
+    <h3>不要做的事</h3>
+    <ul>
+      <li>不要在大文件传输和会话恢复尚未可信前，优先堆 AI、监控或更多协议。</li>
+      <li>不要为了追 Termius 的 16 pane 而把 16 写死到 shared core；应以 capability 和平台上限约束。</li>
+      <li>不要弱化 Host Key 变更阻断、批量目标确认或审计脱敏来换取“一键连接”。</li>
+      <li>不要把“公开个别评论”写成竞品普遍故障；用户调研和自己的长时间压测仍是后续证据缺口。</li>
+    </ul>
+  </section>
+
+  <section id="sources">
+    <h2>Sources / 来源与限制</h2>
+    <h3>Relay 内部基线</h3>
+    <ul class="source-list">
+      <li><a href="/root/code/ssh-tools/README.md">Relay README</a>：部署、安全边界、工作区、SFTP、批量命令和非目标。</li>
+      <li><a href="/root/code/ssh-tools/docs/research/2026-09-16-termius-gap-review.md">Termius 体验差距复核</a>：当前 Relay 与 Termius 的内部对照、已知 P0/P1/P2 缺口。</li>
+      <li><a href="/root/code/ssh-tools/docs/product/2026-09-15-ssh-productivity-release.md">SSH Productivity 交付说明</a>：当前 Web-first 版本已交付范围和明确后置项。</li>
+      <li><a href="/root/code/ssh-tools/docs/ssh-interoperability-guide.md">SSH 跨产品迁移说明</a>：Relay 已支持的 OpenSSH、Termius CSV、MobaXterm、Xshell、SecureCRT 导入。</li>
+    </ul>
+
+    <h3>公共资料</h3>
+    <ul class="source-list">
+      <li><a href="https://www.termius.com/">Termius 官方产品页</a>、<a href="https://www.termius.com/pricing">官方定价</a>、<a href="https://termius.com/blog/workspaces">Workspace 文章</a>、<a href="https://apps.apple.com/us/app/termius-modern-ssh-client/id549039908?see-all=reviews">App Store 评论</a>：跨端、Vault、Workspace、Broadcast/协作、套餐与用户反馈。</li>
+      <li><a href="https://www.getmobaxterm.com/">MobaXterm 官方产品页</a>、<a href="https://www.getmobaxterm.com/faq">官方 FAQ</a>、<a href="https://www.trustradius.com/products/mobaxterm/reviews">TrustRadius 评论</a>、<a href="https://www.reddit.com/r/networking/comments/onthyd/which_ssh_clients_are_worth_using/">Reddit 讨论</a>：一站式协议、便携、SFTP/续传、许可证和公开痛点。</li>
+      <li><a href="https://www.xshell.com/en/xshell-all-features/">Xshell 官方功能规格</a>、<a href="https://www.xshell.com/en/xshell/">产品与定价</a>、<a href="https://www.xshell.com/docs/Xshell8_manual.pdf">Xshell 8 手册</a>、<a href="https://www.g2.com/products/xshell/reviews">G2 评论</a>、<a href="https://www.reddit.com/r/linuxadmin/comments/1w2oy2q/xshell_questions/">Reddit 讨论</a>：会话/脚本/隧道/文件能力、平台/价格与发现性问题。</li>
+      <li><a href="https://netcatty.app/en/docs/introduction/">Netcatty 官方介绍</a>、<a href="https://netcatty.app/en/docs/cloudsync/">同步架构</a>、<a href="https://netcatty.app/en/docs/release-notes/">发布记录</a>、<a href="https://github.com/binaricat/Netcatty/issues/2973">SFTP Issue</a>、<a href="https://github.com/binaricat/Netcatty/issues/1276">连接慢 Issue</a>、<a href="https://github.com/binaricat/Netcatty/issues/1897">渲染/CPU Issue</a>：跨平台、加密同步、AI/MCP、版本迭代与公开故障信号。</li>
+      <li><a href="https://www.finalshell.net.cn/downloads">FinalShell 官方功能页</a>、<a href="https://www.finalshell.net.cn/download">跨平台下载页</a>、<a href="https://finalshell.com.cn/articles/finalshell-troubleshooting-guide">官方排障指南</a>、<a href="https://bbs.huaweicloud.com/blogs/388931">华为云社区体验文章</a>：监控、SFTP、加速、版本分层与性能/稳定性信号。</li>
+    </ul>
+
+    <h3>依赖与证据缺口</h3>
+    <p>本简报使用了仓库文件和公开网络资料；没有 CRM、客户会议记录、内部聊天、销售情报或真实 Relay 用户行为分析。因此，关于“用户痛点”的部分是公开反馈和产品逻辑推断，最值得补的证据是：Relay 的真实传输失败率/耗时、网络切换后的 session 结果、按主机数量的 UI 性能、导入失败分布，以及 5–10 位目标用户的任务访谈。</p>
+    <p class="small">本简报不把任何未经证实的竞品弱点转化为客户对外话术；竞品能力和价格应在销售或产品评审前重新打开官方页面核对。</p>
+  </section>
+
+  <footer>Relay SSH 竞品与用户痛点竞争简报 · 研究日期 2026-09-16 · 事实、公开反馈和推断已尽量分层。</footer>
+</main>
+</body>
+</html>
