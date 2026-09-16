@@ -83,7 +83,7 @@
   <header>
     <div class="eyebrow">Relay / Competitive Brief / 2026-09-16</div>
     <h1>Relay SSH 竞品与用户痛点竞争简报</h1>
-    <p class="lead">比较 Termius、MobaXterm、Xshell、Netcatty、FinalShell 的产品亮点与公开用户痛点，并将结论映射到 Relay 的产品改进优先级。</p>
+    <p class="lead">比较 Termius、MobaXterm、Xshell、Netcatty、FinalShell 的产品亮点与公开用户痛点，并重点研究 Termius/Netcatty 的现代简洁 UI、交互模式和 Relay 可借鉴的改进路径。</p>
     <div class="meta">
       <span class="chip blue">范围：SSH 工作台 / 终端 / SFTP / 批量运维</span>
       <span class="chip green">证据：官方资料 + 公开评论/Issue + Relay 仓库基线</span>
@@ -96,7 +96,7 @@
     <div class="grid">
       <article class="card wide">
         <h3>一句话结论</h3>
-        <p>SSH 客户端的竞争焦点已经从“能否连上”转向“能否在正确的主机上，以可复用、可恢复、可审计的方式完成任务”。Relay 的基础安全和任务闭环已经有差异化，但最需要补的是传输可靠性、任务上下文密度、并行协同和平台可达性。</p>
+        <p>SSH 客户端的竞争焦点已经从“能否连上”转向“能否在正确的主机上，以可复用、可恢复、可审计的方式完成任务”。Relay 的基础安全和任务闭环已经有差异化，但最需要补的是传输可靠性、任务上下文密度、并行协同和平台可达性；现代 UI 的关键则是让用户少记忆、少跳转、少猜状态。</p>
         <div class="signal infer"><span class="label">产品推断</span><br>Relay 不应复制 MobaXterm/FinalShell 的“大而全”，而应把“自托管、local-first、可信状态、低锁定”做成明确的竞争定位。</div>
       </article>
       <article class="card wide">
@@ -213,6 +213,234 @@
     </table>
   </section>
 
+  <section id="ui-ux">
+    <h2>UI/UX Benchmark / UI 与交互体验调研</h2>
+    <p>本节关注“现代简洁”背后的交互结构，而不是简单换一套颜色或圆角。Termius 的公开设计说明和 Netcatty 的产品文档共同指向一个方向：把主机资产、当前任务、终端上下文和状态反馈分层组织；高密度能力通过搜索、快捷键和按需展开进入，而不是全部常驻在主界面。</p>
+
+    <div class="grid">
+      <article class="card">
+        <h3>Termius：把复杂度藏在任务结构里</h3>
+        <ul>
+          <li>从侧栏混合 Hosts、活动连接和 SFTP，转向把数据集中在 Vault、把终端放在更宽的顶部导航中，减少导航层级之间的混淆。</li>
+          <li>用 Command Palette 解决长标签和大量连接的发现问题：模糊搜索主机、环境和已打开 tab，键盘即可跳转或新建连接。</li>
+          <li>Workspace 默认 Focus，必要时切到 Split；后台连接仍可见，命令完成时提供通知，保存后可按任务重新打开。</li>
+          <li>SFTP 和 Transfers 有独立但靠近当前工作流的入口，用户无需离开任务去另一个工具。</li>
+        </ul>
+        <div class="signal infer"><span class="label">可借鉴原则</span><br>导航不追求“所有功能都可见”，而是把高频入口固定，把长尾能力放进 Command Palette、Workspace 和上下文面板。</div>
+        <p class="small"><a href="https://termius.com/blog/termius-x">桌面导航重构</a> · <a href="https://termius.com/blog/workspaces">Workspace Focus/Split</a> · <a href="https://termius.com/blog/workspaces-focus-without-losing-context">Focus、后台状态与 Broadcast</a> · <a href="https://termius.com/blog/rethinking-sftp-for-mobile">SFTP 与 Transfers</a></p>
+      </article>
+
+      <article class="card">
+        <h3>Netcatty：用可视线索和键盘降低认知负担</h3>
+        <ul>
+          <li>Vault 同时提供网格视图和紧凑列表视图：前者帮助快速识别，后者支持排序、批量编辑和高密度管理。</li>
+          <li>主机卡片使用 OS 图标、品牌色、Tags 和活跃会话计数；列表行提供悬停快捷动作，减少“先打开详情再操作”的往返。</li>
+          <li>全局搜索支持模糊匹配主机、IP、Tags、用户名；Keyboard-first 的快捷键可重映射，鼠标和键盘是两条等价路径。</li>
+          <li>SFTP 使用 Source/Destination 双栏和拖放作为主机制，隐藏文件、当前路径、选择和批量操作都有明确的视觉位置。</li>
+        </ul>
+        <div class="signal infer"><span class="label">可借鉴原则</span><br>把“我正在找哪台主机”和“我接下来要对它做什么”放在同一视图里；视图密度可切换，但对象模型和操作语义不变。</div>
+        <p class="small"><a href="https://netcatty.app/en/docs/introduction/">认知负担与视觉线索</a> · <a href="https://netcatty.app/en/docs/hosts-overview/">Vault 网格/列表/Tags</a> · <a href="https://netcatty.app/en/docs/terminal-shortcuts/">Keyboard-first 快捷键</a> · <a href="https://netcatty.app/en/docs/sftp-overview/">双栏 SFTP 与拖放</a></p>
+      </article>
+
+      <article class="card wide">
+        <h3>两者的共同规律：现代简洁 = 少打断 + 可见上下文</h3>
+        <div class="signal"><span class="label">1. 少记忆</span><br>用名称、Tags、环境、身份和最近使用记录替代 IP/端口/密钥的纯文本记忆。</div>
+        <div class="signal"><span class="label">2. 少跳转</span><br>终端、SFTP、任务状态和常用命令围绕当前 Workspace 组织，动作完成后仍回到原上下文。</div>
+        <div class="signal"><span class="label">3. 少猜测</span><br>连接、重连、文件传输、后台命令和危险操作都显示当前状态、下一步动作和影响范围。</div>
+        <div class="signal"><span class="label">4. 渐进暴露</span><br>默认界面只承担最常用的连接和任务；批量、脚本、协议、日志和高级设置按需展开。</div>
+      </article>
+    </div>
+
+    <h3>可直接借鉴的交互模式</h3>
+    <table>
+      <thead><tr><th>模式</th><th>Termius 观察</th><th>Netcatty 观察</th><th>Relay 建议</th><th>优先级</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>信息架构</td>
+          <td>把 Vault/数据与活动终端分开；Workspace 负责按任务组织连接。</td>
+          <td>Vault 是主对象，网格/列表是两种认知视图，Tags 跨层级筛选。</td>
+          <td>将 <code>Servers</code>（资产）、<code>Workspaces</code>（当前任务）、<code>Activity</code>（结果/历史）形成清晰一级入口；把身份、导入导出等长尾能力收进设置或上下文面板。</td>
+          <td><span class="priority p1">P1</span></td>
+        </tr>
+        <tr>
+          <td>快速发现</td>
+          <td>用模糊搜索连接和已打开 tab，解决长标签与大量连接的导航问题。</td>
+          <td>Cmd/Ctrl+P Quick Connect、Cmd/Ctrl+J Quick Switch，搜索主机、Tags 和命令。</td>
+          <td>统一一个 Quick Switcher：搜索 Host、Tag、Group、Identity、已打开 tab、Workspace 和 Snippet；搜索结果直接显示环境、用户名和连接状态。</td>
+          <td><span class="priority p1">P1</span></td>
+        </tr>
+        <tr>
+          <td>Focus 与并行</td>
+          <td>Focus 是默认注意力模式，Split 用于并行观察；Workspace 可保存并恢复。</td>
+          <td>Split Right/Down、快捷键可重映射，支持对当前 pane 的明确管理。</td>
+          <td>默认单 pane；需要并行时按 capability 展开 N pane。活动 pane 有明确边界、主机标签和输入状态，Broadcast 必须先展示目标快照。</td>
+          <td><span class="priority p1">P1</span></td>
+        </tr>
+        <tr>
+          <td>SFTP 上下文</td>
+          <td>SFTP 连接与终端 tab 并列，Transfers 有稳定入口，跨设备仍能找到任务。</td>
+          <td>Source/Destination 双栏、路径栏、拖放、隐藏文件开关和批量选择形成完整文件心智模型。</td>
+          <td>在当前 Host/Workspace 内打开 Remote Files 侧面板或底部面板，保留终端状态；补拖放、双栏/本地文件视图、可见 Transfer Center 和逐项恢复。</td>
+          <td><span class="priority p0">P0</span></td>
+        </tr>
+        <tr>
+          <td>视觉线索</td>
+          <td>深色终端、主机/环境命名、状态点和主题让多个会话可快速区分。</td>
+          <td>OS 图标、主色、Tags、Host 状态和活跃会话计数帮助扫视大库存。</td>
+          <td>为 Host 增加环境徽标（prod/staging/dev）、OS/协议、最近活动和 Host Key 状态；颜色必须同时配合文字和图标，不能只靠颜色。</td>
+          <td><span class="priority p1">P1</span></td>
+        </tr>
+        <tr>
+          <td>状态反馈</td>
+          <td>后台命令完成可通知，Workspace 让用户不必反复切换检查。</td>
+          <td>发布记录持续修复状态恢复、焦点指示、SFTP 操作、主题和渲染问题，说明这些细节直接影响可用性。</td>
+          <td>统一连接、SFTP、批量任务和 Workspace 的状态组件：当前阶段、耗时/进度、失败原因、是否可重试、下一步动作；禁止永久 loading。</td>
+          <td><span class="priority p0">P0</span></td>
+        </tr>
+        <tr>
+          <td>键盘与触控</td>
+          <td>快捷键承担 tab 跳转、连接创建和工作区切换。</td>
+          <td>快捷键可重映射，并明确处理终端复制/中断等冲突。</td>
+          <td>提供可搜索的 Shortcut Map；同一动作同时有按钮、快捷键和可访问名称；避免 Ctrl/Cmd+C、V、K 与 shell/浏览器语义冲突。</td>
+          <td><span class="priority p1">P1</span></td>
+        </tr>
+        <tr>
+          <td>移动与窄屏</td>
+          <td>手机使用底部导航，平板使用顶部 tab，按设备形态改变入口而不是缩小桌面界面。</td>
+          <td>跨桌面保持统一对象模型，窗口/托盘/恢复等状态仍在持续打磨。</td>
+          <td>先定义窄屏的单 pane、底部操作栏、文件选择和软键盘行为；不要把桌面四 pane 直接压缩到手机。</td>
+          <td><span class="priority p2">P2</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Relay 当前体验审查</h3>
+    <table>
+      <thead><tr><th>区域</th><th>当前基础</th><th>体验判断</th><th>应该怎么改</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>视觉层</td>
+          <td>已有深色/浅色/高对比主题、蓝/绿/黄/红状态语义、卡片、hover 和 focus-visible。</td>
+          <td><span class="status lead">Relay lead</span><br>基础语言已足够现代，不需要先做大规模视觉重塑。</td>
+          <td>控制渐变、阴影和装饰密度；把终端留给内容，把卡片留给资产列表；继续保证文字 + 图标 + 颜色三重语义。</td>
+        </tr>
+        <tr>
+          <td>一级导航</td>
+          <td>左侧有全部 Server、收藏、分组；顶部并列放置终端、活动、身份、片段、工作区和偏好。</td>
+          <td><span class="status pressure">Pressure from Termius</span><br>功能已齐，但入口层级偏扁平，容易变成“每个功能一个按钮”。</td>
+          <td>收敛为 Servers / Workspaces / Activity 三个任务入口；身份、片段、导入导出按上下文或设置进入；保留一个全局 Quick Switcher 兜底。</td>
+        </tr>
+        <tr>
+          <td>主机发现</td>
+          <td>支持名称、地址、用户名、Tags 搜索，收藏排序和分组筛选。</td>
+          <td><span class="status pressure">Pressure from Termius/Netcatty</span><br>已有数据能力，但 Recent、Tags 和已打开会话没有形成独立的“找任务”入口。</td>
+          <td>增加 Recent、Tags、保存视图和打开 tab 搜索；Host 卡片显示环境、协议、最近连接、身份和风险状态；悬停提供连接/SFTP/复制地址等低风险动作。</td>
+        </tr>
+        <tr>
+          <td>终端工作区</td>
+          <td>已有 tab、左右/上下/四格布局、活动 pane 同步、状态 aria-live 和键盘可调分隔线。</td>
+          <td><span class="status mixed">Mixed</span><br>可靠性和可访问性基础较好，但还不是 Focus/Split/Workspace 的统一注意力模型。</td>
+          <td>默认 Focus，Split 作为视图切换而不是永久布局；显示当前 Workspace、活动 pane、后台任务和未读结果；Broadcast 只能在清晰的目标上下文内出现。</td>
+        </tr>
+        <tr>
+          <td>SFTP</td>
+          <td>已有路径输入、面包屑、刷新、新建目录、上传、选择、下载、重命名和删除。</td>
+          <td><span class="status pressure">Pressure from Termius/Netcatty</span><br>当前更像“远程列表 + 操作栏”，还不是现代文件工作区。</td>
+          <td>加入拖放和本地文件面板；将上传/下载进度提升为稳定的 Transfer Center；保留当前 Host/Workspace 上下文，错误直接给出权限、路径、连接和恢复建议。</td>
+        </tr>
+        <tr>
+          <td>安全反馈</td>
+          <td>已有 Host Key 确认/变更阻断、批量目标预览、危险操作确认、dialog 焦点和状态文案。</td>
+          <td><span class="status lead">Relay lead</span><br>安全交互是可以保留的差异化，不应为了“更快”删掉确认。</td>
+          <td>把确认做得更短更具体：显示目标、环境、影响范围和可撤销性；安全错误区分“用户需要处理”和“可以自动重试”，不要只显示红色错误。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>建议的页面骨架</h3>
+    <div class="grid">
+      <article class="card">
+        <h3>1. Servers：找得到</h3>
+        <p>左侧是可收缩的 Servers 导航：All、Recent、Favorites、Tags、Groups；主区域顶部只有搜索/Quick Switcher 和一个主按钮“添加 Server”。列表/卡片切换用于在扫视和密度之间选择。</p>
+        <p class="small">Host 卡片优先显示：名称、环境、地址、用户名、协议、最近连接和安全状态。连接、SFTP、复制地址等低风险动作放在卡片上下文菜单中。</p>
+      </article>
+      <article class="card">
+        <h3>2. Workspace：做任务</h3>
+        <p>进入终端后，顶栏显示 Workspace 名称、主机数量、连接状态和保存/切换入口；默认 Focus，Split 是同一 Workspace 的另一种视角。tab 标签使用“别名 · 环境 · 用户”，而不是只展示长地址。</p>
+        <p class="small">后台 pane 有未读状态和完成通知；离开 Server 列表不应隐式销毁仍在运行的会话，无法保持时必须明确说明。</p>
+      </article>
+      <article class="card">
+        <h3>3. Context panels：少跳转</h3>
+        <p>Remote Files、Snippets、Activity 和目标选择器以侧面板/底部面板进入，不覆盖当前任务；面板标题始终带当前 Host/Workspace 上下文。高频动作保留在面板头部，长尾设置进入二级面板。</p>
+        <p class="small">Routine 操作用面板完成；删除、Host Key、Broadcast 和批量写操作才使用明确的确认对话框。</p>
+      </article>
+      <article class="card">
+        <h3>4. Safety rail：快，但不盲</h3>
+        <p>Broadcast、批量命令和删除等动作在执行前显示目标快照、环境徽标、命令/文件范围、并发和停止方式；执行中显示逐主机状态，完成后支持异常聚合和回到原任务。</p>
+        <p class="small">建议把安全确认做成“可读的最后一道检查”，而不是重复填写表单。</p>
+      </article>
+    </div>
+
+    <h3>UI/交互改进优先级</h3>
+    <table>
+      <thead><tr><th>优先级</th><th>改进项</th><th>具体交互要求</th><th>验收信号</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="priority p0">P0</span>状态可信</td>
+          <td>连接、SFTP、批量命令统一状态条和 Transfer Center</td>
+          <td>每个任务都有阶段、进度/耗时、失败原因、是否可重试、下一步动作；断线、取消、服务重启和锁定都有明确终态。</td>
+          <td>用户不需要刷新、重复点击或猜测“还在不在跑”。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>导航收敛</td>
+          <td>Servers / Workspaces / Activity + Quick Switcher</td>
+          <td>Ctrl/Cmd+K 进入模糊搜索，可找 Host、Tag、Group、Identity、tab、Workspace 和 Snippet；全局 header 不再平铺所有功能按钮。</td>
+          <td>从任意页面 2 次操作内回到目标主机或打开的会话。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>Focus/Split</td>
+          <td>任务视角与并行视角统一</td>
+          <td>默认 Focus；Split 按 capability 展开；pane 支持键盘调整和清晰活动边界；Broadcast 复用目标选择和安全预览。</td>
+          <td>用户能同时观察多个环境，但不会误把输入发给错误主机。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>文件工作区</td>
+          <td>双栏/拖放 SFTP + 上下文面板</td>
+          <td>左侧本地文件、右侧远端目录；路径/隐藏文件/选择/批量操作可见；上传下载进入全局 Transfer Center，并支持暂停、恢复、重试。</td>
+          <td>常见“上传配置、下载日志、改名、回到原终端”路径无需离开 Workspace。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>扫视线索</td>
+          <td>环境、OS、协议和安全状态徽标</td>
+          <td>在 Host 卡片、tab、pane 和确认框使用一致的环境徽标；颜色只做增强，文字必须直接说明 prod/staging、SSH/SFTP 和 Host Key 状态。</td>
+          <td>多台相似主机并列时，用户能快速回答“我连的是谁、处于什么风险”。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p1">P1</span>快捷键一致</td>
+          <td>Shortcut Map 与焦点策略</td>
+          <td>列出可搜索的快捷键；终端输入、浏览器快捷键、面板搜索和全局切换不互相抢占；每个 icon-only action 有 tooltip 和 aria-label。</td>
+          <td>键盘用户不需要记忆隐藏路径，触控用户也能完成同一任务。</td>
+        </tr>
+        <tr>
+          <td><span class="priority p2">P2</span>跨端适配</td>
+          <td>窄屏/移动导航与生命周期</td>
+          <td>手机使用单 pane、底部操作栏和适配软键盘的 SFTP/文件选择；平板再恢复多 pane；网络切换和后台恢复沿用同一状态语义。</td>
+          <td>不是把桌面 UI 缩小，而是保持对象和任务模型、重做入口密度。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>不要照搬的部分</h3>
+    <ul>
+      <li>不要把“现代”理解为所有操作都变成图标、浮层或隐藏手势；危险操作必须有可读文字和键盘/触控等价路径。</li>
+      <li>不要为了追求高密度，默认打开大量 pane、监控卡片或 AI 面板；终端内容仍应占据主要注意力。</li>
+      <li>不要把 OS 颜色、环境色或主题色当成唯一安全提示；生产环境、Host Key 和批量目标必须直接写出来。</li>
+      <li>不要在会话、SFTP 和传输状态还不可靠时，先做大规模视觉换肤；信任感来自可解释的状态和可恢复的动作。</li>
+    </ul>
+
+    <div class="signal user"><span class="label">证据限制</span><br>Termius/Netcatty 官方页面主要是产品设计与能力说明，不等同于独立可用性实验；公开 App Store、GitHub Issue 和 release notes 只能作为方向性信号。Relay 当前判断来自代码、已有 UX 走查和产品文档，下一步最值得补的是 5–10 位目标用户完成“找主机 → 打开 Workspace → 传文件 → 批量执行 → 断线恢复”的任务观察。</div>
+  </section>
+
   <section id="guidance">
     <h2>Guidance / Relay 改进清单</h2>
     <p>优先级按用户感知价值、风险和 Relay 现有架构连续性排序；P0/P1 是建议进入下一轮版本，P2 是完成边界设计后再做。</p>
@@ -320,9 +548,11 @@
     <h3>公共资料</h3>
     <ul class="source-list">
       <li><a href="https://www.termius.com/">Termius 官方产品页</a>、<a href="https://www.termius.com/pricing">官方定价</a>、<a href="https://termius.com/blog/workspaces">Workspace 文章</a>、<a href="https://apps.apple.com/us/app/termius-modern-ssh-client/id549039908?see-all=reviews">App Store 评论</a>：跨端、Vault、Workspace、Broadcast/协作、套餐与用户反馈。</li>
+      <li><a href="https://termius.com/blog/termius-x">Termius 桌面导航重构</a>、<a href="https://termius.com/blog/workspaces-focus-without-losing-context">Focus/Split 与 Workspace 状态</a>、<a href="https://termius.com/blog/rethinking-sftp-for-mobile">SFTP 与 Transfers 交互</a>：数据/终端分层、模糊搜索、任务视角、后台反馈和文件工作流。</li>
       <li><a href="https://www.getmobaxterm.com/">MobaXterm 官方产品页</a>、<a href="https://www.getmobaxterm.com/faq">官方 FAQ</a>、<a href="https://www.trustradius.com/products/mobaxterm/reviews">TrustRadius 评论</a>、<a href="https://www.reddit.com/r/networking/comments/onthyd/which_ssh_clients_are_worth_using/">Reddit 讨论</a>：一站式协议、便携、SFTP/续传、许可证和公开痛点。</li>
       <li><a href="https://www.xshell.com/en/xshell-all-features/">Xshell 官方功能规格</a>、<a href="https://www.xshell.com/en/xshell/">产品与定价</a>、<a href="https://www.xshell.com/docs/Xshell8_manual.pdf">Xshell 8 手册</a>、<a href="https://www.g2.com/products/xshell/reviews">G2 评论</a>、<a href="https://www.reddit.com/r/linuxadmin/comments/1w2oy2q/xshell_questions/">Reddit 讨论</a>：会话/脚本/隧道/文件能力、平台/价格与发现性问题。</li>
       <li><a href="https://netcatty.app/en/docs/introduction/">Netcatty 官方介绍</a>、<a href="https://netcatty.app/en/docs/cloudsync/">同步架构</a>、<a href="https://netcatty.app/en/docs/release-notes/">发布记录</a>、<a href="https://github.com/binaricat/Netcatty/issues/2973">SFTP Issue</a>、<a href="https://github.com/binaricat/Netcatty/issues/1276">连接慢 Issue</a>、<a href="https://github.com/binaricat/Netcatty/issues/1897">渲染/CPU Issue</a>：跨平台、加密同步、AI/MCP、版本迭代与公开故障信号。</li>
+      <li><a href="https://netcatty.app/en/docs/hosts-overview/">Netcatty Vault 视图</a>、<a href="https://netcatty.app/en/docs/terminal-shortcuts/">Keyboard-first 快捷键</a>、<a href="https://netcatty.app/en/docs/sftp-overview/">双栏 SFTP</a>：网格/列表、Tags、视觉线索、模糊搜索、可重映射快捷键和拖放文件交互。</li>
       <li><a href="https://www.finalshell.net.cn/downloads">FinalShell 官方功能页</a>、<a href="https://www.finalshell.net.cn/download">跨平台下载页</a>、<a href="https://finalshell.com.cn/articles/finalshell-troubleshooting-guide">官方排障指南</a>、<a href="https://bbs.huaweicloud.com/blogs/388931">华为云社区体验文章</a>：监控、SFTP、加速、版本分层与性能/稳定性信号。</li>
     </ul>
 
