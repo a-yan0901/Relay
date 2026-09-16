@@ -53,6 +53,20 @@ type ConnectionFeedback = {
   message: string;
 };
 
+interface DownloadWriter {
+  write(data: Uint8Array): Promise<void> | void;
+  seek?(position: number): Promise<void> | void;
+  close(): Promise<void> | void;
+}
+
+interface SaveFileHandle {
+  createWritable(): Promise<DownloadWriter>;
+}
+
+type FilePickerWindow = Window & {
+  showSaveFilePicker?: (options?: { suggestedName?: string }) => Promise<SaveFileHandle>;
+};
+
 const createTerminalId = (): string => {
   if (typeof globalThis.crypto?.randomUUID === 'function') return `terminal-${globalThis.crypto.randomUUID()}`;
   return `terminal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -164,6 +178,7 @@ export const App = ({ runtime }: AppProps) => {
   const [expiredRunIds, setExpiredRunIds] = useState<Set<string>>(new Set());
   const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
   const transferFilesRef = useRef(new Map<string, File>());
+  const downloadWritersRef = useRef(new Map<string, DownloadWriter>());
   const refreshedHostForTerminalRef = useRef(new Set<string>());
   const lockedFromCurrentAppRef = useRef(false);
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null);
@@ -516,14 +531,62 @@ export const App = ({ runtime }: AppProps) => {
     name: file.name,
     size: file.size,
     async *stream() {
-      yield new Uint8Array(await file.arrayBuffer());
+      const reader = file.stream().getReader();
+      try {
+        for (;;) {
+          const next = await reader.read();
+          if (next.done) return;
+          yield next.value;
+        }
+      } finally {
+        reader.releaseLock();
+      }
     }
   });
 
-  const streamToBlob = async (stream: AsyncIterable<Uint8Array>): Promise<Blob> => {
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of stream) chunks.push(chunk);
-    return new Blob(chunks.map((chunk) => chunk.slice().buffer as ArrayBuffer), { type: 'application/octet-stream' });
+  const triggerNativeDownload = (transferId: string, name: string): void => {
+    const anchor = document.createElement('a');
+    anchor.href = `/api/transfers/${encodeURIComponent(transferId)}/content?offset=0`;
+    anchor.download = name;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  };
+
+  const openDownloadWriter = async (name: string): Promise<DownloadWriter | null> => {
+    const picker = (window as FilePickerWindow).showSaveFilePicker;
+    if (!picker) return null;
+    try {
+      return await (await picker({ suggestedName: name })).createWritable();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') return null;
+      throw error;
+    }
+  };
+
+  const saveDownloadStream = async (transferId: string, stream: AsyncIterable<Uint8Array>, name: string, offset: number, preparedWriter?: DownloadWriter | null): Promise<void> => {
+    let writer: DownloadWriter | null | undefined = preparedWriter ?? downloadWritersRef.current.get(transferId);
+    if (!writer) {
+      writer = await openDownloadWriter(name);
+      if (!writer) throw new AppError('CAPABILITY_UNAVAILABLE', '当前浏览器不支持流式保存，请使用原生下载');
+      downloadWritersRef.current.set(transferId, writer);
+    } else {
+      downloadWritersRef.current.set(transferId, writer);
+    }
+    if (offset > 0) {
+      if (!writer.seek) throw new AppError('CAPABILITY_UNAVAILABLE', '当前浏览器不支持断点写入，请重新选择下载位置');
+      await writer.seek(offset);
+    }
+    for await (const chunk of stream) await writer.write(chunk);
+    await writer.close();
+    downloadWritersRef.current.delete(transferId);
+  };
+
+  const resumeRequestForJob = (job: TransferJob) => {
+    const checkpoint = job.checkpoint;
+    return checkpoint && checkpoint.offset > 0
+      ? { transferId: job.id, expectedOffset: checkpoint.offset, checksum: checkpoint.checksum }
+      : undefined;
   };
 
   const handleUploadSftp = async (hostId: string, file: File, path: string): Promise<void> => {
@@ -541,17 +604,16 @@ export const App = ({ runtime }: AppProps) => {
   };
 
   const handleDownloadSftp = async (hostId: string, sourcePath: string, name: string): Promise<void> => {
+    const writer = await openDownloadWriter(name);
     const job = await runtime.files.createTransfer({ kind: 'download', hostId, sourcePath, targetPath: name });
     updateTransferJob(job);
     try {
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-      const blob = await streamToBlob(await runtime.files.download(job.id));
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = name;
-      anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      if (!writer) {
+        triggerNativeDownload(job.id, name);
+        return;
+      }
+      await saveDownloadStream(job.id, await runtime.files.download(job.id), name, 0, writer);
       await refreshTransferJob(job.id);
     } catch (error) {
       await refreshTransferJob(job.id);
@@ -566,26 +628,28 @@ export const App = ({ runtime }: AppProps) => {
   };
 
   const handleRetryTransfer = (id: string): void => {
-    void runtime.files.retryTransfer(id).then((job) => {
+    const currentJob = transferJobs.find((candidate) => candidate.id === id);
+    const preparedWriter = currentJob?.kind === 'download' && !downloadWritersRef.current.has(id)
+      ? openDownloadWriter(currentJob.targetPath)
+      : Promise.resolve(downloadWritersRef.current.get(id) ?? null);
+    void preparedWriter.then((writer) => runtime.files.retryTransfer(id).then((job) => {
       updateTransferJob(job);
       if (job.kind === 'upload') {
         const file = transferFilesRef.current.get(id);
         if (!file) return;
         updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-        void runtime.files.upload(id, fileToBinarySource(file)).then(updateTransferJob).catch(() => refreshTransferJob(id));
+        void runtime.files.upload(id, fileToBinarySource(file), resumeRequestForJob(job)).then(updateTransferJob).catch(() => refreshTransferJob(id));
+        return;
+      }
+      if (!writer) {
+        triggerNativeDownload(id, job.targetPath);
         return;
       }
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-      void runtime.files.download(id).then(streamToBlob).then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = job.targetPath;
-        anchor.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      void runtime.files.download(id, resumeRequestForJob(job)).then((stream) => saveDownloadStream(id, stream, job.targetPath, job.checkpoint?.offset ?? 0, writer)).then(() => {
         return refreshTransferJob(id);
       }).catch(() => refreshTransferJob(id));
-    }).catch(() => undefined);
+    })).catch(() => undefined);
   };
 
   const handleOpenActivity = (): void => {
@@ -768,6 +832,7 @@ export const App = ({ runtime }: AppProps) => {
       setCommandRun(null);
       setTransferJobs([]);
       transferFilesRef.current.clear();
+      downloadWritersRef.current.clear();
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
     }

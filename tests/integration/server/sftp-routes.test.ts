@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { buildApp } from '../../../src/server/app.js';
 import { openDatabase } from '../../../src/server/db/database.js';
@@ -74,5 +74,89 @@ describe('sftp routes', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toBe('download-data');
+  });
+
+  it('forwards raw upload chunks and the resume checkpoint without building multipart content', async () => {
+    const job: TransferJob = {
+      id: 'upload-1',
+      kind: 'upload',
+      hostId: 'host-1',
+      sourcePath: 'local.txt',
+      targetPath: '/remote.txt',
+      status: 'queued',
+      completedBytes: 5,
+      totalBytes: 11,
+      checkpoint: { transferId: 'upload-1', offset: 5, totalBytes: 11, checksum: 'a'.repeat(64) },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const consumeUpload = vi.fn(async (_id: string, source: AsyncIterable<Uint8Array>, _onUpdate: unknown, _sessionKey: Buffer, resume: unknown) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of source) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks).toString()).toBe(' world');
+      expect(resume).toEqual({ transferId: 'upload-1', expectedOffset: 5, checksum: 'a'.repeat(64) });
+      return { ...job, status: 'completed' as const, completedBytes: 11 };
+    });
+    const transferManager = { get: async () => job, consumeUpload } as unknown as TransferManager;
+    const { app, cookie } = await setup(transferManager);
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/transfers/upload-1/content',
+      headers: {
+        cookie,
+        'content-type': 'application/octet-stream',
+        'x-transfer-offset': '5',
+        'x-transfer-checksum': 'a'.repeat(64)
+      },
+      payload: Buffer.from(' world')
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(consumeUpload).toHaveBeenCalledOnce();
+  });
+
+  it('forwards browser-compatible bounded upload chunk metadata', async () => {
+    const job: TransferJob = {
+      id: 'upload-chunk-1',
+      kind: 'upload',
+      hostId: 'host-1',
+      sourcePath: 'local.txt',
+      targetPath: '/remote.txt',
+      status: 'running',
+      completedBytes: 5,
+      totalBytes: 11,
+      checkpoint: { transferId: 'upload-chunk-1', offset: 5, totalBytes: 11, checksum: 'b'.repeat(64) },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const consumeUploadChunk = vi.fn(async (_id: string, source: AsyncIterable<Uint8Array>, _onUpdate: unknown, _sessionKey: Buffer, resume: unknown, nextChecksum: string, final: boolean) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of source) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks).toString()).toBe(' world');
+      expect(resume).toEqual({ transferId: 'upload-chunk-1', expectedOffset: 5, checksum: 'b'.repeat(64) });
+      expect(nextChecksum).toBe('c'.repeat(64));
+      expect(final).toBe(true);
+      return { ...job, status: 'completed' as const, completedBytes: 11 };
+    });
+    const transferManager = { get: async () => job, consumeUploadChunk } as unknown as TransferManager;
+    const { app, cookie } = await setup(transferManager);
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/transfers/upload-chunk-1/content/chunk',
+      headers: {
+        cookie,
+        'content-type': 'application/octet-stream',
+        'x-transfer-offset': '5',
+        'x-transfer-checksum': 'b'.repeat(64),
+        'x-transfer-next-checksum': 'c'.repeat(64),
+        'x-transfer-final': 'true'
+      },
+      payload: Buffer.from(' world')
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(consumeUploadChunk).toHaveBeenCalledOnce();
   });
 });

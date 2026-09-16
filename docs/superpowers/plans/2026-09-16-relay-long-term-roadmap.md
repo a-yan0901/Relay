@@ -302,7 +302,7 @@ export interface OperationDiagnostic {
 
 ## Task R-02: 流式 SFTP、断点续传和文件完整性
 
-**Status:** Ready
+**Status:** Done (2026-09-16)
 **Priority:** P0
 **Milestone:** M1
 **Depends on:** R-01 的 transfer 终态；现有 `BinarySource`/`ByteStream` adapter 边界。
@@ -311,10 +311,11 @@ export interface OperationDiagnostic {
 
 **Files:**
 
-- Modify: `src/shared/core/models.ts`, `src/shared/core/ports.ts`, `src/shared/core/state-machines.ts`, `src/shared/protocol.ts`
-- Modify: `src/server/sftp/transfer-manager.ts`, `src/server/sftp/sftp-adapter.ts`, `src/server/api/sftp-routes.ts`, `src/server/db/migrations.ts`, `src/server/db/repositories.ts`
-- Modify: `src/web/platform/web-adapters.ts`, `src/web/components/TransferQueue.tsx`, `src/web/components/SftpPanel.tsx`
-- Test: `tests/unit/server/transfer-manager.test.ts`, `tests/unit/server/transfer-restart.test.ts`, `tests/integration/server/sftp-routes.test.ts`, `tests/unit/web/web-adapters.test.ts`, `tests/unit/web/sftp-panel.dom.test.tsx`
+- Modify: `src/shared/core/models.ts`, `src/shared/core/ports.ts`, `src/shared/core/state-machines.ts`, `src/shared/errors.ts`, `src/shared/crypto/sha256.ts`
+- Modify: `src/server/app.ts`, `src/server/sftp/transfer-manager.ts`, `src/server/sftp/sftp-adapter.ts`, `src/server/sftp/types.ts`, `src/server/api/sftp-routes.ts`, `src/server/db/migrations.ts`, `src/server/db/repositories.ts`, `src/server/db/types.ts`
+- Modify: `src/web/api.ts`, `src/web/App.tsx`, `src/web/platform/web-adapters.ts`, `src/web/components/TransferQueue.tsx`, `src/web/components/SftpPanel.tsx`
+- Test: `tests/unit/shared/sha256.test.ts`, `tests/unit/shared/core-state-machines.test.ts`, `tests/unit/server/transfer-manager.test.ts`, `tests/unit/server/transfer-restart.test.ts`, `tests/unit/server/sftp-adapter.test.ts`, `tests/integration/server/sftp-routes.test.ts`, `tests/unit/web/web-adapters.test.ts`, `tests/unit/web/sftp-panel.dom.test.tsx`, `tests/e2e/ssh-productivity.spec.ts`
+- Docs: `README.md`, `docs/product/2026-09-15-ssh-productivity-release.md`, this roadmap
 
 **Interfaces:**
 
@@ -338,26 +339,28 @@ export interface TransferResumeRequest {
 - Web adapter 传递 `AsyncIterable<Uint8Array>`；不得在 `web-adapters.ts` 通过 `collectBinarySource` 将完整文件聚合成一个 Blob/Uint8Array 后再发送。
 - Server 的临时远端文件必须绑定 `hostId + transferId`，恢复前验证已有字节数和 checkpoint；checksum 不匹配从安全位置重新开始而不是拼接未知内容。
 
-- [ ] **Step 1: 写失败的中断、恢复和完整性测试。**
+- Chromium/HTTP/1.1 不可靠支持 streaming request body；Web adapter 使用固定 1 MiB 上限的 Blob 分块 PUT，并通过共享增量 SHA-256 传递每块前后 checkpoint。Server 保留 async iterable 的直接流式入口，分块入口只在块边界落盘和更新 checkpoint；现代浏览器用 File System Access writer 直接写下载流，其他浏览器使用带 Content-Disposition 的原生下载，均不在应用层聚合完整文件。
+
+- [x] **Step 1: 写失败的中断、恢复和完整性测试。**
 
   对上传/下载分别在 0%、中间 offset、接近完成处中断；断点恢复后比较最终 checksum；取消、失败和服务重启均断言目标文件不存在半文件，且重新执行不会复用其他 transfer 的临时文件。
 
-- [ ] **Step 2: 运行传输聚焦测试确认失败。**
+- [x] **Step 2: 运行传输聚焦测试确认失败。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   npm test -- --run tests/unit/server/transfer-manager.test.ts tests/unit/server/transfer-restart.test.ts tests/integration/server/sftp-routes.test.ts tests/unit/web/web-adapters.test.ts
   ```
 
-- [ ] **Step 3: 实现持久化 checkpoint 和 streaming adapter。**
+- [x] **Step 3: 实现持久化 checkpoint 和 streaming adapter。**
 
   给 transfer_jobs 增加 checkpoint/temporary path/last error 的非敏感字段；上传和下载按 chunk 更新进度；Web 文件读取和响应写出使用 async iterable；状态更新沿用 R-01 的 operation event。
 
-- [ ] **Step 4: 实现恢复与失败清理。**
+- [x] **Step 4: 实现恢复与失败清理。**
 
   `retry` 先读取当前 job 和 checkpoint，确认同一 owner/host/path，再调用 resume；取消、超时、连接错误和 checksum mismatch 执行临时文件清理或标记为可人工清理，不把远端临时文件显示为目标文件。
 
-- [ ] **Step 5: 运行 SFTP DOM、OpenSSH 和大文件 fixture。**
+- [x] **Step 5: 运行 SFTP DOM、OpenSSH 和大文件 fixture。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -365,11 +368,11 @@ export interface TransferResumeRequest {
   npm run test:e2e -- --project=chromium tests/e2e/ssh-productivity.spec.ts
   ```
 
-- [ ] **Step 6: 提交可靠传输 slice。**
+- [x] **Step 6: 提交可靠传输 slice。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-  git add src/shared/core/models.ts src/shared/core/ports.ts src/shared/core/state-machines.ts src/shared/protocol.ts src/server/sftp/transfer-manager.ts src/server/sftp/sftp-adapter.ts src/server/api/sftp-routes.ts src/server/db/migrations.ts src/server/db/repositories.ts src/web/platform/web-adapters.ts src/web/components/TransferQueue.tsx src/web/components/SftpPanel.tsx tests/unit/server/transfer-manager.test.ts tests/unit/server/transfer-restart.test.ts tests/integration/server/sftp-routes.test.ts tests/unit/web/web-adapters.test.ts tests/unit/web/sftp-panel.dom.test.tsx
+  git add src/shared/core/models.ts src/shared/core/ports.ts src/shared/core/state-machines.ts src/shared/errors.ts src/shared/crypto/sha256.ts src/server/app.ts src/server/sftp/transfer-manager.ts src/server/sftp/sftp-adapter.ts src/server/sftp/types.ts src/server/api/sftp-routes.ts src/server/db/migrations.ts src/server/db/repositories.ts src/server/db/types.ts src/web/api.ts src/web/App.tsx src/web/platform/web-adapters.ts src/web/components/TransferQueue.tsx src/web/components/SftpPanel.tsx tests/unit/shared/sha256.test.ts tests/unit/shared/core-state-machines.test.ts tests/unit/server/transfer-manager.test.ts tests/unit/server/transfer-restart.test.ts tests/unit/server/sftp-adapter.test.ts tests/integration/server/sftp-routes.test.ts tests/unit/web/web-adapters.test.ts tests/unit/web/sftp-panel.dom.test.tsx tests/e2e/ssh-productivity.spec.ts README.md docs/product/2026-09-15-ssh-productivity-release.md docs/superpowers/plans/2026-09-16-relay-long-term-roadmap.md
   git diff --cached --check
   git commit -m "feat: add resumable streaming sftp transfers"
   ```
@@ -381,7 +384,15 @@ export interface TransferResumeRequest {
 - 取消/失败/重启后状态可解释，半文件不会替代目标文件。
 - TransferQueue 可显示进度、速度/ETA、恢复位置、失败原因和下一步动作。
 
-**Verification:** server transfer unit/integration、Web adapter/DOM、OpenSSH SFTP fixture 和 Chromium E2E；M1 退出时按 Q-01 的 Release gate 执行全量回归。
+**Verification:**
+
+- Focused transfer/adapter/DOM：7 个文件、29 个测试通过；`npm run lint`、`npm run typecheck`、`npm run build` 通过。
+- SFTP DOM/Web adapter/OpenSSH：3 个文件、17 个测试通过。
+- Full regression：`npm test`，83 个测试文件、308 个测试全部通过。
+- Browser：`npm run test:e2e -- --project=chromium tests/e2e/ssh-productivity.spec.ts`，2/2 通过；覆盖真实 OpenSSH SFTP 上传、原生下载、取消清理、Workspace 和批量任务边界。
+- `git diff --check` 通过；feature commit：待提交后补充 hash。
+
+**Evidence gap / follow-up:** 当前 Chromium E2E 固定关闭系统文件选择器，验证了原生下载 fallback；File System Access writer 的真实浏览器交互需要在有权限的 headed 浏览器矩阵补充。多块上传由 1 MiB+3 B fixture 覆盖，真实 OpenSSH 仍是小文件边界；后续 R-03 可加入网络切换、请求丢响应和大文件长时传输矩阵。
 
 ---
 

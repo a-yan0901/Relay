@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { AppError } from '../../../src/shared/errors.js';
@@ -28,6 +29,56 @@ const fakeResource = (overrides: Partial<SftpResource> = {}): SftpResource & { w
     close() {}
   } satisfies SftpResource & { writes: string[]; renamed: Array<[string, string]>; removed: string[] };
   return Object.assign(target, overrides);
+};
+
+const resumableResource = (): SftpResource & { target: Buffer; temporary: Buffer; renamed: Array<[string, string]>; removed: string[]; failOnce: boolean } => {
+  const target = {
+    target: Buffer.alloc(0),
+    temporary: Buffer.alloc(0),
+    renamed: [],
+    removed: [],
+    failOnce: true,
+    async list() { return []; },
+    async stat(path: string) {
+      if (path.includes('.relay-tmp-')) return { name: path.split('/').at(-1) ?? path, path, type: 'file' as const, size: target.temporary.byteLength, mode: null, modifiedAt: null };
+      if (path === '/remote.txt' && target.target.byteLength > 0) return { name: 'remote.txt', path, type: 'file' as const, size: target.target.byteLength, mode: null, modifiedAt: null };
+      return null;
+    },
+    async mkdir() {},
+    async rename(from: string, to: string) {
+      target.renamed.push([from, to]);
+      target.target = target.temporary;
+      target.temporary = Buffer.alloc(0);
+    },
+    async remove(path: string) {
+      target.removed.push(path);
+      if (path.includes('.relay-tmp-')) target.temporary = Buffer.alloc(0);
+    },
+    async rmdir() {},
+    async writeFile(path: string, source: AsyncIterable<Uint8Array>, onProgress?: (bytes: number) => void, _signal?: AbortSignal, options?: { offset?: number }) {
+      const offset = options?.offset ?? 0;
+      if (offset === 0) target.temporary = Buffer.alloc(0);
+      let completed = offset;
+      for await (const chunk of source) {
+        const value = Buffer.from(chunk);
+        target.temporary = Buffer.concat([target.temporary.subarray(0, completed), value, target.temporary.subarray(completed + value.byteLength)]);
+        completed += value.byteLength;
+        onProgress?.(completed);
+        if (target.failOnce) {
+          target.failOnce = false;
+          throw new AppError('SFTP_CONNECTION_FAILED');
+        }
+      }
+    },
+    async readFile(path: string, _signal?: AbortSignal, options?: { offset?: number; end?: number }) {
+      const content = path.includes('.relay-tmp-') ? target.temporary : target.target;
+      const start = options?.offset ?? 0;
+      const end = options?.end ?? content.byteLength;
+      return (async function* () { yield content.subarray(start, end); })();
+    },
+    close() {}
+  } satisfies SftpResource & { target: Buffer; temporary: Buffer; renamed: Array<[string, string]>; removed: string[]; failOnce: boolean };
+  return target;
 };
 
 describe('TransferManager', () => {
@@ -117,5 +168,105 @@ describe('TransferManager', () => {
     await firstPromise;
     await expect(secondPromise).rejects.toMatchObject({ code: 'TRANSFER_CANCELLED' });
     expect(writeCount).toBe(1);
+  });
+
+  it('resumes a connection-interrupted upload from its verified checkpoint', async () => {
+    const nextResource = resumableResource();
+    const manager = new TransferManager({ resourceProvider: { open: async () => ({ resource: nextResource, close: () => nextResource.close() }) } });
+    const job = await manager.create({ kind: 'upload', hostId: 'host-1', sourcePath: 'local.txt', targetPath: '/remote.txt', totalBytes: 11 });
+    const source = () => chunks(['hello', ' world']);
+
+    await expect(manager.consumeUpload(job.id, source())).rejects.toMatchObject({ code: 'SFTP_CONNECTION_FAILED' });
+    const failed = await manager.get(job.id);
+    expect(failed).toMatchObject({ status: 'failed', completedBytes: 5, checkpoint: { offset: 5 } });
+    expect(nextResource.target).toHaveLength(0);
+
+    const queued = await manager.retry(job.id);
+    expect(queued).toMatchObject({ status: 'queued', completedBytes: 5, checkpoint: { offset: 5 } });
+    const resumed = await manager.consumeUpload(job.id, source(), undefined, undefined, {
+      transferId: job.id,
+      expectedOffset: 5,
+      checksum: failed?.checkpoint?.checksum ?? null
+    });
+
+    expect(resumed.status).toBe('completed');
+    expect(nextResource.target.toString()).toBe('hello world');
+    expect(createHash('sha256').update(nextResource.target).digest('hex')).toBe(resumed.checkpoint?.checksum);
+  });
+
+  it('resumes a connection-interrupted download from its verified remote prefix', async () => {
+    const remote = Buffer.from('hello world');
+    let failOnce = true;
+    const nextResource: SftpResource = {
+      async list() { return []; },
+      async stat(path) { return path === '/remote.txt' ? { name: 'remote.txt', path, type: 'file', size: remote.byteLength, mode: null, modifiedAt: null } : null; },
+      async mkdir() {},
+      async rename() {},
+      async remove() {},
+      async rmdir() {},
+      async writeFile() {},
+      async readFile(_path, _signal, options) {
+        const start = options?.offset ?? 0;
+        const end = options?.end ?? remote.byteLength;
+        return (async function* () {
+          if (start === 0 && options?.end === undefined && failOnce) {
+            failOnce = false;
+            yield remote.subarray(0, 5);
+            throw new AppError('SFTP_CONNECTION_FAILED');
+          }
+          yield remote.subarray(start, end);
+        })();
+      },
+      close() {}
+    };
+    const manager = new TransferManager({ resourceProvider: { open: async () => ({ resource: nextResource, close() {} }) } });
+    const job = await manager.create({ kind: 'download', hostId: 'host-1', sourcePath: '/remote.txt', targetPath: 'remote.txt', totalBytes: remote.byteLength });
+    const firstStream = await manager.streamDownload(job.id);
+    const firstOutput: Buffer[] = [];
+    await expect((async () => {
+      for await (const chunk of firstStream) firstOutput.push(Buffer.from(chunk));
+    })()).rejects.toMatchObject({ code: 'SFTP_CONNECTION_FAILED' });
+    const failed = await manager.get(job.id);
+    expect(Buffer.concat(firstOutput).toString()).toBe('hello');
+    expect(failed).toMatchObject({ status: 'failed', completedBytes: 5, checkpoint: { offset: 5 } });
+
+    await manager.retry(job.id);
+    const resumedStream = await manager.streamDownload(job.id, undefined, undefined, {
+      transferId: job.id,
+      expectedOffset: 5,
+      checksum: failed?.checkpoint?.checksum ?? null
+    });
+    const resumedOutput: Buffer[] = [];
+    for await (const chunk of resumedStream) resumedOutput.push(Buffer.from(chunk));
+
+    expect(Buffer.concat(resumedOutput).toString()).toBe(' world');
+    expect((await manager.get(job.id))?.status).toBe('completed');
+    expect((await manager.get(job.id))?.checkpoint?.checksum).toBe(createHash('sha256').update(remote).digest('hex'));
+  });
+
+  it('accepts bounded upload chunks and only publishes the target after the final checksum matches', async () => {
+    const nextResource = resumableResource();
+    nextResource.failOnce = false;
+    const manager = new TransferManager({ resourceProvider: { open: async () => ({ resource: nextResource, close: () => nextResource.close() }) } });
+    const job = await manager.create({ kind: 'upload', hostId: 'host-1', sourcePath: 'local.txt', targetPath: '/remote.txt', totalBytes: 11 });
+    const prefixChecksum = createHash('sha256').update('hello').digest('hex');
+    const finalChecksum = createHash('sha256').update('hello world').digest('hex');
+
+    const partial = await manager.consumeUploadChunk(job.id, chunks(['hello']), undefined, undefined, {
+      transferId: job.id,
+      expectedOffset: 0,
+      checksum: null
+    }, prefixChecksum, false);
+    expect(partial).toMatchObject({ status: 'running', completedBytes: 5, checkpoint: { offset: 5, checksum: prefixChecksum } });
+    expect(nextResource.target).toHaveLength(0);
+
+    const completed = await manager.consumeUploadChunk(job.id, chunks([' world']), undefined, undefined, {
+      transferId: job.id,
+      expectedOffset: 5,
+      checksum: prefixChecksum
+    }, finalChecksum, true);
+    expect(completed.status).toBe('completed');
+    expect(nextResource.target.toString()).toBe('hello world');
+    expect(completed.checkpoint?.checksum).toBe(finalChecksum);
   });
 });

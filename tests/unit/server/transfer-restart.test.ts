@@ -35,11 +35,28 @@ describe('transfer restart persistence', () => {
       VALUES (@id, @owner_id, @name, @address, @port, @username, @auth_type, @credential_ciphertext, @credential_version, @credential_source, @identity_id, @host_key_algorithm, @host_key_fingerprint, @group_id, @tags_json, @jump_host_ids_json, @connection_profile_json, @connection_profile_overrides_json, @is_favorite, @last_connected_at, @created_at, @updated_at)
     `).run(hostRow);
     const repository = new TransferRepository(database, 'owner-a');
-    repository.create({ ownerId: 'owner-a', id: 'transfer-restart', kind: 'download', hostId: 'host-1', sourcePath: '/remote.txt', targetPath: 'remote.txt', status: 'running', completedBytes: 4, totalBytes: 10, createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString() });
+    repository.create({
+      ownerId: 'owner-a',
+      id: 'transfer-restart',
+      kind: 'download',
+      hostId: 'host-1',
+      sourcePath: '/remote.txt',
+      targetPath: 'remote.txt',
+      status: 'running',
+      completedBytes: 4,
+      totalBytes: 10,
+      checkpointOffset: 4,
+      checkpointChecksum: 'a'.repeat(64),
+      temporaryPath: null,
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString()
+    });
 
     const manager = new TransferManager({ ownerId: 'owner-a', repository, resourceProvider: { open: async () => ({ resource: resource(), close() {} }) }, now: () => 1_000 });
-    expect(await manager.get('transfer-restart')).toMatchObject({ status: 'interrupted', errorCode: 'SERVICE_RESTARTED' });
+    expect(await manager.get('transfer-restart')).toMatchObject({ status: 'interrupted', errorCode: 'SERVICE_RESTARTED', completedBytes: 4, checkpoint: { offset: 4, checksum: 'a'.repeat(64) } });
     expect((await manager.retry('transfer-restart')).status).toBe('queued');
+    expect((await manager.get('transfer-restart'))?.checkpoint?.offset).toBe(4);
+    expect((await manager.get('transfer-restart'))?.completedBytes).toBe(4);
     expect(repository.get('transfer-restart')?.status).toBe('queued');
   });
 });

@@ -14,6 +14,7 @@ const sftpErrorMessage = (error: unknown, action: SftpAction): string => {
     if (error.code === 'SFTP_NOT_FOUND') return '远程文件或目录不存在，请刷新后重试';
     if (error.code === 'SFTP_PATH_INVALID') return '远程路径无效，请检查路径后重试';
     if (error.code === 'SFTP_CONNECTION_FAILED') return `${action}失败，SFTP 连接已断开`;
+    if (error.code === 'TRANSFER_RESUME_INVALID') return `${action}的断点校验失败，已回退到安全位置，请重试`;
   }
   return `${action}失败，请检查远程路径和权限`;
 };

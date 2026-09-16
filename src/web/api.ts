@@ -1,5 +1,5 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
-import type { ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, GroupNode, HostListFilter, IdentityMetadata, SftpEntry, Snippet, SnippetMetadata, TransferJob, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
+import type { ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, GroupNode, HostListFilter, IdentityMetadata, SftpEntry, Snippet, SnippetMetadata, TransferJob, TransferResumeRequest, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
 
@@ -78,26 +78,34 @@ const parseErrorBody = async (response: Response): Promise<ApiErrorBody> => {
 type RequestOptions = {
   method?: string;
   headers?: Headers;
-  body?: string | Blob | FormData;
+  body?: string | Blob | FormData | ReadableStream<Uint8Array>;
   acceptedStatuses?: readonly number[];
-  responseType?: 'json' | 'blob';
+  responseType?: 'json' | 'blob' | 'stream';
+  /** Streaming transfers must not be aborted by the short control-request timeout. */
+  timeoutMs?: number | null;
+  duplex?: 'half';
 };
+
+const isReadableStream = (value: unknown): value is ReadableStream<Uint8Array> => (
+  typeof value === 'object' && value !== null && typeof (value as { getReader?: unknown }).getReader === 'function'
+);
 
 const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> => {
   const headers = new Headers(init.headers);
   if (typeof init.body === 'string' && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
-  const { acceptedStatuses = [], responseType = 'json', ...fetchOptions } = init;
+  const { acceptedStatuses = [], responseType = 'json', timeoutMs = REQUEST_TIMEOUT_MS, duplex, ...fetchOptions } = init;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = timeoutMs === null ? undefined : setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       ...fetchOptions,
       headers,
       credentials: 'same-origin',
-      signal: controller.signal
-    });
+      signal: controller.signal,
+      ...(duplex === undefined && isReadableStream(init.body) ? { duplex: 'half' as const } : duplex === undefined ? {} : { duplex })
+    } as Parameters<typeof fetch>[1] & { duplex?: 'half' });
 
     if (!response.ok && !acceptedStatuses.includes(response.status)) {
       const body = await parseErrorBody(response);
@@ -112,8 +120,9 @@ const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> =>
     if (response.status === 204) {
       return undefined as T;
     }
-    if (responseType === 'blob') {
-      return await response.blob() as T;
+    if (responseType === 'blob') return await response.blob() as T;
+    if (responseType === 'stream') {
+      return (response.body ?? new ReadableStream<Uint8Array>()) as T;
     }
     return await response.json() as T;
   } catch (error) {
@@ -122,7 +131,7 @@ const request = async <T>(url: string, init: RequestOptions = {}): Promise<T> =>
     }
     throw error;
   } finally {
-    clearTimeout(timeout);
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 };
 
@@ -305,18 +314,40 @@ export const listTransfers = (): Promise<TransferJob[]> => request<TransferJob[]
 
 export const getTransfer = (id: string): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}`);
 
-export const uploadTransferContent = (id: string, file: Blob): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}/content`, {
+export const uploadTransferContent = (id: string, source: ReadableStream<Uint8Array>, resume?: TransferResumeRequest): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}/content`, {
   method: 'PUT',
-  body: (() => {
-    const form = new FormData();
-    const filename = 'name' in file && typeof file.name === 'string' ? file.name : 'upload';
-    form.append('file', file, filename);
-    return form;
-  })()
+  headers: new Headers({
+    'content-type': 'application/octet-stream',
+    ...(resume === undefined ? {} : {
+      'x-transfer-offset': String(resume.expectedOffset),
+      ...(resume.checksum === null ? {} : { 'x-transfer-checksum': resume.checksum })
+    })
+  }),
+  body: source,
+  timeoutMs: null,
+  duplex: 'half'
 });
 
-export const downloadTransferContent = (id: string): Promise<Blob> => request<Blob>(`/api/transfers/${encodeURIComponent(id)}/content`, {
-  responseType: 'blob'
+export const uploadTransferChunk = (id: string, chunk: Blob, resume: TransferResumeRequest, nextChecksum: string, final: boolean): Promise<TransferJob> => request<TransferJob>(`/api/transfers/${encodeURIComponent(id)}/content/chunk`, {
+  method: 'PUT',
+  headers: new Headers({
+    'content-type': 'application/octet-stream',
+    'x-transfer-offset': String(resume.expectedOffset),
+    ...(resume.checksum === null ? {} : { 'x-transfer-checksum': resume.checksum }),
+    'x-transfer-next-checksum': nextChecksum,
+    'x-transfer-final': String(final)
+  }),
+  body: chunk,
+  timeoutMs: null
+});
+
+export const downloadTransferContent = (id: string, resume?: TransferResumeRequest): Promise<ReadableStream<Uint8Array>> => request<ReadableStream<Uint8Array>>(`/api/transfers/${encodeURIComponent(id)}/content`, {
+  headers: resume === undefined ? undefined : new Headers({
+    'x-transfer-offset': String(resume.expectedOffset),
+    ...(resume.checksum === null ? {} : { 'x-transfer-checksum': resume.checksum })
+  }),
+  responseType: 'stream',
+  timeoutMs: null
 });
 
 export const cancelTransfer = (id: string): Promise<void> => request<void>(`/api/transfers/${encodeURIComponent(id)}`, { method: 'DELETE' });

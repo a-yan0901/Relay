@@ -98,6 +98,7 @@ test.describe('SSH productivity boundaries', () => {
   test('recovers workspaces, closes live sockets, completes SFTP, and audits batch execution', async ({ page }) => {
     test.setTimeout(180_000);
     await installSocketCapture(page);
+    await disableFilePicker(page);
     await waitForReady(page);
     await clearWorkspace(page);
 
@@ -211,4 +212,9 @@ const installSocketCapture = async (page: Page): Promise<void> => {
     });
     (window as Window & { __relaySockets?: WebSocket[] }).__relaySockets = sockets;
   });
+};
+
+const disableFilePicker = async (page: Page): Promise<void> => {
+  // Headless Chromium cannot open a user-writable picker; exercise the native download fallback.
+  await page.addInitScript(() => Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined }));
 };

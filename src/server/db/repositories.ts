@@ -160,6 +160,9 @@ interface TransferJobSqlRow {
   completed_bytes: number;
   total_bytes: number | null;
   error_code: string | null;
+  checkpoint_offset: number;
+  checkpoint_checksum: string | null;
+  temporary_path: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -436,6 +439,13 @@ const toTransferJobRow = (row: TransferJobSqlRow): TransferJobRow => ({
   completedBytes: row.completed_bytes,
   totalBytes: row.total_bytes,
   ...(row.error_code === null ? {} : { errorCode: row.error_code }),
+  checkpoint: {
+    transferId: row.id,
+    offset: row.checkpoint_offset,
+    totalBytes: row.total_bytes,
+    checksum: row.checkpoint_checksum
+  },
+  temporaryPath: row.temporary_path,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -1477,8 +1487,8 @@ export class TransferRepository {
     assertIdentifier(input.id, 'HOST_VALIDATION_FAILED');
     if (input.ownerId !== this.ownerId) throw new AppError('HOST_VALIDATION_FAILED');
     this.database.prepare(`
-      INSERT INTO transfer_jobs (id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, created_at, updated_at)
-      VALUES (@id, @ownerId, @kind, @hostId, @sourcePath, @targetPath, @status, @completedBytes, @totalBytes, @errorCode, @createdAt, @updatedAt)
+      INSERT INTO transfer_jobs (id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, checkpoint_offset, checkpoint_checksum, temporary_path, created_at, updated_at)
+      VALUES (@id, @ownerId, @kind, @hostId, @sourcePath, @targetPath, @status, @completedBytes, @totalBytes, @errorCode, @checkpointOffset, @checkpointChecksum, @temporaryPath, @createdAt, @updatedAt)
     `).run({
       id: input.id,
       ownerId: this.ownerId,
@@ -1490,6 +1500,9 @@ export class TransferRepository {
       completedBytes: input.completedBytes,
       totalBytes: input.totalBytes,
       errorCode: input.errorCode ?? null,
+      checkpointOffset: input.checkpointOffset ?? input.completedBytes,
+      checkpointChecksum: input.checkpointChecksum ?? null,
+      temporaryPath: input.temporaryPath ?? null,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt
     });
@@ -1501,7 +1514,7 @@ export class TransferRepository {
   get(id: string): TransferJobRow | null {
     assertIdentifier(id, 'HOST_VALIDATION_FAILED');
     const row = this.database.prepare(`
-      SELECT id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, created_at, updated_at
+      SELECT id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, checkpoint_offset, checkpoint_checksum, temporary_path, created_at, updated_at
       FROM transfer_jobs WHERE id = @id AND owner_id = @ownerId
     `).get({ id, ownerId: this.ownerId }) as TransferJobSqlRow | undefined;
     return row ? toTransferJobRow(row) : null;
@@ -1509,7 +1522,7 @@ export class TransferRepository {
 
   list(): TransferJobRow[] {
     const rows = this.database.prepare(`
-      SELECT id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, created_at, updated_at
+      SELECT id, owner_id, kind, host_id, source_path, target_path, status, completed_bytes, total_bytes, error_code, checkpoint_offset, checkpoint_checksum, temporary_path, created_at, updated_at
       FROM transfer_jobs WHERE owner_id = @ownerId ORDER BY updated_at DESC
     `).all({ ownerId: this.ownerId }) as TransferJobSqlRow[];
     return rows.map(toTransferJobRow);
@@ -1521,7 +1534,9 @@ export class TransferRepository {
     this.database.prepare(`
       UPDATE transfer_jobs
       SET status = @status, completed_bytes = @completedBytes, total_bytes = @totalBytes,
-          error_code = @errorCode, updated_at = @updatedAt
+          error_code = @errorCode, checkpoint_offset = @checkpointOffset,
+          checkpoint_checksum = @checkpointChecksum, temporary_path = @temporaryPath,
+          updated_at = @updatedAt
       WHERE id = @id AND owner_id = @ownerId
     `).run({
       id,
@@ -1530,6 +1545,9 @@ export class TransferRepository {
       completedBytes: patch.completedBytes ?? current.completedBytes,
       totalBytes: patch.totalBytes === undefined ? current.totalBytes : patch.totalBytes,
       errorCode: patch.errorCode === undefined ? current.errorCode ?? null : patch.errorCode ?? null,
+      checkpointOffset: patch.checkpointOffset ?? current.checkpoint?.offset ?? current.completedBytes,
+      checkpointChecksum: patch.checkpointChecksum === undefined ? current.checkpoint?.checksum ?? null : patch.checkpointChecksum ?? null,
+      temporaryPath: patch.temporaryPath === undefined ? current.temporaryPath : patch.temporaryPath,
       updatedAt: patch.updatedAt ?? current.updatedAt
     });
     const updated = this.get(id);

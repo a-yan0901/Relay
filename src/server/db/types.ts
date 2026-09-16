@@ -188,10 +188,14 @@ export interface CommandRunTargetRow {
 
 export interface TransferJobRow extends TransferJob {
   ownerId: string;
+  temporaryPath: string | null;
 }
 
 export type TransferJobPatch = Partial<Pick<TransferJob, 'status' | 'completedBytes' | 'totalBytes' | 'updatedAt'>> & {
   errorCode?: string | null;
+  checkpointOffset?: number;
+  checkpointChecksum?: string | null;
+  temporaryPath?: string | null;
 };
 
 export interface TransferJobCreateRow {
@@ -205,6 +209,9 @@ export interface TransferJobCreateRow {
   completedBytes: number;
   totalBytes: number | null;
   errorCode?: string;
+  checkpointOffset?: number;
+  checkpointChecksum?: string | null;
+  temporaryPath?: string | null;
   createdAt: string;
   updatedAt: string;
 }

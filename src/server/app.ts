@@ -189,6 +189,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   });
   await app.register(websocket);
   await app.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 * 1024 } });
+  app.addContentTypeParser('application/octet-stream', (_request, payload, done) => done(null, payload));
 
   app.addHook('onRequest', async (request) => {
     if (!isMutatingMethod(request.method) || !request.headers.origin) {

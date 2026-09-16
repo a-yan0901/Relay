@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { AppError } from '../../shared/errors.js';
 import { operationNextAction } from '../../shared/core/state-machines.js';
-import type { OperationDiagnostic, TransferJob } from '../../shared/core/models.js';
+import type { OperationDiagnostic, TransferJob, TransferResumeRequest } from '../../shared/core/models.js';
 import { parseTransferRequest } from '../../shared/validation.js';
 import { SessionStore } from '../auth/session-store.js';
 import { AuditRepository } from '../db/repositories.js';
@@ -39,6 +39,36 @@ const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
 
 const readHostId = (params: unknown): string => parse(hostParamsSchema, params).hostId;
 const readTransferId = (params: unknown): string => parse(transferParamsSchema, params).transferId;
+
+const headerValue = (request: FastifyRequest, name: string): string | undefined => {
+  const value = request.headers[name];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+const queryValue = (request: FastifyRequest, name: string): string | undefined => {
+  const value = (request.query as Record<string, unknown>)[name];
+  return typeof value === 'string' ? value : undefined;
+};
+
+const readTransferResume = (request: FastifyRequest, transferId: string): TransferResumeRequest | undefined => {
+  const offsetValue = headerValue(request, 'x-transfer-offset') ?? queryValue(request, 'offset');
+  const checksumValue = headerValue(request, 'x-transfer-checksum') ?? queryValue(request, 'checksum');
+  if (offsetValue === undefined && checksumValue === undefined) return undefined;
+  const expectedOffset = Number(offsetValue);
+  if (offsetValue === undefined || !Number.isSafeInteger(expectedOffset) || expectedOffset < 0) throw new AppError('TRANSFER_RESUME_INVALID');
+  if (checksumValue !== undefined && !/^[a-f0-9]{64}$/iu.test(checksumValue)) throw new AppError('TRANSFER_RESUME_INVALID');
+  return { transferId, expectedOffset, checksum: checksumValue?.toLowerCase() ?? null };
+};
+
+const readTransferChunk = (request: FastifyRequest, transferId: string): { resume: TransferResumeRequest; nextChecksum: string; final: boolean } => {
+  const resume = readTransferResume(request, transferId);
+  const nextChecksum = headerValue(request, 'x-transfer-next-checksum');
+  const finalValue = headerValue(request, 'x-transfer-final');
+  if (!resume || nextChecksum === undefined || !/^[a-f0-9]{64}$/iu.test(nextChecksum) || !['true', 'false'].includes(finalValue ?? '')) {
+    throw new AppError('TRANSFER_RESUME_INVALID');
+  }
+  return { resume, nextChecksum: nextChecksum.toLowerCase(), final: finalValue === 'true' };
+};
 
 const transferDiagnostic = (job: TransferJob, requestId: string): OperationDiagnostic | null => {
   if (job.status === 'queued') return null;
@@ -117,9 +147,18 @@ export const registerSftpRoutes = async (app: FastifyInstance, dependencies: Sft
     } else {
       source = request.raw as unknown as AsyncIterable<Uint8Array>;
     }
-    const job = await dependencies.transferManager.consumeUpload(transferId, source, (updated) => publishTransferUpdate(request.id, updated), session.record.vaultKey);
+    const job = await dependencies.transferManager.consumeUpload(transferId, source, (updated) => publishTransferUpdate(request.id, updated), session.record.vaultKey, readTransferResume(request, transferId));
     reply.send(job);
   };
+
+  app.put('/api/transfers/:transferId/content/chunk', async (request, reply) => {
+    const session = requireUnlockedSession(request, dependencies.sessionStore);
+    const transferId = readTransferId(request.params);
+    const chunk = readTransferChunk(request, transferId);
+    const source = request.raw as unknown as AsyncIterable<Uint8Array>;
+    const job = await dependencies.transferManager.consumeUploadChunk(transferId, source, (updated) => publishTransferUpdate(request.id, updated), session.record.vaultKey, chunk.resume, chunk.nextChecksum, chunk.final);
+    reply.send(job);
+  });
 
   app.post('/api/transfers/:transferId/content', uploadTransferContent);
   app.put('/api/transfers/:transferId/content', uploadTransferContent);
@@ -129,9 +168,10 @@ export const registerSftpRoutes = async (app: FastifyInstance, dependencies: Sft
     const transferId = readTransferId(request.params);
     const job = await dependencies.transferManager.get(transferId);
     if (!job) throw new AppError('TRANSFER_NOT_FOUND');
-    const stream = await dependencies.transferManager.streamDownload(transferId, session.record.vaultKey, (updated) => publishTransferUpdate(request.id, updated));
+    const stream = await dependencies.transferManager.streamDownload(transferId, session.record.vaultKey, (updated) => publishTransferUpdate(request.id, updated), readTransferResume(request, transferId));
+    const preparedJob = await dependencies.transferManager.get(transferId);
     const filename = (job.sourcePath.split('/').at(-1) || 'download').replace(/[\r\n"\\]/gu, '_');
-    return reply.header('content-disposition', `attachment; filename="${filename}"`).type('application/octet-stream').send(Readable.from(stream));
+    return reply.header('content-disposition', `attachment; filename="${filename}"`).header('x-transfer-offset', String(preparedJob?.checkpoint?.offset ?? 0)).type('application/octet-stream').send(Readable.from(stream));
   });
 
   app.get('/api/transfers', async (request, reply) => {

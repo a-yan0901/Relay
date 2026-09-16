@@ -4,7 +4,7 @@ import type { Readable, Writable } from 'node:stream';
 import { AppError } from '../../shared/errors.js';
 import type { SftpEntry } from '../../shared/core/models.js';
 import type { SshConnectionResource, SshSftpResource } from '../ssh/types.js';
-import type { SftpResource } from './types.js';
+import type { SftpReadOptions, SftpResource, SftpWriteOptions } from './types.js';
 
 interface RawSftpAttributes {
   mode?: number;
@@ -18,6 +18,12 @@ interface RawSftpEntry {
   attrs: RawSftpAttributes;
 }
 
+interface RawStreamOptions {
+  flags?: string;
+  start?: number;
+  end?: number;
+}
+
 interface RawSftpResource {
   readdir(path: string, callback: (error: Error | undefined, entries: RawSftpEntry[]) => void): void;
   stat(path: string, callback: (error: Error | undefined, attrs: RawSftpAttributes) => void): void;
@@ -25,8 +31,8 @@ interface RawSftpResource {
   rename(from: string, to: string, callback: (error: Error | undefined) => void): void;
   unlink(path: string, callback: (error: Error | undefined) => void): void;
   rmdir(path: string, callback: (error: Error | undefined) => void): void;
-  createReadStream(path: string): Readable;
-  createWriteStream(path: string): Writable;
+  createReadStream(path: string, options?: RawStreamOptions): Readable;
+  createWriteStream(path: string, options?: RawStreamOptions): Writable;
   end?(): void;
 }
 
@@ -60,7 +66,7 @@ const mapEntry = (basePath: string, entry: RawSftpEntry): SftpEntry => {
   };
 };
 
-const writeStream = async (stream: Writable, source: AsyncIterable<Uint8Array>, signal?: AbortSignal): Promise<void> => {
+const writeStream = async (stream: Writable, source: AsyncIterable<Uint8Array>, onProgress?: (completedBytes: number) => void, signal?: AbortSignal, initialOffset = 0): Promise<void> => {
   let aborted = false;
   const onAbort = (): void => {
     aborted = true;
@@ -68,9 +74,13 @@ const writeStream = async (stream: Writable, source: AsyncIterable<Uint8Array>, 
   };
   signal?.addEventListener('abort', onAbort, { once: true });
   try {
+    let completedBytes = initialOffset;
     for await (const chunk of source) {
       if (aborted || signal?.aborted) throw new AppError('TRANSFER_CANCELLED');
-      if (!stream.write(Buffer.from(chunk))) await once(stream, 'drain');
+      const value = Buffer.from(chunk);
+      if (!stream.write(value)) await once(stream, 'drain');
+      completedBytes += value.byteLength;
+      onProgress?.(completedBytes);
     }
     await new Promise<void>((resolve, reject) => {
       stream.once('error', reject);
@@ -102,14 +112,26 @@ export const createSftpResource = (raw: unknown): SftpResource => {
     rename: (from, to) => callbackVoid((callback) => resource.rename(from, to, callback)),
     remove: (path) => callbackVoid((callback) => resource.unlink(path, callback)),
     rmdir: (path) => callbackVoid((callback) => resource.rmdir(path, callback)),
-    writeFile: (path, source, _onProgress, signal) => writeStream(resource.createWriteStream(path), source, signal),
-    readFile: async (path, signal) => {
-      const stream = resource.createReadStream(path);
+    writeFile: (path, source, _onProgress, signal, options?: SftpWriteOptions) => {
+      const offset = options?.offset ?? 0;
+      const stream = resource.createWriteStream(path, offset > 0 && options?.truncate !== true
+        ? { flags: 'r+', start: offset }
+        : { flags: 'w', start: 0 });
+      return writeStream(stream, source, _onProgress, signal, offset);
+    },
+    readFile: async (path, signal, options?: SftpReadOptions) => {
+      const offset = options?.offset ?? 0;
+      const stream = resource.createReadStream(path, {
+        start: offset,
+        ...(options?.end === undefined ? {} : { end: Math.max(offset, options.end - 1) })
+      });
       if (signal?.aborted) {
         stream.destroy(new AppError('TRANSFER_CANCELLED'));
         throw new AppError('TRANSFER_CANCELLED');
       }
-      signal?.addEventListener('abort', () => stream.destroy(new AppError('TRANSFER_CANCELLED')), { once: true });
+      const onAbort = (): void => { stream.destroy(new AppError('TRANSFER_CANCELLED')); };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      stream.once('close', () => signal?.removeEventListener('abort', onAbort));
       return stream as AsyncIterable<Uint8Array>;
     },
     close: () => resource.end?.()

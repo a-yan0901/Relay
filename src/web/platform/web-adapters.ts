@@ -13,6 +13,7 @@ import type {
   Snippet,
   SnippetMetadata,
   TransferJob,
+  TransferResumeRequest,
   TransferRequest,
   WorkspaceState
 } from '../../shared/core/models';
@@ -45,6 +46,7 @@ import type { TerminalSocketLike } from '../hooks/use-terminal-session';
 import { TerminalSessionController } from '../hooks/use-terminal-session';
 import * as api from '../api';
 import type { CapabilityResponse } from '../api';
+import { Sha256 } from '../../shared/crypto/sha256';
 
 const emptyWorkspace = (): WorkspaceState => ({
   version: 0,
@@ -95,6 +97,7 @@ export interface WebApiClient {
   listTransfers?: typeof api.listTransfers;
   getTransfer?: typeof api.getTransfer;
   uploadTransferContent?: typeof api.uploadTransferContent;
+  uploadTransferChunk?: typeof api.uploadTransferChunk;
   downloadTransferContent?: typeof api.downloadTransferContent;
   cancelTransfer?: typeof api.cancelTransfer;
   retryTransfer?: typeof api.retryTransfer;
@@ -192,12 +195,127 @@ export class WebSecretStore implements SecretStore {
   }
 }
 
-type WebFileClient = Pick<WebApiClient, 'listSftpEntries' | 'createTransfer' | 'cancelTransfer'> & Partial<Pick<WebApiClient, 'listTransfers' | 'getTransfer' | 'mutateSftpEntry' | 'uploadTransferContent' | 'downloadTransferContent' | 'retryTransfer'>>;
+type WebFileClient = Pick<WebApiClient, 'listSftpEntries' | 'createTransfer' | 'cancelTransfer'> & Partial<Pick<WebApiClient, 'listTransfers' | 'getTransfer' | 'mutateSftpEntry' | 'uploadTransferContent' | 'uploadTransferChunk' | 'downloadTransferContent' | 'retryTransfer'>>;
 
-const collectBinarySource = async (source: BinarySource): Promise<Blob> => {
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of source.stream()) chunks.push(chunk);
-  return new Blob(chunks.map((chunk) => chunk.slice().buffer as ArrayBuffer), { type: 'application/octet-stream' });
+const readableStreamToByteStream = (stream: ReadableStream<Uint8Array>): ByteStream => (async function* () {
+  const reader = stream.getReader();
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) return;
+      yield next.value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+})();
+
+const WEB_UPLOAD_CHUNK_BYTES = 1024 * 1024;
+
+interface WebUploadChunk {
+  data: Uint8Array;
+  resume: TransferResumeRequest;
+  nextChecksum: string;
+  final: boolean;
+}
+
+const uploadChunks = async function* (transferId: string, source: ByteStream, sourceSize: number | null, resume?: TransferResumeRequest): AsyncGenerator<WebUploadChunk> {
+  const iterator = source[Symbol.asyncIterator]();
+  const hash = new Sha256();
+  const initialOffset = resume?.expectedOffset ?? 0;
+  const expectedPrefixChecksum = resume?.checksum?.toLowerCase() ?? null;
+  let sourceOffset = 0;
+  let serverOffset = initialOffset;
+  let pending: Uint8Array | undefined;
+  let ended = false;
+  let prefixChecked = initialOffset === 0;
+  let emitted = false;
+
+  const readNext = async (): Promise<Uint8Array | undefined> => {
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) {
+        ended = true;
+        return undefined;
+      }
+      const value = next.value;
+      if (value.byteLength > 0) return value;
+    }
+  };
+
+  const checkPrefix = (): void => {
+    if (prefixChecked || sourceOffset < initialOffset) return;
+    const actual = hash.digestHex();
+    if (expectedPrefixChecksum === null || actual !== expectedPrefixChecksum) throw new AppError('TRANSFER_RESUME_INVALID');
+    prefixChecked = true;
+  };
+
+  try {
+    for (;;) {
+      const parts: Uint8Array[] = [];
+      let partBytes = 0;
+      let checksumBefore: string | null = null;
+
+      while (partBytes < WEB_UPLOAD_CHUNK_BYTES) {
+        if (pending === undefined && !ended) pending = await readNext();
+        if (pending === undefined) break;
+
+        const skip = Math.min(pending.byteLength, Math.max(0, initialOffset - sourceOffset));
+        if (skip > 0) {
+          const prefix = pending.subarray(0, skip);
+          hash.update(prefix);
+          sourceOffset += skip;
+          pending = skip === pending.byteLength ? undefined : pending.subarray(skip);
+          checkPrefix();
+          continue;
+        }
+
+        checkPrefix();
+        if (checksumBefore === null) checksumBefore = hash.digestHex();
+        const take = Math.min(WEB_UPLOAD_CHUNK_BYTES - partBytes, pending.byteLength);
+        const value = pending.subarray(0, take);
+        parts.push(value);
+        hash.update(value);
+        sourceOffset += take;
+        partBytes += take;
+        pending = take === pending.byteLength ? undefined : pending.subarray(take);
+      }
+
+      if (partBytes === 0) {
+        if (sourceOffset < initialOffset) throw new AppError('TRANSFER_RESUME_INVALID');
+        if (!emitted && sourceOffset === initialOffset) {
+          checkPrefix();
+          yield {
+            data: new Uint8Array(),
+            resume: { transferId, expectedOffset: serverOffset, checksum: serverOffset === 0 ? null : expectedPrefixChecksum },
+            nextChecksum: hash.digestHex(),
+            final: true
+          };
+        }
+        break;
+      }
+
+      if (pending === undefined && !ended) pending = await readNext();
+      const final = pending === undefined && ended;
+      const data = new Uint8Array(partBytes);
+      let dataOffset = 0;
+      for (const part of parts) {
+        data.set(part, dataOffset);
+        dataOffset += part.byteLength;
+      }
+      yield {
+        data,
+        resume: { transferId, expectedOffset: serverOffset, checksum: serverOffset === 0 ? null : checksumBefore ?? expectedPrefixChecksum },
+        nextChecksum: hash.digestHex(),
+        final
+      };
+      emitted = true;
+      serverOffset += partBytes;
+      if (sourceSize !== null && sourceOffset > sourceSize) throw new AppError('TRANSFER_RESUME_INVALID');
+    }
+  } finally {
+    await iterator.return?.();
+  }
 };
 
 export class WebFileTransport implements FileTransport {
@@ -234,15 +352,20 @@ export class WebFileTransport implements FileTransport {
     });
   }
 
-  async upload(transferId: string, source: BinarySource): Promise<TransferJob> {
-    return requireApi(this.client.uploadTransferContent)(transferId, await collectBinarySource(source));
+  async upload(transferId: string, source: BinarySource, resume?: TransferResumeRequest): Promise<TransferJob> {
+    const uploadChunk = requireApi(this.client.uploadTransferChunk);
+    let latest: TransferJob | undefined;
+    for await (const chunk of uploadChunks(transferId, source.stream(), source.size, resume)) {
+      const blob = new Blob([chunk.data.slice().buffer as ArrayBuffer], { type: 'application/octet-stream' });
+      latest = await uploadChunk(transferId, blob, chunk.resume, chunk.nextChecksum, chunk.final);
+      if (latest.status === 'completed') return latest;
+    }
+    if (!latest) throw new AppError('TRANSFER_RESUME_INVALID');
+    return latest;
   }
 
-  async download(transferId: string): Promise<ByteStream> {
-    const blob = await requireApi(this.client.downloadTransferContent)(transferId);
-    return (async function* (): ByteStream {
-      yield new Uint8Array(await blob.arrayBuffer());
-    })();
+  async download(transferId: string, resume?: TransferResumeRequest): Promise<ByteStream> {
+    return readableStreamToByteStream(await requireApi(this.client.downloadTransferContent)(transferId, resume));
   }
 
   cancelTransfer(transferId: string): Promise<void> {

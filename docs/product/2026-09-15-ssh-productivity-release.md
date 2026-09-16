@@ -24,8 +24,8 @@ Web 是当前唯一的一等客户端。服务端继续维护单实例、单 Vau
 
 - 主机支持最多四级有序 ProxyJump；每一跳独立使用 Host Key policy，服务端按 owner 重新解析跳板图并拒绝缺失主机、环和超长路径。
 - SFTP 与 SSH 共用认证、Host Key 和跳板路径，支持目录列表、元数据、新建目录、重命名、删除、上传和下载。
-- 上传先写 `${target}.relay-tmp-${transferId}`，完成后原子重命名；失败或取消会尽力清理临时文件，不把半文件暴露为目标文件。
-- 传输队列提供 queued/running/completed/failed/cancelled 状态、进度、取消和失败重试；路径拒绝 NUL、控制字符、反斜杠和规范化后的目录越界。
+- 上传先写 `${target}.relay-tmp-${transferId}`，完成后原子重命名；失败或取消会尽力清理临时文件，不把半文件暴露为目标文件。大文件在 Web 端按 1 MiB 上限分块上传，服务端和远端按 async iterable 流式处理，不在应用层聚合完整内容。
+- 传输队列提供 queued/running/completed/failed/cancelled 状态、进度、速度/ETA、checkpoint 恢复位置、原因、取消和失败重试；断点恢复前验证远端临时文件的长度与 SHA-256，最终文件完成后才可见。路径拒绝 NUL、控制字符、反斜杠和规范化后的目录越界。
 - 服务重启会把持久化的 queued/running 传输和批量任务标记为 interrupted，并保留 `SERVICE_RESTARTED` 原因；只有用户显式重试，任务才会重新进入 queued。
 - Snippets 使用 Vault 加密 payload 和显式 `{{variable}}` 变量；批量执行前展示主机、展开命令、并发、超时和输出保存选项。
 - 批量任务默认并发 4、最大 16，单主机默认超时 60 秒，单主机输出默认上限 256 KiB；多主机和高风险命令需要显式确认，单台失败不会隐藏其他主机结果。

@@ -226,12 +226,13 @@ export interface TransferState {
   status: TransferStatus;
   completedBytes: number;
   totalBytes: number | null;
+  checkpointOffset?: number;
   errorCode?: string;
 }
 
 export type TransferEvent =
   | { type: 'start'; totalBytes?: number | null }
-  | { type: 'progress'; completedBytes: number }
+  | { type: 'progress'; completedBytes: number; checkpointOffset?: number }
   | { type: 'completed' }
   | { type: 'failed'; code: string }
   | { type: 'interrupted'; code: string }
@@ -242,7 +243,8 @@ export const initialTransferState = (id: string): TransferState => ({
   id,
   status: 'queued',
   completedBytes: 0,
-  totalBytes: null
+  totalBytes: null,
+  checkpointOffset: 0
 });
 
 export const transitionTransfer = (state: TransferState, event: TransferEvent): TransferState => {
@@ -257,9 +259,13 @@ export const transitionTransfer = (state: TransferState, event: TransferEvent): 
       if (state.status !== 'running' || !Number.isFinite(event.completedBytes) || event.completedBytes < state.completedBytes) {
         throw invalidTransition(state.status, event.type);
       }
+      if (event.checkpointOffset !== undefined && (!Number.isSafeInteger(event.checkpointOffset) || event.checkpointOffset < (state.checkpointOffset ?? 0) || event.checkpointOffset > event.completedBytes)) {
+        throw invalidTransition(state.status, event.type);
+      }
       return {
         ...state,
-        completedBytes: state.totalBytes === null ? event.completedBytes : Math.min(state.totalBytes, event.completedBytes)
+        completedBytes: state.totalBytes === null ? event.completedBytes : Math.min(state.totalBytes, event.completedBytes),
+        checkpointOffset: event.checkpointOffset ?? event.completedBytes
       };
     case 'completed':
       if (state.status !== 'running') throw invalidTransition(state.status, event.type);
@@ -275,7 +281,7 @@ export const transitionTransfer = (state: TransferState, event: TransferEvent): 
       return { ...state, status: 'cancelled' };
     case 'retry':
       if (state.status !== 'failed' && state.status !== 'interrupted') throw invalidTransition(state.status, event.type);
-      return { ...state, status: 'queued', completedBytes: 0, errorCode: undefined };
+      return { ...state, status: 'queued', errorCode: undefined };
   }
 };
 

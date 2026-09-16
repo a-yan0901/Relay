@@ -137,6 +137,19 @@ export interface SftpEntry {
 export type TransferKind = 'upload' | 'download';
 export type TransferStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
+export interface TransferCheckpoint {
+  transferId: string;
+  offset: number;
+  totalBytes: number | null;
+  checksum: string | null;
+}
+
+export interface TransferResumeRequest {
+  transferId: string;
+  expectedOffset: number;
+  checksum: string | null;
+}
+
 export interface TransferJob {
  id: string;
  kind: TransferKind;
@@ -147,6 +160,9 @@ export interface TransferJob {
  completedBytes: number;
  totalBytes: number | null;
  errorCode?: string;
+ checkpoint?: TransferCheckpoint;
+ speedBytesPerSecond?: number;
+ etaSeconds?: number | null;
  createdAt: string;
  updatedAt: string;
 }

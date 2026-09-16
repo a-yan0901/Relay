@@ -11,6 +11,7 @@ import type {
   Snippet,
   SnippetMetadata,
   TransferJob,
+  TransferResumeRequest,
   TransferRequest,
   OperationDiagnostic
 } from './models.js';
@@ -162,8 +163,8 @@ export interface FileTransport {
   createTransfer(request: TransferRequest): Promise<TransferJob>;
   listTransfers(): Promise<readonly TransferJob[]>;
   getTransfer(transferId: string): Promise<TransferJob | null>;
-  upload(transferId: string, source: BinarySource): Promise<TransferJob>;
-  download(transferId: string): Promise<ByteStream>;
+  upload(transferId: string, source: BinarySource, resume?: TransferResumeRequest): Promise<TransferJob>;
+  download(transferId: string, resume?: TransferResumeRequest): Promise<ByteStream>;
   cancelTransfer(transferId: string): Promise<void>;
   retryTransfer(transferId: string): Promise<TransferJob>;
 }

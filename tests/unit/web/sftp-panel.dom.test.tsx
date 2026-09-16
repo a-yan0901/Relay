@@ -82,6 +82,27 @@ describe('SftpPanel', () => {
     expect(onRetry).toHaveBeenCalledWith('transfer-restarted');
   });
 
+  it('shows the safe recovery position for an interrupted transfer', () => {
+    render(<TransferQueue jobs={[{
+      id: 'transfer-checkpoint', kind: 'upload', hostId: 'host-1', sourcePath: 'release.bin', targetPath: '/release.bin',
+      status: 'interrupted', completedBytes: 4, totalBytes: 10, checkpoint: {
+        transferId: 'transfer-checkpoint', offset: 4, totalBytes: 10, checksum: null
+      }, createdAt: '', updatedAt: ''
+    }]} onRetry={() => {}} />);
+
+    expect(screen.getByText(/可从 4 B 继续/u)).toBeInTheDocument();
+  });
+
+  it('shows live throughput and ETA while a transfer is running', () => {
+    render(<TransferQueue jobs={[{
+      id: 'transfer-progress', kind: 'download', hostId: 'host-1', sourcePath: '/release.bin', targetPath: 'release.bin',
+      status: 'running', completedBytes: 512, totalBytes: 2048, speedBytesPerSecond: 256, etaSeconds: 6,
+      createdAt: '', updatedAt: ''
+    }]} />);
+
+    expect(screen.getByText(/25% · 256 B\/s · 预计 6s/u)).toBeInTheDocument();
+  });
+
   it('supports breadcrumbs, directory creation and renaming without leaving the current host', async () => {
     const user = userEvent.setup();
     const onList = vi.fn(async (_hostId: string, path: string) => path === '/apps'

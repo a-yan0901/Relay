@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
+import type { TransferResumeRequest } from '../../../src/shared/core/models.js';
 import type { HostMetadata } from '../../../src/shared/validation.js';
 import { createWebAdapters, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport } from '../../../src/web/platform/web-adapters.js';
 import type { TerminalSocketLike } from '../../../src/web/hooks/use-terminal-session.js';
@@ -57,7 +58,14 @@ const createWebContractApi = () => {
     createTransfer: async () => transfer,
     getTransfer: async () => transfer,
     uploadTransferContent: async () => ({ ...transfer, kind: 'upload' as const, status: 'completed' as const, completedBytes: 2, totalBytes: 2 }),
-    downloadTransferContent: async () => new Blob([new Uint8Array([0x6f, 0x6b])]),
+    uploadTransferChunk: async () => ({ ...transfer, kind: 'upload' as const, status: 'completed' as const, completedBytes: 2, totalBytes: 2 }),
+    downloadTransferContent: async () => new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([0x6f]));
+        controller.enqueue(new Uint8Array([0x6b]));
+        controller.close();
+      }
+    }),
     cancelTransfer: async () => {},
     retryTransfer: async () => transfer,
     startCommandRun: async () => commandRun,
@@ -128,7 +136,14 @@ describe('web adapters', () => {
       createTransfer: vi.fn(async () => ({ id: 'transfer-1', kind: 'download' as const, hostId: 'host-1', sourcePath: '/source', targetPath: 'target', status: 'queued' as const, completedBytes: 0, totalBytes: null, createdAt: '', updatedAt: '' })),
       getTransfer: vi.fn(async (id: string) => ({ id, kind: 'download' as const, hostId: 'host-1', sourcePath: '/source', targetPath: 'target', status: 'queued' as const, completedBytes: 0, totalBytes: null, createdAt: '', updatedAt: '' })),
       uploadTransferContent: vi.fn(async () => ({ id: 'transfer-1', kind: 'upload' as const, hostId: 'host-1', sourcePath: 'source', targetPath: '/target', status: 'completed' as const, completedBytes: 1, totalBytes: 1, createdAt: '', updatedAt: '' })),
-      downloadTransferContent: vi.fn(async () => new Blob(['content'])),
+      uploadTransferChunk: vi.fn(async (_id: string, _chunk: Blob, _resume: unknown, _nextChecksum: string, _final: boolean) => ({ id: 'transfer-1', kind: 'upload' as const, hostId: 'host-1', sourcePath: 'source', targetPath: '/target', status: 'completed' as const, completedBytes: 3, totalBytes: 3, createdAt: '', updatedAt: '' })),
+      downloadTransferContent: vi.fn(async () => new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([99, 111]));
+          controller.enqueue(new Uint8Array([110, 116, 101, 110, 116]));
+          controller.close();
+        }
+      })),
       cancelTransfer: vi.fn(async () => {}),
       retryTransfer: vi.fn(async () => ({ id: 'transfer-1', kind: 'download' as const, hostId: 'host-1', sourcePath: '/source', targetPath: 'target', status: 'queued' as const, completedBytes: 0, totalBytes: null, createdAt: '', updatedAt: '' })),
       startCommandRun: vi.fn(async (request) => ({ id: 'run-1', command: request.command, hostIds: request.hostIds, persistOutput: request.persistOutput, status: 'queued' as const, targets: request.hostIds.map((hostId) => ({ hostId, status: 'queued' as const, exitCode: null, output: '', outputBytes: 0 })), createdAt: '' })),
@@ -142,7 +157,7 @@ describe('web adapters', () => {
     await files.createDirectory('host-1', '/tmp/new');
     await files.rename('host-1', '/tmp/new', '/tmp/renamed');
     await files.remove('host-1', '/tmp/renamed');
-    await files.upload('transfer-1', { name: 'source', size: 7, async *stream() { yield new Uint8Array([1, 2, 3]); } });
+    await files.upload('transfer-1', { name: 'source', size: 3, async *stream() { yield new Uint8Array([1, 2, 3]); } }, { transferId: 'transfer-1', expectedOffset: 0, checksum: null });
     const downloaded: Uint8Array[] = [];
     for await (const chunk of await files.download('transfer-1')) downloaded.push(chunk);
     await files.cancelTransfer('transfer-1');
@@ -152,8 +167,14 @@ describe('web adapters', () => {
     expect(api.mutateSftpEntry).toHaveBeenCalledWith('host-1', { action: 'mkdir', path: '/tmp/new' });
     expect(api.mutateSftpEntry).toHaveBeenCalledWith('host-1', { action: 'rename', from: '/tmp/new', to: '/tmp/renamed' });
     expect(api.mutateSftpEntry).toHaveBeenCalledWith('host-1', { action: 'delete', path: '/tmp/renamed', confirmed: true });
-    expect(api.uploadTransferContent).toHaveBeenCalledWith('transfer-1', expect.any(Blob));
-    expect(downloaded).toEqual([new Uint8Array([99, 111, 110, 116, 101, 110, 116])]);
+    const uploadCall = api.uploadTransferChunk.mock.calls[0];
+    expect(uploadCall?.[0]).toBe('transfer-1');
+    expect(uploadCall?.[1]).toBeInstanceOf(Blob);
+    expect(await uploadCall?.[1].text()).toBe('\x01\x02\x03');
+    expect(uploadCall?.[2]).toEqual({ transferId: 'transfer-1', expectedOffset: 0, checksum: null });
+    expect(uploadCall?.[3]).toBe('039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81');
+    expect(uploadCall?.[4]).toBe(true);
+    expect(downloaded).toEqual([new Uint8Array([99, 111]), new Uint8Array([110, 116, 101, 110, 116])]);
     expect(api.cancelTransfer).toHaveBeenCalledWith('transfer-1');
     expect(api.retryTransfer).toHaveBeenCalledWith('transfer-1');
 
@@ -173,6 +194,35 @@ describe('web adapters', () => {
     await expect(secretStore.get('host-1')).resolves.toBeNull();
     await expect(secretStore.set('host-1', 'secret')).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
     expect(createWebAdapters({ api: { listHosts: async () => [], getHost: async () => null } })).toHaveProperty('sessions');
+  });
+
+  it('splits browser uploads into bounded chunks while carrying the incremental checkpoint checksum', async () => {
+    const totalBytes = 1024 * 1024 + 3;
+    const data = new Uint8Array(totalBytes);
+    data.fill(7);
+    const calls: Array<{ size: number; offset: number; checksum: string | null; nextChecksum: string; final: boolean }> = [];
+    const api = {
+      listSftpEntries: vi.fn(async () => []),
+      createTransfer: vi.fn(async () => ({ id: 'transfer-large', kind: 'upload' as const, hostId: 'host-1', sourcePath: 'source', targetPath: '/target', status: 'queued' as const, completedBytes: 0, totalBytes, createdAt: '', updatedAt: '' })),
+      cancelTransfer: vi.fn(async () => {}),
+      uploadTransferChunk: vi.fn(async (_id: string, chunk: Blob, resume: TransferResumeRequest, nextChecksum: string, final: boolean) => {
+        calls.push({ size: chunk.size, offset: resume.expectedOffset, checksum: resume.checksum, nextChecksum, final });
+        const offset = resume.expectedOffset + chunk.size;
+        return {
+          id: 'transfer-large', kind: 'upload' as const, hostId: 'host-1', sourcePath: 'source', targetPath: '/target',
+          status: final ? 'completed' as const : 'running' as const, completedBytes: offset, totalBytes,
+          checkpoint: { transferId: 'transfer-large', offset, totalBytes, checksum: nextChecksum }, createdAt: '', updatedAt: ''
+        };
+      })
+    };
+
+    const files = new WebFileTransport(api);
+    const completed = await files.upload('transfer-large', { name: 'source', size: totalBytes, async *stream() { yield data; } });
+
+    expect(completed.status).toBe('completed');
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({ size: 1024 * 1024, offset: 0, checksum: null, final: false });
+    expect(calls[1]).toMatchObject({ size: 3, offset: 1024 * 1024, checksum: calls[0]?.nextChecksum, final: true });
   });
 
   it('composes the full platform-neutral runtime at the Web boundary', async () => {

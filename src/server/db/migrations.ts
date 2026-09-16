@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from './database.js';
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 export const migrate = (database: SqliteDatabase): void => {
   const applyMigration = database.transaction(() => {
@@ -175,6 +175,9 @@ export const migrate = (database: SqliteDatabase): void => {
         completed_bytes INTEGER NOT NULL DEFAULT 0 CHECK (completed_bytes >= 0),
         total_bytes INTEGER CHECK (total_bytes IS NULL OR total_bytes >= 0),
         error_code TEXT,
+        checkpoint_offset INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_offset >= 0),
+        checkpoint_checksum TEXT,
+        temporary_path TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -312,6 +315,17 @@ export const migrate = (database: SqliteDatabase): void => {
     const auditColumns = database.pragma('table_info(audit_events)') as Array<{ name: string }>;
     if (!auditColumns.some((column) => column.name === 'metadata_json')) {
       database.exec("ALTER TABLE audit_events ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'");
+    }
+
+    const transferColumns = database.pragma('table_info(transfer_jobs)') as Array<{ name: string }>;
+    if (!transferColumns.some((column) => column.name === 'checkpoint_offset')) {
+      database.exec('ALTER TABLE transfer_jobs ADD COLUMN checkpoint_offset INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_offset >= 0)');
+    }
+    if (!transferColumns.some((column) => column.name === 'checkpoint_checksum')) {
+      database.exec('ALTER TABLE transfer_jobs ADD COLUMN checkpoint_checksum TEXT');
+    }
+    if (!transferColumns.some((column) => column.name === 'temporary_path')) {
+      database.exec('ALTER TABLE transfer_jobs ADD COLUMN temporary_path TEXT');
     }
 
     database.pragma(`user_version = ${SCHEMA_VERSION}`);
