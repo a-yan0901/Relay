@@ -205,6 +205,8 @@
 
 **Release evidence:** `npx vitest run tests/unit/web/account-menu.dom.test.tsx` passed (`8/8`); `npm test` passed (`109 files / 518 tests`); `npm run typecheck`, `npm run lint`, and `npm run build` passed; default Playwright E2E passed (`4/4`); account-enabled Playwright E2E passed (`4/4`). Shared boundary scan found no Node, React, WebSocket, ssh2 or browser-storage dependency under `src/shared`. SQLite audit metadata and generated-artifact scans found no test password, token, host secret or marker; temporary databases and Playwright reports were removed before commit.
 
+**Implementation commit:** `c2eec63` (`feat: complete account deletion lifecycle`).
+
 ## Plan self-review
 
 - [x] Scope is limited to X-04D and explicitly excludes local-data deletion.
