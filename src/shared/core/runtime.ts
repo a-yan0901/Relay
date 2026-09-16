@@ -8,6 +8,7 @@ import type {
   HostStore,
   IdentityStore,
   ImportExportPort,
+  PlatformServices,
   SecretStore,
   SessionTransport,
   SnippetStore,
@@ -39,4 +40,6 @@ export interface CoreRuntime {
   snippets: SnippetStore;
   activity: ActivityStore;
   imports: ImportExportPort;
+  /** System APIs are optional so Local-only runtimes remain fully usable. */
+  platformServices?: PlatformServices;
 }

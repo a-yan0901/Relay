@@ -52,6 +52,31 @@ export interface BinarySource {
   stream(): ByteStream;
 }
 
+export type NotificationPermission = 'default' | 'granted' | 'denied';
+
+export interface NotificationRequest {
+  title: string;
+  body: string;
+  tag?: string;
+}
+
+export interface NotificationPort {
+  permission(): Promise<NotificationPermission>;
+  requestPermission(): Promise<NotificationPermission>;
+  notify(request: NotificationRequest): Promise<void>;
+}
+
+export interface ClipboardPort {
+  readText(): Promise<string>;
+  writeText(text: string): Promise<void>;
+}
+
+/** Optional system capabilities supplied by a platform shell. */
+export interface PlatformServices {
+  clipboard?: ClipboardPort;
+  notifications?: NotificationPort;
+}
+
 export interface SessionEvent {
   type: 'data' | 'stderr' | 'exit' | 'close' | 'diagnostic';
   data?: string;
