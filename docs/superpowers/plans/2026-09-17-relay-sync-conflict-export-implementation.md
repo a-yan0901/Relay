@@ -27,6 +27,8 @@
 
 ## Task 1: 建立 shared conflict-export contract 与严格 parser
 
+- [x] Task 1 complete：shared wire contract、严格 parser/serializer、边界测试和跨端 fixture 已完成。
+
 **Files:**
 
 - Modify src/shared/core/models.ts near WrappedKeyEnvelope/SyncPreview to expose SyncConflictExportKdf、SyncConflictExportCopy、SyncConflictExport。
@@ -53,6 +55,8 @@
 
 ## Task 2: Implement the server-only encrypted package format
 
+- [x] Task 2 complete：独立 salt/bundle key、AES-GCM envelope、Argon2id 派生、解密 round-trip 和篡改拒绝已完成。
+
 **Files:**
 
 - Create src/server/sync/sync-conflict-export.ts。
@@ -75,6 +79,8 @@
 **Checkpoint:** focused crypto tests pass；inspect test output and source to ensure no password or snapshot is included in error/audit strings。
 
 ## Task 3: Add readonly SyncService integration and strict Fastify route
+
+- [x] Task 3 complete：只读 SyncService、严格导出 API、审计白名单和真实数据库 integration 已完成。
 
 **Files:**
 
@@ -100,6 +106,8 @@
 **Checkpoint:** focused integration tests pass；git diff --check；rg confirms export password is absent from audit metadata and persistence writes。
 
 ## Task 4: Wire Web API, Sync adapter, and platform file-save capability
+
+- [x] Task 4 complete：Web API/adapter 严格响应解析和浏览器 FileSavePort 已完成，并保持旧服务能力协商兼容。
 
 **Files:**
 
@@ -128,6 +136,8 @@
 
 ## Task 5: Implement Sync Center export interaction
 
+- [x] Task 5 complete：密码确认、busy/retry/stale 状态、加密下载和冲突保留语义已完成。
+
 **Files:**
 
 - Modify src/web/components/SyncCenter.tsx。
@@ -154,6 +164,8 @@
 
 ## Task 6: Extend account-enabled and Local-only E2E coverage
 
+- [x] Task 6 complete：Local-only、账号导出下载、解密验证、冲突保留和敏感标记断言已完成。
+
 **Files:**
 
 - Modify tests/e2e/account-sync.spec.ts。
@@ -176,10 +188,12 @@
 
 ## Task 7: Release verification, roadmap evidence, and commit
 
+- [x] Task 7 complete：focused/full test、类型检查、lint、build、两种 E2E 和敏感数据扫描均已通过；文档证据与路线图已更新，聚焦提交已创建。
+
 **Files:**
 
 - Modify docs/superpowers/plans/2026-09-17-relay-sync-conflict-export-implementation.md checkboxes and evidence notes。
-- Modify docs/superpowers/roadmaps/2026-09-16-relay-long-term-roadmap.md only to mark X-04C complete and record the verification commit/evidence；leave X-04D untouched。
+- Modify docs/superpowers/plans/2026-09-16-relay-long-term-roadmap.md only to mark X-04C complete and record the verification commit/evidence；leave X-04D untouched。
 - Add or update security-scan notes only in the relevant existing roadmap/evidence section。
 
 **Verification sequence:**
@@ -200,6 +214,8 @@ Only after all commands have fresh passing evidence:
 - mark roadmap X-04C [x] with commit/evidence, preserving the risk-based validation rule for later small changes;
 - create one focused commit such as feat: add encrypted sync conflict export;
 - do not push.
+
+**Release evidence (2026-09-17):** focused shared/server/Web tests `4 files / 33 tests` passed；full Vitest `108 files / 499 tests` passed；`npm run typecheck`、`npm run lint`、`npm run build` passed；默认 Playwright E2E `4/4` passed；account-enabled Playwright E2E `3/3` passed。运行时 SQLite 扫描 `auditRows=1`、`conflictRows=2`、`leakedNeedles=[]`；下载产物和 E2E 输出未发现导出密码、Host marker、Vault marker 或地址；shared conflict-export parser 未引用 Blob、URL、document、localStorage、sessionStorage 或 Node-only API。Build 仅保留既有的 Web chunk 超过 500 kB warning，不影响通过。
 
 ## Plan self-review
 

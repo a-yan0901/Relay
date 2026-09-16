@@ -29,7 +29,8 @@ describe('browser system services', () => {
     expect(detectBrowserSystemCapabilities(hosts)).toEqual({
       clipboardRead: true,
       clipboardWrite: true,
-      notifications: true
+      notifications: true,
+      fileSave: false
     });
   });
 
@@ -69,6 +70,23 @@ describe('browser system services', () => {
     await expect(services.clipboard?.readText()).rejects.toBeInstanceOf(AppError);
     await expect(services.clipboard?.readText()).rejects.toEqual(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
     await expect(services.clipboard?.writeText('text')).rejects.toEqual(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
+  });
+
+  it('passes encrypted export bytes to the injected file host', async () => {
+    const save = vi.fn(async () => undefined);
+    const services = createBrowserSystemServices(createHosts({ fileSave: { save } }));
+    const request = { name: 'relay-sync-conflict-conflict-1.json', content: new TextEncoder().encode('{"format":"relay-sync-conflict"}'), mimeType: 'application/json;charset=utf-8' };
+
+    await services.fileSave?.save(request);
+
+    expect(save).toHaveBeenCalledWith(request);
+    expect(detectBrowserSystemCapabilities(createHosts({ fileSave: { save } })).fileSave).toBe(true);
+  });
+
+  it('maps a rejected file host to a stable capability error', async () => {
+    const services = createBrowserSystemServices(createHosts({ fileSave: { save: vi.fn(async () => { throw new Error('browser denied'); }) } }));
+
+    await expect(services.fileSave?.save({ name: 'export.json', content: new Uint8Array([1]), mimeType: 'application/json' })).rejects.toEqual(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
   });
 
   it('passes an already-redacted notification request through unchanged', async () => {

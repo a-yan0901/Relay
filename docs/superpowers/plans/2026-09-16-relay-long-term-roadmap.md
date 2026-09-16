@@ -74,7 +74,7 @@
 | 批量与复盘 | 有安全批量命令和逐主机结果，但缺少输出对比、历史检索、异常聚合和可选的会话日志书签。 | O-01、O-02 |
 | 迁移 | 已覆盖多个产品的通用输入，FinalShell/Netcatty 原生或专属字段映射仍需评估。 | O-03 |
 | 平台 | shared core 已预留，原生桌面/Android UI、系统 keychain、移动生命周期尚未交付。 | X-01、X-02 |
-| 账号与同步 | 已有默认关闭的 Web 账号/设备/加密快照同步核心切片、recovery key 一次展示/离线确认/包装轮换和新设备恢复 preview/apply；真实删除 re-auth、冲突导出和完整账号删除闭环仍缺失。 | X-04 |
+| 账号与同步 | 已有默认关闭的 Web 账号/设备/加密快照同步核心切片、recovery key 一次展示/离线确认/包装轮换、新设备恢复 preview/apply 和冲突加密导出；真实删除 re-auth 和完整账号删除闭环仍缺失。 | X-04 |
 | 能力广度 | 端口转发、Agent Forwarding、Mosh、Serial、Telnet、RDP/VNC、X11、团队 Vault 和受控 Agent 尚未进入当前核心。 | X-03、X-05 |
 
 ## 2. 长期里程碑与进入/退出条件
@@ -88,7 +88,7 @@
 | M2 现代任务工作流 | 让用户少记忆、少跳转、少在 tab 中迷路。 | U-01、U-02、U-03、U-04 | 目标主机/会话可快速找到；Focus/Split/文件面板保持上下文；键盘、触控和窄屏路径通过。 |
 | M3 生产力与复盘 | 让批量命令、片段、结果、日志和迁移形成闭环。 | O-01、O-02、O-03 | 批量目标固定快照；结果可搜索/对比；导入冲突可解释；敏感内容不泄露。 |
 | M4 平台与能力边界 | 在不污染 shared core 的情况下扩展桌面、移动端和协议能力，并固定账号/同步的接入边界。 | X-01、X-02、X-03 | 每个新平台/协议有 capability、adapter、权限、审计和 contract test；不支持时有一致降级。 |
-| M5 个人账号与加密同步 | 登录账号后跨设备同步加密 Vault；未登录继续 Local-only。当前已完成核心 Web/自托管同步、recovery key 生命周期和 Web 新设备恢复。 | X-04 | 完成冲突导出、删除 re-auth 与账号删除语义的安全/跨端验证；云端不持有可解密 Vault 的材料。 |
+| M5 个人账号与加密同步 | 登录账号后跨设备同步加密 Vault；未登录继续 Local-only。当前已完成核心 Web/自托管同步、recovery key 生命周期、Web 新设备恢复和只读冲突加密导出。 | X-04 | 完成删除 re-auth 与账号删除语义的安全/跨端验证；云端不持有可解密 Vault 的材料。 |
 | M6 组织与 Agent | 在明确数据归属和权限后支持团队协作与受控 Agent。 | X-05 | 完成独立 spec、威胁模型、审批/审计和恢复设计；未批准能力不进入 UI。 |
 
 ## 3. 需求追踪矩阵
@@ -133,7 +133,7 @@
 - `src/web/components/SftpPanel.tsx`、`TransferQueue.tsx`、`ActivityPanel.tsx`：文件、传输和任务反馈。
 - `src/web/components/HostTargetPicker.tsx`、`CommandRunDialog.tsx`、`CommandRunResults.tsx`、`SnippetPalette.tsx`：批量与片段。
 - `src/web/platform/web-adapters.ts`、`src/web/theme.ts`、`src/web/styles.css`：平台边界、主题和视觉系统。
-- `src/web/components/AccountMenu.tsx`、`SyncCenter.tsx`：已交付当前 Web 账号/设备/同步状态和冲突选择 UI，只消费 shared account/sync 状态，不在组件中复制加密规则；恢复、密钥轮换和冲突导出仍待补齐。
+- `src/web/components/AccountMenu.tsx`、`SyncCenter.tsx`：已交付当前 Web 账号/设备/同步状态、冲突选择和只读冲突导出 UI，只消费 shared account/sync 状态，不在组件中复制加密规则；删除 re-auth 仍待补齐。
 
 ### Tests
 
@@ -1151,7 +1151,7 @@ export interface TargetSelectionSnapshot {
 
 - [x] **Step 4: 实现离线队列、revision conflict 和事务应用。**
 
-  本地变更先事务提交，再持久化加密待上传 envelope；同步失败不阻塞本地工作；冲突保留两边加密副本并提供 keep-local/use-remote；`export-both` 的独立加密导出仍未完成，应用失败不改变现有 Vault。
+  本地变更先事务提交，再持久化加密待上传 envelope；同步失败不阻塞本地工作；冲突保留两边加密副本并提供 keep-local/use-remote；已提供只读的 `export-both` 独立加密导出，导出成功不改变冲突状态，应用失败不改变现有 Vault。
 
 - [x] **Step 5: 实现当前 Web/native-like 跨端同步 UI。**
 
@@ -1161,17 +1161,17 @@ export interface TargetSelectionSnapshot {
 
   验证同步服务故障不会改变 Host Key、SFTP 路径、批量确认和任务终态；Web、desktop-like、Android-like runtime 共享状态/错误/Local fallback 断言；涉及 Vault、账号、加密、迁移或跨模块行为时按 Q-01 执行全量验证。
 
-**Acceptance（当前状态）:** 未登录时完整 Local-only 可用且没有同步请求；登录并解锁后可创建并同步 opaque encrypted snapshot；已登录的新设备可使用原 Vault 主密码或 active recovery key 预览并事务创建本地 Vault，错误/过期输入不会改变本地状态；云端同步表、审计和普通日志不包含 Vault 明文或可直接使用的 key，recovery key 明文只出现在显式的一次性 issue response 和当前 UI 内存；离线、撤销、登出、revision 冲突、云端删除恢复窗口和 recovery key 生命周期已有验证，个人同步未改变现有 SSH/SFTP/批量安全不变量。冲突导出、真实删除 re-auth 和账号删除语义尚未满足最终 Acceptance。
+**Acceptance（当前状态）:** 未登录时完整 Local-only 可用且没有同步请求；登录并解锁后可创建并同步 opaque encrypted snapshot；已登录的新设备可使用原 Vault 主密码或 active recovery key 预览并事务创建本地 Vault，错误/过期输入不会改变本地状态；unresolved conflict 的 local/remote 完整 snapshot 可用独立导出密码分别加密导出，下载不包含明文且导出后冲突仍保留；云端同步表、审计和普通日志不包含 Vault 明文或可直接使用的 key，recovery key 明文只出现在显式的一次性 issue response 和当前 UI 内存；离线、撤销、登出、revision 冲突、云端删除恢复窗口和 recovery key 生命周期已有验证，个人同步未改变现有 SSH/SFTP/批量安全不变量。真实删除 re-auth 和账号删除语义尚未满足最终 Acceptance。
 
-**Verification:** account/sync shared contract、加密单元、server integration、DOM/E2E、跨端 fake 和敏感数据扫描已通过；migration `SCHEMA_VERSION = 13`，X-04A focused Vitest `8 files / 65 tests` 和历史 release gate 已通过，X-04B focused Vitest `9 files / 73 tests`、当前 full Vitest `106 files / 483 tests`、typecheck、lint、build、默认 E2E `4/4`、account E2E `3/3` 均通过。当前 Web E2E 通过清除本地 app_config/资源表并保留 blind sync 表来模拟独立新设备状态，真实 provider-separated 多数据卷仍需后续架构验证。`secret_persistence_findings = 0` 的扫描结论不覆盖尚未交付的 re-auth/export-both/账号删除安全评审。
+**Verification:** account/sync shared contract、加密单元、server integration、DOM/E2E、跨端 fake 和敏感数据扫描已通过；migration `SCHEMA_VERSION = 13`，X-04A focused Vitest `8 files / 65 tests` 和历史 release gate 已通过，X-04B focused Vitest `9 files / 73 tests` 已通过；本次 X-04C focused shared/server/Web Vitest `4 files / 33 tests`、full Vitest `108 files / 499 tests`、typecheck、lint、build、默认 E2E `4/4`、account E2E `3/3` 均通过。运行时 SQLite 扫描 `auditRows=1`、`conflictRows=2`、`leakedNeedles=[]`，下载产物和 E2E 输出未发现导出密码、Host/Vault marker 或地址；shared parser boundary scan clean。当前 Web E2E 通过清除本地 app_config/资源表并保留 blind sync 表来模拟独立新设备状态，真实 provider-separated 多数据卷仍需后续架构验证。删除 re-auth 和账号删除安全评审仍待完成。
 
-**Progress record (2026-09-17):** 已完成实现计划 Task 1–8、Task 9 的敏感数据扫描与技术 release gate；相关提交为 `99410dd`、`1f88039`、`b8b8cb1`、`4b0b5a7`、`acc001c`、`f630ab2`、`9bd95c7`、`1d14100`、`23d0bdd`、`103a1ee` 和 `be07225`。X-04A 已完成实现、focused 验证和历史 Release gate；X-04B 已完成 Web recovery preview/apply、事务 bootstrap、恢复 UI 和 account E2E，最终 focused 9/73、full Vitest 106/483、默认 E2E 4/4、account E2E 3/3 的 release gate 证据见实现计划 Task 11。最终 M5 仍缺真实 provider-separated 多数据卷验证、删除 re-auth、冲突导出和完整账号删除闭环。
+**Progress record (2026-09-17):** 已完成实现计划 Task 1–8、Task 9 的敏感数据扫描与技术 release gate；相关提交为 `99410dd`、`1f88039`、`b8b8cb1`、`4b0b5a7`、`acc001c`、`f630ab2`、`9bd95c7`、`1d14100`、`23d0bdd`、`103a1ee` 和 `be07225`。X-04A 已完成实现、focused 验证和历史 Release gate；X-04B 已完成 Web recovery preview/apply、事务 bootstrap、恢复 UI 和 account E2E，最终 focused 9/73、full Vitest 106/483、默认 E2E 4/4、account E2E 3/3 的 release gate 证据见实现计划 Task 11。X-04C 已完成只读冲突加密导出、Web 下载能力和两种 E2E/敏感数据验证，详细证据见 `2026-09-17-relay-sync-conflict-export-implementation.md` Task 7；实现已包含在本次 X-04C 提交中。最终 M5 仍缺真实 provider-separated 多数据卷验证、删除 re-auth 和完整账号删除闭环。
 
 **Remaining implementation tasks:**
 
 - [x] **X-04A：实现 recovery key 生命周期。** 生成、一次展示、离线确认、包装/轮换、丢失不可恢复，以及错误 recovery key 不改变本地 Vault；实现与验证证据见 `relay-account-and-encrypted-sync-implementation.md` Task 10，Release gate 已通过。
 - [x] **X-04B：实现独立新设备恢复。** 新设备使用主密码或 active recovery key 解开 envelope，先预览再事务创建本地 Vault 并应用 Host/Identity/Group/Snippet/Workspace；Web DOM/App、服务端错误/TTL/一次性 token 和 account-enabled E2E 已覆盖。当前 E2E 通过保留 blind sync 表、清除本地表模拟独立设备状态，真正 provider-separated 多数据卷仍是后续架构任务。
-- [ ] **X-04C：实现冲突加密导出。** 将 local/remote 两份以不含明文的可恢复格式导出，下载/文件能力留在 adapter，不在 shared core 引入浏览器对象。
+- [x] **X-04C：实现冲突加密导出。** 将 local/remote 两份以不含明文的可恢复格式导出，下载/文件能力留在 adapter，不在 shared core 引入浏览器对象；只读导出成功后冲突仍保留。
 - [ ] **X-04D：实现删除 re-auth 与账号删除闭环。** re-auth 必须由服务端验证且短时有效；账号/云端数据删除、恢复、撤销设备和本地副本保留都要有 UI/API/审计测试。
 
 ---

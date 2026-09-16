@@ -5,9 +5,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 
-import type { AccountSession, SyncHead, SyncPreview, SyncState } from '../../../src/shared/core/models';
+import { AppError } from '../../../src/shared/errors';
+import type { AccountSession, SyncConflictExport, SyncHead, SyncPreview, SyncState } from '../../../src/shared/core/models';
 import { createCapabilitySet } from '../../../src/shared/core/capabilities';
-import type { DeviceTrustPort, SyncPort } from '../../../src/shared/core/ports';
+import type { DeviceTrustPort, FileSavePort, SyncPort } from '../../../src/shared/core/ports';
+import { parseSyncConflictExport } from '../../../src/shared/core/sync-conflict-export';
 import { SyncCenter } from '../../../src/web/components/SyncCenter';
 
 const account: AccountSession = {
@@ -27,6 +29,28 @@ const head: SyncHead = {
 
 const capabilities = createCapabilitySet('web', ['account.auth', 'device.trust', 'sync.encrypted']);
 
+const createConflictExport = (): SyncConflictExport => {
+  const envelope = (aad: string) => ({
+    version: 1 as const,
+    nonce: Buffer.alloc(12).toString('base64'),
+    ciphertext: Buffer.alloc(32).toString('base64'),
+    authTag: Buffer.alloc(16).toString('base64'),
+    aad: Buffer.from(aad).toString('base64')
+  });
+  const localAad = 'relay-sync-conflict:v1:conflict-1:local';
+  const remoteAad = 'relay-sync-conflict:v1:conflict-1:remote';
+  return {
+    format: 'relay-sync-conflict',
+    version: 1,
+    conflictId: 'conflict-1',
+    createdAt: '2026-09-17T10:00:00.000Z',
+    copies: [
+      { copy: 'local', revision: 3, payloadHash: 'a'.repeat(64), kdf: { algorithm: 'argon2id', memoryCost: 19_456, timeCost: 2, parallelism: 1, hashLength: 32, salt: Buffer.alloc(16).toString('base64') }, wrappedBundleKey: envelope(localAad), payload: envelope(localAad) },
+      { copy: 'remote', revision: 4, payloadHash: 'b'.repeat(64), kdf: { algorithm: 'argon2id', memoryCost: 19_456, timeCost: 2, parallelism: 1, hashLength: 32, salt: Buffer.alloc(16, 1).toString('base64') }, wrappedBundleKey: envelope(remoteAad), payload: envelope(remoteAad) }
+    ]
+  };
+};
+
 const createSyncPort = (overrides: Partial<SyncPort> = {}): SyncPort => ({
   status: vi.fn(async () => ({ sync: 'synced' as const, head, pendingCount: 0 })),
   descriptor: vi.fn(async () => null),
@@ -39,6 +63,7 @@ const createSyncPort = (overrides: Partial<SyncPort> = {}): SyncPort => ({
     conflictTypes: ['host'],
     localBackupRevision: 3
   } satisfies SyncPreview)),
+  exportConflict: vi.fn(async () => createConflictExport()),
   resolveConflict: vi.fn(async () => undefined),
   enable: vi.fn(async () => head),
   issueRecoveryKey: vi.fn(async (reveal) => {
@@ -50,7 +75,7 @@ const createSyncPort = (overrides: Partial<SyncPort> = {}): SyncPort => ({
   ...overrides
 });
 
-const renderCenter = (sync: SyncState, syncPort: SyncPort, options: { vaultLocked?: boolean; preview?: SyncPreview; devicesPort?: DeviceTrustPort } = {}) => render(
+const renderCenter = (sync: SyncState, syncPort: SyncPort, options: { vaultLocked?: boolean; preview?: SyncPreview; devicesPort?: DeviceTrustPort; fileSave?: FileSavePort } = {}) => render(
   <SyncCenter
     account={account}
     sync={sync}
@@ -58,6 +83,7 @@ const renderCenter = (sync: SyncState, syncPort: SyncPort, options: { vaultLocke
     vaultLocked={options.vaultLocked ?? false}
     syncPort={syncPort}
     devicesPort={options.devicesPort}
+    fileSave={options.fileSave}
     preview={options.preview}
     onClose={vi.fn()}
   />
@@ -171,13 +197,86 @@ describe('SyncCenter', () => {
       conflictTypes: ['host', 'workspace'],
       localBackupRevision: 3
     };
-    for (const [label, resolution] of [['保留本地', 'keep-local'], ['使用远端', 'use-remote'], ['导出两份', 'export-both'] as const]) {
+    for (const [label, resolution] of [['保留本地', 'keep-local'], ['使用远端', 'use-remote'] as const]) {
       cleanup();
       const syncPort = createSyncPort();
       renderCenter({ sync: 'conflict', head, pendingCount: 1 }, syncPort, { preview });
       await user.click(screen.getByRole('button', { name: label }));
       expect(syncPort.resolveConflict).toHaveBeenCalledWith('conflict-1', resolution);
     }
+  });
+
+  it('exports an encrypted copy with matching password confirmation and keeps the conflict open', async () => {
+    const user = userEvent.setup();
+    let saved: { name: string; content: Uint8Array; mimeType: string } | undefined;
+    const fileSave: FileSavePort = {
+      save: vi.fn(async (request) => { saved = request; })
+    };
+    const syncPort = createSyncPort();
+    const preview: SyncPreview = { conflictId: 'conflict-1', localRevision: 3, remoteRevision: 4, conflictTypes: ['host', 'workspace'], localBackupRevision: 3 };
+    renderCenter({ sync: 'conflict', head, pendingCount: 1 }, syncPort, { preview, fileSave });
+
+    await user.click(screen.getByRole('button', { name: '导出两份' }));
+    const exportDialog = screen.getByRole('dialog', { name: '导出加密副本' });
+    expect(exportDialog).toBeInTheDocument();
+    const submit = screen.getByRole('button', { name: '下载加密副本' });
+    expect(submit).toBeDisabled();
+
+    await user.type(screen.getByLabelText('导出密码'), 'short');
+    await user.type(screen.getByLabelText('确认导出密码'), 'short');
+    await user.click(submit);
+    expect(await screen.findByRole('alert')).toHaveTextContent('至少需要 8 个字符');
+    expect(syncPort.exportConflict).not.toHaveBeenCalled();
+
+    await user.clear(screen.getByLabelText('导出密码'));
+    await user.clear(screen.getByLabelText('确认导出密码'));
+    await user.type(screen.getByLabelText('导出密码'), 'one-time export password');
+    await user.type(screen.getByLabelText('确认导出密码'), 'one-time export password');
+    expect(submit).toBeEnabled();
+    await user.click(submit);
+
+    expect(syncPort.exportConflict).toHaveBeenCalledWith('conflict-1', 'one-time export password');
+    expect(fileSave.save).toHaveBeenCalledTimes(1);
+    expect(saved?.name).toBe('relay-sync-conflict-conflict-1.json');
+    expect(saved?.mimeType).toBe('application/json;charset=utf-8');
+    expect(parseSyncConflictExport(JSON.parse(new TextDecoder().decode(saved?.content)))).toEqual(createConflictExport());
+    expect(screen.getByText('需要你选择冲突处理方式')).toBeInTheDocument();
+    expect(screen.queryByLabelText('导出密码')).not.toBeInTheDocument();
+    expect(syncPort.resolveConflict).not.toHaveBeenCalled();
+  });
+
+  it('clears entered passwords after a failed export and allows retry', async () => {
+    const user = userEvent.setup();
+    const syncPort = createSyncPort({ exportConflict: vi.fn(async () => { throw new Error('export failed'); }) });
+    const fileSave: FileSavePort = { save: vi.fn(async () => undefined) };
+    renderCenter({ sync: 'conflict', head, pendingCount: 1 }, syncPort, { preview: { conflictId: 'conflict-1', localRevision: 3, remoteRevision: 4, conflictTypes: ['host'], localBackupRevision: 3 }, fileSave });
+
+    await user.click(screen.getByRole('button', { name: '导出两份' }));
+    await user.type(screen.getByLabelText('导出密码'), 'one-time export password');
+    await user.type(screen.getByLabelText('确认导出密码'), 'one-time export password');
+    await user.click(screen.getByRole('button', { name: '下载加密副本' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('export failed');
+    expect(screen.getByLabelText('导出密码')).toHaveValue('');
+    expect(screen.getByLabelText('确认导出密码')).toHaveValue('');
+  });
+
+  it('closes a stale export form and reloads the conflict preview', async () => {
+    const user = userEvent.setup();
+    const syncPort = createSyncPort({ exportConflict: vi.fn(async () => { throw new AppError('SYNC_NOT_FOUND'); }) });
+    const fileSave: FileSavePort = { save: vi.fn(async () => undefined) };
+    renderCenter({ sync: 'conflict', head, pendingCount: 1 }, syncPort, { preview: { conflictId: 'conflict-1', localRevision: 3, remoteRevision: 4, conflictTypes: ['host'], localBackupRevision: 3 }, fileSave });
+
+    await user.click(screen.getByRole('button', { name: '导出两份' }));
+    await user.type(screen.getByLabelText('导出密码'), 'one-time export password');
+    await user.type(screen.getByLabelText('确认导出密码'), 'one-time export password');
+    await user.click(screen.getByRole('button', { name: '下载加密副本' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('冲突状态已变化，请重新加载');
+    expect(screen.queryByRole('dialog', { name: '导出加密副本' })).not.toBeInTheDocument();
+    expect(await screen.findByText('需要你选择冲突处理方式')).toBeInTheDocument();
+    expect(syncPort.previewPull).toHaveBeenCalledTimes(1);
+    expect(syncPort.resolveConflict).not.toHaveBeenCalled();
   });
 
   it('makes a revoked device state local-only and does not render sensitive fields', () => {

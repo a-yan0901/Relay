@@ -1,6 +1,8 @@
 import { AppError } from '../../shared/errors';
 import type {
   ClipboardPort,
+  FileSavePort,
+  FileSaveRequest,
   NotificationPermission as RelayNotificationPermission,
   NotificationPort,
   NotificationRequest,
@@ -12,6 +14,10 @@ export interface BrowserClipboardHost {
   writeText?: (text: string) => Promise<void>;
 }
 
+export interface BrowserFileHost {
+  save: (request: FileSaveRequest) => Promise<void> | void;
+}
+
 export interface BrowserNotificationHost {
   permission: RelayNotificationPermission;
   requestPermission: () => Promise<RelayNotificationPermission>;
@@ -21,12 +27,14 @@ export interface BrowserNotificationHost {
 export interface BrowserSystemHosts {
   secureContext: boolean;
   clipboard?: BrowserClipboardHost;
+  fileSave?: BrowserFileHost;
   notifications?: BrowserNotificationHost;
 }
 
 export interface BrowserSystemCapabilities {
   clipboardRead: boolean;
   clipboardWrite: boolean;
+  fileSave: boolean;
   notifications: boolean;
 }
 
@@ -43,11 +51,28 @@ const normalizePermission = (value: unknown): RelayNotificationPermission => (
 const defaultBrowserSystemHosts = (): BrowserSystemHosts => {
   const browserNavigator = typeof globalThis.navigator === 'undefined' ? undefined : globalThis.navigator;
   const notificationConstructor = typeof globalThis.Notification === 'function' ? globalThis.Notification : undefined;
+  const browserDocument = typeof globalThis.document === 'undefined' ? undefined : globalThis.document;
+  const browserUrl = typeof globalThis.URL === 'undefined' ? undefined : globalThis.URL;
+  const browserBlob = typeof globalThis.Blob === 'function' ? globalThis.Blob : undefined;
   return {
     secureContext: globalThis.isSecureContext !== false,
     clipboard: browserNavigator?.clipboard ? {
       readText: () => browserNavigator.clipboard.readText(),
       writeText: (text: string) => browserNavigator.clipboard.writeText(text)
+    } : undefined,
+    fileSave: browserDocument && browserUrl && browserBlob && typeof browserUrl.createObjectURL === 'function' ? {
+      save: ({ name, content, mimeType }: FileSaveRequest) => {
+        const blob = new browserBlob([content.slice().buffer as ArrayBuffer], { type: mimeType });
+        const url = browserUrl.createObjectURL(blob);
+        const anchor = browserDocument.createElement('a');
+        anchor.href = url;
+        anchor.download = name;
+        anchor.hidden = true;
+        (browserDocument.body ?? browserDocument.documentElement).append(anchor);
+        anchor.click();
+        anchor.remove();
+        browserUrl.revokeObjectURL(url);
+      }
     } : undefined,
     notifications: notificationConstructor ? {
       get permission() {
@@ -69,6 +94,7 @@ export const detectBrowserSystemCapabilities = (
 ): BrowserSystemCapabilities => ({
   clipboardRead: hosts.secureContext && typeof hosts.clipboard?.readText === 'function',
   clipboardWrite: hosts.secureContext && typeof hosts.clipboard?.writeText === 'function',
+  fileSave: typeof hosts.fileSave?.save === 'function',
   notifications: hosts.notifications !== undefined
 });
 
@@ -88,6 +114,20 @@ const createClipboardPort = (
     if (!capabilities.clipboardWrite || !hosts.clipboard?.writeText) throw unavailable();
     try {
       await hosts.clipboard.writeText(text);
+    } catch {
+      throw unavailable();
+    }
+  }
+});
+
+const createFileSavePort = (
+  hosts: BrowserSystemHosts,
+  capabilities: BrowserSystemCapabilities
+): FileSavePort => ({
+  async save(request: FileSaveRequest): Promise<void> {
+    if (!capabilities.fileSave || !hosts.fileSave) throw unavailable();
+    try {
+      await hosts.fileSave.save(request);
     } catch {
       throw unavailable();
     }
@@ -128,6 +168,7 @@ export const createBrowserSystemServices = (
   return {
     capabilities,
     clipboard: createClipboardPort(hosts, capabilities),
+    fileSave: createFileSavePort(hosts, capabilities),
     notifications: createNotificationPort(hosts, capabilities)
   };
 };

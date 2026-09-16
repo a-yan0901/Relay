@@ -1,6 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { applySyncRecovery, confirmRecoveryKey, getAccountSession, getSetupStatus, getSyncState, issueRecoveryKey, previewSyncRecovery, signIn } from '../../../src/web/api';
+import { applySyncRecovery, confirmRecoveryKey, exportConflict, getAccountSession, getSetupStatus, getSyncState, issueRecoveryKey, previewSyncRecovery, signIn } from '../../../src/web/api';
+
+const createConflictExportResponse = () => {
+  const envelope = (aad: string) => ({
+    version: 1,
+    nonce: Buffer.alloc(12).toString('base64'),
+    ciphertext: Buffer.alloc(32).toString('base64'),
+    authTag: Buffer.alloc(16).toString('base64'),
+    aad: Buffer.from(aad).toString('base64')
+  });
+  const localAad = 'relay-sync-conflict:v1:conflict-api-1:local';
+  const remoteAad = 'relay-sync-conflict:v1:conflict-api-1:remote';
+  return {
+    format: 'relay-sync-conflict',
+    version: 1,
+    conflictId: 'conflict-api-1',
+    createdAt: '2026-09-17T10:00:00.000Z',
+    copies: [
+      { copy: 'local', revision: 3, payloadHash: 'a'.repeat(64), kdf: { algorithm: 'argon2id', memoryCost: 19_456, timeCost: 2, parallelism: 1, hashLength: 32, salt: Buffer.alloc(16).toString('base64') }, wrappedBundleKey: envelope(localAad), payload: envelope(localAad) },
+      { copy: 'remote', revision: 4, payloadHash: 'b'.repeat(64), kdf: { algorithm: 'argon2id', memoryCost: 19_456, timeCost: 2, parallelism: 1, hashLength: 32, salt: Buffer.alloc(16, 1).toString('base64') }, wrappedBundleKey: envelope(remoteAad), payload: envelope(remoteAad) }
+    ]
+  };
+};
 
 describe('web API request lifecycle', () => {
   afterEach(() => {
@@ -117,5 +139,21 @@ describe('web API request lifecycle', () => {
 
     fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ ...preview, conflictTypes: ['host', 'group', 'identity', 'snippet', 'workspace', 'host-key', 'host'] }), { status: 200 }));
     await expect(previewSyncRecovery({ method: 'master-password', secret: 'master-password' })).rejects.toMatchObject({ code: 'PROTOCOL_INVALID_MESSAGE' });
+  });
+
+  it('posts only the explicit conflict export password and parses the encrypted package strictly', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(createConflictExportResponse()), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await exportConflict('conflict-api-1', 'one-time export password');
+
+    expect(result.conflictId).toBe('conflict-api-1');
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe('/api/sync/v1/conflicts/conflict-api-1/export');
+    expect(init).toEqual(expect.objectContaining({ method: 'POST', credentials: 'same-origin' }));
+    expect(JSON.parse((init as { body?: string }).body as string)).toEqual({ exportPassword: 'one-time export password' });
+
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ ...createConflictExportResponse(), leaked: 'plaintext' }), { status: 200 }));
+    await expect(exportConflict('conflict-api-1', 'one-time export password')).rejects.toMatchObject({ code: 'PROTOCOL_INVALID_MESSAGE' });
   });
 });

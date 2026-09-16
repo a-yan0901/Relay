@@ -880,6 +880,18 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 .sync-conflict .dialog-copy { margin: 10px 0 13px; }
 
 .sync-conflict-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.sync-export-form { background: rgba(93, 168, 255, 0.045); border: 1px solid rgba(93, 168, 255, 0.2); border-radius: 10px; margin-top: 13px; padding: 13px; }
+
+.sync-export-form .dialog-copy { margin: 9px 0 13px; }
+
+.sync-export-form .field { margin-bottom: 11px; }
+
+.sync-export-hint { color: var(--faint); font-size: 9px; line-height: 1.55; margin: 0 0 12px; }
+
+.sync-export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.sync-export-actions .button { flex: 0 1 auto; }
 .broadcast-preview-dialog { max-width: 620px; }
 .broadcast-preview-summary { background: rgba(93, 168, 255, 0.08); border: 1px solid rgba(93, 168, 255, 0.18); border-radius: 8px; display: flex; justify-content: space-between; margin-top: 15px; padding: 10px 12px; }
 .broadcast-preview-summary strong { color: var(--text); font-size: 12px; }

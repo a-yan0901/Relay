@@ -108,6 +108,32 @@ export interface SyncPreview {
   localBackupRevision: number;
 }
 
+export interface SyncConflictExportKdf {
+  algorithm: 'argon2id';
+  memoryCost: number;
+  timeCost: number;
+  parallelism: number;
+  hashLength: number;
+  salt: string;
+}
+
+export interface SyncConflictExportCopy {
+  copy: 'local' | 'remote';
+  revision: number;
+  payloadHash: string;
+  kdf: SyncConflictExportKdf;
+  wrappedBundleKey: WrappedKeyEnvelope;
+  payload: WrappedKeyEnvelope;
+}
+
+export interface SyncConflictExport {
+  format: 'relay-sync-conflict';
+  version: 1;
+  conflictId: string;
+  createdAt: string;
+  copies: readonly [SyncConflictExportCopy, SyncConflictExportCopy];
+}
+
 export interface VaultRecoveryPreview {
   previewId: string;
   vaultId: string;

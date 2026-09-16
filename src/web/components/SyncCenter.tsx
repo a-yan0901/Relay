@@ -4,7 +4,8 @@ import { AppError } from '@shared/errors';
 import { describeAccountSyncState } from '@shared/core/account-sync';
 import type { CapabilitySet } from '@shared/core/capabilities';
 import type { AccountSession, DeviceDescriptor, RecoveryKeyState, SyncHead, SyncPreview, SyncResolution, SyncState } from '@shared/core/models';
-import type { ClipboardPort, DeviceTrustPort, SyncPort } from '@shared/core/ports';
+import { serializeSyncConflictExport, SYNC_CONFLICT_EXPORT_PASSWORD_MAX_LENGTH, SYNC_CONFLICT_EXPORT_PASSWORD_MIN_LENGTH } from '@shared/core/sync-conflict-export';
+import type { ClipboardPort, DeviceTrustPort, FileSavePort, SyncPort } from '@shared/core/ports';
 
 export interface SyncCenterProps {
   account: AccountSession | null;
@@ -14,6 +15,7 @@ export interface SyncCenterProps {
   syncPort?: SyncPort;
   devicesPort?: DeviceTrustPort;
   clipboard?: ClipboardPort;
+  fileSave?: FileSavePort;
   preview?: SyncPreview | null;
   onSyncChange?: (sync: SyncState) => void;
   onClose: () => void;
@@ -67,6 +69,7 @@ export const SyncCenter = ({
   syncPort,
   devicesPort,
   clipboard,
+  fileSave,
   preview,
   onSyncChange,
   onClose
@@ -83,6 +86,9 @@ export const SyncCenter = ({
   const [recoveryInput, setRecoveryInput] = useState('');
   const [recoverySavedOffline, setRecoverySavedOffline] = useState(false);
   const [recoveryCopied, setRecoveryCopied] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportPassword, setExportPassword] = useState('');
+  const [exportPasswordConfirm, setExportPasswordConfirm] = useState('');
 
   const accountSignedIn = account?.state === 'signed-in';
   const available = accountSignedIn && capabilities.supports('sync.encrypted') && syncPort !== undefined;
@@ -93,6 +99,9 @@ export const SyncCenter = ({
     setCurrent(sync);
     setConflict(preview ?? null);
     setResolved(null);
+    setExportOpen(false);
+    setExportPassword('');
+    setExportPasswordConfirm('');
     const nextRecovery = sync.recovery ?? defaultRecoveryState();
     setRecovery(nextRecovery);
     if (nextRecovery.status !== 'pending-confirmation') {
@@ -257,12 +266,78 @@ export const SyncCenter = ({
     }
   };
 
+  const clearExportSecrets = (): void => {
+    setExportPassword('');
+    setExportPasswordConfirm('');
+  };
+
+  const closeExport = (): void => {
+    setExportOpen(false);
+    clearExportSecrets();
+  };
+
+  const openExport = (): void => {
+    if (!fileSave) {
+      setError('当前客户端不支持文件保存');
+      return;
+    }
+    setError(null);
+    setResolved(null);
+    setExportOpen(true);
+  };
+
+  const exportConflict = async (): Promise<void> => {
+    if (!syncPort || !available || !conflict || vaultLocked || !fileSave || busy) return;
+    if (exportPassword.length < SYNC_CONFLICT_EXPORT_PASSWORD_MIN_LENGTH) {
+      setError(`至少需要 ${SYNC_CONFLICT_EXPORT_PASSWORD_MIN_LENGTH} 个字符`);
+      return;
+    }
+    if (exportPassword.length > SYNC_CONFLICT_EXPORT_PASSWORD_MAX_LENGTH) {
+      setError(`不能超过 ${SYNC_CONFLICT_EXPORT_PASSWORD_MAX_LENGTH} 个字符`);
+      return;
+    }
+    if (exportPassword !== exportPasswordConfirm) {
+      setError('两次输入的导出密码不一致');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const exported = await syncPort.exportConflict(conflict.conflictId, exportPassword);
+      const content = new TextEncoder().encode(serializeSyncConflictExport(exported));
+      await fileSave.save({
+        name: `relay-sync-conflict-${conflict.conflictId}.json`,
+        content,
+        mimeType: 'application/json;charset=utf-8'
+      });
+      closeExport();
+      setResolved('已下载加密冲突副本；当前冲突仍保留');
+    } catch (reason: unknown) {
+      clearExportSecrets();
+      if (reason instanceof AppError && (reason.code === 'SYNC_CONFLICT' || reason.code === 'SYNC_NOT_FOUND')) {
+        closeExport();
+        setConflict(null);
+        setError('冲突状态已变化，请重新加载');
+      } else {
+        setError(messageFromError(reason, '导出失败，请稍后重试'));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeCenter = (): void => {
+    closeExport();
+    onClose();
+  };
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="sync-center-dialog" role="dialog" aria-modal="true" aria-label="同步中心">
         <div className="sync-center-heading">
           <div><p className="eyebrow">ENCRYPTED SYNC</p><h2>同步中心</h2></div>
-          <button className="icon-button" type="button" aria-label="关闭同步中心" title="关闭同步中心" onClick={onClose}>×</button>
+          <button className="icon-button" type="button" aria-label="关闭同步中心" title="关闭同步中心" onClick={closeCenter}>×</button>
         </div>
 
         <div className={`sync-status-card sync-status-${visibleStatus}`} role="status">
@@ -325,13 +400,26 @@ export const SyncCenter = ({
             <div className="sync-conflict-actions">
               <button className="button button-ghost" type="button" disabled={!available || busy || vaultLocked} onClick={() => void resolve('keep-local')}>保留本地</button>
               <button className="button button-ghost" type="button" disabled={!available || busy || vaultLocked} onClick={() => void resolve('use-remote')}>使用远端</button>
-              <button className="button button-ghost" type="button" disabled={!available || busy || vaultLocked} onClick={() => void resolve('export-both')}>导出两份</button>
+              <button className="button button-ghost" type="button" disabled={!available || busy || vaultLocked || !fileSave} onClick={openExport}>导出两份</button>
             </div>
+            {exportOpen && <div className="sync-export-form" role="dialog" aria-modal="true" aria-label="导出加密副本">
+              <div className="account-section-heading"><strong>导出加密副本</strong></div>
+              <p className="dialog-copy">导出内容包含本地和远端的加密快照。导出密码只用于保护文件，当前冲突不会被解决。</p>
+              <form onSubmit={(event) => { event.preventDefault(); void exportConflict(); }}>
+                <label className="field" htmlFor="sync-export-password"><span>导出密码</span><input id="sync-export-password" type="password" autoComplete="new-password" value={exportPassword} onChange={(event) => setExportPassword(event.target.value)} /></label>
+                <label className="field" htmlFor="sync-export-password-confirm"><span>确认导出密码</span><input id="sync-export-password-confirm" type="password" autoComplete="new-password" value={exportPasswordConfirm} onChange={(event) => setExportPasswordConfirm(event.target.value)} /></label>
+                <p className="sync-export-hint">至少 8 个字符。请将密码与下载文件分开保存。</p>
+                <div className="sync-export-actions">
+                  <button className="button button-primary" type="submit" disabled={busy || !exportPassword || !exportPasswordConfirm || exportPassword !== exportPasswordConfirm}>{busy ? '下载中…' : '下载加密副本'}</button>
+                  <button className="button button-ghost" type="button" disabled={busy} onClick={closeExport}>取消</button>
+                </div>
+              </form>
+            </div>}
           </> : <p className="dialog-copy">正在加载冲突详情…</p>}
         </section>}
 
         {visibleStatus === 'device-revoked' && <p className="dialog-warning">当前设备已被撤销。你仍可使用本地 Vault，但需要在账号菜单中重新登录受信任设备。</p>}
-        <div className="dialog-actions"><button className="button button-ghost" type="button" onClick={onClose}>完成</button></div>
+        <div className="dialog-actions"><button className="button button-ghost" type="button" onClick={closeCenter}>完成</button></div>
       </section>
     </div>
   );

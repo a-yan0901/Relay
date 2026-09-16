@@ -1192,7 +1192,7 @@ export const App = ({ runtime }: AppProps) => {
       recoveryPort={runtime.vaultRecovery}
       onRecovered={completeSyncRecovery}
     />
-    {syncCenterOpen && accountSession && runtime.sync && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked syncPort={runtime.sync} devicesPort={runtime.devices} clipboard={runtime.platformServices?.clipboard} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
+    {syncCenterOpen && accountSession && runtime.sync && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked syncPort={runtime.sync} devicesPort={runtime.devices} clipboard={runtime.platformServices?.clipboard} fileSave={runtime.platformServices?.fileSave} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
   </>;
 
   return (
@@ -1358,7 +1358,7 @@ export const App = ({ runtime }: AppProps) => {
       />}
       {commandRun && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal" role="dialog" aria-modal="true" aria-labelledby="command-run-result-title"><CommandRunResults run={commandRun} hosts={state.hosts} onCancel={handleCancelCommandRun} onOpenHost={handleOpenHostFromResult} /><button className="button button-ghost" id="command-run-result-title" type="button" onClick={() => setCommandRun(null)}>关闭结果</button></section></div>}
       {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} hosts={state.hosts} filter={activityFilter} loading={activityLoading} hasMore={activityNextCursor !== undefined} diagnostics={operationDiagnostics} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} onApplyFilter={handleApplyActivityFilter} onLoadMore={handleLoadMoreActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
-      {syncCenterOpen && accountSession && runtime.sync && capabilities.supports('sync.encrypted') && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked={false} syncPort={runtime.sync} devicesPort={runtime.devices} clipboard={runtime.platformServices?.clipboard} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
+      {syncCenterOpen && accountSession && runtime.sync && capabilities.supports('sync.encrypted') && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked={false} syncPort={runtime.sync} devicesPort={runtime.devices} clipboard={runtime.platformServices?.clipboard} fileSave={runtime.platformServices?.fileSave} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
       {workspaceSettingsMode && <WorkspaceSettings
         mode={workspaceSettingsMode}
         onClose={() => setWorkspaceSettingsMode(null)}

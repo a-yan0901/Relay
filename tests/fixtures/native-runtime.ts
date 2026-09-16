@@ -10,6 +10,7 @@ import type {
   IdentityMetadata,
   RecoveryKeyState,
   SftpEntry,
+  SyncConflictExport,
   SyncDescriptor,
   SyncEnvelope,
   SyncHead,
@@ -209,6 +210,31 @@ const createOpaqueEnvelope = (deviceId: string): SyncEnvelope => ({
   byteLength: 64
 });
 
+const createOpaqueConflictExport = (): SyncConflictExport => ({
+  format: 'relay-sync-conflict',
+  version: 1,
+  conflictId: 'contract-conflict',
+  createdAt: CONTRACT_TIMESTAMP,
+  copies: [
+    {
+      copy: 'local',
+      revision: 1,
+      payloadHash: 'a'.repeat(64),
+      kdf: { algorithm: 'argon2id', memoryCost: 19_456, timeCost: 2, parallelism: 1, hashLength: 32, salt: 'opaque-salt' },
+      wrappedBundleKey: { version: 1, nonce: 'opaque-nonce', ciphertext: 'opaque-key', authTag: 'opaque-tag', aad: 'opaque-aad' },
+      payload: { version: 1, nonce: 'opaque-nonce', ciphertext: 'opaque-payload', authTag: 'opaque-tag', aad: 'opaque-aad' }
+    },
+    {
+      copy: 'remote',
+      revision: 2,
+      payloadHash: 'b'.repeat(64),
+      kdf: { algorithm: 'argon2id', memoryCost: 19_456, timeCost: 2, parallelism: 1, hashLength: 32, salt: 'opaque-salt' },
+      wrappedBundleKey: { version: 1, nonce: 'opaque-nonce', ciphertext: 'opaque-key', authTag: 'opaque-tag', aad: 'opaque-aad' },
+      payload: { version: 1, nonce: 'opaque-nonce', ciphertext: 'opaque-payload', authTag: 'opaque-tag', aad: 'opaque-aad' }
+    }
+  ]
+});
+
 export const createInMemoryAccountSyncPorts = (): InMemoryAccountSyncPorts => {
   let account: AccountSession | null = null;
   let descriptor: SyncDescriptor | null = null;
@@ -308,6 +334,9 @@ export const createInMemoryAccountSyncPorts = (): InMemoryAccountSyncPorts => {
         conflictTypes: ['host', 'workspace'],
         localBackupRevision: 0
       } satisfies SyncPreview;
+    },
+    async exportConflict() {
+      return createOpaqueConflictExport();
     },
     async resolveConflict() {
       syncState = { ...syncState, sync: 'synced', pendingCount: 0 };

@@ -1,12 +1,18 @@
+import { readFile } from 'node:fs/promises';
+
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import BetterSqlite3 from 'better-sqlite3';
 
+import { parseSyncConflictExport } from '../../src/shared/core/sync-conflict-export';
+import type { SyncEnvelope } from '../../src/shared/core/models';
+import { decryptSyncConflictExportCopy } from '../../src/server/sync/sync-conflict-export';
 import { startE2eSshFixture, type E2eSshFixture } from './ssh-fixture';
 
 const MASTER_PASSWORD = 'webssh e2e master password';
 const ACCOUNT_EMAIL = 'relay-account-e2e@example.com';
 const ACCOUNT_PASSWORD = 'relay account e2e password';
 const LOCAL_SECRET_MARKER = 'vault-secret-marker-e2e';
+const CONFLICT_EXPORT_PASSWORD = 'relay conflict export e2e password';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -24,10 +30,12 @@ const ensureVaultReady = async (page: Page): Promise<void> => {
   const setupButton = page.getByRole('button', { name: '创建 Vault' });
   const unlockButton = page.getByRole('button', { name: '解锁 Vault' });
   const serverHeading = page.getByRole('heading', { name: 'Server', exact: true });
+  const terminalBackButton = page.getByRole('button', { name: '← Server 列表' });
   await expect.poll(async () => {
     if (await setupButton.isVisible()) return 'setup';
     if (await unlockButton.isVisible()) return 'locked';
     if (await serverHeading.isVisible()) return 'ready';
+    if (await terminalBackButton.isVisible()) return 'ready';
     return 'loading';
   }, { timeout: 15_000 }).toMatch(/setup|locked|ready/u);
   if (await setupButton.isVisible()) {
@@ -38,7 +46,7 @@ const ensureVaultReady = async (page: Page): Promise<void> => {
     await page.getByLabel('主密码', { exact: true }).fill(MASTER_PASSWORD);
     await unlockButton.click();
   }
-  if (!await serverHeading.isVisible()) await expect(serverHeading).toBeVisible({ timeout: 15_000 });
+  if (!await serverHeading.isVisible() && !await terminalBackButton.isVisible()) await expect(serverHeading).toBeVisible({ timeout: 15_000 });
 };
 
 const addHost = async (page: Page, name: string, fixture: E2eSshFixture, password = fixture.password): Promise<void> => {
@@ -81,6 +89,22 @@ const resetLocalVaultForNewDevice = (): void => {
   }
 };
 
+const latestUnresolvedConflictId = (accountId: string): string | null => {
+  const database = new BetterSqlite3('.tmp-e2e-account-data/webssh.sqlite', { readonly: true });
+  try {
+    const row = database.prepare(`
+      SELECT id
+      FROM sync_conflicts
+      WHERE account_id = ? AND resolved_at IS NULL
+      ORDER BY rowid DESC
+      LIMIT 1
+    `).get(accountId) as { id: string } | undefined;
+    return row?.id ?? null;
+  } finally {
+    database.close();
+  }
+};
+
 test.describe('account and encrypted sync boundaries', () => {
   let fixture: E2eSshFixture;
 
@@ -94,8 +118,10 @@ test.describe('account and encrypted sync boundaries', () => {
 
   test('keeps Local-only when the server does not advertise account capabilities', async ({ page }) => {
     const accountRequests: string[] = [];
+    const syncRequests: string[] = [];
     page.on('request', (request) => {
       if (request.url().includes('/api/account/')) accountRequests.push(request.url());
+      if (request.url().includes('/api/sync/')) syncRequests.push(request.url());
     });
     await page.route('**/api/capabilities', async (route) => {
       const response = await route.fetch();
@@ -112,8 +138,10 @@ test.describe('account and encrypted sync boundaries', () => {
     await ensureVaultReady(page);
     const menu = await openAccountMenu(page);
     await expect(menu).toContainText('账号服务未启用');
+    await expect(menu.getByRole('button', { name: '打开同步中心' })).toHaveCount(0);
     await page.waitForTimeout(250);
     expect(accountRequests).toEqual([]);
+    expect(syncRequests).toEqual([]);
   });
 
   test('registers while locked, syncs opaque data across contexts, and preserves local state after revoke/logout', async ({ page, browser }) => {
@@ -199,6 +227,104 @@ test.describe('account and encrypted sync boundaries', () => {
       const headAfterConflict = await readJson<{ head: { revision: number } | null }>(page, '/api/sync/v1/state');
       expect(headAfterConflict.body.head?.revision).toBe(2);
 
+      const currentEnvelopeResponse = await readJson<{ envelope: SyncEnvelope }>(page, '/api/sync/v1/envelope');
+      expect(currentEnvelopeResponse.status).toBe(200);
+      const firstAccount = await readJson<{ account: { accountId: string } | null }>(page, '/api/account/session');
+      const accountId = firstAccount.body.account?.accountId;
+      if (!accountId) throw new Error('account session missing account id');
+      const seededConflictId = 'e2e-conflict-export';
+      const database = new BetterSqlite3('.tmp-e2e-account-data/webssh.sqlite');
+      try {
+        database.prepare(`
+          INSERT OR REPLACE INTO sync_conflicts (
+            id, account_id, local_revision, remote_revision,
+            local_envelope_json, remote_envelope_json, created_at, resolved_at
+          ) VALUES (@id, @accountId, @localRevision, @remoteRevision, @local, @remote, @createdAt, NULL)
+        `).run({
+          id: seededConflictId,
+          accountId,
+          localRevision: (staleEnvelope as SyncEnvelope).revision,
+          remoteRevision: currentEnvelopeResponse.body.envelope.revision,
+          local: JSON.stringify(staleEnvelope),
+          remote: JSON.stringify(currentEnvelopeResponse.body.envelope),
+          createdAt: new Date().toISOString()
+        });
+        database.prepare(`
+          INSERT INTO sync_client_state (account_id, pending_envelope_json, status, error_code, updated_at)
+          VALUES (@accountId, @pending, 'conflict', 'SYNC_CONFLICT', @updatedAt)
+          ON CONFLICT(account_id) DO UPDATE SET
+            pending_envelope_json = excluded.pending_envelope_json,
+            status = excluded.status,
+            error_code = excluded.error_code,
+            updated_at = excluded.updated_at
+        `).run({ accountId, pending: JSON.stringify(staleEnvelope), updatedAt: new Date().toISOString() });
+      } finally {
+        database.close();
+      }
+
+      await ensureVaultReady(page);
+      const exportMenu = await openAccountMenu(page);
+      await exportMenu.getByRole('button', { name: '打开同步中心' }).click();
+      const exportCenter = page.getByRole('dialog', { name: '同步中心' });
+      await expect(exportCenter).toContainText('存在同步冲突，需要处理');
+      const activeConflictId = latestUnresolvedConflictId(accountId);
+      if (!activeConflictId) throw new Error('unresolved conflict missing after sync center opened');
+      await exportCenter.getByRole('button', { name: '导出两份' }).click();
+      await exportCenter.getByLabel('导出密码', { exact: true }).fill(CONFLICT_EXPORT_PASSWORD);
+      await exportCenter.getByLabel('确认导出密码', { exact: true }).fill(CONFLICT_EXPORT_PASSWORD);
+      const exportResponsePromise = page.waitForResponse((response) => (
+        response.request().method() === 'POST' && response.url().includes(`/api/sync/v1/conflicts/${activeConflictId}/export`)
+      ));
+      const downloadPromise = page.waitForEvent('download');
+      await exportCenter.getByRole('button', { name: '下载加密副本' }).click();
+      const [exportResponse, download] = await Promise.all([exportResponsePromise, downloadPromise]);
+      const exportRaw = await exportResponse.text();
+      expect(exportResponse.status()).toBe(200);
+      expect(exportRaw).not.toContain(CONFLICT_EXPORT_PASSWORD);
+      expect(exportRaw).not.toContain(LOCAL_SECRET_MARKER);
+      expect(download.suggestedFilename()).toBe(`relay-sync-conflict-${activeConflictId}.json`);
+      const downloadPath = await download.path();
+      if (!downloadPath) throw new Error('encrypted conflict export download path missing');
+      const downloadedRaw = await readFile(downloadPath, 'utf8');
+      expect(downloadedRaw).not.toContain(CONFLICT_EXPORT_PASSWORD);
+      expect(downloadedRaw).not.toContain(LOCAL_SECRET_MARKER);
+      const exported = parseSyncConflictExport(JSON.parse(downloadedRaw) as unknown);
+      expect(exported.conflictId).toBe(activeConflictId);
+      expect(exported.copies.map((copy) => copy.copy)).toEqual(['local', 'remote']);
+      expect(exported.copies.map((copy) => copy.revision)).toEqual([1, 2]);
+      const localSnapshot = JSON.parse((await decryptSyncConflictExportCopy(activeConflictId, exported.copies[0], CONFLICT_EXPORT_PASSWORD)).toString('utf8')) as Record<string, unknown>;
+      const remoteSnapshot = JSON.parse((await decryptSyncConflictExportCopy(activeConflictId, exported.copies[1], CONFLICT_EXPORT_PASSWORD)).toString('utf8')) as Record<string, unknown>;
+      expect(localSnapshot).toEqual(expect.objectContaining({ schemaVersion: 1, groups: expect.any(Array), hosts: expect.any(Array), identities: expect.any(Array), snippets: expect.any(Array), workspace: expect.any(Object) }));
+      expect(remoteSnapshot).toEqual(expect.objectContaining({ schemaVersion: 1, groups: expect.any(Array), hosts: expect.any(Array), identities: expect.any(Array), snippets: expect.any(Array), workspace: expect.any(Object) }));
+      expect(JSON.stringify(remoteSnapshot)).toContain(LOCAL_SECRET_MARKER);
+      expect(exportCenter).toContainText('需要你选择冲突处理方式');
+      expect(exportCenter.getByRole('button', { name: '保留本地' })).toBeVisible();
+      expect(exportCenter.getByRole('button', { name: '使用远端' })).toBeVisible();
+
+      const storedConflict = new BetterSqlite3('.tmp-e2e-account-data/webssh.sqlite');
+      try {
+        const conflictRow = storedConflict.prepare('SELECT resolved_at, local_envelope_json, remote_envelope_json FROM sync_conflicts WHERE id = ?').get(seededConflictId) as { resolved_at: string | null; local_envelope_json: string; remote_envelope_json: string } | undefined;
+        expect(conflictRow?.resolved_at).toBeNull();
+        expect(conflictRow?.local_envelope_json).not.toContain(LOCAL_SECRET_MARKER);
+        expect(conflictRow?.remote_envelope_json).not.toContain(LOCAL_SECRET_MARKER);
+        const exportAudit = storedConflict.prepare(`SELECT metadata_json FROM audit_events WHERE event_type = 'sync_conflict_exported' ORDER BY created_at DESC LIMIT 1`).get() as { metadata_json: string } | undefined;
+        expect(exportAudit?.metadata_json).toBeTruthy();
+        expect(exportAudit?.metadata_json).not.toContain(CONFLICT_EXPORT_PASSWORD);
+        expect(exportAudit?.metadata_json).not.toContain(LOCAL_SECRET_MARKER);
+      } finally {
+        storedConflict.close();
+      }
+      await exportCenter.getByRole('button', { name: '关闭同步中心' }).click();
+      const cleanupConflicts = new BetterSqlite3('.tmp-e2e-account-data/webssh.sqlite');
+      try {
+        cleanupConflicts.prepare('UPDATE sync_conflicts SET resolved_at = ? WHERE account_id = ? AND resolved_at IS NULL').run(new Date().toISOString(), accountId);
+        cleanupConflicts.prepare('DELETE FROM sync_client_state WHERE account_id = ?').run(accountId);
+      } finally {
+        cleanupConflicts.close();
+      }
+
+      const terminalBack = page.getByRole('button', { name: '← Server 列表' });
+      if (await terminalBack.isVisible()) await terminalBack.click();
       const firstAccountMenu = await openAccountMenu(page);
       const secondDevice = firstAccountMenu.locator('.account-devices li').filter({ hasNotText: '· 当前' }).first();
       await expect(secondDevice).toBeVisible();

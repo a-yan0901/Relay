@@ -17,6 +17,7 @@ import type {
   SftpEntry,
   Snippet,
   SnippetMetadata,
+  SyncConflictExport,
   SyncDescriptor,
   SyncEnvelope,
   SyncHead,
@@ -159,6 +160,7 @@ export interface WebApiClient {
   pushSyncEnvelope?: typeof api.pushSyncEnvelope;
   previewPull?: typeof api.previewPull;
   resolveConflict?: typeof api.resolveConflict;
+  exportConflict?: typeof api.exportConflict;
   issueRecoveryKey?: typeof api.issueRecoveryKey;
   confirmRecoveryKey?: typeof api.confirmRecoveryKey;
   previewSyncRecovery?: typeof api.previewSyncRecovery;
@@ -504,7 +506,7 @@ export class WebDeviceTrust implements DeviceTrustPort {
   }
 }
 
-type WebSyncClient = Pick<WebApiClient, 'getSyncState' | 'getSyncDescriptor' | 'enableSync' | 'retrySync' | 'previewPull' | 'resolveConflict'> & Partial<Pick<WebApiClient, 'getSyncEnvelope' | 'pushSyncEnvelope' | 'issueRecoveryKey' | 'confirmRecoveryKey'>>;
+type WebSyncClient = Pick<WebApiClient, 'getSyncState' | 'getSyncDescriptor' | 'enableSync' | 'retrySync' | 'previewPull' | 'resolveConflict'> & Partial<Pick<WebApiClient, 'getSyncEnvelope' | 'pushSyncEnvelope' | 'issueRecoveryKey' | 'confirmRecoveryKey' | 'exportConflict'>>;
 
 export class WebSync implements SyncPort {
   constructor(private readonly client: WebSyncClient = api) {}
@@ -534,6 +536,10 @@ export class WebSync implements SyncPort {
 
   previewPull(): Promise<SyncPreview> {
     return requireApi(this.client.previewPull)();
+  }
+
+  async exportConflict(conflictId: string, exportPassword: string): Promise<SyncConflictExport> {
+    return requireApi(this.client.exportConflict)(conflictId, exportPassword);
   }
 
   resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void> {
@@ -863,6 +869,7 @@ export const createWebAdapters = (options: {
     clipboard: browserSystemServices.capabilities.clipboardRead && browserSystemServices.capabilities.clipboardWrite
       ? browserSystemServices.clipboard
       : undefined,
+    fileSave: browserSystemServices.capabilities.fileSave ? browserSystemServices.fileSave : undefined,
     notifications: browserSystemServices.capabilities.notifications ? browserSystemServices.notifications : undefined
   } satisfies PlatformServices;
   const runtime = {

@@ -41,6 +41,7 @@ const envelopeSchema = z.object({
 
 const conflictParamsSchema = z.object({ conflictId: z.string().min(1).max(128) }).strict();
 const resolveBodySchema = z.object({ resolution: z.enum(['keep-local', 'use-remote', 'export-both']) }).strict();
+const exportBodySchema = z.object({ exportPassword: z.string().min(8).max(4_096) }).strict();
 const recoveryKeyBodySchema = z.object({ recoveryKey: z.string().min(1).max(128) }).strict();
 const deleteBodySchema = z.object({
   reauthenticated: z.literal(true),
@@ -161,6 +162,29 @@ export const registerSyncRoutes = async (app: FastifyInstance, dependencies: Syn
     const vaultSession = requireUnlockedSession(request, dependencies.sessionStore);
     const preview = await dependencies.syncService.previewPull(account.accountId, dependencies.ownerId, vaultSession.record.vaultKey);
     reply.send(preview);
+  });
+
+  app.post('/api/sync/v1/conflicts/:conflictId/export', async (request, reply) => {
+    requireEnabled(dependencies);
+    const account = requireAccount(request, dependencies);
+    const vaultSession = requireUnlockedSession(request, dependencies.sessionStore);
+    const params = conflictParamsSchema.safeParse(request.params);
+    const body = exportBodySchema.safeParse(request.body);
+    if (!params.success || !body.success) throw new AppError('SYNC_PAYLOAD_INVALID');
+    const exported = await dependencies.syncService.exportConflict(
+      account.accountId,
+      dependencies.ownerId,
+      vaultSession.record.vaultKey,
+      params.data.conflictId,
+      body.data.exportPassword
+    );
+    audit(dependencies, 'sync_conflict_exported', request.id, account, {
+      conflictId: exported.conflictId,
+      localRevision: exported.copies[0].revision,
+      remoteRevision: exported.copies[1].revision,
+      status: 'succeeded'
+    });
+    reply.type('application/json').header('cache-control', 'no-store').send(exported);
   });
 
   app.post('/api/sync/v1/conflicts/:conflictId/resolve', async (request, reply) => {

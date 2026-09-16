@@ -1,5 +1,6 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
-import type { AccountSession, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, Snippet, SnippetMetadata, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
+import type { AccountSession, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, Snippet, SnippetMetadata, SyncConflictExport, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
+import { parseSyncConflictExport } from '@shared/core/sync-conflict-export';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
 import type { VaultRecoveryInput } from '@shared/core/ports';
@@ -64,6 +65,7 @@ export interface WebSyncApi {
   confirmRecoveryKey(recoveryKey: string): Promise<RecoveryKeyState>;
   retrySync(): Promise<void>;
   previewPull(): Promise<SyncPreview>;
+  exportConflict(conflictId: string, exportPassword: string): Promise<SyncConflictExport>;
   resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void>;
 }
 
@@ -485,6 +487,15 @@ const parseSyncEnvelopeResponse = (value: unknown): SyncEnvelope | null => {
   return parseSyncEnvelope(value.envelope);
 };
 
+const parseWebSyncConflictExport = (value: unknown): SyncConflictExport => {
+  try {
+    return parseSyncConflictExport(value);
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'SYNC_PAYLOAD_INVALID') return invalidResponse();
+    throw error;
+  }
+};
+
 export const getSetupStatus = (): Promise<SetupStatus> => request<SetupStatus>('/api/setup/status');
 
 export const getCapabilities = (): Promise<CapabilityResponse> => request<CapabilityResponse>('/api/capabilities');
@@ -541,6 +552,11 @@ export const resolveConflict: WebSyncApi['resolveConflict'] = (conflictId, resol
   method: 'POST',
   ...json({ resolution })
 });
+
+export const exportConflict: WebSyncApi['exportConflict'] = (conflictId, exportPassword) => request<unknown>(`/api/sync/v1/conflicts/${encodeURIComponent(conflictId)}/export`, {
+  method: 'POST',
+  ...json({ exportPassword })
+}).then(parseWebSyncConflictExport);
 
 export const previewSyncRecovery: WebVaultRecoveryApi['previewSyncRecovery'] = (input) => request<unknown>('/api/setup/from-sync/preview', {
   method: 'POST',

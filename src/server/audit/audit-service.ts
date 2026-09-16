@@ -28,7 +28,7 @@ export interface PaginatedAuditEvents {
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const EVENT_PATTERN = /^[a-z][a-z0-9._-]{1,63}$/u;
-const ALLOWED_METADATA = new Set(['runId', 'transferId', 'accountId', 'deviceId', 'vaultId', 'action', 'resolution', 'reason', 'status', 'targetCount', 'successCount', 'failureCount', 'cancelledCount', 'interruptedCount', 'anomalyCount', 'truncatedCount', 'durationMs', 'revision']);
+const ALLOWED_METADATA = new Set(['runId', 'transferId', 'accountId', 'deviceId', 'vaultId', 'conflictId', 'localRevision', 'remoteRevision', 'action', 'resolution', 'reason', 'status', 'targetCount', 'successCount', 'failureCount', 'cancelledCount', 'interruptedCount', 'anomalyCount', 'truncatedCount', 'durationMs', 'revision']);
 
 const assertId = (value: string): void => {
   if (!ID_PATTERN.test(value)) throw new AppError('AUDIT_METADATA_INVALID');
@@ -39,7 +39,7 @@ const sanitizeMetadata = (input: Readonly<Record<string, unknown>> | undefined):
   const metadata: Record<string, string | number | boolean | null> = {};
   for (const [key, value] of Object.entries(input)) {
     if (!ALLOWED_METADATA.has(key)) throw new AppError('AUDIT_METADATA_INVALID');
-    if (key === 'runId' || key === 'transferId' || key === 'accountId' || key === 'deviceId' || key === 'vaultId') {
+    if (key === 'runId' || key === 'transferId' || key === 'accountId' || key === 'deviceId' || key === 'vaultId' || key === 'conflictId') {
       if (typeof value !== 'string') throw new AppError('AUDIT_METADATA_INVALID');
       assertId(value);
       metadata[key] = value;

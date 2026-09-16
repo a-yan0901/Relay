@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 
 import type {
   SyncDescriptor,
+  SyncConflictExport,
   SyncEnvelope,
   SyncHead,
   SyncPreview,
@@ -35,6 +36,11 @@ import {
 } from './sync-crypto.js';
 import { BlindSyncRepository, type BlindSyncStore, type SyncClientState, type SyncDeleteRequest } from './sync-repository.js';
 import { SyncSnapshotService } from './sync-snapshot.js';
+import {
+  assembleSyncConflictExport,
+  assertSyncConflictExportPassword,
+  createSyncConflictExportCopy
+} from './sync-conflict-export.js';
 import type { VaultConfig } from '../vault/types.js';
 
 export interface SyncServiceContract {
@@ -51,6 +57,7 @@ export interface SyncServiceContract {
   previewPull(accountId: string, ownerId: string, vaultKey: Buffer): Promise<SyncPreview>;
   previewRecovery(accountId: string, deviceId: string, ownerId: string, vaultKey: Buffer): Promise<VaultRecoveryPreview>;
   applyRecovery(accountId: string, deviceId: string, ownerId: string, vaultKey: Buffer, previewId: string, afterApply?: () => void): Promise<void>;
+  exportConflict(accountId: string, ownerId: string, vaultKey: Buffer, conflictId: string, exportPassword: string): Promise<SyncConflictExport>;
   resolveConflict(accountId: string, ownerId: string, vaultKey: Buffer, conflictId: string, resolution: SyncResolution): Promise<void>;
   getClientState(accountId: string): SyncClientState | null;
   savePending(accountId: string, envelope: SyncEnvelope | null, status: Extract<SyncStatus, 'pending' | 'offline' | 'conflict' | 'needs-unlock' | 'device-revoked'>, errorCode?: string | null): void;
@@ -491,6 +498,74 @@ export class SyncService implements SyncServiceContract {
       }
     } finally {
       this.applyingRecoveryPreviews.delete(previewId);
+    }
+  }
+
+  async exportConflict(
+    accountId: string,
+    ownerId: string,
+    vaultKey: Buffer,
+    conflictId: string,
+    exportPassword: string
+  ): Promise<SyncConflictExport> {
+    assertSyncConflictExportPassword(exportPassword);
+    const conflict = this.store.getConflict(accountId, conflictId);
+    if (!conflict) throw new AppError('SYNC_NOT_FOUND');
+    const descriptor = this.getDescriptor(accountId);
+    if (!descriptor) throw new AppError('SYNC_NOT_ENABLED');
+    if (
+      conflict.local.vaultId !== descriptor.vaultId ||
+      conflict.remote.vaultId !== descriptor.vaultId ||
+      conflict.local.keyVersion !== descriptor.keyVersion ||
+      conflict.remote.keyVersion !== descriptor.keyVersion
+    ) throw new AppError('SYNC_PAYLOAD_INVALID');
+
+    let syncKey: Buffer | undefined;
+    let localPlaintext: Buffer | undefined;
+    let remotePlaintext: Buffer | undefined;
+    try {
+      syncKey = unwrapSyncKey(vaultKey, descriptor.vaultId, descriptor.keyVersion, descriptor.wrappedSyncKey);
+      localPlaintext = decryptSyncPayload(syncKey, conflict.local);
+      this.snapshotService.validate(localPlaintext);
+      const local = await createSyncConflictExportCopy({
+        conflictId,
+        copy: 'local',
+        revision: conflict.local.revision,
+        payloadHash: conflict.local.payloadHash,
+        plaintext: localPlaintext,
+        exportPassword
+      });
+      localPlaintext.fill(0);
+      localPlaintext = undefined;
+
+      remotePlaintext = decryptSyncPayload(syncKey, conflict.remote);
+      this.snapshotService.validate(remotePlaintext);
+      const remote = await createSyncConflictExportCopy({
+        conflictId,
+        copy: 'remote',
+        revision: conflict.remote.revision,
+        payloadHash: conflict.remote.payloadHash,
+        plaintext: remotePlaintext,
+        exportPassword
+      });
+
+      const current = this.store.getConflict(accountId, conflictId);
+      if (!current || JSON.stringify(current.local) !== JSON.stringify(conflict.local) || JSON.stringify(current.remote) !== JSON.stringify(conflict.remote)) {
+        throw new AppError('SYNC_CONFLICT');
+      }
+      return assembleSyncConflictExport({
+        conflictId,
+        createdAt: new Date(this.clock()).toISOString(),
+        local,
+        remote
+      });
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'VAULT_CRYPTO_FAILED') throw new AppError('SYNC_PAYLOAD_INVALID');
+      throw error;
+    } finally {
+      localPlaintext?.fill(0);
+      remotePlaintext?.fill(0);
+      syncKey?.fill(0);
     }
   }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { assertAccountSyncContract, assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
-import type { AccountSession, DeviceDescriptor, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest, VaultRecoveryPreview } from '../../../src/shared/core/models.js';
+import type { AccountSession, DeviceDescriptor, SyncConflictExport, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest, VaultRecoveryPreview } from '../../../src/shared/core/models.js';
 import type { HostMetadata } from '../../../src/shared/validation.js';
 import { createWebAdapters, WebAccountSession, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync, WebVaultRecovery } from '../../../src/web/platform/web-adapters.js';
 import type { TerminalSocketLike } from '../../../src/web/hooks/use-terminal-session.js';
@@ -81,6 +81,13 @@ const createWebContractApi = () => {
     workspaceIncluded: true,
     conflictTypes: [],
     expiresAt: '2026-09-17T00:10:00.000Z'
+  };
+  const conflictExport: SyncConflictExport = {
+    format: 'relay-sync-conflict', version: 1, conflictId: 'conflict-1', createdAt: '2026-09-17T00:00:00.000Z',
+    copies: [
+      { copy: 'local', revision: 1, payloadHash: 'a'.repeat(64), kdf: { algorithm: 'argon2id', memoryCost: 19_456, timeCost: 2, parallelism: 1, hashLength: 32, salt: 'opaque-salt' }, wrappedBundleKey: { version: 1, nonce: 'opaque', ciphertext: 'opaque', authTag: 'opaque', aad: 'opaque' }, payload: { version: 1, nonce: 'opaque', ciphertext: 'opaque', authTag: 'opaque', aad: 'opaque' } },
+      { copy: 'remote', revision: 2, payloadHash: 'b'.repeat(64), kdf: { algorithm: 'argon2id', memoryCost: 19_456, timeCost: 2, parallelism: 1, hashLength: 32, salt: 'opaque-salt' }, wrappedBundleKey: { version: 1, nonce: 'opaque', ciphertext: 'opaque', authTag: 'opaque', aad: 'opaque' }, payload: { version: 1, nonce: 'opaque', ciphertext: 'opaque', authTag: 'opaque', aad: 'opaque' } }
+    ]
   };
   const syncDescriptor: SyncDescriptor = {
     vaultId: syncHead.vaultId,
@@ -169,6 +176,7 @@ const createWebContractApi = () => {
       return syncHead;
     },
     previewPull: async () => ({ conflictId: 'conflict-1', localRevision: 0, remoteRevision: 1, conflictTypes: ['host'] as const, localBackupRevision: 0 }),
+    exportConflict: async () => conflictExport,
     resolveConflict: async () => { currentSync = { ...currentSync, sync: 'synced', pendingCount: 0 }; },
     issueRecoveryKey: async () => {
       const recovery = { status: 'pending-confirmation' as const, activeKeyVersion: null, pendingKeyVersion: 1 };
@@ -409,6 +417,37 @@ describe('web adapters', () => {
       previewPull: async () => { throw new Error('not used'); },
       resolveConflict: async () => undefined
     }).issueRecoveryKey(() => undefined)).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
+    await expect(new WebSync({
+      getSyncState: async () => ({ sync: 'synced' as const, head: null }),
+      getSyncDescriptor: async () => null,
+      enableSync: async () => { throw new Error('not used'); },
+      retrySync: async () => undefined,
+      previewPull: async () => { throw new Error('not used'); },
+      resolveConflict: async () => undefined
+    }).exportConflict('conflict-1', 'export-password')).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
+  });
+
+  it('passes the explicit export password through the optional WebSync method', async () => {
+    const exported: SyncConflictExport = {
+      format: 'relay-sync-conflict', version: 1, conflictId: 'conflict-1', createdAt: '2026-09-17T00:00:00.000Z', copies: [] as never
+    };
+    const exportConflict = vi.fn(async (conflictId: string, password: string) => {
+      expect(conflictId).toBe('conflict-1');
+      expect(password).toBe('export-password');
+      return exported;
+    });
+    const sync = new WebSync({
+      getSyncState: async () => ({ sync: 'synced' as const, head: null }),
+      getSyncDescriptor: async () => null,
+      enableSync: async () => { throw new Error('not used'); },
+      retrySync: async () => undefined,
+      previewPull: async () => { throw new Error('not used'); },
+      resolveConflict: async () => undefined,
+      exportConflict
+    });
+
+    await expect(sync.exportConflict('conflict-1', 'export-password')).resolves.toBe(exported);
+    expect(exportConflict).toHaveBeenCalledTimes(1);
   });
 
   it('keeps new-device recovery behind an optional platform port', async () => {

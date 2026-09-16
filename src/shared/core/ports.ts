@@ -13,6 +13,7 @@ import type {
   SftpEntry,
   Snippet,
   SnippetMetadata,
+  SyncConflictExport,
   SyncDescriptor,
   SyncEnvelope,
   SyncHead,
@@ -79,9 +80,20 @@ export interface ClipboardPort {
   writeText(text: string): Promise<void>;
 }
 
+export interface FileSaveRequest {
+  name: string;
+  content: Uint8Array;
+  mimeType: string;
+}
+
+export interface FileSavePort {
+  save(request: FileSaveRequest): Promise<void>;
+}
+
 /** Optional system capabilities supplied by a platform shell. */
 export interface PlatformServices {
   clipboard?: ClipboardPort;
+  fileSave?: FileSavePort;
   notifications?: NotificationPort;
 }
 
@@ -167,6 +179,7 @@ export interface SyncPort {
   pull(): Promise<SyncEnvelope | null>;
   push(envelope: SyncEnvelope, idempotencyKey: string): Promise<SyncHead>;
   previewPull(): Promise<SyncPreview>;
+  exportConflict(conflictId: string, exportPassword: string): Promise<SyncConflictExport>;
   resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void>;
   enable(): Promise<SyncHead>;
   issueRecoveryKey(reveal: RecoveryKeyReveal): Promise<RecoveryKeyState>;

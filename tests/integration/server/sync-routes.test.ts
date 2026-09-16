@@ -11,9 +11,12 @@ import { AccountRepository, GroupRepository, HostRepository, IdentityRepository,
 import { openDatabase } from '../../../src/server/db/database.js';
 import { migrate } from '../../../src/server/db/migrations.js';
 import { createSyncKey, decryptSyncPayload, encryptSyncPayload, unwrapSyncKey, wrapSyncKey } from '../../../src/server/sync/sync-crypto.js';
+import { decryptSyncConflictExportCopy } from '../../../src/server/sync/sync-conflict-export.js';
 import { BlindSyncRepository } from '../../../src/server/sync/sync-repository.js';
 import { SyncSnapshotService } from '../../../src/server/sync/sync-snapshot.js';
 import { SyncService, type SyncTransport } from '../../../src/server/sync/sync-service.js';
+import { parseSyncConflictExport } from '../../../src/shared/core/sync-conflict-export.js';
+import type { SyncEnvelope } from '../../../src/shared/core/models.js';
 import { SnippetService } from '../../../src/server/automation/snippet-service.js';
 import { VaultBundleService } from '../../../src/server/workspace/vault-bundle-service.js';
 import { WorkspaceRepository } from '../../../src/server/workspace/workspace-repository.js';
@@ -583,6 +586,128 @@ describe('blind sync storage and snapshot bridge', () => {
     });
     expect(duplicatePush.statusCode).toBe(200);
     expect(duplicatePush.json()).toEqual(expect.objectContaining({ revision: 1 }));
+  });
+
+  it('exports both unresolved encrypted conflict snapshots without resolving or persisting plaintext', async () => {
+    const { app, database } = await makeApp();
+    const exportPassword = 'one-time conflict export password';
+    const hostMarker = 'conflict-export-host-marker';
+    const registered = await app.inject({
+      method: 'POST',
+      url: '/api/account/register',
+      headers: { origin: ORIGIN },
+      payload: { email: 'conflict-export@example.com', password: ACCOUNT_PASSWORD }
+    });
+    const accountCookie = cookieFrom(registered, 'relay_account_session');
+    const accountId = (json<{ account: { accountId: string } }>(registered)).account.accountId;
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', headers: { origin: ORIGIN }, payload: { masterPassword: MASTER_PASSWORD } });
+    const vaultCookie = cookieFrom(setup, 'webssh_session');
+    const cookies = `${accountCookie}; ${vaultCookie}`;
+    expect((await app.inject({ method: 'POST', url: '/api/sync/v1/enable', headers: { origin: ORIGIN, cookie: cookies } })).statusCode).toBe(201);
+
+    const initialEnvelopeResponse = await app.inject({ method: 'GET', url: '/api/sync/v1/envelope', headers: { cookie: accountCookie } });
+    const initialEnvelope = json<{ envelope: SyncEnvelope }>(initialEnvelopeResponse).envelope;
+    const host = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { name: hostMarker, address: '192.0.2.44', username: 'export-user', auth: { type: 'password', password: hostMarker } }
+    });
+    expect(host.statusCode).toBe(201);
+
+    let remoteEnvelope: SyncEnvelope | null = null;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const state = await app.inject({ method: 'GET', url: '/api/sync/v1/state', headers: { cookie: accountCookie } });
+      const head = json<{ head: { revision: number } | null }>(state).head;
+      if (head?.revision === 2) {
+        remoteEnvelope = json<{ envelope: SyncEnvelope }>(await app.inject({ method: 'GET', url: '/api/sync/v1/envelope', headers: { cookie: accountCookie } })).envelope;
+        break;
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    expect(remoteEnvelope).not.toBeNull();
+
+    const store = new BlindSyncRepository(database);
+    const conflictId = store.saveConflict(accountId, initialEnvelope, remoteEnvelope!);
+    store.saveClientState(accountId, {
+      pendingEnvelope: initialEnvelope,
+      status: 'conflict',
+      errorCode: 'SYNC_CONFLICT',
+      updatedAt: new Date().toISOString()
+    });
+
+    const unauthenticated = await app.inject({
+      method: 'POST',
+      url: `/api/sync/v1/conflicts/${conflictId}/export`,
+      headers: { origin: ORIGIN },
+      payload: { exportPassword }
+    });
+    expect(unauthenticated.statusCode).toBe(401);
+    expect(unauthenticated.json().error.code).toBe('ACCOUNT_SESSION_INVALID');
+
+    const locked = await app.inject({
+      method: 'POST',
+      url: `/api/sync/v1/conflicts/${conflictId}/export`,
+      headers: { origin: ORIGIN, cookie: accountCookie },
+      payload: { exportPassword }
+    });
+    expect(locked.statusCode).toBe(401);
+    expect(locked.json().error.code).toBe('SESSION_INVALID');
+
+    const malformed = await app.inject({
+      method: 'POST',
+      url: `/api/sync/v1/conflicts/${conflictId}/export`,
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { exportPassword, unexpected: 'must reject' }
+    });
+    expect(malformed.statusCode).toBe(422);
+    expect(malformed.json().error.code).toBe('SYNC_PAYLOAD_INVALID');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/sync/v1/conflicts/${conflictId}/export`,
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { exportPassword }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['content-type']).toContain('application/json');
+    expect(response.body).not.toContain(exportPassword);
+    expect(response.body).not.toContain(hostMarker);
+    expect(response.body).not.toContain('192.0.2.44');
+
+    const exported = parseSyncConflictExport(response.json());
+    expect(exported.conflictId).toBe(conflictId);
+    expect(exported.copies.map((copy) => copy.copy)).toEqual(['local', 'remote']);
+    expect(exported.copies.map((copy) => copy.revision)).toEqual([1, 2]);
+    const localPlaintext = await decryptSyncConflictExportCopy(conflictId, exported.copies[0], exportPassword);
+    const remotePlaintext = await decryptSyncConflictExportCopy(conflictId, exported.copies[1], exportPassword);
+    try {
+      const localSnapshot = JSON.parse(localPlaintext.toString('utf8')) as Record<string, unknown>;
+      const remoteSnapshot = JSON.parse(remotePlaintext.toString('utf8')) as Record<string, unknown>;
+      expect(Object.keys(localSnapshot).sort()).toEqual(['groups', 'hosts', 'identities', 'schemaVersion', 'snippets', 'workspace'].sort());
+      expect(Object.keys(remoteSnapshot).sort()).toEqual(['groups', 'hosts', 'identities', 'schemaVersion', 'snippets', 'workspace'].sort());
+      expect(JSON.stringify(remoteSnapshot)).toContain(hostMarker);
+    } finally {
+      localPlaintext.fill(0);
+      remotePlaintext.fill(0);
+    }
+
+    expect(store.getConflict(accountId, conflictId)).not.toBeNull();
+    expect(json<{ sync: string }>(await app.inject({ method: 'GET', url: '/api/sync/v1/state', headers: { cookie: accountCookie } })).sync).toBe('conflict');
+    const auditRows = database.prepare('SELECT metadata_json FROM audit_events WHERE event_type = ?').all('sync_conflict_exported') as Array<{ metadata_json: string }>;
+    expect(auditRows).toHaveLength(1);
+    expect(JSON.stringify(auditRows)).not.toContain(exportPassword);
+    expect(JSON.stringify(auditRows)).not.toContain(hostMarker);
+
+    const directResolve = await app.inject({
+      method: 'POST',
+      url: `/api/sync/v1/conflicts/${conflictId}/resolve`,
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { resolution: 'export-both' }
+    });
+    expect(directResolve.statusCode).toBe(409);
+    expect(directResolve.json().error.code).toBe('SYNC_CONFLICT');
   });
 
   it('persists pending before a provider failure and retries the same envelope without blocking local mutation', async () => {
