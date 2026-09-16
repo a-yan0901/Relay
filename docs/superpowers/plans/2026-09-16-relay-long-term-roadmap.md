@@ -291,8 +291,8 @@ export interface OperationDiagnostic {
 **Verification:**
 
 - RED：实现前新增状态、协议、服务重启和服务实例边界断言按预期失败。
-- Focused：15 个文件、74 个测试通过；`npm run lint`、`npm run typecheck`、`npm run build` 通过。
-- Full regression：`npm test`，81 个测试文件、297 个测试全部通过。
+- Focused：核心/DOM 聚焦回归 15 个文件、74 个测试通过；补充终端错误诊断后 6 个文件、47 个测试以及 terminal panel/session 2 个文件、17 个测试通过；`npm run lint`、`npm run typecheck`、`npm run build` 通过。
+- Full regression：`npm test`，81 个测试文件、298 个测试全部通过。
 - Browser：`npm run test:e2e -- --project=chromium tests/e2e/ssh-productivity.spec.ts`，2/2 通过。
 - `git diff --check` 通过；feature commit：`58e5bcc`（`feat: unify ssh operation lifecycle diagnostics`）。
 
