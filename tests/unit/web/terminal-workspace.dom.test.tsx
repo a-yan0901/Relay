@@ -275,4 +275,18 @@ describe('TerminalWorkspace', () => {
     expect(onClear).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it('explains the current connection stage and user action', () => {
+    render(<TerminalToolbar
+      state="failed"
+      diagnostic={{
+        operationId: 'terminal-1', hostId: 'host-1', kind: 'terminal', stage: 'auth', state: 'failed', retryable: false, nextAction: 'edit-credentials', errorCode: 'SSH_AUTH_FAILED', startedAt: '2026-09-16T00:00:00.000Z', endedAt: '2026-09-16T00:00:01.000Z'
+      }}
+      onReconnect={vi.fn()}
+      onClose={vi.fn()}
+      onClear={vi.fn()}
+    />);
+
+    expect(screen.getByText('认证 · 编辑凭据')).toBeInTheDocument();
+  });
 });

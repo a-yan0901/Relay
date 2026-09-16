@@ -38,7 +38,7 @@ describe('transfer restart persistence', () => {
     repository.create({ ownerId: 'owner-a', id: 'transfer-restart', kind: 'download', hostId: 'host-1', sourcePath: '/remote.txt', targetPath: 'remote.txt', status: 'running', completedBytes: 4, totalBytes: 10, createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString() });
 
     const manager = new TransferManager({ ownerId: 'owner-a', repository, resourceProvider: { open: async () => ({ resource: resource(), close() {} }) }, now: () => 1_000 });
-    expect((await manager.get('transfer-restart'))?.status).toBe('interrupted');
+    expect(await manager.get('transfer-restart')).toMatchObject({ status: 'interrupted', errorCode: 'SERVICE_RESTARTED' });
     expect((await manager.retry('transfer-restart')).status).toBe('queued');
     expect(repository.get('transfer-restart')?.status).toBe('queued');
   });

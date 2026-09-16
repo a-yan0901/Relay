@@ -1,8 +1,11 @@
 import type { TerminalStatus } from '@shared/protocol';
+import type { OperationDiagnostic } from '@shared/core/models';
+import { ConnectionStatus, operationDiagnosticLabel } from './ConnectionStatus';
 
 export interface TerminalToolbarProps {
   state: TerminalStatus;
   reconnectDelayMs?: number;
+  diagnostic?: OperationDiagnostic | null;
   onReconnect: () => void;
   onClose: () => void;
   onClear: () => void;
@@ -37,6 +40,7 @@ export const terminalStatusDotClass = (state: TerminalStatus): string => {
 export const TerminalToolbar = ({
   state,
   reconnectDelayMs = 0,
+  diagnostic = null,
   onReconnect,
   onClose,
   onClear,
@@ -46,11 +50,13 @@ export const TerminalToolbar = ({
   showStatus = true
 }: TerminalToolbarProps) => (
   <div className="terminal-toolbar">
-    {showStatus && <div className="terminal-status" role="status" aria-live="polite">
-      <span className={`status-dot ${terminalStatusDotClass(state)}`} aria-hidden="true" />
-      <span>{terminalStatusLabels[state]}</span>
-      {state === 'reconnecting' && reconnectDelayMs > 0 && <small>约 {Math.max(1, Math.ceil(reconnectDelayMs / 1_000))} 秒后自动重试</small>}
-    </div>}
+    {showStatus && <ConnectionStatus
+      label={terminalStatusLabels[state]}
+      tone={state === 'connected' ? 'success' : state === 'failed' ? 'danger' : 'neutral'}
+      detail={state === 'reconnecting' && reconnectDelayMs > 0
+        ? `约 ${Math.max(1, Math.ceil(reconnectDelayMs / 1_000))} 秒后自动重试`
+        : operationDiagnosticLabel(diagnostic)}
+    />}
     <div className="terminal-toolbar-actions">
       {onSearch && <button className={`toolbar-button ${searchActive ? 'is-active' : ''}`} type="button" aria-label="搜索" onClick={onSearch}>⌕<span>搜索</span></button>}
       <button className="toolbar-button" type="button" aria-label="清屏" onClick={onClear}>⌫<span>清屏</span></button>

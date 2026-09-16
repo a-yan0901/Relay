@@ -1442,21 +1442,26 @@ export class CommandRunRepository {
     `).run({ ownerId: this.ownerId, cutoff });
   }
 
-  markActiveRunsFailed(errorCode: string, finishedAt: string): number {
+  markActiveRunsInterrupted(errorCode: string, finishedAt: string): number {
     const operation = this.database.transaction(() => {
       const result = this.database.prepare(`
         UPDATE command_runs
-        SET status = 'failed', finished_at = @finishedAt
+        SET status = 'interrupted', finished_at = @finishedAt
         WHERE owner_id = @ownerId AND status IN ('queued', 'running')
       `).run({ ownerId: this.ownerId, errorCode, finishedAt });
       this.database.prepare(`
         UPDATE command_run_targets
-        SET status = 'failed', error_code = @errorCode, finished_at = @finishedAt
+        SET status = 'interrupted', error_code = @errorCode, finished_at = @finishedAt
         WHERE owner_id = @ownerId AND status IN ('queued', 'running')
       `).run({ ownerId: this.ownerId, errorCode, finishedAt });
       return result.changes;
     });
     return operation();
+  }
+
+  /** @deprecated Use markActiveRunsInterrupted; retained for repository clients compiled against v0.1.0. */
+  markActiveRunsFailed(errorCode: string, finishedAt: string): number {
+    return this.markActiveRunsInterrupted(errorCode, finishedAt);
   }
 }
 

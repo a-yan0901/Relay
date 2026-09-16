@@ -4,6 +4,7 @@ import {
   initialCommandTargetState,
   initialConnectionState,
   initialTransferState,
+  connectionDiagnosticToOperationDiagnostic,
   transitionCommandTarget,
   transitionConnection,
   transitionTransfer
@@ -61,6 +62,42 @@ describe('shared core state machines', () => {
     state = transitionCommandTarget(state, { type: 'start' });
     state = transitionCommandTarget(state, { type: 'completed', exitCode: 0, outputBytes: 4 });
     expect(state.status).toBe('completed');
+    expect(() => transitionCommandTarget(state, { type: 'start' })).toThrow();
+  });
+
+  it('maps low-level connection diagnostics to one explainable operation contract', () => {
+    expect(connectionDiagnosticToOperationDiagnostic({
+      id: 'diagnostic-1',
+      hostId: 'host-1',
+      stage: 'authentication',
+      status: 'failed',
+      hopIndex: 0,
+      retryable: false,
+      code: 'SSH_AUTH_FAILED',
+      at: '2026-09-16T00:00:00.000Z'
+    }, {
+      operationId: 'terminal-1',
+      requestId: 'request-1'
+    })).toEqual({
+      operationId: 'terminal-1',
+      hostId: 'host-1',
+      kind: 'terminal',
+      stage: 'auth',
+      state: 'failed',
+      retryable: false,
+      nextAction: 'edit-credentials',
+      errorCode: 'SSH_AUTH_FAILED',
+      requestId: 'request-1',
+      startedAt: '2026-09-16T00:00:00.000Z',
+      endedAt: '2026-09-16T00:00:00.000Z'
+    });
+  });
+
+  it('keeps an interrupted command target terminal and never restarts it implicitly', () => {
+    let state = transitionCommandTarget(initialCommandTargetState('host-1'), { type: 'start' });
+    state = transitionCommandTarget(state, { type: 'interrupted', code: 'SERVICE_RESTARTED' });
+
+    expect(state).toMatchObject({ status: 'interrupted', errorCode: 'SERVICE_RESTARTED' });
     expect(() => transitionCommandTarget(state, { type: 'start' })).toThrow();
   });
 });

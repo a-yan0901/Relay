@@ -3,7 +3,6 @@ import type {
   CommandRun,
   CommandRunRequest,
   ConnectionTestResult,
-  ConnectionDiagnostic,
   ConnectionProfile,
   GroupNode,
   HostListFilter,
@@ -12,7 +11,8 @@ import type {
   Snippet,
   SnippetMetadata,
   TransferJob,
-  TransferRequest
+  TransferRequest,
+  OperationDiagnostic
 } from './models.js';
 import type {
   GroupPatchInput,
@@ -55,7 +55,7 @@ export interface SessionEvent {
   data?: string;
   code?: number | null;
   signal?: string;
-  diagnostic?: ConnectionDiagnostic;
+  diagnostic?: OperationDiagnostic;
 }
 
 export interface OpenShellRequest {

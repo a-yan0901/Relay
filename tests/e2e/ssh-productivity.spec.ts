@@ -172,7 +172,7 @@ test.describe('SSH productivity boundaries', () => {
     await expect(results).toContainText('batch=e2e-ok');
     await expect(results.getByRole('button', { name: '取消批量任务' })).toBeVisible({ timeout: 5_000 });
     await results.getByRole('button', { name: '取消批量任务' }).click();
-    await expect(results).toContainText('cancelled', { timeout: 15_000 });
+    await expect(results).toContainText('已取消', { timeout: 15_000 });
     await results.getByRole('button', { name: '关闭结果' }).click();
 
     await page.waitForTimeout(1_000);

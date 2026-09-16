@@ -18,4 +18,14 @@ describe('ActivityPanel', () => {
     expect(screen.getByText('批量任务 · 2 台主机 · 1 成功 / 1 失败')).toBeInTheDocument();
     expect(screen.getByText('结果已过期，需要重新执行')).toBeInTheDocument();
   });
+
+  it('keeps the next action visible beside a recent operation', () => {
+    render(<ActivityPanel events={[
+      { id: 'event-1', ownerId: 'owner-a', eventType: 'command_run_summary', hostId: null, requestId: 'req-1', remoteAddress: null, metadata: { runId: 'run-1', targetCount: 1, successCount: 0, failureCount: 1 }, createdAt: '2026-09-15T00:00:00.000Z' }
+    ]} diagnostics={[{
+      operationId: 'run-1', hostId: 'host-1', kind: 'command', stage: 'command', state: 'interrupted', retryable: true, nextAction: 'retry', errorCode: 'SERVICE_RESTARTED', startedAt: '2026-09-15T00:00:00.000Z', endedAt: '2026-09-15T00:00:01.000Z'
+    }]} />);
+
+    expect(screen.getByText(/执行命令 · 已中断 · 重试/u)).toBeInTheDocument();
+  });
 });

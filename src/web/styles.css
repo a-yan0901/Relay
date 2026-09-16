@@ -511,6 +511,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-status small { color: var(--faint); font-size: 9px; white-space: nowrap; }
 
+.connection-status { align-items: center; color: var(--muted); display: inline-flex; font-size: 10px; gap: 6px; white-space: nowrap; }
+
+.connection-status small { color: var(--faint); font-size: 9px; }
+
+.connection-status .button { margin-left: 3px; }
+
 .terminal-toolbar-actions { gap: 4px; }
 
 .toolbar-button { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--faint); display: inline-flex; font-size: 10px; gap: 5px; min-height: 28px; padding: 0 7px; }

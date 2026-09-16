@@ -4,6 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { OperationDiagnostic } from '../../../src/shared/core/models';
 import type { HostMetadataState } from '../../../src/web/state/app-state';
 import { TerminalPanel } from '../../../src/web/components/TerminalPanel';
 
@@ -11,7 +12,7 @@ const testState = vi.hoisted(() => ({
   terminalInstances: [] as Array<{ constructorOptions: Record<string, unknown> }>,
   terminalOutputs: [] as Array<string | Uint8Array>,
   onOutput: null as ((data: Uint8Array) => void) | null,
-  diagnostics: [] as Array<{ stage: string; status: string; retryable: boolean }>,
+  diagnostics: [] as OperationDiagnostic[],
   credential: null as { hostId: string; authType: 'password' | 'private_key'; name: string; address: string; port: number; username: string } | null,
   submitCredential: vi.fn()
 }));
@@ -171,7 +172,16 @@ describe('TerminalPanel mobile selection', () => {
   });
 
   it('does not render connection diagnostics over the console area', () => {
-    testState.diagnostics.push({ stage: 'channel', status: 'started', retryable: false });
+    testState.diagnostics.push({
+      operationId: 'terminal-1',
+      hostId: 'host-1',
+      kind: 'terminal',
+      stage: 'pty',
+      state: 'running',
+      retryable: false,
+      nextAction: 'wait',
+      startedAt: '2026-09-16T00:00:00.000Z'
+    });
     render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} />);
 
     expect(screen.queryByRole('status', { name: '连接诊断' })).not.toBeInTheDocument();

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { APP_ERROR_CODES, AppError, type AppErrorCode } from './errors.js';
-import type { CommandRun, ConnectionDiagnostic, TransferJob } from './core/models.js';
+import type { CommandRun, OperationDiagnostic, TransferJob } from './core/models.js';
 import { hostCredentialSchema } from './validation.js';
 
 const dimensionSchema = z.number().int().min(1).max(500);
@@ -17,6 +17,7 @@ export const terminalOpenSchema = z.object({
   cols: dimensionSchema,
   rows: dimensionSchema,
   requestId: requestIdSchema,
+  knownServiceInstanceId: requestIdSchema.optional(),
   term: z.string().min(1).max(64).regex(/^[a-z0-9._+-]+$/iu).optional()
 }).strict();
 
@@ -78,11 +79,34 @@ export const terminalEnvelopeSchema = z.object({
 
 export type TerminalEnvelope = z.infer<typeof terminalEnvelopeSchema>;
 
+export const operationDiagnosticSchema = z.object({
+  operationId: identifierSchema,
+  hostId: identifierSchema,
+  kind: z.enum(['terminal', 'transfer', 'command']),
+  stage: z.enum(['dns', 'tcp', 'jump-host', 'host-key', 'auth', 'pty', 'sftp', 'command']),
+  state: z.enum(['running', 'completed', 'failed', 'cancelled', 'interrupted', 'needs-reopen']),
+  retryable: z.boolean(),
+  nextAction: z.enum(['wait', 'retry', 'edit-credentials', 'confirm-host-key', 'reopen', 'none']),
+  errorCode: identifierSchema.optional(),
+  requestId: requestIdSchema.optional(),
+  startedAt: z.string().datetime({ offset: true }),
+  endedAt: z.string().datetime({ offset: true }).optional()
+}).strict();
+
+export const parseOperationDiagnostic = (input: unknown): OperationDiagnostic => {
+  try {
+    return operationDiagnosticSchema.parse(input) as OperationDiagnostic;
+  } catch {
+    throw new AppError('PROTOCOL_INVALID_MESSAGE');
+  }
+};
+
 export type TerminalStatus = 'connecting' | 'awaiting-host-key' | 'awaiting-credential' | 'connected' | 'reconnecting' | 'interrupted' | 'needs-reopen' | 'closed' | 'failed';
 
 export interface TerminalStatusEvent {
   type: 'status';
   state: TerminalStatus;
+  serviceInstanceId: string;
   requestId?: string;
 }
 
@@ -108,7 +132,7 @@ export interface TerminalCredentialRequiredEvent {
 
 export interface TerminalDiagnosticEvent {
   type: 'diagnostic';
-  diagnostic: ConnectionDiagnostic;
+  diagnostic: OperationDiagnostic;
 }
 
 export interface TerminalErrorEvent {
@@ -161,7 +185,12 @@ export interface CommandRunOperationEvent {
   run: CommandRun;
 }
 
-export type OperationServerEvent = OperationEvent | TransferOperationEvent | CommandRunOperationEvent;
+export interface OperationDiagnosticEvent {
+  type: 'diagnostic';
+  diagnostic: OperationDiagnostic;
+}
+
+export type OperationServerEvent = OperationEvent | TransferOperationEvent | CommandRunOperationEvent | OperationDiagnosticEvent;
 
 export interface PendingHostKeyDecision {
   pendingFingerprint?: string;

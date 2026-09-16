@@ -50,7 +50,7 @@ export class CommandRunStore {
     this.vaultService = options.vaultService;
     this.ttlMs = options.ttlMs ?? 15 * 60 * 1000;
     this.now = options.now ?? Date.now;
-    this.repository?.markActiveRunsFailed('SERVER_RESTARTED', new Date(this.now()).toISOString());
+    this.repository?.markActiveRunsInterrupted('SERVICE_RESTARTED', new Date(this.now()).toISOString());
     this.repository?.deleteExpiredFinishedRuns(new Date(this.now() - this.ttlMs).toISOString());
   }
 
@@ -123,7 +123,7 @@ export class CommandRunStore {
       });
     }
     for (const hostId of row.hostIds) {
-      if (!targets.has(hostId)) targets.set(hostId, { hostId, status: 'failed', exitCode: null, output: '', outputBytes: 0, errorCode: 'SERVER_RESTARTED' });
+      if (!targets.has(hostId)) targets.set(hostId, { hostId, status: 'interrupted', exitCode: null, output: '', outputBytes: 0, errorCode: 'SERVICE_RESTARTED' });
     }
     const run: CommandRun = {
       id: row.id,

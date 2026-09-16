@@ -51,6 +51,7 @@ import { registerIdentityRoutes } from './api/identity-routes.js';
 export interface AppDependencies {
   database: SqliteDatabase;
   config: AppRuntimeConfig;
+  serviceInstanceId?: string;
   appConfigRepository?: AppConfigRepository;
   sessionStore?: SessionStore;
   vaultService?: VaultService;
@@ -282,6 +283,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   await registerTerminalGateway(app, {
     ownerId: 'default',
     config: dependencies.config,
+    serviceInstanceId: dependencies.serviceInstanceId ?? randomUUID(),
     sessionStore,
     hostRepository,
     groupRepository,

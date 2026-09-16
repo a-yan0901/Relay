@@ -240,6 +240,41 @@ export interface ConnectionDiagnostic {
   at: string;
 }
 
+/**
+ * The user-facing lifecycle contract shared by terminal, transfer and command
+ * clients. ConnectionDiagnostic remains the low-level SSH adapter event; the
+ * server maps it into this stable, platform-neutral shape before publishing it.
+ */
+export type OperationDiagnosticKind = 'terminal' | 'transfer' | 'command';
+
+export type OperationStage =
+  | 'dns'
+  | 'tcp'
+  | 'jump-host'
+  | 'host-key'
+  | 'auth'
+  | 'pty'
+  | 'sftp'
+  | 'command';
+
+export type OperationDiagnosticState = 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'needs-reopen';
+
+export type OperationNextAction = 'wait' | 'retry' | 'edit-credentials' | 'confirm-host-key' | 'reopen' | 'none';
+
+export interface OperationDiagnostic {
+  operationId: string;
+  hostId: string;
+  kind: OperationDiagnosticKind;
+  stage: OperationStage;
+  state: OperationDiagnosticState;
+  retryable: boolean;
+  nextAction: OperationNextAction;
+  errorCode?: string;
+  requestId?: string;
+  startedAt: string;
+  endedAt?: string;
+}
+
 export type Capability =
   | 'workspace.persistence'
   | 'workspace.templates'

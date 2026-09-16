@@ -187,7 +187,7 @@
 
 ## Task R-01: 统一连接、会话和任务生命周期诊断
 
-**Status:** Ready
+**Status:** Done（2026-09-16）
 **Priority:** P0
 **Milestone:** M1
 **Depends on:** 已交付的 CoreRuntime、TerminalStatus、TransferJob、CommandRun 状态模型。
@@ -225,6 +225,7 @@ export interface OperationDiagnostic {
   retryable: boolean;
   nextAction: 'wait' | 'retry' | 'edit-credentials' | 'confirm-host-key' | 'reopen' | 'none';
   errorCode?: string;
+  requestId?: string;
   startedAt: string;
   endedAt?: string;
 }
@@ -233,11 +234,11 @@ export interface OperationDiagnostic {
 - Server 只发布脱敏的阶段、状态、稳定错误码和 request id；Web 负责将 `nextAction` 映射为可读按钮和文案。
 - `reconnecting` 只表示客户端仍在保留窗口内尝试恢复；服务重启后的旧 Shell 使用 `interrupted`/`needs-reopen`，不能显示 `connected`。
 
-- [ ] **Step 1: 写失败的状态和事件测试。**
+- [x] **Step 1: 写失败的状态和事件测试。**
 
   覆盖 DNS/TCP/跳板/Host Key/认证/PTY 顺序，永久认证失败不重连，可恢复断线显示倒计时，服务重启将 terminal/transfer/command 的非终态变为 `interrupted`，旧 session 进入 `needs-reopen`，取消后不能回到 running。
 
-- [ ] **Step 2: 运行聚焦测试确认失败。**
+- [x] **Step 2: 运行聚焦测试确认失败。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -246,15 +247,15 @@ export interface OperationDiagnostic {
 
   Expected: 新增状态/事件断言在实现前失败，且失败位置指向状态转换或重启边界。
 
-- [ ] **Step 3: 实现 server 诊断映射和终态落盘。**
+- [x] **Step 3: 实现 server 诊断映射和终态落盘。**
 
   在 session manager、TransferManager、command-run-store 和 operation gateway 复用同一终态语义；启动时把持久化的 queued/running 任务标记为 interrupted；底层错误只在 server 侧映射为稳定 `AppError` code。
 
-- [ ] **Step 4: 实现 Web 状态组件。**
+- [x] **Step 4: 实现 Web 状态组件。**
 
   `ConnectionStatus`、`TerminalToolbar`、`TransferQueue` 和 `ActivityPanel` 显示阶段、状态、原因和下一步；所有自动重试显示下一次时间；永久错误只显示编辑/确认/重新打开等相关动作。
 
-- [ ] **Step 5: 运行 DOM 与 Chromium 回归。**
+- [x] **Step 5: 运行 DOM 与 Chromium 回归。**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -262,7 +263,7 @@ export interface OperationDiagnostic {
   npm run test:e2e -- --project=chromium tests/e2e/ssh-productivity.spec.ts
   ```
 
-- [ ] **Step 6: 更新状态/错误文档并提交。**
+- [x] **Step 6: 更新状态/错误文档并提交。**
 
   更新 `README.md` 和 `docs/product/2026-09-15-ssh-productivity-release.md` 的重启、取消和恢复语义；检查 `git diff --check` 后提交：
 
@@ -280,7 +281,22 @@ export interface OperationDiagnostic {
 - 服务重启后不显示虚假的旧 Shell 状态；任务和传输可见且可重试。
 - 终端状态、Activity、TransferQueue 和 API 事件的状态含义一致。
 
-**Verification:** 相关 focused tests、Chromium 路径、状态文档和一条任务 commit；M1 结束再运行全量验证。
+**Implementation notes:**
+
+- `OperationDiagnostic` 统一 terminal/transfer/command 的阶段、终态、稳定错误码和下一步动作；底层 SSH `ConnectionDiagnostic` 只保留在 adapter/server 边界。
+- 终端状态携带 `serviceInstanceId`；短断线沿用同一服务实例尝试 reattach，服务重启后进入 `needs-reopen`，不伪造旧 Shell 仍然 connected。
+- 服务启动时将持久化的 queued/running command run 与 transfer job 标为 `interrupted/SERVICE_RESTARTED`；UI 显示原因、重试或凭据/Host Key 处理入口。
+- 为 operation WebSocket 增加诊断事件；当前 Web 端仍以既有 API 状态轮询渲染传输/批量结果，后续可在 R-02/R-03 统一实时任务订阅。
+
+**Verification:**
+
+- RED：实现前新增状态、协议、服务重启和服务实例边界断言按预期失败。
+- Focused：15 个文件、74 个测试通过；`npm run lint`、`npm run typecheck`、`npm run build` 通过。
+- Full regression：`npm test`，81 个测试文件、297 个测试全部通过。
+- Browser：`npm run test:e2e -- --project=chromium tests/e2e/ssh-productivity.spec.ts`，2/2 通过。
+- `git diff --check` 通过；commit hash 在提交后补记。
+
+**Evidence gap / follow-up:** R-02 的断点续传与大文件 streaming、R-03 的网络切换/锁定/Workspace 恢复矩阵仍未实现；本任务只固定其依赖的终态和诊断契约。
 
 ---
 

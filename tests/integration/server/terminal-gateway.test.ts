@@ -66,7 +66,7 @@ const cookieFrom = (response: { headers: Record<string, string | string[] | unde
   return value.split(';', 1)[0];
 };
 
-const makeApp = async () => {
+const makeApp = async (serviceInstanceId = 'service-test') => {
   const database = openDatabase(':memory:');
   migrate(database);
   databases.push(database);
@@ -75,6 +75,7 @@ const makeApp = async () => {
   const app = await buildApp({
     database,
     sshSessionManager: manager,
+    serviceInstanceId,
     config: {
       nodeEnv: 'test',
       port: 3000,
@@ -202,10 +203,11 @@ describe('terminal WebSocket gateway', () => {
     const statuses: string[] = [];
     socket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'tab-1' }));
 
-    const first = await nextJson<{ type: string; state?: string; fingerprint?: string }>(socket);
+    const first = await nextJson<{ type: string; state?: string; serviceInstanceId?: string; fingerprint?: string }>(socket);
     if (first.type === 'status' && first.state === 'connecting') statuses.push(first.state);
+    expect(first.serviceInstanceId).toBe('service-test');
     const awaiting = await nextJson<{ type: string; state?: string }>(socket);
-    expect(awaiting).toEqual(expect.objectContaining({ type: 'status', state: 'awaiting-host-key' }));
+    expect(awaiting).toEqual(expect.objectContaining({ type: 'status', state: 'awaiting-host-key', serviceInstanceId: 'service-test' }));
     const challenge = await nextJson<{ type: string; fingerprint: string }>(socket);
     expect(challenge).toEqual(expect.objectContaining({ type: 'host-key', fingerprint: 'SHA256:fixture-key' }));
     socket.send(JSON.stringify({ type: 'resize', cols: 100, rows: 30 }));
@@ -228,6 +230,11 @@ describe('terminal WebSocket gateway', () => {
     await waitFor(() => channel.resizes.length === 2 && channel.writes.length === 1);
     expect(channel.resizes).toEqual([{ cols: 100, rows: 30 }, { cols: 80, rows: 24 }]);
     expect(channel.writes[0].toString()).toBe('printf gateway\\n');
+
+    const staleSocket = await connectSocket(url, { cookie, origin: ORIGIN });
+    staleSocket.send(JSON.stringify({ type: 'open', hostId, cols: 80, rows: 24, requestId: 'tab-stale', knownServiceInstanceId: 'service-before-restart' }));
+    expect(await nextJson<{ type: string; code?: string }>(staleSocket)).toEqual(expect.objectContaining({ type: 'error', code: 'SESSION_NEEDS_REOPEN' }));
+    staleSocket.close();
 
     socket.send(JSON.stringify({ type: 'close' }));
     expect((await nextJson<{ type: string; state?: string }>(socket)).state).toBe('closed');
@@ -300,7 +307,7 @@ describe('terminal WebSocket gateway', () => {
     firstSocket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'tab-refresh' }));
     const firstStatus = await nextJson<{ type: string; state?: string }>(firstSocket);
     if (firstStatus.state === 'connecting') {
-      expect(await nextJson<{ type: string; state?: string }>(firstSocket)).toEqual({ type: 'status', state: 'awaiting-host-key' });
+      expect(await nextJson<{ type: string; state?: string; serviceInstanceId?: string }>(firstSocket)).toEqual({ type: 'status', state: 'awaiting-host-key', serviceInstanceId: 'service-test' });
     }
     const challenge = await nextJson<{ type: string; fingerprint: string }>(firstSocket);
     expect(challenge).toEqual(expect.objectContaining({ type: 'host-key', fingerprint: 'SHA256:fixture-key' }));
@@ -318,7 +325,7 @@ describe('terminal WebSocket gateway', () => {
     const refreshedSocket = await connectSocket(url, { cookie, origin: ORIGIN });
     refreshedSocket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'tab-refresh' }));
 
-    expect(await nextJson<{ type: string; state?: string }>(refreshedSocket)).toEqual({ type: 'status', state: 'connected' });
+    expect(await nextJson<{ type: string; state?: string; serviceInstanceId?: string }>(refreshedSocket)).toEqual({ type: 'status', state: 'connected', serviceInstanceId: 'service-test' });
     expect((await nextMessage(refreshedSocket)).toString()).toBe('output before refresh\n');
     refreshedSocket.close();
   });

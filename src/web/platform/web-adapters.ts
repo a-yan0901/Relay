@@ -484,7 +484,8 @@ export class WebSessionTransport implements SessionTransport {
       onOutput: (data) => emit({ type: 'data', data: new TextDecoder().decode(data) }),
       onExit: (event) => emit({ type: 'exit', code: event.code, ...(event.signal === undefined ? {} : { signal: event.signal }) }),
       onSnapshot: (snapshot) => {
-        for (const diagnostic of snapshot.diagnostics) emit({ type: 'diagnostic', diagnostic });
+        const diagnostic = snapshot.diagnostics.at(-1);
+        if (diagnostic) emit({ type: 'diagnostic', diagnostic });
         if (snapshot.state === 'closed') emit({ type: 'close' });
       }
     });

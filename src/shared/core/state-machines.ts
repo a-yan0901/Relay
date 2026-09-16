@@ -1,4 +1,111 @@
-import type { CommandTargetStatus, TransferStatus } from './models.js';
+import type {
+  CommandTargetStatus,
+  ConnectionDiagnostic,
+  OperationDiagnostic,
+  OperationDiagnosticKind,
+  OperationDiagnosticState,
+  OperationNextAction,
+  OperationStage,
+  TransferStatus
+} from './models.js';
+
+const connectionDiagnosticStage: Record<ConnectionDiagnostic['stage'], OperationStage> = {
+  resolve: 'dns',
+  tcp: 'tcp',
+  jump: 'jump-host',
+  'host-key': 'host-key',
+  authentication: 'auth',
+  channel: 'pty'
+};
+
+export const operationNextAction = (
+  state: OperationDiagnosticState,
+  retryable: boolean,
+  errorCode?: string
+): OperationNextAction => {
+  if (state === 'running') return 'wait';
+  if (state === 'completed' || state === 'cancelled') return 'none';
+  if (state === 'interrupted' || state === 'needs-reopen') return state === 'needs-reopen' ? 'reopen' : 'retry';
+  if (errorCode === 'SSH_AUTH_FAILED' || errorCode === 'IMPORT_RECORD_INVALID') return 'edit-credentials';
+  if (errorCode === 'HOST_KEY_REQUIRED' || errorCode === 'HOST_KEY_MISMATCH') return 'confirm-host-key';
+  return retryable ? 'retry' : 'none';
+};
+
+const terminalErrorStage = (errorCode: string): OperationStage => {
+  if (['SSH_AUTH_FAILED', 'IMPORT_RECORD_INVALID'].includes(errorCode)) return 'auth';
+  if (['HOST_KEY_REQUIRED', 'HOST_KEY_MISMATCH'].includes(errorCode)) return 'host-key';
+  if (['SESSION_NEEDS_REOPEN', 'SERVICE_RESTARTED', 'OPERATION_NOT_FOUND'].includes(errorCode)) return 'pty';
+  return 'tcp';
+};
+
+const terminalErrorRetryable = (errorCode: string): boolean => ![
+  'PROTOCOL_INVALID_MESSAGE',
+  'HOST_NOT_FOUND',
+  'VAULT_LOCKED',
+  'SESSION_INVALID',
+  'SESSION_EXPIRED',
+  'IDENTITY_NOT_FOUND',
+  'SSH_AUTH_FAILED',
+  'HOST_KEY_REQUIRED',
+  'HOST_KEY_MISMATCH',
+  'IMPORT_RECORD_INVALID'
+].includes(errorCode);
+
+export interface OperationErrorContext {
+  operationId: string;
+  hostId: string;
+  errorCode: string;
+  at: string;
+  state?: Extract<OperationDiagnosticState, 'failed' | 'needs-reopen'>;
+  requestId?: string;
+}
+
+export const operationErrorToDiagnostic = (context: OperationErrorContext): OperationDiagnostic => {
+  const state = context.state ?? 'failed';
+  const retryable = state === 'needs-reopen' ? false : terminalErrorRetryable(context.errorCode);
+  return {
+    operationId: context.operationId,
+    hostId: context.hostId,
+    kind: 'terminal',
+    stage: terminalErrorStage(context.errorCode),
+    state,
+    retryable,
+    nextAction: operationNextAction(state, retryable, context.errorCode),
+    errorCode: context.errorCode,
+    ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+    startedAt: context.at,
+    endedAt: context.at
+  };
+};
+
+export interface ConnectionDiagnosticContext {
+  operationId: string;
+  kind?: OperationDiagnosticKind;
+  requestId?: string;
+}
+
+export const connectionDiagnosticToOperationDiagnostic = (
+  diagnostic: ConnectionDiagnostic,
+  context: ConnectionDiagnosticContext
+): OperationDiagnostic => {
+  const state: OperationDiagnosticState = diagnostic.status === 'started'
+    ? 'running'
+    : diagnostic.status === 'succeeded' ? 'completed' : 'failed';
+  const endedAt = state === 'running' ? undefined : diagnostic.at;
+  return {
+    operationId: context.operationId,
+    hostId: diagnostic.hostId,
+    kind: context.kind ?? 'terminal',
+    stage: connectionDiagnosticStage[diagnostic.stage],
+    state,
+    retryable: diagnostic.retryable,
+    nextAction: operationNextAction(state, diagnostic.retryable, diagnostic.code),
+    ...(diagnostic.code === undefined ? {} : { errorCode: diagnostic.code }),
+    ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+    startedAt: diagnostic.at,
+    ...(endedAt === undefined ? {} : { endedAt })
+  };
+};
 
 export type ConnectionStateName =
   | 'idle'
@@ -185,6 +292,7 @@ export type CommandTargetEvent =
   | { type: 'progress'; outputBytes: number }
   | { type: 'completed'; exitCode: number | null; outputBytes: number }
   | { type: 'failed'; code: string; outputBytes?: number }
+  | { type: 'interrupted'; code: string }
   | { type: 'cancelled' };
 
 export const initialCommandTargetState = (hostId: string): CommandTargetState => ({
@@ -211,6 +319,9 @@ export const transitionCommandTarget = (
     case 'failed':
       if (state.status !== 'running') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'failed', errorCode: event.code, outputBytes: event.outputBytes ?? state.outputBytes };
+    case 'interrupted':
+      if (state.status !== 'queued' && state.status !== 'running') throw invalidTransition(state.status, event.type);
+      return { ...state, status: 'interrupted', errorCode: event.code };
     case 'cancelled':
       if (state.status !== 'queued' && state.status !== 'running') throw invalidTransition(state.status, event.type);
       return { ...state, status: 'cancelled' };

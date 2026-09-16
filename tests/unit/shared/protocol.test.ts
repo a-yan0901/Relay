@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AppError } from '@shared/errors';
-import { parseTerminalClientMessage, parseTerminalEnvelope } from '@shared/protocol';
+import { operationDiagnosticSchema, parseTerminalClientMessage, parseTerminalEnvelope } from '@shared/protocol';
 
 describe('parseTerminalClientMessage', () => {
   it('parses the versioned cross-platform terminal envelope', () => {
@@ -24,6 +24,17 @@ describe('parseTerminalClientMessage', () => {
       rows: 36,
       requestId: 'open-1'
     });
+  });
+
+  it('allows a reconnect to prove which service instance it last used', () => {
+    expect(parseTerminalClientMessage({
+      type: 'open',
+      hostId: 'host-1',
+      cols: 80,
+      rows: 24,
+      requestId: 'open-1',
+      knownServiceInstanceId: 'service-1'
+    })).toEqual(expect.objectContaining({ knownServiceInstanceId: 'service-1' }));
   });
 
   it('parses resize, input, ping, and close messages', () => {
@@ -50,6 +61,32 @@ describe('parseTerminalClientMessage', () => {
 
     expect(() => parseTerminalClientMessage(message, { pendingFingerprint: 'SHA256:bad' })).toThrow(AppError);
     expect(parseTerminalClientMessage(message, { pendingFingerprint: 'SHA256:good' })).toEqual(message);
+  });
+
+  it('validates the unified operation diagnostic without accepting terminal content', () => {
+    expect(operationDiagnosticSchema.parse({
+      operationId: 'terminal-1',
+      hostId: 'host-1',
+      kind: 'terminal',
+      stage: 'pty',
+      state: 'running',
+      retryable: true,
+      nextAction: 'wait',
+      requestId: 'request-1',
+      startedAt: '2026-09-16T00:00:00.000Z'
+    })).toEqual(expect.objectContaining({ kind: 'terminal', stage: 'pty', nextAction: 'wait' }));
+
+    expect(() => operationDiagnosticSchema.parse({
+      operationId: 'terminal-1',
+      hostId: 'host-1',
+      kind: 'terminal',
+      stage: 'pty',
+      state: 'running',
+      retryable: true,
+      nextAction: 'wait',
+      startedAt: '2026-09-16T00:00:00.000Z',
+      output: 'private terminal output'
+    })).toThrow();
   });
 
   it.each([

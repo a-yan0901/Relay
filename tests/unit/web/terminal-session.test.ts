@@ -15,7 +15,7 @@ class FakeSocket implements TerminalSocketLike {
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event?: unknown) => void) | null = null;
   closeCalls = 0;
 
   constructor(readonly url: string) {
@@ -26,10 +26,10 @@ class FakeSocket implements TerminalSocketLike {
     this.sent.push(data);
   }
 
-  close(): void {
+  close(code?: number): void {
     this.closeCalls += 1;
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code: code ?? 1000 });
   }
 
   open(): void {
@@ -205,6 +205,32 @@ describe('TerminalSessionController', () => {
     }
   });
 
+  it('derives an actionable diagnostic when a terminal error has no preceding stage event', () => {
+    FakeSocket.instances = [];
+    const controller = new TerminalSessionController({
+      hostId: 'host-1',
+      terminalId: 'terminal-1',
+      webSocketFactory: (url) => new FakeSocket(url)
+    });
+    controller.connect();
+    const socket = lastSocket();
+    socket.open();
+    socket.message(JSON.stringify({ type: 'error', code: 'SSH_AUTH_FAILED', message: '远程服务器认证失败' }));
+
+    expect(controller.snapshot.diagnostics).toEqual([
+      expect.objectContaining({
+        operationId: 'terminal-1',
+        hostId: 'host-1',
+        kind: 'terminal',
+        stage: 'auth',
+        state: 'failed',
+        retryable: false,
+        nextAction: 'edit-credentials',
+        errorCode: 'SSH_AUTH_FAILED'
+      })
+    ]);
+  });
+
   it('shows an explicit reopen state when the server says the session is gone', () => {
     FakeSocket.instances = [];
     const controller = new TerminalSessionController({
@@ -221,6 +247,36 @@ describe('TerminalSessionController', () => {
     expect(controller.snapshot.error?.code).toBe('SESSION_NEEDS_REOPEN');
   });
 
+  it('carries the service instance across transient reconnects and blocks a changed instance', () => {
+    vi.useFakeTimers();
+    try {
+      FakeSocket.instances = [];
+      const controller = new TerminalSessionController({
+        hostId: 'host-1',
+        terminalId: 'terminal-1',
+        webSocketFactory: (url) => new FakeSocket(url),
+        reconnectBaseMs: 250
+      });
+      controller.connect();
+      const first = lastSocket();
+      first.open();
+      first.message(JSON.stringify({ type: 'status', state: 'connected', serviceInstanceId: 'service-a' }));
+      first.close(1006);
+      vi.advanceTimersByTime(250);
+
+      const second = lastSocket();
+      second.open();
+      expect(JSON.parse(second.sent[0] as string)).toEqual(expect.objectContaining({ knownServiceInstanceId: 'service-a' }));
+      second.message(JSON.stringify({ type: 'status', state: 'connecting', serviceInstanceId: 'service-b' }));
+
+      expect(controller.snapshot.state).toBe('needs-reopen');
+      expect(controller.snapshot.error?.code).toBe('SESSION_NEEDS_REOPEN');
+      expect(FakeSocket.instances).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps sanitized connection diagnostics for the status UI', () => {
     FakeSocket.instances = [];
     const controller = new TerminalSessionController({
@@ -234,18 +290,21 @@ describe('TerminalSessionController', () => {
     socket.message(JSON.stringify({
       type: 'diagnostic',
       diagnostic: {
-        id: 'diagnostic-1',
+        operationId: 'terminal-1',
         hostId: 'host-1',
-        stage: 'authentication',
-        status: 'failed',
-        hopIndex: 0,
+        kind: 'terminal',
+        stage: 'auth',
+        state: 'failed',
         retryable: false,
-        code: 'SSH_AUTH_FAILED',
-        at: '2026-09-15T00:00:00.000Z'
+        nextAction: 'edit-credentials',
+        errorCode: 'SSH_AUTH_FAILED',
+        requestId: 'terminal-1',
+        startedAt: '2026-09-15T00:00:00.000Z',
+        endedAt: '2026-09-15T00:00:00.000Z'
       }
     }));
 
-    expect(controller.snapshot.diagnostics).toEqual([expect.objectContaining({ stage: 'authentication', status: 'failed' })]);
+    expect(controller.snapshot.diagnostics).toEqual([expect.objectContaining({ stage: 'auth', state: 'failed' })]);
   });
 
   it('closes explicitly and removes reconnect timers', () => {

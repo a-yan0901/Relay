@@ -24,6 +24,7 @@ export interface TerminalWorkspaceProps {
   activeTerminalId: string | null;
   onActivate: (terminalId: string) => void;
   onClose: (terminalId: string) => void;
+  onEditHost?: (host: HostMetadataState) => void;
   onConnectHost?: (host: HostMetadataState) => void;
   onOpenBatchCommand?: () => void;
   onOpenSnippetPalette?: () => void;
@@ -93,6 +94,7 @@ export const TerminalWorkspace = ({
   onCancelTransfer,
   onRetryTransfer,
   onStatusChange,
+  onEditHost,
   preferences = DEFAULT_PREFERENCES,
   onBackToHosts,
   visible: workspaceVisible = true,
@@ -379,13 +381,14 @@ export const TerminalWorkspace = ({
             {activeToolbar && activeTerminalId && <TerminalToolbar
               state={activeToolbar.state}
               reconnectDelayMs={activeToolbar.reconnectDelayMs}
+              diagnostic={activeToolbar.diagnostic}
               onReconnect={activeToolbar.onReconnect}
               onClose={() => onClose(activeTerminalId)}
               onClear={activeToolbar.onClear}
               onSearch={activeToolbar.onSearch}
               onFullscreen={activeToolbar.onFullscreen}
               searchActive={activeToolbar.searchActive}
-              showStatus={false}
+              showStatus
             />}
             {onConnectHost && (
               <div className="terminal-host-picker-anchor">
@@ -457,7 +460,7 @@ export const TerminalWorkspace = ({
                     </label>
                   </div>
                 )}
-                <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} />
+                <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} preferences={preferences} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onStatusChange={(snapshot) => onStatusChange?.(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} />
               </div>
             );
           })}

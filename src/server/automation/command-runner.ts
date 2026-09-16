@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../../shared/errors.js';
-import type { CommandRun, CommandTargetResult } from '../../shared/core/models.js';
+import { operationNextAction } from '../../shared/core/state-machines.js';
+import type { CommandRun, CommandTargetResult, OperationDiagnostic } from '../../shared/core/models.js';
 import { assessCommandRisk } from '../../shared/core/command-safety.js';
 import { expandCommandTemplate as expandTemplate, parseCommandRunRequest } from '../../shared/validation.js';
 import type { HostMetadata } from '../../shared/validation.js';
-import type { CommandRunOperationEvent } from '../../shared/protocol.js';
+import type { CommandRunOperationEvent, OperationDiagnosticEvent } from '../../shared/protocol.js';
 import type { SshConnectionResource } from '../ssh/types.js';
 import { CommandRunStore } from './command-run-store.js';
 
@@ -27,7 +28,8 @@ export interface CommandHostLookup {
 }
 
 export interface CommandRunEventPublisher {
-  publish(ownerId: string, event: CommandRunOperationEvent): void;
+  publish(ownerId: string, event: CommandRunOperationEvent | OperationDiagnosticEvent): void;
+  publishDiagnostic?(ownerId: string, diagnostic: OperationDiagnostic): void;
 }
 
 export interface CommandRunnerOptions {
@@ -130,7 +132,7 @@ export class CommandRunner {
   async cancel(runId: string): Promise<void> {
     const run = await this.store.get(runId);
     if (!run) throw new AppError('COMMAND_RUN_NOT_FOUND');
-    if (['completed', 'failed', 'cancelled'].includes(run.status)) return;
+    if (['completed', 'failed', 'cancelled', 'interrupted'].includes(run.status)) return;
     const control = this.controls.get(runId);
     if (!control) throw new AppError('COMMAND_RUN_NOT_FOUND');
     control.cancelRequested = true;
@@ -260,6 +262,26 @@ export class CommandRunner {
   }
 
   private publish(run: CommandRun): void {
-    this.operationBus?.publish(this.options.ownerId, { type: 'command-run', run });
+    if (!this.operationBus) return;
+    this.operationBus.publish(this.options.ownerId, { type: 'command-run', run });
+    for (const target of run.targets) {
+      if (target.status === 'queued') continue;
+      const state: OperationDiagnostic['state'] = target.status;
+      const retryable = target.status === 'interrupted';
+      const diagnostic: OperationDiagnostic = {
+        operationId: run.id,
+        hostId: target.hostId,
+        kind: 'command',
+        stage: 'command',
+        state,
+        retryable,
+        nextAction: operationNextAction(state, retryable, target.errorCode),
+        ...(target.errorCode === undefined ? {} : { errorCode: target.errorCode }),
+        startedAt: target.startedAt ?? run.createdAt,
+        ...(target.finishedAt === undefined ? {} : { endedAt: target.finishedAt })
+      };
+      if (this.operationBus.publishDiagnostic) this.operationBus.publishDiagnostic(this.options.ownerId, diagnostic);
+      else this.operationBus.publish(this.options.ownerId, { type: 'diagnostic', diagnostic });
+    }
   }
 }

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { RawData, WebSocket } from 'ws';
 
@@ -7,6 +9,7 @@ import {
   type TerminalClientMessage,
   type TerminalServerEvent
 } from '../../shared/protocol.js';
+import { connectionDiagnosticToOperationDiagnostic } from '../../shared/core/state-machines.js';
 import { storedHostCredentialSchema, type HostCredentialInput, type StoredHostCredential } from '../../shared/validation.js';
 import { resolveConnectionConfiguration } from '../../shared/core/connection-resolution.js';
 import type { GroupNode } from '../../shared/core/models.js';
@@ -124,6 +127,7 @@ export class TerminalGatewayState {
 export interface TerminalGatewayDependencies {
   ownerId: string;
   config: Pick<AppRuntimeConfig, 'trustedOrigins'>;
+  serviceInstanceId?: string;
   sessionStore: SessionStore;
   hostRepository: HostRepository;
   groupRepository?: GroupRepository;
@@ -195,6 +199,7 @@ export const registerTerminalGateway = async (
   app: FastifyInstance,
   dependencies: TerminalGatewayDependencies
 ): Promise<void> => {
+  const serviceInstanceId = dependencies.serviceInstanceId ?? randomUUID();
   app.get('/ws/terminal', {
     websocket: true,
     preValidation: async (request) => websocketHandshake(request, dependencies)
@@ -249,7 +254,7 @@ export const registerTerminalGateway = async (
         return;
       }
       lastStatus = state;
-      send({ type: 'status', state });
+      send({ type: 'status', state, serviceInstanceId });
     };
 
     const markHostConnected = (hostId: string): void => {
@@ -312,6 +317,9 @@ export const registerTerminalGateway = async (
         throw new AppError('HOST_NOT_FOUND');
       }
 
+      if (message.knownServiceInstanceId !== undefined && message.knownServiceInstanceId !== serviceInstanceId) {
+        throw new AppError('SESSION_NEEDS_REOPEN');
+      }
       managerSessionId = `${authenticatedSessionId}:${message.requestId}`;
       const reattached = dependencies.sessionManager.reattach(managerSessionId, row.id);
       if (reattached) {
@@ -420,7 +428,13 @@ export const registerTerminalGateway = async (
           if (state === 'connected') markHostConnected(row.id);
           sendStatus(state);
         },
-        onDiagnostic: (event) => send({ type: 'diagnostic', diagnostic: event }),
+        onDiagnostic: (event) => send({
+          type: 'diagnostic',
+          diagnostic: connectionDiagnosticToOperationDiagnostic(event, {
+            operationId: message.requestId,
+            requestId: message.requestId
+          })
+        }),
         onHostKey: async (challenge) => new Promise<boolean>((resolve) => {
           const policy = hostKeyPolicies.get(challenge.hostId ?? row.id) ?? hostKeyPolicy;
           hostKeyPolicy = policy;

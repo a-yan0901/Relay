@@ -18,6 +18,7 @@ Web 是当前唯一的一等客户端。服务端继续维护单实例、单 Vau
 - 浏览器刷新时使用当前标签页的非敏感 sessionStorage 描述尝试复接 live session；应用进程重启后恢复 tab 意图并创建新 shell，不伪造旧会话仍存活。
 - Vault bundle 使用独立导出密码和 Argon2id/AES-GCM 加密，支持导出、解密预览、冲突确认和事务导入；导出密码不进入 bundle、数据库或日志。
 - 连接统一经过阶段诊断、按主机保存的 Keepalive/自动重连策略和资源生命周期；Host Key 首次连接需确认，已知指纹变化硬失败。
+- 终端、传输和批量任务共享 `OperationDiagnostic` 契约：状态携带阶段、稳定错误码、是否可重试和下一步动作。客户端用服务实例标识区分短暂断线与服务重启，重启后的旧 Console 显示需要重新打开，不伪造旧 Shell 仍然连接。
 
 ### P1：高频任务闭环
 
@@ -25,6 +26,7 @@ Web 是当前唯一的一等客户端。服务端继续维护单实例、单 Vau
 - SFTP 与 SSH 共用认证、Host Key 和跳板路径，支持目录列表、元数据、新建目录、重命名、删除、上传和下载。
 - 上传先写 `${target}.relay-tmp-${transferId}`，完成后原子重命名；失败或取消会尽力清理临时文件，不把半文件暴露为目标文件。
 - 传输队列提供 queued/running/completed/failed/cancelled 状态、进度、取消和失败重试；路径拒绝 NUL、控制字符、反斜杠和规范化后的目录越界。
+- 服务重启会把持久化的 queued/running 传输和批量任务标记为 interrupted，并保留 `SERVICE_RESTARTED` 原因；只有用户显式重试，任务才会重新进入 queued。
 - Snippets 使用 Vault 加密 payload 和显式 `{{variable}}` 变量；批量执行前展示主机、展开命令、并发、超时和输出保存选项。
 - 批量任务默认并发 4、最大 16，单主机默认超时 60 秒，单主机输出默认上限 256 KiB；多主机和高风险命令需要显式确认，单台失败不会隐藏其他主机结果。
 

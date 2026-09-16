@@ -5,6 +5,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
 
+import type { OperationDiagnostic } from '@shared/core/models';
 import type { TerminalCredentialRequiredEvent, TerminalStatus } from '@shared/protocol';
 import type { HostCredentialInput } from '@shared/validation';
 import type { HostMetadataState } from '../state/app-state';
@@ -51,6 +52,7 @@ const CredentialDialog = ({ terminalId, prompt, onSubmit, onCancel }: { terminal
 export interface TerminalPanelToolbarState {
   state: TerminalStatus;
   reconnectDelayMs: number;
+  diagnostic: OperationDiagnostic | null;
   onReconnect: () => void;
   onClear: () => void;
   onSearch: () => void;
@@ -63,12 +65,13 @@ export interface TerminalPanelProps {
   host: HostMetadataState;
   active: boolean;
   onClose: () => void;
+  onEditHost?: (host: HostMetadataState) => void;
   onStatusChange?: (snapshot: TerminalSessionSnapshot) => void;
   onToolbarChange?: (terminalId: string, toolbar: TerminalPanelToolbarState | null) => void;
   preferences?: UiPreferences;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose, onStatusChange, onToolbarChange, preferences = DEFAULT_PREFERENCES }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, preferences = DEFAULT_PREFERENCES }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const outputSanitizerRef = useRef(new TerminalOutputSanitizer());
@@ -210,6 +213,9 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onStatusChang
     }
   }, []);
 
+  const diagnostic = session.state.diagnostics.at(-1) ?? null;
+  const errorAction = diagnostic?.nextAction;
+
   useEffect(() => {
     if (!active) {
       onToolbarChange?.(terminalId, null);
@@ -218,6 +224,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onStatusChang
     onToolbarChange?.(terminalId, {
       state: session.state.state,
       reconnectDelayMs: session.state.reconnectDelayMs,
+      diagnostic,
       onReconnect: session.reconnect,
       onClear: clear,
       onSearch: toggleSearch,
@@ -225,13 +232,19 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onStatusChang
       searchActive: searchOpen
     });
     return () => onToolbarChange?.(terminalId, null);
-  }, [active, clear, fullscreen, onToolbarChange, searchOpen, session.reconnect, session.state.reconnectDelayMs, session.state.state, terminalId, toggleSearch]);
+  }, [active, clear, diagnostic, fullscreen, onToolbarChange, searchOpen, session.reconnect, session.state.reconnectDelayMs, session.state.state, terminalId, toggleSearch]);
+
+  const errorActionButton = errorAction === 'edit-credentials'
+    ? onEditHost ? <button className="button button-ghost button-small" type="button" onClick={() => onEditHost(host)}>编辑 Server 凭据</button> : null
+    : errorAction === 'confirm-host-key'
+      ? onEditHost ? <button className="button button-ghost button-small" type="button" onClick={() => onEditHost(host)}>检查 Host Key</button> : null
+      : <button className="button button-ghost button-small" type="button" onClick={session.reconnect}>{session.state.state === 'needs-reopen' ? '重新打开' : '重新连接'}</button>;
 
   return (
     <section className={`terminal-panel ${active ? 'is-active' : ''}`} aria-hidden={!active}>
       {searchOpen && <div className="terminal-search"><label htmlFor={`terminal-search-${terminalId}`}>终端搜索</label><input id={`terminal-search-${terminalId}`} autoFocus value={searchValue} onChange={(event) => updateSearch(event.target.value)} placeholder="搜索终端输出" /></div>}
       <div className="terminal-canvas" ref={mountRef} />
-      {session.state.error && <div className="terminal-error" role="alert"><strong>{session.state.error.message}</strong><button className="button button-ghost button-small" type="button" onClick={session.reconnect}>重新连接</button></div>}
+      {session.state.error && <div className="terminal-error" role="alert"><strong>{session.state.error.message}</strong>{errorAction !== 'none' && errorActionButton}</div>}
       {session.state.hostKey && <HostKeyDialog challenge={session.state.hostKey} onDecision={session.decideHostKey} />}
       {session.state.credential && <CredentialDialog terminalId={terminalId} prompt={session.state.credential} onSubmit={session.submitCredential} onCancel={onClose} />}
     </section>

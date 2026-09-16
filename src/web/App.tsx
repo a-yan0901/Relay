@@ -16,7 +16,7 @@ import { IdentityManager } from './components/IdentityManager';
 import { SnippetManager } from './components/SnippetManager';
 import { SnippetPalette } from './components/SnippetPalette';
 import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
-import type { AuditEvent, CommandRun, CommandRunRequest, IdentityMetadata, Snippet, SnippetMetadata, TransferJob, WorkspaceTemplate } from '../shared/core/models';
+import type { AuditEvent, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import type { CapabilitySet } from '../shared/core/capabilities';
 import type { BinarySource } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
@@ -160,6 +160,7 @@ export const App = ({ runtime }: AppProps) => {
   const [snippets, setSnippets] = useState<SnippetMetadata[]>([]);
   const [activityOpen, setActivityOpen] = useState(false);
   const [activityEvents, setActivityEvents] = useState<AuditEvent[]>([]);
+  const [operationDiagnostics, setOperationDiagnostics] = useState<OperationDiagnostic[]>([]);
   const [expiredRunIds, setExpiredRunIds] = useState<Set<string>>(new Set());
   const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
   const transferFilesRef = useRef(new Map<string, File>());
@@ -733,6 +734,13 @@ export const App = ({ runtime }: AppProps) => {
       reconnectDelayMs: snapshot.reconnectDelayMs,
       errorMessage: snapshot.error?.message ?? null
     });
+    if (snapshot.diagnostics.length > 0) {
+      setOperationDiagnostics((current) => {
+        const next = new Map(current.map((diagnostic) => [`${diagnostic.operationId}:${diagnostic.hostId}`, diagnostic]));
+        for (const diagnostic of snapshot.diagnostics) next.set(`${diagnostic.operationId}:${diagnostic.hostId}`, diagnostic);
+        return [...next.values()].slice(-200);
+      });
+    }
     if (snapshot.state !== 'connected') {
       refreshedHostForTerminalRef.current.delete(terminalId);
       return;
@@ -813,6 +821,7 @@ export const App = ({ runtime }: AppProps) => {
             activeTerminalId={state.activeTerminalId}
             onActivate={(terminalId) => dispatch({ type: 'terminalActivated', terminalId })}
             onClose={handleCloseTerminal}
+            onEditHost={openEditHost}
             onConnectHost={handleOpenTerminal}
             onStatusChange={handleTerminalStatus}
             onOpenBatchCommand={capabilities.supports('automation.batch-exec') ? () => handleOpenBatchCommand() : undefined}
@@ -871,7 +880,7 @@ export const App = ({ runtime }: AppProps) => {
         onConfirm={handleStartCommandRun}
       />}
       {commandRun && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal" role="dialog" aria-modal="true" aria-labelledby="command-run-result-title"><CommandRunResults run={commandRun} hosts={state.hosts} onCancel={handleCancelCommandRun} /><button className="button button-ghost" id="command-run-result-title" type="button" onClick={() => setCommandRun(null)}>关闭结果</button></section></div>}
-      {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
+      {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} diagnostics={operationDiagnostics} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
       {workspaceSettingsMode && <WorkspaceSettings
         mode={workspaceSettingsMode}
         onClose={() => setWorkspaceSettingsMode(null)}

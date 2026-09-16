@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { WebSocket } from 'ws';
 
 import { AppError } from '../../shared/errors.js';
+import type { OperationDiagnostic } from '../../shared/core/models.js';
 import type { OperationServerEvent } from '../../shared/protocol.js';
 import { getSessionId } from '../auth/session-cookie.js';
 import { SessionStore } from '../auth/session-store.js';
@@ -14,6 +15,10 @@ export class OperationEventBus {
 
   publish(ownerId: string, event: OperationServerEvent): void {
     for (const listener of this.listeners.get(ownerId) ?? []) listener(event);
+  }
+
+  publishDiagnostic(ownerId: string, diagnostic: OperationDiagnostic): void {
+    this.publish(ownerId, { type: 'diagnostic', diagnostic });
   }
 
   subscribe(ownerId: string, listener: Listener): () => void {

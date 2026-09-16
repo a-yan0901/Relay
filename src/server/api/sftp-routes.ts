@@ -3,7 +3,8 @@ import { z } from 'zod';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { AppError } from '../../shared/errors.js';
-import type { TransferJob } from '../../shared/core/models.js';
+import { operationNextAction } from '../../shared/core/state-machines.js';
+import type { OperationDiagnostic, TransferJob } from '../../shared/core/models.js';
 import { parseTransferRequest } from '../../shared/validation.js';
 import { SessionStore } from '../auth/session-store.js';
 import { AuditRepository } from '../db/repositories.js';
@@ -39,9 +40,30 @@ const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
 const readHostId = (params: unknown): string => parse(hostParamsSchema, params).hostId;
 const readTransferId = (params: unknown): string => parse(transferParamsSchema, params).transferId;
 
+const transferDiagnostic = (job: TransferJob, requestId: string): OperationDiagnostic | null => {
+  if (job.status === 'queued') return null;
+  const state: OperationDiagnostic['state'] = job.status;
+  const retryable = job.status === 'interrupted' || (job.status === 'failed' && !['SFTP_PATH_INVALID', 'SFTP_PERMISSION_DENIED'].includes(job.errorCode ?? ''));
+  return {
+    operationId: job.id,
+    hostId: job.hostId,
+    kind: 'transfer',
+    stage: 'sftp',
+    state,
+    retryable,
+    nextAction: operationNextAction(state, retryable, job.errorCode),
+    ...(job.errorCode === undefined ? {} : { errorCode: job.errorCode }),
+    requestId,
+    startedAt: job.createdAt,
+    ...(job.status === 'running' ? {} : { endedAt: job.updatedAt })
+  };
+};
+
 export const registerSftpRoutes = async (app: FastifyInstance, dependencies: SftpRouteDependencies): Promise<void> => {
   const publishTransferUpdate = (requestId: string, job: TransferJob): void => {
     dependencies.operationBus.publish(dependencies.ownerId, { type: 'transfer', job });
+    const diagnostic = transferDiagnostic(job, requestId);
+    if (diagnostic) dependencies.operationBus.publishDiagnostic(dependencies.ownerId, diagnostic);
     if (['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status)) {
       dependencies.auditRepository.insert({
         eventType: `sftp_transfer_${job.status}`,

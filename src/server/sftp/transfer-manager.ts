@@ -66,7 +66,7 @@ export class TransferManager {
       now: options.now ?? Date.now
     };
     this.repository = options.repository ?? (options.database && options.ownerId ? new TransferRepository(options.database, options.ownerId) : undefined);
-    this.repository?.markActiveInterrupted('SERVER_RESTARTED', timestamp(this.options.now));
+    this.repository?.markActiveInterrupted('SERVICE_RESTARTED', timestamp(this.options.now));
     this.repository?.deleteExpired(new Date(this.options.now() - this.options.ttlMs).toISOString());
     for (const job of this.repository?.list() ?? []) {
       const sharedJob = sharedJobFromRow(job);

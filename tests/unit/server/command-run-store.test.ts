@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe('CommandRunStore', () => {
-  it('marks persisted queued work as failed after a service restart and restores it after unlock', async () => {
+  it('marks persisted queued work as interrupted after a service restart and restores it after unlock', async () => {
     const database = openDatabase(':memory:');
     migrate(database);
     databases.push(database);
@@ -35,8 +35,8 @@ describe('CommandRunStore', () => {
     const restartedStore = new CommandRunStore({ ownerId: 'owner-a', repository, vaultService: new VaultService(), now: () => 1_000 });
     const restored = await restartedStore.get(run.id, vault.vaultKey);
 
-    expect(restored).toMatchObject({ id: run.id, status: 'failed', finishedAt: new Date(1_000).toISOString() });
-    expect(restored?.targets).toEqual([expect.objectContaining({ hostId: 'host-1', status: 'failed', errorCode: 'SERVER_RESTARTED' })]);
+    expect(restored).toMatchObject({ id: run.id, status: 'interrupted', finishedAt: new Date(1_000).toISOString() });
+    expect(restored?.targets).toEqual([expect.objectContaining({ hostId: 'host-1', status: 'interrupted', errorCode: 'SERVICE_RESTARTED' })]);
   });
 
   it('removes expired persisted results as well as the in-memory snapshot', async () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { ConnectionDiagnostic } from '@shared/core/models';
+import type { OperationDiagnostic } from '@shared/core/models';
+import { operationErrorToDiagnostic } from '@shared/core/state-machines';
 import type {
   TerminalCredentialRequiredEvent,
   TerminalErrorEvent,
@@ -30,22 +31,29 @@ const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null
 );
 
-const DIAGNOSTIC_STAGES = ['resolve', 'tcp', 'jump', 'host-key', 'authentication', 'channel'] as const;
-const DIAGNOSTIC_STATUSES = ['started', 'succeeded', 'failed'] as const;
+const DIAGNOSTIC_KINDS = ['terminal', 'transfer', 'command'] as const;
+const DIAGNOSTIC_STAGES = ['dns', 'tcp', 'jump-host', 'host-key', 'auth', 'pty', 'sftp', 'command'] as const;
+const DIAGNOSTIC_STATES = ['running', 'completed', 'failed', 'cancelled', 'interrupted', 'needs-reopen'] as const;
+const DIAGNOSTIC_ACTIONS = ['wait', 'retry', 'edit-credentials', 'confirm-host-key', 'reopen', 'none'] as const;
 
-const isDiagnostic = (value: unknown): value is ConnectionDiagnostic => {
+const isDiagnostic = (value: unknown): value is OperationDiagnostic => {
   if (!isRecord(value)) return false;
-  return typeof value.id === 'string' && typeof value.hostId === 'string' &&
+  return typeof value.operationId === 'string' && typeof value.hostId === 'string' &&
+    typeof value.kind === 'string' && DIAGNOSTIC_KINDS.includes(value.kind as typeof DIAGNOSTIC_KINDS[number]) &&
     typeof value.stage === 'string' && DIAGNOSTIC_STAGES.includes(value.stage as typeof DIAGNOSTIC_STAGES[number]) &&
-    typeof value.status === 'string' && DIAGNOSTIC_STATUSES.includes(value.status as typeof DIAGNOSTIC_STATUSES[number]) &&
-    typeof value.hopIndex === 'number' && Number.isInteger(value.hopIndex) && value.hopIndex >= 0 && value.hopIndex <= 4 &&
-    typeof value.retryable === 'boolean' && typeof value.at === 'string' &&
-    (value.code === undefined || typeof value.code === 'string');
+    typeof value.state === 'string' && DIAGNOSTIC_STATES.includes(value.state as typeof DIAGNOSTIC_STATES[number]) &&
+    typeof value.retryable === 'boolean' && typeof value.nextAction === 'string' &&
+    DIAGNOSTIC_ACTIONS.includes(value.nextAction as typeof DIAGNOSTIC_ACTIONS[number]) &&
+    typeof value.startedAt === 'string' &&
+    (value.errorCode === undefined || typeof value.errorCode === 'string') &&
+    (value.requestId === undefined || typeof value.requestId === 'string') &&
+    (value.endedAt === undefined || typeof value.endedAt === 'string');
 };
 
 const isServerEvent = (value: unknown): value is TerminalServerEvent => {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
-  if (value.type === 'status') return isTerminalStatus(value.state);
+  if (value.type === 'status') return isTerminalStatus(value.state) &&
+    (value.serviceInstanceId === undefined || typeof value.serviceInstanceId === 'string');
   if (value.type === 'diagnostic') return isDiagnostic(value.diagnostic);
   if (value.type === 'pong') return true;
   if (value.type === 'exit') return typeof value.code === 'number' || value.code === null;
@@ -93,7 +101,7 @@ export interface TerminalSessionSnapshot {
   error: TerminalErrorEvent | null;
   exit: Extract<TerminalServerEvent, { type: 'exit' }> | null;
   reconnectDelayMs: number;
-  diagnostics: ConnectionDiagnostic[];
+  diagnostics: OperationDiagnostic[];
 }
 
 export interface TerminalSessionControllerOptions {
@@ -131,6 +139,7 @@ export class TerminalSessionController {
   private stopped = false;
   private retryBlocked = false;
   private reconnectAttempt = 0;
+  private serviceInstanceId: string | null = null;
   private snapshotValue: TerminalSessionSnapshot = {
     state: 'closed',
     hostKey: null,
@@ -181,7 +190,7 @@ export class TerminalSessionController {
     if (this.retryBlocked) return;
     if (this.socket && (this.socket.readyState === 0 || this.socket.readyState === 1)) return;
     this.clearReconnectTimer();
-    this.updateSnapshot({ state: 'connecting', error: null, exit: null, credential: null, reconnectDelayMs: 0 });
+    this.updateSnapshot({ state: 'connecting', error: null, exit: null, credential: null, reconnectDelayMs: 0, diagnostics: [] });
 
     const socket = this.socketFactory(terminalSocketUrl());
     this.socket = socket;
@@ -197,6 +206,9 @@ export class TerminalSessionController {
   }
 
   reconnect(): void {
+    if (this.snapshotValue.state === 'needs-reopen') {
+      this.serviceInstanceId = null;
+    }
     this.stopped = false;
     this.retryBlocked = false;
     this.reconnectAttempt = 0;
@@ -265,7 +277,8 @@ export class TerminalSessionController {
       cols: size.cols,
       rows: size.rows,
       requestId: this.options.terminalId,
-      term: 'xterm-256color'
+      term: 'xterm-256color',
+      ...(this.serviceInstanceId === null ? {} : { knownServiceInstanceId: this.serviceInstanceId })
     });
   }
 
@@ -300,6 +313,34 @@ export class TerminalSessionController {
   private handleServerEvent(event: TerminalServerEvent): void {
     switch (event.type) {
       case 'status':
+        if (event.serviceInstanceId !== undefined) {
+          if (this.serviceInstanceId !== null && this.serviceInstanceId !== event.serviceInstanceId) {
+            this.retryBlocked = true;
+            this.clearReconnectTimer();
+            const currentSocket = this.socket;
+            this.detachSocket(currentSocket);
+            this.socket = null;
+            const at = new Date().toISOString();
+            this.updateSnapshot({
+              state: 'needs-reopen',
+              reconnectDelayMs: 0,
+              error: { type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务已重启，请重新打开终端' },
+              credential: null,
+              hostKey: null,
+              diagnostics: [...this.snapshotValue.diagnostics, operationErrorToDiagnostic({
+                operationId: this.options.terminalId,
+                hostId: this.options.hostId,
+                errorCode: 'SERVICE_RESTARTED',
+                state: 'needs-reopen',
+                requestId: this.options.terminalId,
+                at
+              })].slice(-100)
+            });
+            currentSocket?.close(1008, 'service restarted');
+            return;
+          }
+          this.serviceInstanceId = event.serviceInstanceId;
+        }
         this.updateSnapshot({
           state: event.state,
           ...(event.state === 'awaiting-host-key' ? {} : { hostKey: null }),
@@ -316,14 +357,30 @@ export class TerminalSessionController {
       case 'credential-required':
         this.updateSnapshot({ state: 'awaiting-credential', credential: event, error: null });
         return;
-      case 'error':
+      case 'error': {
         this.retryBlocked = true;
-        if (['SESSION_NEEDS_REOPEN', 'SERVICE_RESTARTED', 'OPERATION_NOT_FOUND'].includes(event.code)) {
-          this.updateSnapshot({ state: 'needs-reopen', error: event, credential: null, reconnectDelayMs: 0 });
-        } else {
-          this.updateSnapshot({ state: 'failed', error: event, credential: null });
-        }
+        const needsReopen = ['SESSION_NEEDS_REOPEN', 'SERVICE_RESTARTED', 'OPERATION_NOT_FOUND'].includes(event.code);
+        const state = needsReopen ? 'needs-reopen' : 'failed';
+        const diagnostic = operationErrorToDiagnostic({
+          operationId: this.options.terminalId,
+          hostId: this.options.hostId,
+          errorCode: event.code,
+          state,
+          requestId: this.options.terminalId,
+          at: new Date().toISOString()
+        });
+        const hasMatchingDiagnostic = this.snapshotValue.diagnostics.some((item) => (
+          item.operationId === diagnostic.operationId && item.errorCode === diagnostic.errorCode && item.state !== 'running'
+        ));
+        this.updateSnapshot({
+          state,
+          error: event,
+          credential: null,
+          ...(needsReopen ? { reconnectDelayMs: 0 } : {}),
+          ...(hasMatchingDiagnostic ? {} : { diagnostics: [...this.snapshotValue.diagnostics, diagnostic].slice(-100) })
+        });
         return;
+      }
       case 'diagnostic':
         this.updateSnapshot({ diagnostics: [...this.snapshotValue.diagnostics, event.diagnostic].slice(-100) });
         return;
