@@ -191,8 +191,8 @@ export interface PwaRegistrationResult {
   registered: boolean;
 }
 
-export const registerPwaServiceWorker: () => Promise<PwaRegistrationResult>;
-export const isStandaloneDisplayMode: () => boolean;
+export const registerPwaServiceWorker: (environment?: PwaRegistrationEnvironment) => Promise<PwaRegistrationResult>;
+export const isStandaloneDisplayMode: (environment?: PwaRegistrationEnvironment) => boolean;
 ```
 
 - manifest 使用 `name: "Relay SSH Workspace"`、`short_name: "Relay"`、`start_url: "/"`、`scope: "/"`、`display: "standalone"`、`theme_color: "#07111f"` 和 `background_color: "#07111f"`；图标使用本地 SVG，不能请求外部资源。
@@ -200,29 +200,29 @@ export const isStandaloneDisplayMode: () => boolean;
 - fetch 只处理 same-origin GET；`/api/`、`/ws/`、非 GET 和跨 origin 直接交给浏览器。导航请求网络失败时回退到缓存的 `/`；静态 GET 网络成功且 response `ok` 时才写入 cache。
 - 注册失败只返回 `{ supported: true, registered: false }`，不阻断 React 启动；development/test 不主动清理用户已有 registration。
 
-- [ ] **Step 1: Write failing registration tests.**
+- [x] **Step 1: Write failing registration tests.**
 
   注入 fake `serviceWorker.register`，覆盖支持且注册成功、`serviceWorker` 不存在、register reject 三种结果；验证 `isStandaloneDisplayMode()` 在 `matchMedia('(display-mode: standalone)')` true 或 iOS standalone true 时返回 true，普通浏览器返回 false。
 
-- [ ] **Step 2: Run focused registration tests and observe failure.**
+- [x] **Step 2: Run focused registration tests and observe failure.**
 
   Run: `npx vitest run tests/unit/web/pwa-registration.test.ts`
   Expected: FAIL，因为 registration module 尚不存在。
 
-- [ ] **Step 3: Add manifest, icons and service worker.**
+- [x] **Step 3: Add manifest, icons and service worker.**
 
   所有静态内容使用绝对根路径；service worker 中明确排除 API/WSS，不能使用 network-first 缓存 API 响应。
 
-- [ ] **Step 4: Add the registration boundary and bootstrap it.**
+- [x] **Step 4: Add the registration boundary and bootstrap it.**
 
   `main.tsx` 在 `createRoot(...).render(...)` 前调用 `void registerPwaServiceWorker()`；不得 await 它或把失败渲染成 boot error。`index.html` 增加 manifest、description、apple mobile web app 元数据。
 
-- [ ] **Step 5: Run static/PWA verification.**
+- [x] **Step 5: Run static/PWA verification.**
 
   Run: `npx vitest run tests/unit/web/pwa-registration.test.ts && npm run build:web && test -f dist/web/manifest.webmanifest && test -f dist/web/sw.js && git diff --check`
   Expected: PASS；构建产物包含 manifest、service worker 和两个图标，Web bundle 不请求 `/api/` 作为 shell cache。
 
-- [ ] **Step 6: Commit the PWA shell.**
+- [x] **Step 6: Commit the PWA shell.**
 
   ```bash
   git add index.html public src/web/main.tsx src/web/platform/pwa-registration.ts tests/unit/web/pwa-registration.test.ts
