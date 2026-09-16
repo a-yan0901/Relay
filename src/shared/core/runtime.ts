@@ -1,8 +1,10 @@
 import type { CapabilitySet } from './capabilities.js';
 import type {
   ActivityStore,
+  AccountSessionPort,
   CommandTransport,
   ConnectionProbe,
+  DeviceTrustPort,
   FileTransport,
   GroupStore,
   HostStore,
@@ -12,6 +14,7 @@ import type {
   SecretStore,
   SessionTransport,
   SnippetStore,
+  SyncPort,
   VaultSessionPort,
   WorkspaceStore
 } from './ports.js';
@@ -42,4 +45,8 @@ export interface CoreRuntime {
   imports: ImportExportPort;
   /** System APIs are optional so Local-only runtimes remain fully usable. */
   platformServices?: PlatformServices;
+  /** Account/sync remain optional so Local-only clients need no account service. */
+  account?: AccountSessionPort;
+  devices?: DeviceTrustPort;
+  sync?: SyncPort;
 }

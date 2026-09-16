@@ -1,16 +1,24 @@
 import type {
+  AccountSession,
   ActivityFilter,
   ActivityPage,
   CommandRun,
   CommandRunRequest,
   ConnectionTestResult,
   ConnectionProfile,
+  DeviceDescriptor,
   GroupNode,
   HostListFilter,
   IdentityMetadata,
   SftpEntry,
   Snippet,
   SnippetMetadata,
+  SyncDescriptor,
+  SyncEnvelope,
+  SyncHead,
+  SyncPreview,
+  SyncResolution,
+  SyncStatus,
   TransferJob,
   TransferResumeRequest,
   TransferRequest,
@@ -124,6 +132,29 @@ export interface VaultSessionPort {
   setup(masterPassword: string): Promise<VaultStatus>;
   unlock(masterPassword: string): Promise<VaultStatus>;
   lock(): Promise<void>;
+}
+
+export interface AccountSessionPort {
+  status(): Promise<AccountSession | null>;
+  register(email: string, password: string, label?: string): Promise<AccountSession>;
+  signIn(email: string, password: string, label?: string): Promise<AccountSession>;
+  signOut(): Promise<void>;
+}
+
+export interface DeviceTrustPort {
+  listDevices(): Promise<readonly DeviceDescriptor[]>;
+  revokeDevice(deviceId: string): Promise<void>;
+}
+
+export interface SyncPort {
+  status(): Promise<{ sync: SyncStatus; head: SyncHead | null; pendingCount?: number; lastErrorCode?: string }>;
+  descriptor(): Promise<SyncDescriptor | null>;
+  pull(): Promise<SyncEnvelope | null>;
+  push(envelope: SyncEnvelope, idempotencyKey: string): Promise<SyncHead>;
+  previewPull(): Promise<SyncPreview>;
+  resolveConflict(conflictId: string, resolution: SyncResolution): Promise<void>;
+  enable(): Promise<SyncHead>;
+  retry(): Promise<void>;
 }
 
 export interface ConnectionProbe {

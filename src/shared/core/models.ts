@@ -9,6 +9,104 @@ export interface VaultStatus {
   phase: VaultPhase;
 }
 
+export type AccountState = 'signed-out' | 'authenticating' | 'signed-in' | 'revoked';
+
+export type SyncStatus =
+  | 'local-only'
+  | 'needs-unlock'
+  | 'syncing'
+  | 'synced'
+  | 'pending'
+  | 'offline'
+  | 'conflict'
+  | 'device-revoked';
+
+export interface AccountSession {
+  accountId: string;
+  deviceId: string;
+  state: Exclude<AccountState, 'signed-out' | 'authenticating'>;
+  expiresAt: string;
+}
+
+export interface DeviceDescriptor {
+  id: string;
+  label: string;
+  platform: ClientPlatform;
+  lastSeenAt: string | null;
+  current: boolean;
+  revokedAt: string | null;
+}
+
+export interface SyncHead {
+  vaultId: string;
+  revision: number;
+  keyVersion: number;
+  payloadHash: string;
+  updatedAt: string;
+}
+
+export interface WrappedKeyEnvelope {
+  version: number;
+  nonce: string;
+  ciphertext: string;
+  authTag: string;
+  aad: string;
+}
+
+export interface VaultUnlockEnvelope {
+  version: number;
+  kdf: {
+    algorithm: string;
+    salt: string;
+    memoryCost: number;
+    timeCost: number;
+    parallelism: number;
+    hashLength: number;
+  };
+  wrappedVaultKey: WrappedKeyEnvelope;
+  recoveryWrappedVaultKey?: WrappedKeyEnvelope;
+}
+
+export interface SyncDescriptor {
+  vaultId: string;
+  keyVersion: number;
+  vaultUnlockEnvelope: VaultUnlockEnvelope;
+  wrappedSyncKey: WrappedKeyEnvelope;
+}
+
+export interface SyncEnvelope {
+  schemaVersion: number;
+  vaultId: string;
+  revision: number;
+  parentRevision: number | null;
+  deviceId: string;
+  keyVersion: number;
+  nonce: string;
+  ciphertext: string;
+  authTag: string;
+  aad: string;
+  payloadHash: string;
+  byteLength: number;
+}
+
+export interface SyncPreview {
+  conflictId: string;
+  localRevision: number;
+  remoteRevision: number;
+  conflictTypes: readonly ('host' | 'group' | 'identity' | 'snippet' | 'workspace' | 'host-key')[];
+  localBackupRevision: number;
+}
+
+export type SyncResolution = 'keep-local' | 'use-remote' | 'export-both';
+
+export interface SyncState {
+  sync: SyncStatus;
+  head: SyncHead | null;
+  pendingCount: number;
+  lastErrorCode?: string;
+  lastSyncedAt?: string;
+}
+
 export interface ReconnectPolicy {
   enabled: boolean;
   maxAttempts: number;

@@ -102,7 +102,7 @@ export const effectiveMaxPanes = (capabilities: CapabilitySet, platformMaxPanes?
   return Math.min(localLimit, capabilities.limits.maxWorkspacePanes ?? localLimit);
 };
 
-export const WEB_CAPABILITIES: readonly Capability[] = [
+const WEB_BASE_CAPABILITIES: readonly Capability[] = [
   'workspace.persistence',
   'workspace.templates',
   'workspace.multi-pane',
@@ -127,4 +127,28 @@ export const WEB_CAPABILITIES: readonly Capability[] = [
   'session.lifecycle-status'
 ];
 
-export const createWebCapabilitySet = (limits: Partial<CapabilityLimits> = {}): CapabilitySet => createCapabilitySet('web', WEB_CAPABILITIES, limits);
+export const ACCOUNT_SYNC_CAPABILITIES: readonly Capability[] = [
+  'account.auth',
+  'device.trust',
+  'sync.encrypted'
+];
+
+/** All capabilities a Web adapter can implement, including optional account/sync. */
+export const WEB_CLIENT_CAPABILITIES: readonly Capability[] = [
+  ...WEB_BASE_CAPABILITIES,
+  ...ACCOUNT_SYNC_CAPABILITIES
+];
+
+/** @deprecated Use WEB_CLIENT_CAPABILITIES for client candidates. */
+export const WEB_CAPABILITIES: readonly Capability[] = WEB_BASE_CAPABILITIES;
+
+export interface WebCapabilityOptions extends Partial<CapabilityLimits> {
+  accountSyncEnabled?: boolean;
+}
+
+export const createWebCapabilitySet = (options: WebCapabilityOptions = {}): CapabilitySet => {
+  const capabilities = options.accountSyncEnabled
+    ? WEB_CLIENT_CAPABILITIES
+    : WEB_BASE_CAPABILITIES;
+  return createCapabilitySet('web', capabilities, options);
+};

@@ -192,11 +192,11 @@ export interface SyncPort {
 }
 ```
 
-- [ ] **Step 1: Write the failing contract tests.**
+- [x] **Step 1: Write the failing contract tests.**
 
   在 `account-sync-contract.test.ts` 断言 `local-only`、`needs-unlock`、`device-revoked` 的状态文案/下一步，account DTO 不允许出现 token/master password/private key 字段，`SyncEnvelope` 必须包含 revision/hash/AAD 元数据。增加一个不实现可选 ports 的旧 `CoreRuntime` fake，证明 Local-only 类型兼容。
 
-- [ ] **Step 2: Run tests to verify they fail.**
+- [x] **Step 2: Run tests to verify they fail.**
 
   Run:
 
@@ -207,11 +207,11 @@ export interface SyncPort {
 
   Expected: FAIL because account/sync types, optional runtime ports and state helpers do not exist.
 
-- [ ] **Step 3: Implement the platform-neutral contract.**
+- [x] **Step 3: Implement the platform-neutral contract.**
 
   把类型放入 shared，给 `CoreRuntime` 增加 `account?: AccountSessionPort`、`devices?: DeviceTrustPort`、`sync?: SyncPort`；新增 `accountSyncCapabilities` helper。将 `WEB_CLIENT_CAPABILITIES` 定义为现有 Web client candidates 加 `account.auth`、`device.trust`、`sync.encrypted`，`createWebCapabilitySet({ accountSyncEnabled = false })` 只有在 server 配置开启时才把三个名称放入实际 server set；Web adapter 直接使用 `WEB_CLIENT_CAPABILITIES` 计算交集，未启用时保留现有列表。新增以下稳定错误码并绑定 HTTP 状态：`ACCOUNT_EMAIL_INVALID`(400)、`ACCOUNT_PASSWORD_INVALID`(400)、`ACCOUNT_EXISTS`(409)、`ACCOUNT_AUTH_FAILED`(401)、`ACCOUNT_SESSION_INVALID`(401)、`ACCOUNT_DEVICE_REVOKED`(403)、`SYNC_NOT_ENABLED`(409)、`SYNC_NOT_FOUND`(404)、`SYNC_CONFLICT`(409)、`SYNC_PAYLOAD_INVALID`(422)、`SYNC_KEY_VERSION_UNSUPPORTED`(422)、`SYNC_DELETE_CONFIRMATION_REQUIRED`(400)。
 
-- [ ] **Step 4: Run the focused contract tests.**
+- [x] **Step 4: Run the focused contract tests.**
 
   Run:
 
