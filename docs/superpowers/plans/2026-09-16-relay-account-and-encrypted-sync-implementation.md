@@ -351,11 +351,11 @@ export interface AccountService {
 }
 ```
 
-- [ ] **Step 1: Write failing account/session tests.**
+- [x] **Step 1: Write failing account/session tests.**
 
   覆盖 email 规范化/重复注册、弱密码、错误密码不泄露账户存在性、argon2 hash 不等于明文、session token 只在 cookie 层出现、过期 session、登出、设备列表 current 标记、撤销设备后 session 无法继续使用、当前 account 不能绕过 owner/account 检查。测试还要确认 migration 从旧 schema 升级后现有 Host/Vault 数据不变。
 
-- [ ] **Step 2: Run tests to verify failure.**
+- [x] **Step 2: Run tests to verify failure.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -364,15 +364,15 @@ export interface AccountService {
 
   Expected: FAIL because account tables, repositories and service do not exist.
 
-- [ ] **Step 3: Add schema and owner-safe repositories.**
+- [x] **Step 3: Add schema and owner-safe repositories.**
 
   将 `SCHEMA_VERSION` 从 11 升到 12，新增 `accounts`、`account_devices`、`account_sessions` metadata table，并为 account/email/device/revokedAt 建索引；migration 使用 `CREATE TABLE IF NOT EXISTS` 和事务，旧表不重建。repository 的 `getAccountByEmail`、`createAccount`、`createDevice`、`listDevices`、`revokeDevice` 全部使用参数化 SQL；不要将 account password/session token 写入 repository 返回 DTO。
 
-- [ ] **Step 4: Implement password hash and in-memory session store.**
+- [x] **Step 4: Implement password hash and in-memory session store.**
 
   `account-crypto.ts` 使用 Argon2id encoded hash（不使用 Vault `K_vault`）；password 只存在调用栈。`AccountSessionStore` 生成至少 32-byte random token，内部只保存 token hash、accountId/deviceId/expiry，idle/absolute expiry 后立即删除；`account-cookie.ts` 使用 `relay_account_session`、HttpOnly、SameSite=Strict、production Secure，与 `webssh_session` 完全分离。撤销 device 时同步删除它的内存 sessions。
 
-- [ ] **Step 5: Run account focused tests.**
+- [x] **Step 5: Run account focused tests.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -381,7 +381,7 @@ export interface AccountService {
 
   Expected: PASS; no account secret appears in test response/log assertions.
 
-- [ ] **Step 6: Commit account storage slice.**
+- [x] **Step 6: Commit account storage slice.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

@@ -8,11 +8,15 @@ import {
   type ConnectionProfileSettings,
   type HostMetadata
 } from '../../shared/validation.js';
-import type { ConnectionProfileOverrides } from '../../shared/core/models.js';
+import type { ClientPlatform, ConnectionProfileOverrides } from '../../shared/core/models.js';
 import { ARGON2ID_PARAMS, VAULT_VERSION, type VaultConfig } from '../vault/types.js';
 import type { SqliteDatabase } from './database.js';
 import {
   type AppConfigRow,
+  type AccountCreateRow,
+  type AccountDeviceCreateRow,
+  type AccountDeviceRow,
+  type AccountRow,
   type AuditEventInput,
   type AuditEventRow,
   type AuditListFilter,
@@ -46,6 +50,24 @@ interface AppConfigSqlRow {
   wrapped_vault_key_aad: string;
   created_at: string;
   updated_at: string;
+}
+
+interface AccountSqlRow {
+  id: string;
+  email: string;
+  password_hash: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AccountDeviceSqlRow {
+  id: string;
+  account_id: string;
+  label: string;
+  platform: ClientPlatform;
+  created_at: string;
+  last_seen_at: string | null;
+  revoked_at: string | null;
 }
 
 interface GroupSqlRow {
@@ -168,6 +190,8 @@ interface TransferJobSqlRow {
 }
 
 const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+const ACCOUNT_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+const ACCOUNT_PLATFORMS = new Set<ClientPlatform>(['web', 'desktop', 'android']);
 
 const assertIdentifier = (value: string, code: 'HOST_VALIDATION_FAILED' | 'INTERNAL_ERROR' = 'INTERNAL_ERROR'): void => {
   if (typeof value !== 'string' || !SAFE_IDENTIFIER.test(value)) {
@@ -176,6 +200,37 @@ const assertIdentifier = (value: string, code: 'HOST_VALIDATION_FAILED' | 'INTER
 };
 
 const assertOwner = (ownerId: string): void => assertIdentifier(ownerId);
+
+const assertAccountEmail = (email: string): void => {
+  if (
+    typeof email !== 'string' ||
+    email.length === 0 ||
+    email.length > 320 ||
+    email !== email.trim() ||
+    !ACCOUNT_EMAIL.test(email)
+  ) {
+    throw new AppError('ACCOUNT_EMAIL_INVALID');
+  }
+};
+
+const assertAccountId = (accountId: string): void => assertIdentifier(accountId, 'INTERNAL_ERROR');
+const assertDeviceId = (deviceId: string): void => assertIdentifier(deviceId, 'INTERNAL_ERROR');
+
+const assertAccountPasswordHash = (passwordHash: string): void => {
+  if (typeof passwordHash !== 'string' || passwordHash.length < 16 || passwordHash.length > 1024) {
+    throw new AppError('INTERNAL_ERROR');
+  }
+};
+
+const assertDevicePlatform = (platform: ClientPlatform): void => {
+  if (!ACCOUNT_PLATFORMS.has(platform)) throw new AppError('INTERNAL_ERROR');
+};
+
+const assertDeviceLabel = (label: string): void => {
+  if (typeof label !== 'string' || label.length === 0 || label.length > 128 || [...label].some((character) => (character.codePointAt(0) ?? 0) <= 0x1f || character === '\u007f')) {
+    throw new AppError('INTERNAL_ERROR');
+  }
+};
 
 const now = (): string => new Date().toISOString();
 
@@ -319,6 +374,24 @@ const toGroupRow = (row: GroupSqlRow): GroupRow => ({
   connectionProfile: parseConnectionProfileOverrides(row.connection_profile_json),
   createdAt: row.created_at,
   updatedAt: row.updated_at
+});
+
+const toAccountRow = (row: AccountSqlRow): AccountRow => ({
+  id: row.id,
+  email: row.email,
+  passwordHash: row.password_hash,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const toAccountDeviceRow = (row: AccountDeviceSqlRow): AccountDeviceRow => ({
+  id: row.id,
+  accountId: row.account_id,
+  label: row.label,
+  platform: row.platform,
+  createdAt: row.created_at,
+  lastSeenAt: row.last_seen_at,
+  revokedAt: row.revoked_at
 });
 
 const toHostRow = (row: HostSqlRow): HostRow => ({
@@ -570,6 +643,143 @@ export class AppConfigRepository {
     }
 
     return created;
+  }
+}
+
+export class AccountRepository {
+  constructor(private readonly database: SqliteDatabase) {}
+
+  getAccountByEmail(email: string): AccountRow | null {
+    assertAccountEmail(email);
+    const row = this.database.prepare(`
+      SELECT id, email, password_hash, created_at, updated_at
+      FROM accounts
+      WHERE email = @email COLLATE NOCASE
+    `).get({ email }) as AccountSqlRow | undefined;
+    return row ? toAccountRow(row) : null;
+  }
+
+  getAccount(id: string): AccountRow | null {
+    assertAccountId(id);
+    const row = this.database.prepare(`
+      SELECT id, email, password_hash, created_at, updated_at
+      FROM accounts
+      WHERE id = @id
+    `).get({ id }) as AccountSqlRow | undefined;
+    return row ? toAccountRow(row) : null;
+  }
+
+  createAccount(input: AccountCreateRow): AccountRow {
+    assertAccountId(input.id);
+    assertAccountEmail(input.email);
+    assertAccountPasswordHash(input.passwordHash);
+    const timestamp = now();
+    try {
+      this.database.prepare(`
+        INSERT INTO accounts (id, email, password_hash, created_at, updated_at)
+        VALUES (@id, @email, @passwordHash, @createdAt, @updatedAt)
+      `).run({
+        id: input.id,
+        email: input.email,
+        passwordHash: input.passwordHash,
+        createdAt: input.createdAt ?? timestamp,
+        updatedAt: input.updatedAt ?? timestamp
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed: accounts.email')) {
+        throw new AppError('ACCOUNT_EXISTS');
+      }
+      throw error;
+    }
+
+    const created = this.getAccount(input.id);
+    if (!created) throw new AppError('INTERNAL_ERROR');
+    return created;
+  }
+
+  createAccountWithDevice(
+    account: AccountCreateRow,
+    device: AccountDeviceCreateRow
+  ): { account: AccountRow; device: AccountDeviceRow } {
+    const create = this.database.transaction(() => {
+      const createdAccount = this.createAccount(account);
+      const createdDevice = this.createDevice(device);
+      return { account: createdAccount, device: createdDevice };
+    });
+    return create();
+  }
+
+  getDevice(accountId: string, deviceId: string): AccountDeviceRow | null {
+    assertAccountId(accountId);
+    assertDeviceId(deviceId);
+    const row = this.database.prepare(`
+      SELECT id, account_id, label, platform, created_at, last_seen_at, revoked_at
+      FROM account_devices
+      WHERE account_id = @accountId AND id = @deviceId
+    `).get({ accountId, deviceId }) as AccountDeviceSqlRow | undefined;
+    return row ? toAccountDeviceRow(row) : null;
+  }
+
+  createDevice(input: AccountDeviceCreateRow): AccountDeviceRow {
+    assertAccountId(input.accountId);
+    assertDeviceId(input.id);
+    assertDeviceLabel(input.label);
+    assertDevicePlatform(input.platform);
+    const timestamp = input.createdAt ?? now();
+    try {
+      this.database.prepare(`
+        INSERT INTO account_devices (id, account_id, label, platform, created_at, last_seen_at, revoked_at)
+        VALUES (@id, @accountId, @label, @platform, @createdAt, NULL, NULL)
+      `).run({
+        id: input.id,
+        accountId: input.accountId,
+        label: input.label,
+        platform: input.platform,
+        createdAt: timestamp
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('FOREIGN KEY constraint failed')) {
+        throw new AppError('ACCOUNT_AUTH_FAILED');
+      }
+      throw error;
+    }
+
+    const created = this.getDevice(input.accountId, input.id);
+    if (!created) throw new AppError('INTERNAL_ERROR');
+    return created;
+  }
+
+  listDevices(accountId: string): AccountDeviceRow[] {
+    assertAccountId(accountId);
+    const rows = this.database.prepare(`
+      SELECT id, account_id, label, platform, created_at, last_seen_at, revoked_at
+      FROM account_devices
+      WHERE account_id = @accountId
+      ORDER BY created_at ASC, id ASC
+    `).all({ accountId }) as AccountDeviceSqlRow[];
+    return rows.map(toAccountDeviceRow);
+  }
+
+  touchDevice(accountId: string, deviceId: string, lastSeenAt = now()): boolean {
+    assertAccountId(accountId);
+    assertDeviceId(deviceId);
+    const result = this.database.prepare(`
+      UPDATE account_devices
+      SET last_seen_at = @lastSeenAt
+      WHERE account_id = @accountId AND id = @deviceId AND revoked_at IS NULL
+    `).run({ accountId, deviceId, lastSeenAt });
+    return result.changes > 0;
+  }
+
+  revokeDevice(accountId: string, deviceId: string, revokedAt = now()): boolean {
+    assertAccountId(accountId);
+    assertDeviceId(deviceId);
+    const result = this.database.prepare(`
+      UPDATE account_devices
+      SET revoked_at = COALESCE(revoked_at, @revokedAt)
+      WHERE account_id = @accountId AND id = @deviceId
+    `).run({ accountId, deviceId, revokedAt });
+    return result.changes > 0;
   }
 }
 

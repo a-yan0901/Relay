@@ -110,6 +110,30 @@ describe('database migrations', () => {
     const table = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transfer_jobs'").get() as { sql: string };
     expect(table.sql).toContain("'paused'");
     expect(database.prepare('SELECT status, checkpoint_offset, temporary_path FROM transfer_jobs WHERE id = ?').get('transfer-legacy')).toEqual({ status: 'interrupted', checkpoint_offset: 4, temporary_path: '/remote.bin.tmp' });
-    expect(database.pragma('user_version', { simple: true })).toBe(11);
+    expect(database.pragma('user_version', { simple: true })).toBe(12);
+  });
+
+  it('adds account metadata tables without rebuilding existing Vault and host data', () => {
+    const database = openDatabase(':memory:');
+    databases.push(database);
+    migrate(database);
+    database.exec(`
+      INSERT INTO hosts (
+        id, owner_id, name, address, port, username, auth_type, credential_ciphertext,
+        credential_version, created_at, updated_at
+      ) VALUES ('legacy-host', 'default', 'Legacy host', '10.0.0.8', 22, 'deploy', 'password', 'ciphertext', 1, '2026-01-01', '2026-01-01');
+    `);
+
+    migrate(database);
+
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('accounts', 'account_devices', 'account_sessions') ORDER BY name").all())
+      .toEqual([
+        { name: 'account_devices' },
+        { name: 'account_sessions' },
+        { name: 'accounts' }
+      ]);
+    expect(database.prepare('SELECT name, address, credential_ciphertext FROM hosts WHERE id = ?').get('legacy-host'))
+      .toEqual({ name: 'Legacy host', address: '10.0.0.8', credential_ciphertext: 'ciphertext' });
+    expect(database.pragma('user_version', { simple: true })).toBe(12);
   });
 });

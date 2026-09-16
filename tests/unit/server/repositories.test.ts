@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   AppConfigRepository,
+  AccountRepository,
   AuditRepository,
   GroupRepository,
   HostRepository,
@@ -63,9 +64,46 @@ describe('SQLite repositories', () => {
       'app_config',
       'groups',
       'hosts',
-      'audit_events'
+      'audit_events',
+      'accounts',
+      'account_devices',
+      'account_sessions'
     ]));
     expect(database.pragma('foreign_keys', { simple: true })).toBe(1);
+  });
+
+  it('stores account credentials and owner-scoped device metadata', () => {
+    const database = createTestDatabase();
+    const accounts = new AccountRepository(database);
+    const account = accounts.createAccount({
+      id: 'account-a',
+      email: 'a@example.com',
+      passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$hash'
+    });
+    const device = accounts.createDevice({
+      id: 'device-a',
+      accountId: account.id,
+      label: 'Browser',
+      platform: 'web'
+    });
+
+    expect(accounts.getAccountByEmail('a@example.com')).toEqual(expect.objectContaining({
+      id: 'account-a',
+      email: 'a@example.com',
+      passwordHash: account.passwordHash
+    }));
+    expect(accounts.listDevices(account.id)).toEqual([expect.objectContaining({
+      id: device.id,
+      accountId: account.id,
+      label: 'Browser',
+      platform: 'web',
+      revokedAt: null
+    })]);
+    expect(accounts.listDevices('account-b')).toEqual([]);
+    expect(accounts.revokeDevice('account-b', device.id)).toBe(false);
+    expect(accounts.getDevice(account.id, device.id)?.revokedAt).toBeNull();
+    expect(accounts.revokeDevice(account.id, device.id)).toBe(true);
+    expect(accounts.getDevice(account.id, device.id)?.revokedAt).not.toBeNull();
   });
 
   it('stores app configuration as one retrievable vault config', () => {

@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from './database.js';
 
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 export const migrate = (database: SqliteDatabase): void => {
   const applyMigration = database.transaction(() => {
@@ -17,6 +17,33 @@ export const migrate = (database: SqliteDatabase): void => {
         wrapped_vault_key_aad TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS accounts (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS account_devices (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        label TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK (platform IN ('web', 'desktop', 'android')),
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT,
+        revoked_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS account_sessions (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        device_id TEXT NOT NULL REFERENCES account_devices(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL,
+        last_used_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS groups (
@@ -143,6 +170,16 @@ export const migrate = (database: SqliteDatabase): void => {
 
       CREATE INDEX IF NOT EXISTS idx_groups_owner_sort
         ON groups (owner_id, sort_order, name);
+      CREATE INDEX IF NOT EXISTS idx_accounts_email
+        ON accounts (email COLLATE NOCASE);
+      CREATE INDEX IF NOT EXISTS idx_account_devices_account
+        ON account_devices (account_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_account_devices_revoked
+        ON account_devices (account_id, revoked_at);
+      CREATE INDEX IF NOT EXISTS idx_account_sessions_account
+        ON account_sessions (account_id, last_used_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_account_sessions_device
+        ON account_sessions (device_id);
       CREATE INDEX IF NOT EXISTS idx_hosts_owner_name
         ON hosts (owner_id, name COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS idx_hosts_owner_address

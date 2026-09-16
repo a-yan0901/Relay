@@ -1,4 +1,4 @@
-import type { ActivityStatus, ConnectionProfileOverrides, GroupNode, TransferJob, TransferStatus, TransferKind, WorkspaceState } from '../../shared/core/models.js';
+import type { ActivityStatus, ClientPlatform, ConnectionProfileOverrides, GroupNode, TransferJob, TransferStatus, TransferKind, WorkspaceState } from '../../shared/core/models.js';
 import type { ConnectionProfileSettings, HostCredentialInput, HostMetadata } from '../../shared/validation.js';
 import type { VaultConfig } from '../vault/types.js';
 
@@ -8,6 +8,40 @@ export interface AppConfigRow {
   vaultConfig: VaultConfig;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AccountRow {
+  id: string;
+  email: string;
+  passwordHash: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountCreateRow {
+  id: string;
+  email: string;
+  passwordHash: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AccountDeviceRow {
+  id: string;
+  accountId: string;
+  label: string;
+  platform: ClientPlatform;
+  createdAt: string;
+  lastSeenAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface AccountDeviceCreateRow {
+  id: string;
+  accountId: string;
+  label: string;
+  platform: ClientPlatform;
+  createdAt?: string;
 }
 
 export interface HostRow extends HostMetadata {
