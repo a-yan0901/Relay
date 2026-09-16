@@ -1,6 +1,6 @@
 # Web SSH Workspace
 
-一个自托管、单实例的 Web SSH 工作台：把多台 Server 的连接信息保存在本地加密 Vault 中，并在浏览器里完成交互式终端、SFTP 文件操作和安全的批量命令执行。
+一个自托管、单实例的 Web SSH 工作台：把多台 Server 的连接信息保存在本地加密 Vault 中，并在浏览器里完成交互式终端、SFTP 文件操作和安全的批量命令执行。账号与加密快照同步是可选扩展，Local-only 始终可用。
 
 ## 快速启动
 
@@ -19,6 +19,8 @@ docker compose up -d --build
 
 服务端默认按来源限制每分钟 120 个请求；只有在明确评估部署流量后才调整 `RATE_LIMIT_MAX`，不要用它替代反向代理和身份认证层的限流。
 
+账号与加密同步默认关闭。部署者明确设置 `ACCOUNT_SYNC_ENABLED=true` 后，用户才能注册/登录账号、管理受信设备并同步加密 Vault 快照；未登录时不会请求账号或同步接口。账号密码与 Vault 主密码相互独立，登录后仍必须先解锁本地 Vault 才能启用同步。同步只包含加密的 Host、Identity、Group、Snippet 和 Workspace 快照，不包含 live Shell、终端内容、SFTP 文件、传输任务、批量执行或默认活动输出。
+
 ## 工作区使用
 
 - 同一台 Server 可以打开多个独立 Console；顶部 tab 会显示 `Server · 1`、`Server · 2`，每个窗口拥有自己的输入、尺寸、Host Key 确认和重连状态。
@@ -27,6 +29,7 @@ docker compose up -d --build
 - “偏好”中可切换深夜蓝、浅色、高对比主题和终端字号。偏好只保存在当前浏览器，不包含任何密码、私钥或会话 token。
 - “工作区与加密数据”支持加密 Vault bundle 的导出、导入预览和冲突确认；导出密码不会写入 bundle、数据库或日志。
 - “身份”支持创建可复用的密码/私钥身份；多个 Server 可以共享同一身份。Group 支持嵌套、默认身份和连接参数继承，Server 可选择跟随分组身份；导入/导出会保留这些关系。
+- 账号菜单和同步中心在服务端开启账号同步且三项能力协商通过时显示；登录后可同步加密快照、查看设备和处理 revision 冲突。登出或撤销设备只停止同步，不删除当前实例的本地 Vault 数据。
 - “工作区”支持保存、打开和删除命名模板；终端支持左右/上下分屏及最多四格布局，模板只保存非敏感的 tab 意图。
 - Server 卡片支持最近连接排序、编辑、测试连接和删除；编辑时凭据留空表示保留原凭据，测试连接不会保存新的认证材料。连接可配置 Keepalive、自动重连和最多四级 ProxyJump，每一跳都执行 host key 校验。
 - 终端连接状态会显示当前阶段（解析、TCP、跳板、Host Key、认证或终端通道）及下一步；短暂断线会在倒计时后自动重连，认证/Host Key 等不可盲重试的错误会要求编辑或确认。服务实例变化后，旧 Console 会显示“需要重新打开”，不会把新服务误报成旧 Shell 仍然存活。
@@ -41,7 +44,7 @@ docker compose up -d --build
 
 ## 跨端扩展边界
 
-`src/shared/core` 提供平台无关的模型、校验、错误码、状态机、目标/连接解析、`CoreRuntime` 和 ports；当前 Web 通过 `src/web/platform/web-adapters.ts` 接入 HTTP/WSS 和浏览器文件能力。桌面与 Android 后续可以替换 transport、文件选择器和 OS keychain/Keystore，不需要复制 Host、Group、Identity、Workspace、Snippet、SFTP 或任务终态规则。当前已用同一套 CoreRuntime contract 验证 Web adapter 与 desktop/Android native-like runtime；这证明了跨端扩展边界，但不代表原生 UI、系统密钥链或本地 SSH 已交付。云同步、团队协作和更多协议暂不属于当前核心的隐式依赖。
+`src/shared/core` 提供平台无关的模型、校验、错误码、状态机、目标/连接解析、`CoreRuntime` 和 ports；当前 Web 通过 `src/web/platform/web-adapters.ts` 接入 HTTP/WSS、浏览器文件能力以及可选的账号/加密同步能力。桌面与 Android 后续可以替换 transport、文件选择器和 OS keychain/Keystore，不需要复制 Host、Group、Identity、Workspace、Snippet、SFTP 或任务终态规则。当前已用同一套 CoreRuntime contract 验证 Web adapter 与 desktop/Android native-like runtime；这证明了跨端扩展边界，但不代表原生 UI、系统密钥链或本地 SSH 已交付。账号同步不是 CoreRuntime 的必选依赖，团队协作和更多协议也不属于当前核心的隐式依赖。
 
 ## 反向代理要求
 
@@ -81,6 +84,8 @@ npm run dev
 ```bash
 npm run build
 DATA_DIR=.local-data NODE_ENV=test TRUSTED_ORIGINS=http://127.0.0.1:4173 PORT=4173 npm start
+# 本地验证账号/同步时再显式开启（默认关闭）
+ACCOUNT_SYNC_ENABLED=true DATA_DIR=.local-data NODE_ENV=test TRUSTED_ORIGINS=http://127.0.0.1:4173 PORT=4173 npm start
 ```
 
 开发模式未显式设置 `TRUSTED_ORIGINS` 时，会自动信任 localhost、回环地址、`0.0.0.0` 和本机网卡地址对应的 Vite 端口；生产模式仍必须显式配置完整浏览器 origin。
@@ -99,6 +104,6 @@ npm run build
 
 ## 威胁模型边界
 
-此版本是单 Vault、单用户实例，已包含 SFTP、ProxyJump、工作区恢复、批量命令和脱敏活动摘要；仍不包含云同步、账号注册、团队 RBAC、SSO、端口转发、RDP/VNC/X11、Telnet、串口或其他远程协议。数据库和备份只得到静态加密保护；能够控制一个已解锁容器、Node 进程或其运行用户的攻击者，可能读取活动会话正在使用的凭据。因此应保护宿主机、Docker socket、`/data` 备份和反向代理管理面，并在离开设备时锁定 Vault。
+此版本仍是单 Vault、单实例产品，已包含 SFTP、ProxyJump、工作区恢复、批量命令、脱敏活动摘要和可选的个人账号/加密快照同步（默认关闭）；仍不包含团队 RBAC、SSO、端口转发、RDP/VNC/X11、Telnet、串口或其他远程协议。同步服务保存的是 opaque 加密 envelope，但当前 Web-mediated Relay 仍是解密 Vault 并执行 SSH/SFTP/命令的受信边界，不宣称零知识。数据库和备份只得到静态加密保护；能够控制一个已解锁容器、Node 进程或其运行用户的攻击者，可能读取活动会话正在使用的凭据。因此应保护宿主机、Docker socket、`/data` 备份和反向代理管理面，并在离开设备时锁定 Vault。
 
-应用日志和活动页只记录脱敏的请求、连接状态、SFTP 生命周期和批量任务摘要，不记录终端输入输出、完整 WebSocket 消息、展开后的变量值或认证材料。批量输出按主机隔离并在 TTL 后清理；短暂浏览器断线可在会话保留窗口内重连；应用进程重启不承诺远程 shell 或内存任务继续存在。当前交付为 Web-first，桌面版以及 Windows、Linux、Android 客户端通过 shared core 和 adapter contract 预留，尚未交付原生 UI。
+应用日志和活动页只记录脱敏的请求、连接状态、SFTP 生命周期和批量任务摘要，不记录终端输入输出、完整 WebSocket 消息、展开后的变量值或认证材料。批量输出按主机隔离并在 TTL 后清理；短暂浏览器断线可在会话保留窗口内重连；应用进程重启不承诺远程 shell 或内存任务继续存在。当前交付为 Web-first；桌面版以及 Windows、Linux、Android 客户端通过 shared core、可选 account/sync ports 和 adapter contract 预留，尚未交付原生 UI，也尚未完成账号同步的最终安全发布门。

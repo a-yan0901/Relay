@@ -1,12 +1,12 @@
 # 统一核心与跨端/跨平台基础
 
-Relay 当前以 Web app 为核心客户端，服务端负责 SSH、SFTP、批量命令和 Vault 的执行边界。桌面版后续覆盖 Windows 和 Linux，Android 版复用同一套 shared core、错误码和 wire protocol，再替换 transport 与 secret store；账号与加密同步作为登录后的可选扩展层，本地 Local-only 模式始终保留。本阶段不绑定 Tauri、Electron 或移动 UI 框架，也不提前实现原生 UI。
+Relay 当前以 Web app 为核心客户端，服务端负责 SSH、SFTP、批量命令和 Vault 的执行边界。桌面版后续覆盖 Windows 和 Linux，Android 版复用同一套 shared core、错误码和 wire protocol，再替换 transport 与 secret store；账号与加密同步已作为登录后的可选扩展层接入 Web，本地 Local-only 模式始终保留。本阶段不绑定 Tauri、Electron 或移动 UI 框架，也不提前实现原生 UI。
 
 ## Review 结论
 
-本轮 review 后，统一核心已经形成可执行边界：`src/shared/core` 固定模型、校验、错误码、状态机、分组/连接继承、目标快照、`CoreRuntime` 和 ports；Web 只实现第一套 adapter。桌面和 Android 仍不做 UI，但可以替换 adapter 而不复制领域规则和用户任务语义；原生端仍需按各自生命周期和交互范式实现 UI。X-01 已将 capability 协商、Web/native-like contract 和规模回归落地：Web adapter 与 desktop/android native-like fake 运行同一套 shared contract，证明扩展点不依赖 DOM 或 HTTP。
+本轮 review 后，统一核心已经形成可执行边界：`src/shared/core` 固定模型、校验、错误码、状态机、分组/连接继承、目标快照、`CoreRuntime` 和 ports；Web 实现第一套 adapter，并以可选 ports 接入账号、设备信任和加密同步。桌面和 Android 仍不做 UI，但可以替换 adapter 而不复制领域规则和用户任务语义；原生端仍需按各自生命周期和交互范式实现 UI。X-01 已将 capability 协商、Web/native-like contract 和规模回归落地，X-04 的 Web account/sync slice 已补充同一套跨 adapter contract 及双浏览器上下文 E2E；最终安全扫描和发布门仍由 Task 9 收口。
 
-剩余风险已收敛为明确的后置能力，而不是架构债务：原生客户端、个人账号/加密同步、团队 Vault、更多协议和更大规模 pane 分别通过 capability、数据归属和生命周期 spec 管理；个人账号/加密同步的边界见 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md)，平台 shell 的设计草案见 [`relay-platform-shell-design.md`](../superpowers/specs/2026-09-16-relay-platform-shell-design.md)，端口转发与协议边界见 [`relay-forwarding-and-protocol-boundaries.md`](../superpowers/specs/2026-09-16-relay-forwarding-and-protocol-boundaries.md)。这些文档都不是当前 Web 已交付能力的声明。
+剩余风险已收敛为明确的后置能力，而不是架构债务：原生客户端、团队 Vault、更多协议和更大规模 pane 分别通过 capability、数据归属和生命周期 spec 管理；个人账号/加密同步的 Web 首版已交付但默认关闭，仍需 Task 9 的安全扫描和发布证据。其边界见 [`relay-account-and-encrypted-sync-design.md`](../superpowers/specs/2026-09-16-relay-account-and-encrypted-sync-design.md)，平台 shell 的设计草案见 [`relay-platform-shell-design.md`](../superpowers/specs/2026-09-16-relay-platform-shell-design.md)，端口转发与协议边界见 [`relay-forwarding-and-protocol-boundaries.md`](../superpowers/specs/2026-09-16-relay-forwarding-and-protocol-boundaries.md)。
 
 ## 核心边界与依赖方向
 
@@ -83,6 +83,9 @@ export interface CoreRuntime {
   snippets: SnippetStore;
   activity: ActivityStore;
   imports: ImportExportPort;
+  account?: AccountSessionPort;
+  devices?: DeviceTrustPort;
+  sync?: SyncPort;
 }
 ~~~
 
@@ -100,10 +103,10 @@ export interface CoreRuntime {
 | `transfer.resume` | Web 支持断点校验时才显示“继续”；否则显示“重试”且不发送 resume 参数 | 从头重试，不伪装成断点恢复 |
 | `sftp.local-files` | 控制浏览器本地文件选择/drop 区 | 保留远端 SFTP，显示“不支持本地文件选择”说明 |
 | `session.reattach` | 已纳入能力集合；仍受服务端会话保留窗口约束 | 刷新后明确显示需要重新连接 |
-| `account.auth` / `device.trust` / `sync.encrypted` | 当前 Web 不宣称已交付 | 保持 Local-only，不创建账号/同步调用 |
+| `account.auth` / `device.trust` / `sync.encrypted` | Web 已实现，默认关闭；服务端必须同时广告并通过交集协商 | 保持 Local-only，不创建账号/同步调用 |
 | `forwarding.local` | 当前未广告 | 不在导航和 runtime 中创建转发入口 |
 
-账号/同步能力即使被服务端错误或提前声明，仍必须经过 client/server 交集；因此当前 Web 不会因为服务端响应包含这些名称而进入账号或云同步路径。
+账号/同步能力即使被服务端错误或提前声明，仍必须经过 client/server 交集；只有三项能力同时可用时，Web 才注入可选 ports。服务端未开启、能力缺失或请求失败时，页面保持 Local-only，不阻塞 Host/terminal 启动。
 
 其中 `WorkspaceStore` 只保存非敏感工作区意图，`IdentityStore` 只返回 Identity metadata，`SecretStore` 由平台决定保存位置，`ImportExportPort` 使用 shared 的 `ImportSourceFile` 和 `Uint8Array`，不使用浏览器 `File`/`Blob`。Web adapter 可以在边界把浏览器对象转换成这些类型，native adapter 则把文件选择器或系统路径转换成同一输入。`FileTransport.download()` 对所有端返回 `Promise<ByteStream>`，resolve 后的 stream 只包含 `Uint8Array`；Web 端只在 stream 内部读取 Blob，避免浏览器对象泄露到 shared port。
 
@@ -131,7 +134,7 @@ Web 的 `SecretStore` 不在浏览器中保存主密码、服务器凭据、导�
 
 ## 账号与加密同步边界
 
-账号与同步不改变现有 Local-only 核心路径：
+当前 Web 已提供账号菜单和同步中心，但 `ACCOUNT_SYNC_ENABLED` 默认为 `false`；它们不改变现有 Local-only 核心路径。当前实现要求先登录账号、再解锁本地 Vault 才能启用或操作同步；账号同步不会绕过本地 Vault，也不意味着 Relay 执行端具备零知识能力。
 
 - 未登录账号时，不创建账号会话、不调用同步 API，Host、Identity、Workspace、Snippet 和本地加密凭据只留在当前实例/设备。
 - 登录账号是开启同步的用户动作，但账号密码不等于 Vault 主密码；只有 Vault 已解锁或使用离线 recovery key 后，才读取/上传同步内容。
@@ -172,7 +175,7 @@ Web 侧的 PWA 子项目已按上述边界落地，具体计划和验证记录�
 - shared core 的 `platformServices` 是可选字段；Web adapter 用 browser adapter 提供用户主动剪贴板动作和通知权限/脱敏摘要，缺失时保留应用内反馈。
 - 网络断开保留工作区并暂停/等待会话恢复；恢复后只提示“正在检查会话状态”，以真实 session/task 状态为准。
 
-PWA 交付不代表账号同步、Desktop/Android 原生 shell、local SSH 或后台常驻连接已交付；这些仍需各自的 implementation plan、安全评审和设备验证。
+PWA 交付不代表 Desktop/Android 原生 shell、local SSH 或后台常驻连接已交付；账号同步是独立的、默认关闭的 Web 可选能力，原生端仍需各自的 implementation plan、安全评审和设备验证。
 
 ## X-03 端口转发与协议能力边界
 
@@ -194,11 +197,11 @@ X-03 的安全边界见 [`relay-forwarding-and-protocol-boundaries.md`](../super
 
 ## Contract tests 与发布门槛
 
-- `tests/fixtures/core-runtime-contract.ts` 保存平台无关的 session、file、command、store、capability 和 `Uint8Array` import/export 断言。
-- `tests/unit/shared/core-adapter-contract.test.ts` 用无平台依赖的 in-memory runtime 验证 `CoreRuntime` 组合；`tests/unit/shared/native-adapter-contract.test.ts` 用同一断言覆盖 desktop 和 Android native-like fake。
-- `tests/unit/web/web-adapters.test.ts` 对真实 Web adapter 运行同一套 CoreRuntime contract，另行验证 HTTP/WSS/浏览器对象到 shared port 的映射，不把 Web 实现细节泄露给 core。
+- `tests/fixtures/core-runtime-contract.ts` 保存平台无关的 session、file、command、store、capability、账号/设备/同步和 `Uint8Array` import/export 断言；账号/同步 ports 缺失时仍保持 Local-only。
+- `tests/unit/shared/core-adapter-contract.test.ts` 用无平台依赖的 in-memory runtime 验证 `CoreRuntime` 组合；`tests/unit/shared/native-adapter-contract.test.ts` 用同一断言覆盖 desktop 和 Android native-like fake，包括可选账号/同步 ports。
+- `tests/unit/web/web-adapters.test.ts` 对真实 Web adapter 运行同一套 CoreRuntime contract，另行验证 HTTP/WSS/浏览器对象到 shared port 的映射；`tests/e2e/account-sync.spec.ts` 验证能力关闭、双浏览器上下文、Vault unlock、opaque envelope、设备撤销、revision 冲突和登出后的本地保留，不把 Web 实现细节泄露给 core。
 - `tests/performance/host-vault-scale.test.ts`、`tests/performance/terminal-output-scale.test.ts` 和 TransferCenter DOM 回归覆盖 Host 搜索、终端 scrollback 与传输任务动作；阈值不依赖固定机器的绝对性能。
 - CI 对 `src/shared` 做静态依赖检查，禁止出现 Node/DOM/React/WebSocket/`ssh2`/浏览器存储依赖；同时运行 Web 和 server 两个 TypeScript target。
 - 每个新功能先修改 shared contract 和 fake contract test，再实现 Web adapter；没有 shared port 的功能不得直接写入 `App.tsx`。
 
-这套约束保证 Relay 仍是 Web-first、local-first、单 Vault 产品，同时保留跨 Web、Windows/Linux 桌面和 Android 的扩展可能；未来登录账号即可进入加密同步，但不牺牲 Local-only 路径，也不提前把团队协作或原生 UI 当作已交付能力。
+这套约束保证 Relay 仍是 Web-first、local-first、单 Vault 产品，同时保留跨 Web、Windows/Linux 桌面和 Android 的扩展可能；当前 Web 登录账号即可进入加密同步，但不牺牲 Local-only 路径，也不把团队协作或原生 UI 当作已交付能力。

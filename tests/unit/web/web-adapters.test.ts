@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
-import type { TransferResumeRequest } from '../../../src/shared/core/models.js';
+import { assertAccountSyncContract, assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
+import type { AccountSession, DeviceDescriptor, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest } from '../../../src/shared/core/models.js';
 import type { HostMetadata } from '../../../src/shared/validation.js';
 import { createWebAdapters, WebAccountSession, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync } from '../../../src/web/platform/web-adapters.js';
 import type { TerminalSocketLike } from '../../../src/web/hooks/use-terminal-session.js';
@@ -55,8 +55,39 @@ const createWebContractApi = () => {
     payloadHash: 'a'.repeat(64),
     updatedAt: '2026-09-16T00:00:00.000Z'
   };
+  const syncEnvelope: SyncEnvelope = {
+    schemaVersion: 1,
+    vaultId: syncHead.vaultId,
+    revision: syncHead.revision,
+    parentRevision: null,
+    deviceId: account.deviceId,
+    keyVersion: syncHead.keyVersion,
+    nonce: 'opaque-nonce',
+    ciphertext: 'opaque-ciphertext',
+    authTag: 'opaque-auth-tag',
+    aad: 'opaque-aad',
+    payloadHash: syncHead.payloadHash,
+    byteLength: 64
+  };
+  const syncDescriptor: SyncDescriptor = {
+    vaultId: syncHead.vaultId,
+    keyVersion: syncHead.keyVersion,
+    vaultUnlockEnvelope: {
+      version: 1,
+      kdf: { algorithm: 'argon2id', salt: 'opaque-salt', memoryCost: 1, timeCost: 1, parallelism: 1, hashLength: 32 },
+      wrappedVaultKey: { version: 1, nonce: 'opaque-vault-nonce', ciphertext: 'opaque-vault-ciphertext', authTag: 'opaque-vault-tag', aad: 'opaque-vault-aad' }
+    },
+    wrappedSyncKey: { version: 1, nonce: 'opaque-sync-nonce', ciphertext: 'opaque-sync-ciphertext', authTag: 'opaque-sync-tag', aad: 'opaque-sync-aad' }
+  };
+  let currentAccount: AccountSession | null = account;
+  let currentSync: SyncState = { sync: 'synced', head: syncHead, pendingCount: 0, lastSyncedAt: syncHead.updatedAt };
+  let currentEnvelope: SyncEnvelope | null = syncEnvelope;
+  const devices: DeviceDescriptor[] = [
+    { id: 'device-1', label: 'Browser', platform: 'web', lastSeenAt: null, current: true, revokedAt: null },
+    { id: 'device-2', label: 'Phone', platform: 'android', lastSeenAt: null, current: false, revokedAt: null }
+  ];
   return {
-    getCapabilities: async () => ({ client: 'web' as const, version: 1 as const, capabilities: ['workspace.persistence', 'account.auth', 'sync.encrypted'] as const }),
+    getCapabilities: async () => ({ client: 'web' as const, version: 1 as const, capabilities: ['workspace.persistence', 'account.auth', 'device.trust', 'sync.encrypted'] as const }),
     getSetupStatus: async () => ({ initialized: true, locked: false }),
     testConnection: async () => ({ ok: true }),
     getWorkspace: async () => ({ version: 0, tabs: [], activeTabId: null, layout: { mode: 'single' as const, ratio: 0.5 }, filters: { query: '', groupId: null, favoriteOnly: false } }),
@@ -102,20 +133,30 @@ const createWebContractApi = () => {
     exportVaultBundle: async () => ({ bundle: 'web-vault-bundle' }),
     previewVaultImport: async () => ({ previewId: 'preview-1', hostCount: 0, groupCount: 0, conflicts: [], expiresAt: '' }),
     applyVaultImport: async () => ({ importedHosts: 0, skippedHosts: 0, importedGroups: 0, skippedGroups: 0 }),
-    getAccountSession: async () => ({ account }),
-    register: async () => ({ account }),
-    signIn: async () => ({ account }),
-    signOut: async () => undefined,
-    listDevices: async () => [{ id: 'device-1', label: 'Browser', platform: 'web' as const, lastSeenAt: null, current: true, revokedAt: null }],
-    revokeDevice: async () => undefined,
-    getSyncState: async () => ({ sync: 'synced' as const, head: syncHead, pendingCount: 0 }),
-    getSyncDescriptor: async () => null,
-    enableSync: async () => syncHead,
-    retrySync: async () => undefined,
-    getSyncEnvelope: async () => null,
-    pushSyncEnvelope: async () => syncHead,
+    getAccountSession: async () => ({ account: currentAccount }),
+    register: async () => ({ account: currentAccount = account }),
+    signIn: async () => ({ account: currentAccount = account }),
+    signOut: async () => { currentAccount = null; },
+    listDevices: async () => devices.map((device) => ({ ...device, current: currentAccount?.deviceId === device.id })),
+    revokeDevice: async (deviceId: string) => {
+      const device = devices.find((candidate) => candidate.id === deviceId);
+      if (device) device.revokedAt = '2026-09-16T00:00:00.000Z';
+    },
+    getSyncState: async () => ({ ...currentSync }),
+    getSyncDescriptor: async () => syncDescriptor,
+    enableSync: async () => {
+      currentSync = { sync: 'synced', head: syncHead, pendingCount: 0, lastSyncedAt: syncHead.updatedAt };
+      return syncHead;
+    },
+    retrySync: async () => { currentSync = { ...currentSync, sync: 'synced', pendingCount: 0 }; },
+    getSyncEnvelope: async () => currentEnvelope,
+    pushSyncEnvelope: async (nextEnvelope: SyncEnvelope) => {
+      currentEnvelope = nextEnvelope;
+      currentSync = { sync: 'synced', head: syncHead, pendingCount: 0, lastSyncedAt: syncHead.updatedAt };
+      return syncHead;
+    },
     previewPull: async () => ({ conflictId: 'conflict-1', localRevision: 0, remoteRevision: 1, conflictTypes: ['host'] as const, localBackupRevision: 0 }),
-    resolveConflict: async () => undefined
+    resolveConflict: async () => { currentSync = { ...currentSync, sync: 'synced', pendingCount: 0 }; }
   };
 };
 
@@ -288,13 +329,13 @@ describe('web adapters', () => {
     expect(runtime.activity).toBeDefined();
     expect(runtime.imports).toBeDefined();
     await expect(runtime.refreshCapabilities()).resolves.toEqual(expect.objectContaining({
-      capabilities: ['workspace.persistence', 'account.auth', 'sync.encrypted']
+      capabilities: ['workspace.persistence', 'account.auth', 'device.trust', 'sync.encrypted']
     }));
     expect(runtime.capabilities.supports('workspace.persistence')).toBe(true);
     expect(runtime.capabilities.supports('workspace.multi-pane')).toBe(false);
     expect(runtime.capabilities.clientCapabilities).toContain('sftp.local-files');
-    expect(runtime.capabilities.serverCapabilities).toEqual(['workspace.persistence', 'account.auth', 'sync.encrypted']);
-    expect(runtime.capabilities.intersection).toEqual(['workspace.persistence', 'account.auth', 'sync.encrypted']);
+    expect(runtime.capabilities.serverCapabilities).toEqual(['workspace.persistence', 'account.auth', 'device.trust', 'sync.encrypted']);
+    expect(runtime.capabilities.intersection).toEqual(['workspace.persistence', 'account.auth', 'device.trust', 'sync.encrypted']);
     expect(runtime.capabilities.supports('transfer.resume')).toBe(false);
     expect(runtime.capabilities.supports('account.auth')).toBe(true);
     expect(runtime.capabilities.supports('sync.encrypted')).toBe(true);
@@ -310,10 +351,17 @@ describe('web adapters', () => {
     await runtime.refreshCapabilities();
 
     expect(runtime.account).toBeDefined();
-    expect(runtime.devices).toBeUndefined();
+    expect(runtime.devices).toBeDefined();
     expect(runtime.sync).toBeDefined();
     await expect(runtime.account?.status()).resolves.toMatchObject({ accountId: 'account-1' });
+    await expect(runtime.devices?.listDevices()).resolves.toHaveLength(2);
     await expect(runtime.sync?.status()).resolves.toMatchObject({ sync: 'synced', head: expect.objectContaining({ revision: 1 }) });
+  });
+
+  it('shares the optional account and encrypted sync contract at the Web boundary', async () => {
+    const runtime = createWebAdapters({ api: createWebContractApi() });
+    await runtime.refreshCapabilities();
+    await assertAccountSyncContract(runtime);
   });
 
   it('maps missing optional functions to CAPABILITY_UNAVAILABLE at the port boundary', async () => {

@@ -86,6 +86,63 @@ export const assertCommandTransportContract = async (transport: CommandTransport
   await transport.cancel(run.id);
 };
 
+/**
+ * The optional account/sync ports must expose the same state transitions on
+ * every client adapter. The envelope assertions deliberately inspect only
+ * opaque metadata; a contract fake must never contain a Vault plaintext.
+ */
+export const assertAccountSyncContract = async (runtime: CoreRuntime): Promise<void> => {
+  expect(runtime.capabilities.supports('account.auth')).toBe(true);
+  expect(runtime.capabilities.supports('device.trust')).toBe(true);
+  expect(runtime.capabilities.supports('sync.encrypted')).toBe(true);
+  expect(runtime.account).toBeDefined();
+  expect(runtime.devices).toBeDefined();
+  expect(runtime.sync).toBeDefined();
+
+  const account = runtime.account!;
+  const devicesPort = runtime.devices!;
+  const sync = runtime.sync!;
+  const session = await account.signIn('contract@example.com', 'opaque-account-password', 'Contract device');
+  expect(session).toEqual(expect.objectContaining({ state: 'signed-in', accountId: expect.any(String), deviceId: expect.any(String) }));
+  expect(await account.status()).toEqual(session);
+
+  const devices = await devicesPort.listDevices();
+  expect(devices.some((device) => device.current && device.id === session.deviceId)).toBe(true);
+  const secondary = devices.find((device) => !device.current);
+  expect(secondary).toBeDefined();
+
+  const initialSync = await sync.status();
+  expect(['local-only', 'synced']).toContain(initialSync.sync);
+  const head = await sync.enable();
+  expect(head).toEqual(expect.objectContaining({ revision: 1, keyVersion: 1, vaultId: expect.any(String) }));
+  expect((await sync.status()).sync).toBe('synced');
+
+  const descriptor = await sync.descriptor();
+  expect(descriptor).toEqual(expect.objectContaining({ vaultId: head.vaultId, wrappedSyncKey: expect.any(Object) }));
+  const envelope = await sync.pull();
+  expect(envelope).toEqual(expect.objectContaining({
+    schemaVersion: 1,
+    vaultId: head.vaultId,
+    revision: 1,
+    ciphertext: expect.any(String),
+    nonce: expect.any(String),
+    authTag: expect.any(String),
+    payloadHash: expect.any(String)
+  }));
+  const opaqueWireData = JSON.stringify({ descriptor, envelope });
+  expect(opaqueWireData).not.toMatch(/opaque-account-password|master password|private key|passphrase/iu);
+  await sync.push(envelope!, 'contract-idempotency-key');
+  const preview = await sync.previewPull();
+  expect(preview.conflictTypes.length).toBeGreaterThan(0);
+  await sync.resolveConflict(preview.conflictId, 'keep-local');
+  await sync.retry();
+
+  await devicesPort.revokeDevice(secondary!.id);
+  expect((await devicesPort.listDevices()).find((device) => device.id === secondary!.id)?.revokedAt).not.toBeNull();
+  await account.signOut();
+  expect(await account.status()).toBeNull();
+};
+
 export const assertCoreRuntimeContract = async (
   runtime: CoreRuntime,
   options: CoreRuntimeContractOptions

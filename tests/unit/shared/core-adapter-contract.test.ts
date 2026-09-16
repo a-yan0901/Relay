@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  assertAccountSyncContract,
   assertCommandTransportContract,
   assertCoreRuntimeContract,
   assertFileTransportContract,
   assertSessionTransportContract
 } from '../../fixtures/core-runtime-contract.js';
-import { createInMemoryCoreRuntime } from '../../fixtures/native-runtime.js';
+import { createInMemoryAccountSyncPorts, createInMemoryCoreRuntime } from '../../fixtures/native-runtime.js';
 import type {
   CommandRun,
   GroupNode,
@@ -169,5 +170,17 @@ describe('shared core adapter contracts', () => {
     expect(negotiated.supports('device.trust')).toBe(false);
     expect(negotiated.supports('sync.encrypted')).toBe(false);
     expect(negotiated.supports('workspace.persistence')).toBe(true);
+  });
+
+  it('runs the optional account and encrypted sync contract when ports are supplied', async () => {
+    const ports = createInMemoryAccountSyncPorts();
+    const runtime = createInMemoryCoreRuntime('desktop', [
+      'workspace.persistence',
+      'account.auth',
+      'device.trust',
+      'sync.encrypted'
+    ], ports);
+
+    await assertAccountSyncContract(runtime);
   });
 });

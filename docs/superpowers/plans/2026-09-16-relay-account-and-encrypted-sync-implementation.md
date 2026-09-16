@@ -729,11 +729,11 @@ export interface WebSyncApi {
 - `createInMemoryCoreRuntime(platform, supportedCapabilities, options?)` accepts optional in-memory account/device/sync ports and keeps them absent by default.
 - `account-sync.spec.ts` uses an account-enabled test server, two browser contexts/devices and the existing Vault setup fixture; no test puts a master password in query params or browser storage.
 
-- [ ] **Step 1: Write failing contract and E2E tests.**
+- [x] **Step 1: Write failing contract and E2E tests.**
 
   Contract tests run the same account/sync assertions on Web, desktop-like and Android-like fake where supported, and assert Local fake remains fully usable without account ports. E2E covers: account feature disabled → no account request; register/sign-in while Vault locked → `needs-unlock`; unlock → enable and opaque envelope; second context sees device/sync head; wrong Vault password cannot restore; logout preserves terminal/local state; device revoke blocks sync; revision conflict requires explicit resolution; cloud fixture body lacks plaintext secret markers.
 
-- [ ] **Step 2: Run tests to verify failure.**
+- [x] **Step 2: Run tests to verify failure.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -743,15 +743,15 @@ export interface WebSyncApi {
 
   Expected: FAIL until fake ports, test server flag and browser flow are implemented.
 
-- [ ] **Step 3: Implement fake ports and test configuration.**
+- [x] **Step 3: Implement fake ports and test configuration.**
 
   Extend native-like fake with deterministic account/session/device/sync state and in-memory encrypted envelope (using test-only opaque bytes, never plaintext secrets). Add an account-enabled Playwright server configuration with isolated temp data; keep default fixture account disabled. Add server cleanup for account session/device state.
 
-- [ ] **Step 4: Implement E2E flow and documentation truth.**
+- [x] **Step 4: Implement E2E flow and documentation truth.**
 
   E2E uses visible UI actions and asserts status/next actions, not implementation details. Add README/architecture text stating account sync is optional and controlled by `ACCOUNT_SYNC_ENABLED`; Local-only, unimplemented native clients and current server trust boundary remain explicit.
 
-- [ ] **Step 5: Run contract and E2E tests.**
+- [x] **Step 5: Run contract and E2E tests.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -761,7 +761,9 @@ export interface WebSyncApi {
 
   Expected: PASS; Local-only and account-enabled paths are both covered.
 
-- [ ] **Step 6: Commit cross-platform contract slice.**
+  Evidence: focused Vitest passed 6 files / 34 tests; `account-sync.spec.ts` passed 2 scenarios; `npm run typecheck` and `npm run lint` passed. The E2E web server also completed the production build successfully.
+
+- [x] **Step 6: Commit cross-platform contract slice.**
 
   ```bash
   export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

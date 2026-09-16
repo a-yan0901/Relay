@@ -5,7 +5,9 @@ import { rm } from 'node:fs/promises';
 import { startServer } from '../../dist/server/index.js';
 
 const dataDir = process.env.DATA_DIR;
-if (dataDir !== '.tmp-e2e-data') throw new Error('the e2e server accepts only .tmp-e2e-data as DATA_DIR');
+if (dataDir !== '.tmp-e2e-data' && dataDir !== '.tmp-e2e-account-data') {
+  throw new Error('the e2e server accepts only the isolated e2e data directories as DATA_DIR');
+}
 
 await rm(dataDir, { recursive: true, force: true });
 const handle = await startServer();
