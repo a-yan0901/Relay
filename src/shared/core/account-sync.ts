@@ -40,10 +40,6 @@ export const describeAccountSyncState = (
       return { label: '同步服务离线，本地仍可用', nextAction: 'retry' };
     case 'conflict':
       return { label: '存在同步冲突，需要处理', nextAction: 'resolve-conflict' };
-    case 'local-only':
-      return { label: '仅本地，不同步', nextAction: 'sign-in' };
-    case 'device-revoked':
-      return { label: '设备已撤销，仅保留本地数据', nextAction: 'use-local' };
   }
 };
 
