@@ -37,9 +37,9 @@ const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43,128}$/u;
 const WORKSPACE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 const relayUrl = (baseUrl: string, role: CloudLiveRelayOptions['role'], workspaceId: string): string => {
-  let parsed: URL;
+  let parsed: globalThis.URL;
   try {
-    parsed = new URL(baseUrl);
+    parsed = new globalThis.URL(baseUrl);
   } catch {
     throw new Error('invalid cloud relay url');
   }
