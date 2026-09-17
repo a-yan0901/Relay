@@ -129,6 +129,25 @@ describe('cloud API', () => {
     expect(response.body).not.toContain(validToken);
   });
 
+  it('rotates bearer sessions through the refresh endpoint', async () => {
+    const refreshed = { ...session, trusted: true };
+    const app = await buildCloudApp({
+      config,
+      auth: { ...createAuth(), async refresh() { return { account: refreshed, token: 'b'.repeat(43) }; } },
+      snapshots: createSnapshots()
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v2/auth/refresh',
+      headers: { authorization: `Bearer ${validToken}` }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ account: refreshed, token: 'b'.repeat(43) });
+  });
+
   it('returns the account head and accepts only the current device as writer', async () => {
     const app = await buildCloudApp({ config, auth: createAuth(), snapshots: createSnapshots() });
     apps.push(app);

@@ -171,6 +171,13 @@ export class CloudAuthService {
     await this.repository.revokeSession(hashToken(token), new Date(this.clock()).toISOString());
   }
 
+  async refresh(token: string): Promise<CloudAuthResult> {
+    const session = await this.authenticate(token);
+    const now = this.clock();
+    await this.repository.revokeSession(hashToken(token), new Date(now).toISOString());
+    return this.issueSession(session.accountId, session.deviceId, new Date(now).toISOString(), session.trusted === true);
+  }
+
   async listDevices(token: string): Promise<readonly CloudDeviceDescriptor[]> {
     const session = await this.authenticate(token);
     return this.repository.listDeviceDescriptors(session.accountId, session.deviceId);

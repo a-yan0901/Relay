@@ -20,6 +20,7 @@ export interface CloudAuthApi {
   signIn(email: string, password: string, device: CloudAuthDeviceInput): Promise<CloudAuthResult>;
   authenticate(token: string): Promise<AccountSession | null>;
   signOut(token: string): Promise<void>;
+  refresh?(token: string): Promise<CloudAuthResult>;
   listDevices(token: string): Promise<readonly CloudDeviceDescriptor[]>;
   revokeDevice(token: string, deviceId: string): Promise<void>;
   trustDevice?(token: string, deviceId: string): Promise<void>;
@@ -283,6 +284,14 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   app.post('/v2/auth/login', async (request, reply) => {
     const input = parseAuthInput(request.body);
     const result = await dependencies.auth.signIn(input.email, input.password, input.device);
+    reply.header('cache-control', 'no-store').send(result);
+  });
+
+  app.post('/v2/auth/refresh', async (request, reply) => {
+    const token = bearerToken(request);
+    if (!token) throw new AppError('ACCOUNT_SESSION_INVALID');
+    if (!dependencies.auth.refresh) throw new AppError('CAPABILITY_UNAVAILABLE');
+    const result = await dependencies.auth.refresh(token);
     reply.header('cache-control', 'no-store').send(result);
   });
 

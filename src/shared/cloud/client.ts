@@ -116,6 +116,10 @@ export class CloudApiClient {
     return this.request('/v2/auth/session', { token });
   }
 
+  refresh(token: string): Promise<CloudAuthResponse> {
+    return this.request('/v2/auth/refresh', { method: 'POST', token });
+  }
+
   signOut(token: string): Promise<void> {
     return this.request('/v2/auth/logout', { method: 'POST', token });
   }

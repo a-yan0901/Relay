@@ -102,4 +102,20 @@ describe('cloud auth service', () => {
     await service.trustDevice(owner.token, pending.account.deviceId);
     expect((await service.authenticate(pending.token)).trusted).toBe(true);
   });
+
+  it('rotates a session token and invalidates the previous token', async () => {
+    const repository = createRepository();
+    const service = new CloudAuthService(repository, { idleTimeoutMs: 60_000, absoluteTimeoutMs: 3_600_000 }, () => 1_700_000_000_000);
+    const issued = await service.register('user@example.com', 'password-123', { platform: 'desktop' });
+
+    const refreshed = await service.refresh(issued.token);
+
+    expect(refreshed.token).not.toBe(issued.token);
+    await expect(service.authenticate(issued.token)).rejects.toMatchObject({ code: 'ACCOUNT_SESSION_INVALID' });
+    await expect(service.authenticate(refreshed.token)).resolves.toMatchObject({
+      accountId: issued.account.accountId,
+      deviceId: issued.account.deviceId,
+      trusted: true
+    });
+  });
 });
