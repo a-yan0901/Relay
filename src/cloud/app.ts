@@ -22,6 +22,7 @@ export interface CloudAuthApi {
   signOut(token: string): Promise<void>;
   listDevices(token: string): Promise<readonly CloudDeviceDescriptor[]>;
   revokeDevice(token: string, deviceId: string): Promise<void>;
+  trustDevice?(token: string, deviceId: string): Promise<void>;
 }
 
 export interface CloudSnapshotApi {
@@ -45,6 +46,7 @@ export interface CloudRelayAuthorization {
 export interface CloudWorkspaceApi extends CloudRelayAuthorization {
   list(accountId: string): Promise<readonly CloudWorkspaceDescriptor[]>;
   get?(accountId: string, workspaceId: string): Promise<CloudWorkspaceDescriptor | null>;
+  grantDeviceAccess?(accountId: string, deviceId: string, now: string): Promise<void>;
 }
 
 export interface CloudAppDependencies {
@@ -100,6 +102,12 @@ const requireSession = async (request: FastifyRequest, auth: CloudAuthApi): Prom
   return { token, session };
 };
 
+const requireTrustedSession = async (request: FastifyRequest, auth: CloudAuthApi): Promise<{ token: string; session: AccountSession }> => {
+  const result = await requireSession(request, auth);
+  if (result.session.trusted === false) throw new AppError('ACCOUNT_DEVICE_TRUST_REQUIRED');
+  return result;
+};
+
 const parseAuthInput = (body: unknown): { email: string; password: string; device: CloudAuthDeviceInput } => {
   const parsed = authSchema.safeParse(body);
   if (!parsed.success) throw new AppError('PROTOCOL_INVALID_MESSAGE');
@@ -150,6 +158,7 @@ const requireRelaySession = async (request: FastifyRequest, auth: CloudAuthApi):
   if (!token) throw new AppError('ACCOUNT_SESSION_INVALID');
   const session = await auth.authenticate(token);
   if (!session) throw new AppError('ACCOUNT_SESSION_INVALID');
+  if (session.trusted === false) throw new AppError('ACCOUNT_DEVICE_TRUST_REQUIRED');
   return { token, session };
 };
 
@@ -272,13 +281,22 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
     reply.code(204).send();
   });
 
+  app.post('/v2/devices/:deviceId/trust', async (request, reply) => {
+    const { token, session } = await requireSession(request, dependencies.auth);
+    const parsed = deviceParamsSchema.safeParse(request.params);
+    if (!parsed.success || !dependencies.auth.trustDevice) throw new AppError('CAPABILITY_UNAVAILABLE');
+    await dependencies.auth.trustDevice(token, parsed.data.deviceId);
+    await dependencies.workspaces?.grantDeviceAccess?.(session.accountId, parsed.data.deviceId, new Date().toISOString());
+    reply.code(204).send();
+  });
+
   app.get('/v2/account-data/keys', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     reply.header('cache-control', 'no-store').send(await requireKeyApi(dependencies).listAccountDataKeys(session.accountId, session.deviceId));
   });
 
   app.put('/v2/account-data/keys/:deviceId', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const parsed = deviceParamsSchema.safeParse(request.params);
     if (!parsed.success) throw new AppError('ACCOUNT_DEVICE_REVOKED');
     const input = parseKeyGrant(request.body, session, 'account-data', session.accountId, parsed.data.deviceId);
@@ -286,12 +304,12 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   });
 
   app.get('/v2/workspaces', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     reply.send(dependencies.workspaces ? await dependencies.workspaces.list(session.accountId) : []);
   });
 
   app.get('/v2/workspaces/:workspaceId/descriptor', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const parsed = workspaceParamsSchema.safeParse(request.params);
     if (!parsed.success || !dependencies.workspaces?.get) throw new AppError('SYNC_NOT_FOUND');
     await requireWorkspaceAccess(session, parsed.data.workspaceId, dependencies, 'viewer');
@@ -301,7 +319,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   });
 
   app.get('/v2/workspaces/:workspaceId/keys', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const parsed = workspaceParamsSchema.safeParse(request.params);
     if (!parsed.success) throw new AppError('SYNC_PAYLOAD_INVALID');
     await requireWorkspaceAccess(session, parsed.data.workspaceId, dependencies, 'viewer');
@@ -309,7 +327,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   });
 
   app.put('/v2/workspaces/:workspaceId/keys/:deviceId', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const params = z.object({
       workspaceId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u),
       deviceId: z.string().min(1).max(128)
@@ -321,12 +339,12 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   });
 
   app.get('/v2/account-data/head', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     reply.send(await dependencies.snapshots.getHead('account-data', session.accountId));
   });
 
   app.get('/v2/account-data/snapshot', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const parsed = revisionQuerySchema.safeParse(request.query);
     if (!parsed.success) throw new AppError('SYNC_PAYLOAD_INVALID');
     const snapshot = await dependencies.snapshots.getRevision(session.accountId, 'account-data', session.accountId, parsed.data.revision);
@@ -335,7 +353,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   });
 
   app.put('/v2/account-data/snapshot', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const snapshot = parseSnapshot(request.body);
     if (snapshot.domain !== 'account-data' || snapshot.accountId !== session.accountId) throw new AppError('SYNC_PAYLOAD_INVALID');
     if (snapshot.writerDeviceId !== session.deviceId) throw new AppError('ACCOUNT_DEVICE_REVOKED');
@@ -350,7 +368,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   });
 
   app.get('/v2/workspaces/:workspaceId/head', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const workspaceId = typeof (request.params as { workspaceId?: unknown }).workspaceId === 'string'
       ? (request.params as { workspaceId: string }).workspaceId
       : '';
@@ -360,7 +378,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   });
 
   app.get('/v2/workspaces/:workspaceId/snapshot', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const workspaceId = typeof (request.params as { workspaceId?: unknown }).workspaceId === 'string'
       ? (request.params as { workspaceId: string }).workspaceId
       : '';
@@ -373,7 +391,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   });
 
   app.put('/v2/workspaces/:workspaceId/snapshot', async (request, reply) => {
-    const { session } = await requireSession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const snapshot = parseSnapshot(request.body);
     const workspaceId = typeof (request.params as { workspaceId?: unknown }).workspaceId === 'string'
       ? (request.params as { workspaceId: string }).workspaceId
@@ -396,7 +414,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
 
   const relayHandshake = async (request: FastifyRequest, role: 'owner' | 'viewer'): Promise<void> => {
     const workspaceId = relayWorkspaceId(request);
-    const { session } = await requireRelaySession(request, dependencies.auth);
+    const { session } = await requireTrustedSession(request, dependencies.auth);
     const authorization = dependencies.relayAuthorization ?? dependencies.workspaces;
     const allowed = role === 'owner'
       ? await authorization?.canOwn(session.accountId, session.deviceId, workspaceId)

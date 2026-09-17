@@ -8,7 +8,7 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 export type CloudDataDomain = 'account-data' | 'workspace';
 
-export type CloudDeviceDescriptor = DeviceDescriptor & { publicKey?: string | null };
+export type CloudDeviceDescriptor = DeviceDescriptor & { publicKey?: string | null; trustedAt?: string | null };
 
 export const CLOUD_KEY_PROTOCOL_VERSION = 1 as const;
 export const CLOUD_WRAPPED_KEY_MAX_BYTES = 16 * 1024;

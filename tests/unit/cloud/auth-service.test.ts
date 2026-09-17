@@ -19,10 +19,10 @@ const createRepository = (): CloudAuthRepositoryPort & { sessions: Map<string, C
     },
     async createAccountWithDevice(account, device) {
       accounts.set(account.id, { id: account.id, email: account.email, passwordHash: account.passwordHash, createdAt: account.createdAt, updatedAt: account.createdAt });
-      devices.set(device.id, { id: device.id, accountId: device.accountId, label: device.label, platform: device.platform, createdAt: device.createdAt, lastSeenAt: null, revokedAt: null });
+      devices.set(device.id, { id: device.id, accountId: device.accountId, label: device.label, platform: device.platform, trustedAt: device.trustedAt ?? null, createdAt: device.createdAt, lastSeenAt: null, revokedAt: null });
     },
     async createDevice(input) {
-      devices.set(input.id, { id: input.id, accountId: input.accountId, label: input.label, platform: input.platform, createdAt: input.createdAt, lastSeenAt: null, revokedAt: null });
+      devices.set(input.id, { id: input.id, accountId: input.accountId, label: input.label, platform: input.platform, trustedAt: input.trustedAt ?? null, createdAt: input.createdAt, lastSeenAt: null, revokedAt: null });
     },
     async getDevice(accountId, deviceId) {
       const device = devices.get(deviceId);
@@ -52,6 +52,12 @@ const createRepository = (): CloudAuthRepositoryPort & { sessions: Map<string, C
       for (const [tokenHash, session] of sessions) {
         if (session.accountId === accountId && session.deviceId === deviceId) sessions.set(tokenHash, { ...session, revokedAt: at });
       }
+    },
+    async trustDevice(accountId, deviceId, at) {
+      const device = devices.get(deviceId);
+      if (!device || device.accountId !== accountId || device.revokedAt !== null || device.trustedAt !== null) return false;
+      devices.set(deviceId, { ...device, trustedAt: at });
+      return true;
     }
   };
 };
@@ -81,5 +87,19 @@ describe('cloud auth service', () => {
     repository.devices.set(deviceId, { ...device, revokedAt: new Date(1_700_000_001_000).toISOString() });
 
     await expect(service.authenticate(result.token)).rejects.toMatchObject({ code: 'ACCOUNT_SESSION_INVALID' });
+  });
+
+  it('requires explicit approval before a newly signed-in device becomes trusted', async () => {
+    const repository = createRepository();
+    const service = new CloudAuthService(repository, { idleTimeoutMs: 60_000, absoluteTimeoutMs: 3_600_000 }, () => 1_700_000_000_000);
+    const owner = await service.register('user@example.com', 'password-123', { platform: 'web' });
+    const pending = await service.signIn('user@example.com', 'password-123', { platform: 'android' });
+
+    expect(owner.account.trusted).toBe(true);
+    expect(pending.account.trusted).toBe(false);
+    expect((await service.authenticate(pending.token)).trusted).toBe(false);
+
+    await service.trustDevice(owner.token, pending.account.deviceId);
+    expect((await service.authenticate(pending.token)).trusted).toBe(true);
   });
 });

@@ -16,6 +16,7 @@ export interface CloudDeviceRecord {
   label: string;
   platform: ClientPlatform;
   publicKey?: string;
+  trustedAt?: string | null;
   createdAt: string;
   lastSeenAt: string | null;
   revokedAt: string | null;
@@ -45,6 +46,7 @@ interface DeviceSqlRow {
   platform: ClientPlatform;
   label: string;
   public_key?: string | null;
+  trusted_at?: string | null;
   created_at: string;
   last_seen_at: string | null;
   revoked_at: string | null;
@@ -78,6 +80,7 @@ const deviceFromRow = (row: DeviceSqlRow): CloudDeviceRecord => ({
   label: row.label,
   platform: row.platform,
   ...(typeof row.public_key === 'string' ? { publicKey: row.public_key } : {}),
+  ...(row.trusted_at === undefined ? {} : { trustedAt: row.trusted_at }),
   createdAt: row.created_at,
   lastSeenAt: row.last_seen_at,
   revokedAt: row.revoked_at
@@ -109,6 +112,7 @@ export interface CreateCloudDeviceInput {
   platform: ClientPlatform;
   createdAt: string;
   publicKey?: string | null;
+  trustedAt?: string | null;
 }
 
 export class CloudAccountRepository {
@@ -134,7 +138,7 @@ export class CloudAccountRepository {
 
   async getDevice(accountId: string, deviceId: string): Promise<CloudDeviceRecord | null> {
     const rows = await this.database.query<DeviceSqlRow[]>(
-      'SELECT device_id, account_id, platform, label, public_key, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND device_id = ? LIMIT 1',
+      'SELECT device_id, account_id, platform, label, public_key, trusted_at, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND device_id = ? LIMIT 1',
       [accountId, deviceId]
     );
     const row = first(rows);
@@ -148,8 +152,8 @@ export class CloudAccountRepository {
         [account.id, account.email, account.passwordHash, account.createdAt, account.createdAt]
       );
       await executor.execute(
-        'INSERT INTO devices (device_id, account_id, platform, label, public_key, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        [device.id, device.accountId, device.platform, device.label, device.publicKey ?? null, device.createdAt]
+        'INSERT INTO devices (device_id, account_id, platform, label, public_key, trusted_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [device.id, device.accountId, device.platform, device.label, device.publicKey ?? null, device.trustedAt ?? null, device.createdAt]
       );
     };
     if (this.database.transaction) {
@@ -161,8 +165,8 @@ export class CloudAccountRepository {
 
   async createDevice(input: CreateCloudDeviceInput): Promise<void> {
     await this.database.execute(
-      'INSERT INTO devices (device_id, account_id, platform, label, public_key, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [input.id, input.accountId, input.platform, input.label, input.publicKey ?? null, input.createdAt]
+      'INSERT INTO devices (device_id, account_id, platform, label, public_key, trusted_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [input.id, input.accountId, input.platform, input.label, input.publicKey ?? null, input.trustedAt ?? null, input.createdAt]
     );
   }
 
@@ -175,7 +179,7 @@ export class CloudAccountRepository {
 
   async listDevices(accountId: string): Promise<readonly CloudDeviceRecord[]> {
     const rows = await this.database.query<DeviceSqlRow[]>(
-      'SELECT device_id, account_id, platform, label, public_key, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND revoked_at IS NULL ORDER BY created_at ASC',
+      'SELECT device_id, account_id, platform, label, public_key, trusted_at, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND revoked_at IS NULL ORDER BY created_at ASC',
       [accountId]
     );
     return rows.filter((row) => row.revoked_at === null).map(deviceFromRow);
@@ -226,6 +230,14 @@ export class CloudAccountRepository {
     );
   }
 
+  async trustDevice(accountId: string, deviceId: string, at: string): Promise<boolean> {
+    const result = await this.database.execute<{ affectedRows?: number }>(
+      'UPDATE devices SET trusted_at = ?, last_seen_at = ? WHERE account_id = ? AND device_id = ? AND revoked_at IS NULL AND trusted_at IS NULL',
+      [at, at, accountId, deviceId]
+    );
+    return (result.affectedRows ?? 0) === 1;
+  }
+
   async listDeviceDescriptors(accountId: string, currentDeviceId: string): Promise<readonly CloudDeviceDescriptor[]> {
     const devices = await this.listDevices(accountId);
     return devices.map((device) => ({
@@ -234,7 +246,8 @@ export class CloudAccountRepository {
       platform: device.platform,
       lastSeenAt: device.lastSeenAt,
       current: device.id === currentDeviceId,
-      revokedAt: device.revokedAt
+      revokedAt: device.revokedAt,
+      ...(device.trustedAt === undefined ? {} : { trustedAt: device.trustedAt })
     }));
   }
 }

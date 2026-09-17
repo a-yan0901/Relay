@@ -1,4 +1,4 @@
-export const CLOUD_SCHEMA_VERSION = 1 as const;
+export const CLOUD_SCHEMA_VERSION = 2 as const;
 
 export interface CloudSchemaExecutor {
   query(statement: string): Promise<unknown>;
@@ -25,6 +25,7 @@ export const CLOUD_SCHEMA_STATEMENTS = [
     platform ENUM('web', 'desktop', 'android') NOT NULL,
     label VARCHAR(128) NOT NULL,
     public_key TEXT NULL,
+    trusted_at DATETIME(3) NULL,
     created_at DATETIME(3) NOT NULL,
     last_seen_at DATETIME(3) NULL,
     revoked_at DATETIME(3) NULL,

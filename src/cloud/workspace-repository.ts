@@ -68,10 +68,26 @@ export class CloudWorkspaceRepository {
 
   async canView(accountId: string, deviceId: string, workspaceId: string): Promise<boolean> {
     const rows = await this.database.query<Array<{ workspace_id: string }>>(
-      'SELECT w.workspace_id FROM workspaces w INNER JOIN devices d ON d.account_id = w.account_id WHERE w.workspace_id = ? AND w.account_id = ? AND d.device_id = ? AND d.revoked_at IS NULL AND w.deleted_at IS NULL LIMIT 1',
-      [workspaceId, accountId, deviceId]
+      `SELECT w.workspace_id
+       FROM workspaces w
+       INNER JOIN workspace_memberships m ON m.workspace_id = w.workspace_id AND m.device_id = ? AND m.revoked_at IS NULL
+       INNER JOIN devices d ON d.account_id = w.account_id AND d.device_id = m.device_id
+       WHERE w.workspace_id = ? AND w.account_id = ? AND d.revoked_at IS NULL AND w.deleted_at IS NULL LIMIT 1`,
+      [deviceId, workspaceId, accountId]
     );
     return rows.length > 0;
+  }
+
+  async grantDeviceAccess(accountId: string, deviceId: string, now: string): Promise<void> {
+    await this.database.execute(
+      `INSERT INTO workspace_memberships (workspace_id, device_id, role, created_at)
+       SELECT w.workspace_id, ?, 'member', ?
+       FROM workspaces w
+       INNER JOIN devices d ON d.account_id = w.account_id AND d.device_id = ? AND d.revoked_at IS NULL
+       WHERE w.account_id = ? AND w.owner_device_id <> ? AND w.deleted_at IS NULL
+       ON DUPLICATE KEY UPDATE role = VALUES(role), revoked_at = NULL`,
+      [deviceId, now, deviceId, accountId, deviceId]
+    );
   }
 
   async ensurePrimaryWorkspace(accountId: string, deviceId: string, encryptedTitle: string, now: string): Promise<CloudWorkspaceDescriptor> {

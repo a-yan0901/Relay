@@ -32,6 +32,7 @@ export interface CloudAuthRepositoryPort {
   revokeSession(tokenHash: string, at: string): Promise<void>;
   revokeDevice(accountId: string, deviceId: string, at: string): Promise<boolean>;
   revokeDeviceSessions(accountId: string, deviceId: string, at: string): Promise<void>;
+  trustDevice?(accountId: string, deviceId: string, at: string): Promise<boolean>;
   listDeviceDescriptors(accountId: string, currentDeviceId: string): Promise<readonly CloudDeviceDescriptor[]>;
 }
 
@@ -91,11 +92,12 @@ const assertRegistrationPassword = (password: string): void => {
 
 const hashToken = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
 
-const toSession = (record: Pick<CloudSessionRecord, 'accountId' | 'deviceId' | 'expiresAt'>): AccountSession => ({
+const toSession = (record: Pick<CloudSessionRecord, 'accountId' | 'deviceId' | 'expiresAt'>, trusted?: boolean): AccountSession => ({
   accountId: record.accountId,
   deviceId: record.deviceId,
   state: 'signed-in',
-  expiresAt: new Date(record.expiresAt).toISOString()
+  expiresAt: new Date(record.expiresAt).toISOString(),
+  ...(trusted === undefined ? {} : { trusted })
 });
 
 export class CloudAuthService {
@@ -117,10 +119,10 @@ export class CloudAuthService {
     const deviceId = randomUUID();
     await this.repository.createAccountWithDevice(
       { id: accountId, email: normalizedEmail, passwordHash: await hashAccountPassword(password), createdAt: now },
-      { id: deviceId, accountId, label: device.label, platform: device.platform, publicKey: device.publicKey, createdAt: now }
+      { id: deviceId, accountId, label: device.label, platform: device.platform, publicKey: device.publicKey, trustedAt: now, createdAt: now }
     );
     await this.deviceCreatedHook?.onDeviceCreated(accountId, deviceId, device.label, now);
-    return this.issueSession(accountId, deviceId, now);
+    return this.issueSession(accountId, deviceId, now, true);
   }
 
   async signIn(email: string, password: string, input: CloudAuthDeviceInput): Promise<CloudAuthResult> {
@@ -138,10 +140,11 @@ export class CloudAuthService {
       label: device.label,
       platform: device.platform,
       publicKey: device.publicKey,
+      trustedAt: null,
       createdAt: now
     });
     await this.deviceCreatedHook?.onDeviceCreated(account.id, deviceId, device.label, now);
-    return this.issueSession(account.id, deviceId, now);
+    return this.issueSession(account.id, deviceId, now, false);
   }
 
   async authenticate(token: string): Promise<AccountSession> {
@@ -160,7 +163,7 @@ export class CloudAuthService {
       throw new AppError('ACCOUNT_SESSION_INVALID');
     }
     await this.repository.touchSession(tokenHash, new Date(now).toISOString());
-    return toSession(session);
+    return toSession(session, device.trustedAt !== null);
   }
 
   async signOut(token: string): Promise<void> {
@@ -178,17 +181,28 @@ export class CloudAuthService {
     const device = await this.repository.getDevice(session.accountId, deviceId);
     if (!device || device.revokedAt !== null) throw new AppError('ACCOUNT_DEVICE_REVOKED');
     const now = new Date(this.clock()).toISOString();
-    // The repository implementation performs the conditional update and
-    // session invalidation atomically from the caller's perspective.
+    // Revoke the device before invalidating its sessions so a concurrent
+    // request cannot create another usable session for the revoked device.
     const revoked = await this.repository.revokeDevice(session.accountId, deviceId, now);
     if (!revoked) throw new AppError('ACCOUNT_DEVICE_REVOKED');
     await this.repository.revokeDeviceSessions(session.accountId, deviceId, now);
   }
 
-  private async issueSession(accountId: string, deviceId: string, createdAt: string): Promise<CloudAuthResult> {
+  async trustDevice(token: string, deviceId: string): Promise<void> {
+    const session = await this.authenticate(token);
+    if (session.trusted !== true) throw new AppError('ACCOUNT_DEVICE_TRUST_REQUIRED');
+    const device = await this.repository.getDevice(session.accountId, deviceId);
+    if (!device || device.revokedAt !== null) throw new AppError('ACCOUNT_DEVICE_REVOKED');
+    if (device.trustedAt !== null) return;
+    if (!this.repository.trustDevice || !(await this.repository.trustDevice(session.accountId, deviceId, new Date(this.clock()).toISOString()))) {
+      throw new AppError('ACCOUNT_DEVICE_REVOKED');
+    }
+  }
+
+  private async issueSession(accountId: string, deviceId: string, createdAt: string, trusted: boolean): Promise<CloudAuthResult> {
     const token = randomBytes(TOKEN_BYTES).toString('base64url');
     const expiresAt = new Date(this.clock() + this.sessionConfig.absoluteTimeoutMs).toISOString();
     await this.repository.createSession({ tokenHash: hashToken(token), accountId, deviceId, createdAt, expiresAt });
-    return { account: { accountId, deviceId, state: 'signed-in', expiresAt }, token };
+    return { account: { accountId, deviceId, state: 'signed-in', expiresAt, trusted }, token };
   }
 }

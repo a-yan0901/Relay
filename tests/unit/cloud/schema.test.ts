@@ -8,7 +8,7 @@ import {
 
 describe('cloud MySQL schema', () => {
   it('contains the account sync and live workspace tables in dependency order', () => {
-    expect(CLOUD_SCHEMA_VERSION).toBe(1);
+    expect(CLOUD_SCHEMA_VERSION).toBe(2);
     const sql = CLOUD_SCHEMA_STATEMENTS.join('\n');
     for (const table of [
       'accounts',

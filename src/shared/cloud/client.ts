@@ -125,6 +125,10 @@ export class CloudApiClient {
     return this.request(`/v2/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE', token });
   }
 
+  trustDevice(token: string, deviceId: string): Promise<void> {
+    return this.request(`/v2/devices/${encodeURIComponent(deviceId)}/trust`, { method: 'POST', token });
+  }
+
   listWorkspaces(token: string): Promise<readonly CloudWorkspaceDescriptor[]> {
     return this.request('/v2/workspaces', { token });
   }

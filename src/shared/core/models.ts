@@ -26,6 +26,8 @@ export interface AccountSession {
   deviceId: string;
   state: Exclude<AccountState, 'signed-out' | 'authenticating'>;
   expiresAt: string;
+  /** Cloud sessions expose whether this device may access encrypted account data. */
+  trusted?: boolean;
 }
 
 export interface AccountDeletionState {
