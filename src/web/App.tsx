@@ -27,7 +27,7 @@ import { RemoteWorkspacePanel } from './components/RemoteWorkspacePanel';
 import type { SftpOpenRequest } from './components/ServerContextMenu';
 import type { AccountSession, ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, SyncState, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
-import type { BinarySource, CloudSyncResult, NotificationPermission, NotificationPort } from '../shared/core/ports';
+import type { BinarySource, CloudSyncResult, FileWriter, NotificationPermission, NotificationPort } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
@@ -70,11 +70,7 @@ type ConnectionFeedback = {
   message: string;
 };
 
-interface DownloadWriter {
-  write(data: Uint8Array): Promise<void> | void;
-  seek?(position: number): Promise<void> | void;
-  close(): Promise<void> | void;
-}
+interface DownloadWriter extends FileWriter {}
 
 interface SaveFileHandle {
   createWritable(): Promise<DownloadWriter>;
@@ -316,6 +312,7 @@ export const App = ({ runtime }: AppProps) => {
   }, []);
 
   const notifications = runtime.platformServices?.notifications;
+  const dialogs = runtime.platformServices?.dialogs;
 
   useEffect(() => {
     let cancelled = false;
@@ -942,6 +939,9 @@ export const App = ({ runtime }: AppProps) => {
   };
 
   const openDownloadWriter = async (name: string): Promise<DownloadWriter | null> => {
+    if (runtime.platformServices?.fileWriter) {
+      return runtime.platformServices.fileWriter.open({ name, mimeType: 'application/octet-stream' });
+    }
     const picker = (window as FilePickerWindow).showSaveFilePicker;
     if (!picker) return null;
     try {
@@ -961,13 +961,19 @@ export const App = ({ runtime }: AppProps) => {
     } else {
       downloadWritersRef.current.set(transferId, writer);
     }
-    if (offset > 0) {
-      if (!writer.seek) throw new AppError('CAPABILITY_UNAVAILABLE', '当前浏览器不支持断点写入，请重新选择下载位置');
-      await writer.seek(offset);
+    try {
+      if (offset > 0) {
+        if (!writer.seek) throw new AppError('CAPABILITY_UNAVAILABLE', '当前浏览器不支持断点写入，请重新选择下载位置');
+        await writer.seek(offset);
+      }
+      for await (const chunk of stream) await writer.write(chunk);
+      await writer.close();
+      downloadWritersRef.current.delete(transferId);
+    } catch (error) {
+      await writer.cancel?.();
+      downloadWritersRef.current.delete(transferId);
+      throw error;
     }
-    for await (const chunk of stream) await writer.write(chunk);
-    await writer.close();
-    downloadWritersRef.current.delete(transferId);
   };
 
   const resumeRequestForJob = (job: TransferJob) => {
@@ -999,6 +1005,11 @@ export const App = ({ runtime }: AppProps) => {
     try {
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
       if (!writer) {
+        if (runtime.platformServices?.fileWriter) {
+          await runtime.files.cancelTransfer(job.id).catch(() => undefined);
+          await refreshTransferJob(job.id);
+          return;
+        }
         triggerNativeDownload(job.id, name);
         return;
       }
@@ -1039,6 +1050,10 @@ export const App = ({ runtime }: AppProps) => {
         return;
       }
       if (!writer) {
+        if (runtime.platformServices?.fileWriter) {
+          void runtime.files.cancelTransfer(id).then(() => refreshTransferJob(id));
+          return;
+        }
         triggerNativeDownload(id, job.targetPath);
         return;
       }
@@ -1153,7 +1168,7 @@ export const App = ({ runtime }: AppProps) => {
   }, [commandRun, notifications]);
 
   const handleDeleteHost = async (host: HostMetadataState): Promise<void> => {
-    if (!window.confirm(`确定删除 Server「${host.name}」吗？`)) return;
+    if (!dialogs || !(await dialogs.confirm(`确定删除 Server「${host.name}」吗？`))) return;
     try {
       await runtime.hosts.delete(host.id);
       const remainingTerminals = state.terminals.filter((terminal) => terminal.hostId !== host.id);
@@ -1166,7 +1181,7 @@ export const App = ({ runtime }: AppProps) => {
   };
 
   const handleClearHostKey = async (host: HostMetadataState): Promise<void> => {
-    if (!window.confirm(`清除 Server「${host.name}」已保存的 Host Key 信任吗？下次连接需要重新确认指纹。`)) return;
+    if (!dialogs || !(await dialogs.confirm(`清除 Server「${host.name}」已保存的 Host Key 信任吗？下次连接需要重新确认指纹。`))) return;
     try {
       await runtime.hosts.clearHostKey(host.id);
       dispatch({ type: 'hostUpdated', host: { ...host, hostKeyAlgorithm: null, hostKeyFingerprint: null } });
@@ -1483,6 +1498,8 @@ export const App = ({ runtime }: AppProps) => {
             openSftpRequest={sftpOpenRequest}
             onSftpRequestConsumed={(requestId) => setSftpOpenRequest((current) => current?.requestId === requestId ? null : current)}
             clipboard={runtime.platformServices?.clipboard}
+            dialogs={dialogs}
+            externalLinks={runtime.platformServices?.externalLinks}
             onOpenSnippetPalette={capabilities.supports('automation.snippets') ? handleOpenSnippetPalette : undefined}
             onListSftp={capabilities.supports('sftp.browse') ? (hostId, path) => runtime.files.list(hostId, path) : undefined}
             onCreateDirectorySftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.createDirectory(hostId, path) : undefined}
@@ -1536,7 +1553,7 @@ export const App = ({ runtime }: AppProps) => {
         onOpenIdentities={capabilities.supports('vault.identities') ? () => { setPreferencesOpen(false); setIdentityOpen(true); } : undefined}
         onOpenSnippets={capabilities.supports('automation.snippet-manager') ? () => { setPreferencesOpen(false); handleOpenSnippetManager(); } : undefined}
       />}
-      {identityOpen && capabilities.supports('vault.identities') && <IdentityManager identities={identities} onCreate={handleCreateIdentity} onUpdate={handleUpdateIdentity} onDelete={async (id) => { if (window.confirm('确定删除这个身份吗？')) await handleDeleteIdentity(id); }} onClose={() => setIdentityOpen(false)} />}
+      {identityOpen && capabilities.supports('vault.identities') && <IdentityManager identities={identities} onCreate={handleCreateIdentity} onUpdate={handleUpdateIdentity} onDelete={async (id) => { if (dialogs && await dialogs.confirm('确定删除这个身份吗？')) await handleDeleteIdentity(id); }} onClose={() => setIdentityOpen(false)} />}
       {snippetManagerOpen && capabilities.supports('automation.snippet-manager') && <SnippetManager snippets={snippets} onGet={(id) => runtime.snippets.get(id)} onCreate={handleCreateSnippet} onUpdate={handleUpdateSnippet} onDelete={handleDeleteSnippet} onClose={() => setSnippetManagerOpen(false)} />}
       {snippetPaletteOpen && capabilities.supports('automation.snippets') && <SnippetPalette snippets={snippets} onSelect={handleSelectSnippetFromPalette} onClose={() => setSnippetPaletteOpen(false)} />}
       {workspaceSwitcherOpen && capabilities.supports('workspace.templates') && <WorkspaceSwitcher templates={workspaceTemplates} currentWorkspace={workspaceStateFromAppState(state)} hosts={state.hosts} onOpen={handleOpenWorkspaceTemplate} onSave={handleSaveWorkspaceTemplate} onDelete={handleDeleteWorkspaceTemplate} onClose={() => setWorkspaceSwitcherOpen(false)} />}
@@ -1570,6 +1587,7 @@ export const App = ({ runtime }: AppProps) => {
         mode={workspaceSettingsMode}
         onClose={() => setWorkspaceSettingsMode(null)}
         onExport={runtime.imports.exportVaultBundle}
+        fileSave={runtime.platformServices?.fileSave}
         onPreviewImport={runtime.imports.previewVaultImport}
         onPreviewExternalImport={runtime.imports.previewExternalImport}
         onApplyImport={async (previewId, resolution) => {

@@ -8,7 +8,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 
 /**
  * Capacitor-facing boundary only. SSH/Vault/SFTP executors are injected by the
- * Android application once the real-device feasibility gate selects a library.
+ * Android application after the native feasibility gate selects a library.
  * Keeping this class small prevents arbitrary WebView calls from becoming
  * native filesystem or process access.
  */
@@ -19,9 +19,13 @@ class RelayNativePlugin : Plugin() {
         const val MAX_FRAME_BYTES = 64 * 1024
         const val MAX_CHUNK_BYTES = 32 * 1024
         const val MAX_IN_FLIGHT_CHUNKS = 4
+        const val MAX_ENCODED_CHUNK_BYTES = 48 * 1024
+        private val SAFE_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
         private val ALLOWED_OPERATIONS = setOf(
             "vault.status", "vault.setup", "vault.unlock", "vault.lock",
             "system.clipboard.readText", "system.clipboard.writeText",
+            "system.confirm", "system.openExternal",
+            "system.fileSave.open", "system.fileSave.write", "system.fileSave.seek", "system.fileSave.close", "system.fileSave.cancel",
             "connection.test",
             "hosts.list", "hosts.get", "hosts.listProfiles", "hosts.getProfile", "hosts.create", "hosts.update", "hosts.delete", "hosts.clearHostKey",
             "identities.list", "identities.get", "identities.create", "identities.update", "identities.delete",
@@ -51,9 +55,10 @@ class RelayNativePlugin : Plugin() {
     fun invoke(call: PluginCall) {
         val request = call.data
         if (request.getInteger("version") != BRIDGE_VERSION ||
-            request.getString("requestId").isNullOrBlank() ||
-            request.getString("operation").isNullOrBlank() ||
-            request.toString().toByteArray(Charsets.UTF_8).size > MAX_FRAME_BYTES
+            !isSafeId(request.getString("requestId")) ||
+            !isSafeOperation(request.getString("operation")) ||
+            request.toString().toByteArray(Charsets.UTF_8).size > MAX_FRAME_BYTES ||
+            !payloadIsBounded(request)
         ) {
             call.reject("PROTOCOL_INVALID_MESSAGE")
             return
@@ -72,8 +77,38 @@ class RelayNativePlugin : Plugin() {
     }
 
     fun emitNativeEvent(event: JSObject) {
+        if (event.toString().toByteArray(Charsets.UTF_8).size > MAX_FRAME_BYTES) return
         notifyListeners("event", JSObject().put("event", event))
     }
 
+    private fun isSafeId(value: String?): Boolean = value != null && SAFE_ID.matches(value)
+
+    private fun isSafeOperation(operation: String?): Boolean = operation != null && operation.isNotBlank() && operation.length <= 96
+
     private fun operationAllowlisted(operation: String): Boolean = operation in ALLOWED_OPERATIONS
+
+    private fun payloadIsBounded(request: JSObject): Boolean {
+        val payload = request.optJSONObject("payload") ?: return false
+        val operation = request.getString("operation") ?: return false
+        if (operation == "system.fileSave.write") {
+            val data = payload.optString("data", "")
+            if (data.length > MAX_ENCODED_CHUNK_BYTES) return false
+            val writerId = payload.optString("writerId", "")
+            if (!isSafeId(writerId)) return false
+        }
+        if (operation == "system.fileSave.seek") {
+            val writerId = payload.optString("writerId", "")
+            if (!isSafeId(writerId) || payload.optLong("position", -1L) < 0L) return false
+        }
+        if (operation == "system.fileSave.close" || operation == "system.fileSave.cancel") {
+            if (!isSafeId(payload.optString("writerId", ""))) return false
+        }
+        if (operation == "system.fileSave.open") {
+            val name = payload.optString("name", "")
+            val mimeType = payload.optString("mimeType", "")
+            if (name.isBlank() || name.length > 255 || name.contains('\u0000') || name.contains('/') || name.contains('\\')) return false
+            if (mimeType.isBlank() || mimeType.length > 128 || !mimeType.contains('/')) return false
+        }
+        return true
+    }
 }

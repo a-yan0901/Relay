@@ -43,12 +43,25 @@ const LOCAL_MAX_EVENT_SUBSCRIBERS = 16;
 const LOCAL_EVENT_CHUNK_BYTES = 32 * 1024;
 const LOCAL_MAX_DOWNLOAD_STREAMS = 4;
 const LOCAL_MAX_RETAINED_SESSION_REQUESTS = 32;
+const LOCAL_MAX_FILE_WRITERS = 4;
 
 export interface WindowsLocalSystemServices {
   clipboard?: {
     readText(): string | Promise<string>;
     writeText(text: string): void | Promise<void>;
   };
+  confirm?: (message: string) => boolean | Promise<boolean>;
+  openExternal?: (url: string) => void | Promise<void>;
+  fileSave?: {
+    open(request: { name: string; mimeType: string }): Promise<WindowsLocalFileWriter | null>;
+  };
+}
+
+export interface WindowsLocalFileWriter {
+  write(data: Uint8Array): Promise<void>;
+  seek(position: number): Promise<void>;
+  close(): Promise<void>;
+  cancel(): Promise<void>;
 }
 
 export interface WindowsLocalRuntimeOptions {
@@ -238,6 +251,7 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
   const pendingShells = new Map<string, PendingShell>();
   const sessionPolicies = new Map<string, Map<string, HostKeyPolicy>>();
   const downloads = new Map<string, DownloadState>();
+  const fileWriters = new Map<string, WindowsLocalFileWriter>();
 
   const emit = (kind: string, payload: unknown, ids: { sessionId?: string; transferId?: string } = {}): void => {
     if (closed) return;
@@ -596,6 +610,66 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       if (!clipboard || !isRecord(payload) || typeof payload.text !== 'string') throw new AppError('CAPABILITY_UNAVAILABLE');
       await clipboard.writeText(payload.text);
     });
+    router.register('system.confirm', async (payload) => {
+      const confirm = options.systemServices?.confirm;
+      if (!confirm || !isRecord(payload) || typeof payload.message !== 'string') throw new AppError('CAPABILITY_UNAVAILABLE');
+      return { confirmed: await confirm(payload.message) };
+    });
+    router.register('system.openExternal', async (payload) => {
+      const openExternal = options.systemServices?.openExternal;
+      if (!openExternal || !isRecord(payload) || typeof payload.url !== 'string') throw new AppError('CAPABILITY_UNAVAILABLE');
+      let parsed: URL;
+      try {
+        parsed = new URL(payload.url);
+      } catch {
+        throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new AppError('CAPABILITY_UNAVAILABLE');
+      await openExternal(parsed.toString());
+    });
+    router.register('system.fileSave.open', async (payload) => {
+      const fileSave = options.systemServices?.fileSave;
+      if (!fileSave || !isRecord(payload) || typeof payload.name !== 'string' || typeof payload.mimeType !== 'string') throw new AppError('CAPABILITY_UNAVAILABLE');
+      if (fileWriters.size >= LOCAL_MAX_FILE_WRITERS) throw new AppError('SFTP_TRANSFER_FAILED', '同时保存的文件过多，请稍后重试');
+      const writer = await fileSave.open({ name: payload.name, mimeType: payload.mimeType });
+      if (!writer) return null;
+      const writerId = randomUUID();
+      fileWriters.set(writerId, writer);
+      return { writerId };
+    });
+    router.register('system.fileSave.write', async (payload) => {
+      if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const writer = fileWriters.get(text(payload.writerId));
+      if (!writer || typeof payload.data !== 'string') throw new AppError('CAPABILITY_UNAVAILABLE');
+      await writer.write(fromBase64Url(payload.data));
+    });
+    router.register('system.fileSave.seek', async (payload) => {
+      if (!isRecord(payload) || typeof payload.position !== 'number') throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const writer = fileWriters.get(text(payload.writerId));
+      if (!writer) throw new AppError('CAPABILITY_UNAVAILABLE');
+      await writer.seek(payload.position);
+    });
+    router.register('system.fileSave.close', async (payload) => {
+      if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const writerId = text(payload.writerId);
+      const writer = fileWriters.get(writerId);
+      if (!writer) throw new AppError('CAPABILITY_UNAVAILABLE');
+      fileWriters.delete(writerId);
+      try {
+        await writer.close();
+      } catch (error) {
+        await writer.cancel().catch(() => undefined);
+        throw error;
+      }
+    });
+    router.register('system.fileSave.cancel', async (payload) => {
+      if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const writerId = text(payload.writerId);
+      const writer = fileWriters.get(writerId);
+      if (!writer) return;
+      fileWriters.delete(writerId);
+      await writer.cancel();
+    });
     router.register('vault.status', async () => ({ phase: appConfigRepository.get() === null ? 'uninitialized' : activeSessionId && sessionStore.get(activeSessionId) ? 'unlocked' : 'locked' }));
     router.register('vault.setup', async (payload) => {
       if (!isRecord(payload) || typeof payload.masterPassword !== 'string') throw new AppError('MASTER_PASSWORD_INVALID');
@@ -806,6 +880,8 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       sessions.clear();
       for (const state of downloads.values()) await state.iterator.return?.();
       downloads.clear();
+      for (const writer of fileWriters.values()) await writer.cancel().catch(() => undefined);
+      fileWriters.clear();
       sshSessionManager.closeAll();
       eventListeners.clear();
       if (closeDatabase) database.close();

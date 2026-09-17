@@ -88,6 +88,14 @@ export interface ClipboardPort {
   canWrite?: boolean;
 }
 
+export interface DialogPort {
+  confirm(message: string): Promise<boolean>;
+}
+
+export interface ExternalLinkPort {
+  open(url: string): Promise<void>;
+}
+
 export interface FileSaveRequest {
   name: string;
   content: Uint8Array;
@@ -98,10 +106,28 @@ export interface FileSavePort {
   save(request: FileSaveRequest): Promise<void>;
 }
 
+export interface FileWriter {
+  write(data: Uint8Array): Promise<void>;
+  seek?(position: number): Promise<void>;
+  close(): Promise<void>;
+  cancel?(): Promise<void>;
+}
+
+/**
+ * Opens a platform-owned file sink. Implementations must consume data in
+ * bounded chunks and must not retain the complete file in memory.
+ */
+export interface FileWriterPort {
+  open(request: Pick<FileSaveRequest, 'name' | 'mimeType'>): Promise<FileWriter | null>;
+}
+
 /** Optional system capabilities supplied by a platform shell. */
 export interface PlatformServices {
   clipboard?: ClipboardPort;
+  dialogs?: DialogPort;
+  externalLinks?: ExternalLinkPort;
   fileSave?: FileSavePort;
+  fileWriter?: FileWriterPort;
   notifications?: NotificationPort;
 }
 

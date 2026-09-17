@@ -1,0 +1,11 @@
+{
+  "name": "@relay/android",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "web:build": "cd ../.. && npm run build:web",
+    "sync": "npm run web:build && npx cap sync android",
+    "build:debug": "npm run sync && npx cap build android --androidreleasetype APK",
+    "build:release": "npm run sync && npx cap build android --androidreleasetype AAB"
+  }
+}

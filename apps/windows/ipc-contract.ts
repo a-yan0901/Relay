@@ -16,6 +16,7 @@ const emptyPayload = z.object({}).strict();
 const idPayload = z.object({ id: safeId }).strict();
 const sessionIdPayload = z.object({ sessionId: safeId }).strict();
 const transferIdPayload = z.object({ transferId: safeId }).strict();
+const writerIdPayload = z.object({ writerId: safeId }).strict();
 const runIdPayload = z.object({ runId: safeId }).strict();
 const transferResume = z.object({
   transferId: safeId,
@@ -43,6 +44,13 @@ export const DESKTOP_IPC_OPERATIONS = [
   'vault.lock',
   'system.clipboard.readText',
   'system.clipboard.writeText',
+  'system.confirm',
+  'system.openExternal',
+  'system.fileSave.open',
+  'system.fileSave.write',
+  'system.fileSave.seek',
+  'system.fileSave.close',
+  'system.fileSave.cancel',
   'connection.test',
   'hosts.list',
   'hosts.get',
@@ -119,6 +127,23 @@ const operationPayloadSchemas: Record<DesktopIpcOperation, z.ZodTypeAny> = {
   'vault.lock': emptyPayload,
   'system.clipboard.readText': emptyPayload,
   'system.clipboard.writeText': z.object({ text: z.string().max(64 * 1024) }).strict(),
+  'system.confirm': z.object({ message: z.string().min(1).max(4096) }).strict(),
+  'system.openExternal': z.object({ url: z.string().url().max(2048).refine((value) => {
+    try {
+      const protocol = new URL(value).protocol;
+      return protocol === 'http:' || protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }, 'external URL is not allowed') }).strict(),
+  'system.fileSave.open': z.object({
+    name: z.string().min(1).max(255).refine((value) => !value.includes('\0') && !/[\\/]/u.test(value), 'invalid file name'),
+    mimeType: z.string().min(1).max(128).regex(/^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/u)
+  }).strict(),
+  'system.fileSave.write': z.object({ writerId: safeId, data: z.string().max(48 * 1024) }).strict(),
+  'system.fileSave.seek': z.object({ writerId: safeId, position: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }).strict(),
+  'system.fileSave.close': writerIdPayload,
+  'system.fileSave.cancel': writerIdPayload,
   'connection.test': z.object({ hostId: safeId }).strict(),
   'hosts.list': z.object({ query: boundedText.optional(), groupId: safeId.nullable().optional(), favorite: z.boolean().optional(), tags: z.array(boundedText).max(32).optional() }).strict(),
   'hosts.get': idPayload,

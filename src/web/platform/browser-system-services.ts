@@ -1,8 +1,12 @@
 import { AppError } from '../../shared/errors';
 import type {
   ClipboardPort,
+  DialogPort,
+  ExternalLinkPort,
   FileSavePort,
   FileSaveRequest,
+  FileWriter,
+  FileWriterPort,
   NotificationPermission as RelayNotificationPermission,
   NotificationPort,
   NotificationRequest,
@@ -18,6 +22,10 @@ export interface BrowserFileHost {
   save: (request: FileSaveRequest) => Promise<void> | void;
 }
 
+export interface BrowserFileWriterHost {
+  open: (request: Pick<FileSaveRequest, 'name' | 'mimeType'>) => Promise<FileWriter | null>;
+}
+
 export interface BrowserNotificationHost {
   permission: RelayNotificationPermission;
   requestPermission: () => Promise<RelayNotificationPermission>;
@@ -27,15 +35,21 @@ export interface BrowserNotificationHost {
 export interface BrowserSystemHosts {
   secureContext: boolean;
   clipboard?: BrowserClipboardHost;
+  confirm?: (message: string) => boolean | Promise<boolean>;
+  openExternal?: (url: string) => void | Promise<void>;
   legacyCopy?: (text: string) => boolean | void;
   fileSave?: BrowserFileHost;
+  fileWriter?: BrowserFileWriterHost;
   notifications?: BrowserNotificationHost;
 }
 
 export interface BrowserSystemCapabilities {
   clipboardRead: boolean;
   clipboardWrite: boolean;
+  dialogs: boolean;
+  externalLinks: boolean;
   fileSave: boolean;
+  fileWriter: boolean;
   notifications: boolean;
 }
 
@@ -55,6 +69,16 @@ const defaultBrowserSystemHosts = (): BrowserSystemHosts => {
   const browserDocument = typeof globalThis.document === 'undefined' ? undefined : globalThis.document;
   const browserUrl = typeof globalThis.URL === 'undefined' ? undefined : globalThis.URL;
   const browserBlob = typeof globalThis.Blob === 'function' ? globalThis.Blob : undefined;
+  const browserFilePicker = (globalThis as typeof globalThis & {
+    showSaveFilePicker?: (options?: { suggestedName?: string; types?: Array<{ accept: Record<string, string[]> }> }) => Promise<{
+      createWritable(): Promise<{
+        write(data: Uint8Array): Promise<void>;
+        seek(position: number): Promise<void>;
+        close(): Promise<void>;
+        abort?: () => Promise<void>;
+      }>;
+    }>;
+  }).showSaveFilePicker;
   const legacyCopy = browserDocument && typeof browserDocument.execCommand === 'function'
     ? (text: string): boolean => {
       const parent = browserDocument.body ?? browserDocument.documentElement;
@@ -94,6 +118,10 @@ const defaultBrowserSystemHosts = (): BrowserSystemHosts => {
       readText: () => browserNavigator.clipboard.readText(),
       writeText: (text: string) => browserNavigator.clipboard.writeText(text)
     } : undefined,
+    confirm: typeof globalThis.confirm === 'function' ? (message: string) => globalThis.confirm(message) : undefined,
+    openExternal: typeof globalThis.open === 'function' ? (url: string) => {
+      globalThis.open(url, '_blank', 'noopener,noreferrer');
+    } : undefined,
     legacyCopy,
     fileSave: browserDocument && browserUrl && browserBlob && typeof browserUrl.createObjectURL === 'function' ? {
       save: ({ name, content, mimeType }: FileSaveRequest) => {
@@ -107,6 +135,27 @@ const defaultBrowserSystemHosts = (): BrowserSystemHosts => {
         anchor.click();
         anchor.remove();
         browserUrl.revokeObjectURL(url);
+      }
+    } : undefined,
+    fileWriter: browserFilePicker ? {
+      open: async ({ name, mimeType }) => {
+        try {
+          const handle = await browserFilePicker({
+            suggestedName: name,
+            types: [{ accept: { [mimeType]: ['.json', '.txt', '.bin'] } }]
+          });
+          const writable = await handle.createWritable();
+          const writer: FileWriter = {
+            write: (data) => writable.write(data),
+            seek: (position) => writable.seek(position),
+            close: () => writable.close(),
+            ...(writable.abort ? { cancel: () => writable.abort?.() ?? Promise.resolve() } : {})
+          };
+          return writer;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') return null;
+          throw error;
+        }
       }
     } : undefined,
     notifications: notificationConstructor ? {
@@ -129,7 +178,10 @@ export const detectBrowserSystemCapabilities = (
 ): BrowserSystemCapabilities => ({
   clipboardRead: hosts.secureContext && typeof hosts.clipboard?.readText === 'function',
   clipboardWrite: (hosts.secureContext && typeof hosts.clipboard?.writeText === 'function') || typeof hosts.legacyCopy === 'function',
+  dialogs: typeof hosts.confirm === 'function',
+  externalLinks: typeof hosts.openExternal === 'function',
   fileSave: typeof hosts.fileSave?.save === 'function',
+  fileWriter: typeof hosts.fileWriter?.open === 'function',
   notifications: hosts.notifications !== undefined
 });
 
@@ -182,6 +234,55 @@ const createFileSavePort = (
   }
 });
 
+const createFileWriterPort = (
+  hosts: BrowserSystemHosts,
+  capabilities: BrowserSystemCapabilities
+): FileWriterPort => ({
+  async open(request): Promise<FileWriter | null> {
+    if (!capabilities.fileWriter || !hosts.fileWriter) throw unavailable();
+    try {
+      return await hosts.fileWriter.open(request);
+    } catch {
+      throw unavailable();
+    }
+  }
+});
+
+const createDialogPort = (
+  hosts: BrowserSystemHosts,
+  capabilities: BrowserSystemCapabilities
+): DialogPort => ({
+  async confirm(message: string): Promise<boolean> {
+    if (!capabilities.dialogs || !hosts.confirm) throw unavailable();
+    try {
+      return await hosts.confirm(message);
+    } catch {
+      throw unavailable();
+    }
+  }
+});
+
+const createExternalLinkPort = (
+  hosts: BrowserSystemHosts,
+  capabilities: BrowserSystemCapabilities
+): ExternalLinkPort => ({
+  async open(url: string): Promise<void> {
+    if (!capabilities.externalLinks || !hosts.openExternal) throw unavailable();
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw unavailable();
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw unavailable();
+    try {
+      await hosts.openExternal(parsed.toString());
+    } catch {
+      throw unavailable();
+    }
+  }
+});
+
 const createNotificationPort = (
   hosts: BrowserSystemHosts,
   capabilities: BrowserSystemCapabilities
@@ -216,7 +317,10 @@ export const createBrowserSystemServices = (
   return {
     capabilities,
     clipboard: createClipboardPort(hosts, capabilities),
+    dialogs: createDialogPort(hosts, capabilities),
+    externalLinks: createExternalLinkPort(hosts, capabilities),
     fileSave: createFileSavePort(hosts, capabilities),
+    fileWriter: createFileWriterPort(hosts, capabilities),
     notifications: createNotificationPort(hosts, capabilities)
   };
 };

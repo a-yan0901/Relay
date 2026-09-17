@@ -55,9 +55,18 @@
 
 以下是已落地但尚未达到“任务完成”标准的增量；未勾选任务仍需按上面的真实平台门禁验收：
 
-- M0/共享边界：已加入 `NativeOperationPort`、事件代际/序列、Android bridge、共享 native `CoreRuntime` 和原生终端 socket 适配；Web 仍默认使用 Web adapter。
-- M1/Windows：已加入版本化 IPC allowlist、sender 校验、窗口导航防护、本地 SQLite/Vault/SSH/SFTP/命令/导入导出组合、剪贴板桥接，以及 Host Key/凭据交互和 ECONNRESET 回归测试。
-- M2/Android：已加入 TypeScript bridge 和 Capacitor 插件边界草案；Android SDK/JDK/Gradle/真机未安装，因此 SSH/SFTP 库选型、Keystore、URI 流和 APK 仍未宣称完成。
+- M0/共享边界：已加入 `NativeOperationPort`、事件代际/序列、Android bridge、共享 native `CoreRuntime` 和原生终端 socket 适配；平台 ports 还覆盖确认对话框、外链和有界文件写入。Web 仍默认使用 Web adapter，浏览器 File System Access API 不可用时回退到小文件下载。
+- M1/Windows：已加入实际 Electron main/preload shell、版本化 IPC allowlist、sender 校验、窗口导航防护、本地 SQLite/Vault/SSH/SFTP/命令/导入导出组合、剪贴板桥接，以及 Host Key/凭据交互和 ECONNRESET 回归测试。文件导出使用临时文件句柄、32 KiB 分块写入和关闭后替换；`npm run build:windows` 已通过，但真实 Windows 安装、原生 ABI、升级迁移和实机任务走查仍未完成。
+- M2/Android：已生成 Capacitor Android 工程，注册 Kotlin `RelayNative` 插件并接入共享操作/文件流边界；JDK 21、Gradle 8.14.3、Android API 36、Build Tools 35.0.0 已在当前环境可用，Kotlin 编译和 debug APK 打包已通过。插件当前仍是安全边界，尚未接入 Android Vault/Keystore、SSH/SFTP executor、URI 文件流和真实设备验证，因此不能宣称 Android 独立 SSH/SFTP 客户端完成。
 - 内存预算：原生文件与终端传输使用 32 KiB 单块；终端输入使用每会话最多 8 条、总量 64 KiB 的有界队列，超限显式报错；Windows 默认最多 4 个 SSH 会话、每会话 64 KiB 脱离缓冲、最多 4 个下载流、最多 32 个可重连请求；IPC/事件订阅和 payload 也有上限。验证默认关闭文件并行并限制 worker，避免在无 Swap 主机上同时启动多份 Node/Vite。
 
-当前最重要的发布阻塞项是实际 Electron 打包/ABI 验证，以及 Android 原生 SSH/SFTP 真机可行性门槛；在这两项完成前，代码只能称为可测试的跨端基础设施增量，不能称为 Windows 安装包或 Android APK 已交付。
+验证记录（2026-09-18）：
+
+- `npm exec vitest -- run` 针对 8 个受影响测试文件，以 `--no-file-parallelism --maxWorkers=1` 执行：8 files、45 tests 通过。
+- `npm exec tsc -- -p tsconfig.native.json --noEmit` 通过；改动的 Windows/native/Web TS/TSX 文件 ESLint 在 `--max-warnings 0` 下通过。
+- `npm run typecheck` 通过。
+- `npm run build:windows` 通过，包含 web、Electron main 和 preload 三段构建；`npx cap sync android` 通过。
+- `./gradlew :app:compileDebugKotlin --no-daemon --max-workers=1 --console=plain` 和 `./gradlew :app:assembleDebug --no-daemon --max-workers=1 --console=plain` 通过；debug APK 已生成。当前没有 Android 真机/模拟器，因此安装、连接、生命周期和 SSH/SFTP 任务仍无设备证据。
+- `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 159 个测试文件、695 个测试，其中 693 通过；剩余 2 个失败均来自本次未修改的既有测试/实现不一致：`terminal-profile-service.test.ts` 的默认主题断言，以及 `core-boundary.test.ts` 对既有 cloud WebSocket 文件的静态断言。它们不属于本次原生壳/文件流改动，已由上述受影响范围测试覆盖本次变更。
+
+当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及 Android 原生 SSH/SFTP executor、Keystore、URI 流和真机可行性门槛；在这些完成前，代码只能称为可测试的跨端基础设施和原生壳增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。

@@ -44,10 +44,16 @@ describe('Windows local runtime', () => {
       },
       async testConnection() { return { ok: true }; }
     };
-    runtime = createWindowsLocalRuntime({ dataDir: ':memory:', sshAdapter });
+    const confirm = vi.fn(async () => true);
+    const openExternal = vi.fn(async () => undefined);
+    runtime = createWindowsLocalRuntime({ dataDir: ':memory:', sshAdapter, systemServices: { confirm, openExternal } });
     const events: Array<{ kind: string; payload: unknown }> = [];
     runtime.subscribe((event) => events.push({ kind: event.kind, payload: event.payload }));
     await request(runtime, 'setup-2', 'vault.setup', { masterPassword: 'test-password' });
+    await expect(request(runtime, 'confirm-1', 'system.confirm', { message: 'continue?' })).resolves.toEqual({ confirmed: true });
+    await request(runtime, 'external-1', 'system.openExternal', { url: 'https://example.com' });
+    expect(confirm).toHaveBeenCalledWith('continue?');
+    expect(openExternal).toHaveBeenCalledWith('https://example.com/');
     const host = await request(runtime, 'host-1', 'hosts.create', { input: { name: 'Test', address: 'example.com', port: 22, username: 'root', auth: { type: 'password', password: 'secret' } } }) as { id: string };
     const openPromise = runtime.router.dispatch({ version: 1, requestId: 'open-1', operation: 'sessions.openShell', payload: { request: { requestId: 'session-1', hostId: host.id, cols: 80, rows: 24 } } });
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -55,5 +61,27 @@ describe('Windows local runtime', () => {
     await expect(request(runtime, 'trust-1', 'sessions.hostKeyDecision', { sessionId: 'session-1', decision: 'trust', fingerprint: 'SHA256:abc' })).resolves.toMatchObject({ accepted: true });
     await expect(openPromise).resolves.toMatchObject({ ok: true, result: { sessionId: 'session-1' } });
     await request(runtime, 'close-1', 'sessions.close', { sessionId: 'session-1' });
+  });
+
+  it('streams native file saves through a bounded writer handle', async () => {
+    const writer = {
+      write: vi.fn(async (_data: Uint8Array) => undefined),
+      seek: vi.fn(async (_position: number) => undefined),
+      close: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined)
+    };
+    const open = vi.fn(async () => writer);
+    runtime = createWindowsLocalRuntime({ dataDir: ':memory:', systemServices: { fileSave: { open } } });
+    await request(runtime, 'setup-file-save', 'vault.setup', { masterPassword: 'test-password' });
+    const opened = await request(runtime, 'file-open', 'system.fileSave.open', { name: 'output.bin', mimeType: 'application/octet-stream' }) as { writerId: string };
+    await request(runtime, 'file-write', 'system.fileSave.write', { writerId: opened.writerId, data: Buffer.from('chunk').toString('base64url') });
+    await request(runtime, 'file-seek', 'system.fileSave.seek', { writerId: opened.writerId, position: 5 });
+    await request(runtime, 'file-close', 'system.fileSave.close', { writerId: opened.writerId });
+
+    expect(open).toHaveBeenCalledWith({ name: 'output.bin', mimeType: 'application/octet-stream' });
+    expect(writer.write).toHaveBeenCalledWith(new Uint8Array(Buffer.from('chunk')));
+    expect(writer.seek).toHaveBeenCalledWith(5);
+    expect(writer.close).toHaveBeenCalledOnce();
+    expect(writer.cancel).not.toHaveBeenCalled();
   });
 });

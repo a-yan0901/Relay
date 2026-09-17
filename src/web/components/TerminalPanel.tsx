@@ -8,7 +8,7 @@ import { Terminal } from '@xterm/xterm';
 import { AppError } from '@shared/errors';
 import type { OperationDiagnostic } from '@shared/core/models';
 import type { TerminalProfile } from '@shared/terminal-appearance';
-import type { ClipboardPort } from '@shared/core/ports';
+import type { ClipboardPort, DialogPort, ExternalLinkPort } from '@shared/core/ports';
 import type { TerminalCredentialRequiredEvent, TerminalStatus } from '@shared/protocol';
 import type { HostCredentialInput } from '@shared/validation';
 import type { HostMetadataState, WorkspaceRestoreStatus } from '../state/app-state';
@@ -80,12 +80,14 @@ export interface TerminalPanelProps {
   onOpenSftp?: () => void;
   onNewTerminal?: () => void;
   clipboard?: ClipboardPort;
+  dialogs?: DialogPort;
+  externalLinks?: ExternalLinkPort;
   preferences?: UiPreferences;
   terminalProfile?: TerminalProfile;
   recoveryStatus?: WorkspaceRestoreStatus;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, onOpenSftp, onNewTerminal, clipboard, preferences = DEFAULT_PREFERENCES, terminalProfile, recoveryStatus }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, onOpenSftp, onNewTerminal, clipboard, dialogs, externalLinks, preferences = DEFAULT_PREFERENCES, terminalProfile, recoveryStatus }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
@@ -146,7 +148,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(searchAddon);
     terminal.loadAddon(new WebLinksAddon((_event, uri) => {
-      if (/^https?:\/\//iu.test(uri)) window.open(uri, '_blank', 'noopener,noreferrer');
+      if (/^https?:\/\//iu.test(uri)) void externalLinks?.open(uri);
     }));
     terminal.open(mountRef.current);
     if (active) terminal.focus();
@@ -213,7 +215,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       fitAddonRef.current = null;
       searchAddonRef.current = null;
     };
-  }, [canReadClipboard, canWriteClipboard, session.resize, session.sendInput]);
+  }, [canReadClipboard, canWriteClipboard, externalLinks, session.resize, session.sendInput]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -276,13 +278,16 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
         setClipboardFeedback('剪贴板中没有可粘贴的文本');
         return;
       }
-      if (!window.confirm(`将粘贴 ${text.length} 个字符到终端，是否继续？`)) return;
+      const confirmed = dialogs
+        ? await dialogs.confirm(`将粘贴 ${text.length} 个字符到终端，是否继续？`)
+        : typeof globalThis.confirm === 'function' && globalThis.confirm(`将粘贴 ${text.length} 个字符到终端，是否继续？`);
+      if (!confirmed) return;
       session.sendInput(text);
       setClipboardFeedback(`已粘贴 ${text.length} 个字符`);
     } catch (error) {
       setClipboardFeedback(error instanceof AppError ? error.message : '剪贴板操作失败，请检查浏览器权限');
     }
-  }, [clipboard, session.sendInput]);
+  }, [clipboard, dialogs, session.sendInput]);
 
   useEffect(() => {
     copySelectionRef.current = copySelection;

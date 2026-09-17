@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist/windows/electron-main.js",
   "engines": {
     "node": ">=22"
   },
@@ -11,6 +12,13 @@
     "build:web": "vite build --outDir dist/web",
     "build:server": "tsup src/server/index.ts --format esm --target node22 --out-dir dist/server --sourcemap --clean",
     "build:cloud": "tsup src/cloud/index.ts --format esm --target node22 --out-dir dist/cloud --sourcemap --clean",
+    "build:windows:main": "tsup --config apps/windows/tsup-main.config.ts",
+    "build:windows:preload": "tsup --config apps/windows/tsup-preload.config.ts",
+    "build:windows": "npm run build:web && npm run build:windows:main && npm run build:windows:preload",
+    "dev:windows": "npm run build:windows && electron dist/windows/electron-main.js",
+    "package:windows": "npm run build:windows && electron-builder --win nsis portable --x64",
+    "build:android:debug": "npm --prefix apps/android run build:debug",
+    "build:android:release": "npm --prefix apps/android run build:release",
     "build": "npm run build:web && npm run build:server && npm run build:cloud",
     "start": "node dist/server/index.js",
     "start:cloud": "node dist/cloud/index.js",
@@ -21,6 +29,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
     "@fastify/cookie": "^11.1.2",
     "@fastify/helmet": "^13.1.1",
     "@fastify/multipart": "^10.1.1",
@@ -44,6 +54,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^7.0.1",
@@ -59,6 +70,8 @@
     "@typescript-eslint/parser": "^8.70.0",
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.5",
+    "electron": "^44.4.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^10.10.0",
     "globals": "^17.12.0",
     "jsdom": "^29.1.1",
@@ -75,5 +88,49 @@
     "esbuild@0.27.7": true,
     "esbuild@0.28.2": true,
     "ssh2@1.17.0": true
+  },
+  "build": {
+    "appId": "cn.ayan.relay",
+    "productName": "Relay",
+    "asar": true,
+    "npmRebuild": true,
+    "nodeGypRebuild": false,
+    "files": [
+      "dist/web/**/*",
+      "dist/windows/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/argon2/**/*",
+      "node_modules/ssh2/**/*"
+    ],
+    "directories": {
+      "output": "dist/releases"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Relay-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import type { FileSavePort } from '../../shared/core/ports';
 import type {
   ImportedCredential,
   ImportApplyRequest,
@@ -18,6 +19,7 @@ export interface WorkspaceSettingsProps {
   mode: WorkspaceSettingsMode;
   onClose: () => void;
   onExport: (password: string) => Promise<string>;
+  fileSave?: FileSavePort;
   onPreviewImport: (password: string, bundle: string) => Promise<VaultBundlePreview>;
   onApplyImport: (previewId: string, resolution: VaultBundleResolution) => Promise<VaultBundleApplyResult>;
   onPreviewExternalImport: (files: readonly ImportSourceFile[], formatHint?: ImportFormat) => Promise<ImportPreview>;
@@ -43,17 +45,22 @@ const isVaultBundle = (content: string): boolean => {
   }
 };
 
-const downloadBundle = (bundle: string): void => {
+const downloadBundle = async (bundle: string, fileSave?: FileSavePort): Promise<void> => {
+  const name = `relay-vault-${new Date().toISOString().slice(0, 10)}.json`;
+  if (fileSave) {
+    await fileSave.save({ name, content: new TextEncoder().encode(bundle), mimeType: 'application/json' });
+    return;
+  }
   const blob = new Blob([bundle], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `relay-vault-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.download = name;
   anchor.click();
   URL.revokeObjectURL(url);
 };
 
-export const WorkspaceSettings = ({ mode, onClose, onExport, onPreviewImport, onApplyImport, onPreviewExternalImport, onApplyExternalImport }: WorkspaceSettingsProps) => {
+export const WorkspaceSettings = ({ mode, onClose, onExport, fileSave, onPreviewImport, onApplyImport, onPreviewExternalImport, onApplyExternalImport }: WorkspaceSettingsProps) => {
   const [password, setPassword] = useState('');
   const [files, setFiles] = useState<ImportSourceFile[]>([]);
   const [bundle, setBundle] = useState('');
@@ -210,7 +217,7 @@ export const WorkspaceSettings = ({ mode, onClose, onExport, onPreviewImport, on
     setBusy(true);
     setMessage(null);
     try {
-      downloadBundle(await onExport(password));
+      await downloadBundle(await onExport(password), fileSave);
       setPassword('');
       setMessage('导出完成，请妥善保存加密数据包。');
     } catch {

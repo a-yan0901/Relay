@@ -29,8 +29,11 @@ describe('browser system services', () => {
     expect(detectBrowserSystemCapabilities(hosts)).toEqual({
       clipboardRead: true,
       clipboardWrite: true,
+      dialogs: false,
+      externalLinks: false,
       notifications: true,
-      fileSave: false
+      fileSave: false,
+      fileWriter: false
     });
   });
 
@@ -130,6 +133,39 @@ describe('browser system services', () => {
     const services = createBrowserSystemServices(createHosts({ fileSave: { save: vi.fn(async () => { throw new Error('browser denied'); }) } }));
 
     await expect(services.fileSave?.save({ name: 'export.json', content: new Uint8Array([1]), mimeType: 'application/json' })).rejects.toEqual(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
+  });
+
+  it('keeps streaming file writes behind an injected bounded writer', async () => {
+    const writer = {
+      write: vi.fn(async () => undefined),
+      seek: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined)
+    };
+    const open = vi.fn(async () => writer);
+    const services = createBrowserSystemServices(createHosts({ fileWriter: { open } }));
+
+    const opened = await services.fileWriter?.open({ name: 'output.bin', mimeType: 'application/octet-stream' });
+    await opened?.write(new Uint8Array([1, 2, 3]));
+    await opened?.seek?.(3);
+    await opened?.close();
+
+    expect(open).toHaveBeenCalledWith({ name: 'output.bin', mimeType: 'application/octet-stream' });
+    expect(writer.write).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
+    expect(writer.seek).toHaveBeenCalledWith(3);
+    expect(writer.close).toHaveBeenCalledOnce();
+    expect(detectBrowserSystemCapabilities(createHosts({ fileWriter: { open } })).fileWriter).toBe(true);
+  });
+
+  it('keeps confirmation and external links behind validated browser hosts', async () => {
+    const confirm = vi.fn(async () => true);
+    const openExternal = vi.fn(async () => undefined);
+    const services = createBrowserSystemServices(createHosts({ confirm, openExternal }));
+
+    await expect(services.dialogs?.confirm('确认继续吗？')).resolves.toBe(true);
+    await services.externalLinks?.open('https://example.com/path');
+    expect(confirm).toHaveBeenCalledWith('确认继续吗？');
+    expect(openExternal).toHaveBeenCalledWith('https://example.com/path');
+    await expect(services.externalLinks?.open('file:///etc/passwd')).rejects.toEqual(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
   });
 
   it('passes an already-redacted notification request through unchanged', async () => {

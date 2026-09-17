@@ -1050,7 +1050,10 @@ export const createWebAdapters = (options: {
     clipboard: browserSystemServices.capabilities.clipboardRead || browserSystemServices.capabilities.clipboardWrite
       ? browserSystemServices.clipboard
       : undefined,
+    dialogs: browserSystemServices.capabilities.dialogs ? browserSystemServices.dialogs : undefined,
+    externalLinks: browserSystemServices.capabilities.externalLinks ? browserSystemServices.externalLinks : undefined,
     fileSave: browserSystemServices.capabilities.fileSave ? browserSystemServices.fileSave : undefined,
+    fileWriter: browserSystemServices.capabilities.fileWriter ? browserSystemServices.fileWriter : undefined,
     notifications: browserSystemServices.capabilities.notifications ? browserSystemServices.notifications : undefined
   } satisfies PlatformServices;
   const runtime = {

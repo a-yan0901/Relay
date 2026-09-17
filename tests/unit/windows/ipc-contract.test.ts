@@ -40,6 +40,11 @@ describe('Windows desktop IPC contract', () => {
       operation: 'sessions.hostKeyDecision',
       payload: { sessionId: 'session-1', decision: 'trust', fingerprint: 'not-a-fingerprint' }
     })).toThrow('invalid desktop IPC request');
+    expect(encodeDesktopIpcRequest({ version: 1, requestId: 'request-5', operation: 'system.confirm', payload: { message: '继续吗？' } })).toMatchObject({ operation: 'system.confirm' });
+    expect(encodeDesktopIpcRequest({ version: 1, requestId: 'request-6', operation: 'system.openExternal', payload: { url: 'https://example.com' } })).toMatchObject({ operation: 'system.openExternal' });
+    expect(() => parseDesktopIpcRequest({ version: 1, requestId: 'request-7', operation: 'system.openExternal', payload: { url: 'file:///etc/passwd' } })).toThrow('invalid desktop IPC request');
+    expect(encodeDesktopIpcRequest({ version: 1, requestId: 'request-8', operation: 'system.fileSave.write', payload: { writerId: 'writer-1', data: 'AQID' } })).toMatchObject({ operation: 'system.fileSave.write' });
+    expect(() => parseDesktopIpcRequest({ version: 1, requestId: 'request-9', operation: 'system.fileSave.open', payload: { name: 'C:\\secret.txt', mimeType: 'text/plain' } })).toThrow('invalid desktop IPC request');
   });
 
   it('rejects local filesystem paths and unknown handler registration', () => {
