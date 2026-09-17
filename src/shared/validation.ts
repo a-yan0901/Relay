@@ -204,6 +204,7 @@ const hostBaseSchema = z.object({
   auth: hostCredentialSchema.optional(),
   credentialSource: hostCredentialSourceSchema.optional(),
   groupId: z.string().min(1).max(MAX_GROUP_ID_LENGTH).optional().nullable(),
+  terminalProfileId: scopedIdentifierSchema.optional().nullable(),
   jumpHostIds: z.array(z.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9._:-]*$/iu)).max(4).refine((ids) => new Set(ids).size === ids.length).default([]),
   connectionProfile: connectionProfileSettingsPatchSchema.optional(),
   tags: z.array(tagSchema).max(20).default([]).transform((tags) => [...new Set(tags)]),
@@ -244,6 +245,7 @@ export interface HostMetadata {
   username: string;
   authType: HostCredentialInput['type'];
   groupId: string | null;
+  terminalProfileId?: string | null;
   tags: string[];
   isFavorite: boolean;
   hostKeyAlgorithm: string | null;

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../../shared/errors.js';
+import { terminalAppearanceSchema, type TerminalAppearance, type TerminalProfile } from '../../shared/terminal-appearance.js';
 import {
   connectionProfileSettingsSchema,
   connectionProfileSettingsPatchSchema,
@@ -108,6 +109,7 @@ interface HostSqlRow {
   jump_host_ids_json: string;
   connection_profile_json: string;
   connection_profile_overrides_json: string | null;
+  terminal_profile_id: string | null;
   is_favorite: number;
   last_connected_at: string | null;
   created_at: string;
@@ -426,6 +428,7 @@ const toHostRow = (row: HostSqlRow): HostRow => ({
   jumpHostIds: parseJumpHostIds(row.jump_host_ids_json),
   connectionProfile: parseConnectionProfile(row.connection_profile_json),
   connectionProfileOverrides: parseConnectionProfileOverrides(row.connection_profile_overrides_json),
+  terminalProfileId: row.terminal_profile_id,
   isFavorite: row.is_favorite === 1,
   lastConnectedAt: row.last_connected_at,
   createdAt: row.created_at,
@@ -1212,7 +1215,7 @@ export class HostRepository {
              credential_ciphertext, credential_version, credential_source, identity_id, host_key_algorithm,
              host_key_fingerprint, group_id, tags_json, is_favorite,
              jump_host_ids_json,
-             connection_profile_json, connection_profile_overrides_json,
+             connection_profile_json, connection_profile_overrides_json, terminal_profile_id,
              last_connected_at, created_at, updated_at
       FROM hosts
       WHERE id = @id AND owner_id = @ownerId
@@ -1247,14 +1250,14 @@ export class HostRepository {
           credential_ciphertext, credential_version, credential_source, identity_id, host_key_algorithm,
           host_key_fingerprint, group_id, tags_json, is_favorite,
           jump_host_ids_json,
-          connection_profile_json, connection_profile_overrides_json,
+          connection_profile_json, connection_profile_overrides_json, terminal_profile_id,
           last_connected_at, created_at, updated_at
         ) VALUES (
           @id, @ownerId, @name, @address, @port, @username, @authType,
           @credentialCiphertext, @credentialVersion, @credentialSource, @identityId, @hostKeyAlgorithm,
           @hostKeyFingerprint, @groupId, @tags, @isFavorite,
           @jumpHostIds,
-          @connectionProfile, @connectionProfileOverrides,
+          @connectionProfile, @connectionProfileOverrides, @terminalProfileId,
           @lastConnectedAt, @createdAt, @updatedAt
         )
       `).run({
@@ -1276,6 +1279,7 @@ export class HostRepository {
         jumpHostIds: serializeJumpHostIds(input.jumpHostIds),
         connectionProfile: serializeConnectionProfile(input.connectionProfile),
         connectionProfileOverrides: serializeConnectionProfileOverrides(input.connectionProfileOverrides),
+        terminalProfileId: input.terminalProfileId ?? null,
         isFavorite: input.isFavorite ? 1 : 0,
         lastConnectedAt: input.lastConnectedAt,
         createdAt: timestamp,
@@ -1320,6 +1324,7 @@ export class HostRepository {
       jumpHostIds: patch.jumpHostIds === undefined ? current.jumpHostIds : patch.jumpHostIds,
       connectionProfile: patch.connectionProfile === undefined ? current.connectionProfile : patch.connectionProfile,
       connectionProfileOverrides: patch.connectionProfileOverrides === undefined ? current.connectionProfileOverrides : patch.connectionProfileOverrides,
+      terminalProfileId: patch.terminalProfileId === undefined ? current.terminalProfileId ?? null : patch.terminalProfileId,
       isFavorite: patch.isFavorite ?? current.isFavorite,
       lastConnectedAt: patch.lastConnectedAt === undefined ? current.lastConnectedAt : patch.lastConnectedAt
     };
@@ -1342,7 +1347,7 @@ export class HostRepository {
           host_key_fingerprint = @hostKeyFingerprint, group_id = @groupId,
           tags_json = @tags, jump_host_ids_json = @jumpHostIds,
           connection_profile_json = @connectionProfile,
-          connection_profile_overrides_json = @connectionProfileOverrides,
+          connection_profile_overrides_json = @connectionProfileOverrides, terminal_profile_id = @terminalProfileId,
           is_favorite = @isFavorite,
           last_connected_at = @lastConnectedAt, updated_at = @updatedAt
       WHERE id = @id AND owner_id = @ownerId
@@ -1408,7 +1413,7 @@ export class HostRepository {
       SELECT id, owner_id, name, address, port, username, auth_type,
              host_key_algorithm, host_key_fingerprint, group_id, tags_json,
              credential_source, identity_id,
-             jump_host_ids_json, connection_profile_json, connection_profile_overrides_json, is_favorite,
+             jump_host_ids_json, connection_profile_json, connection_profile_overrides_json, terminal_profile_id, is_favorite,
              last_connected_at, created_at, updated_at
       FROM hosts
       WHERE ${clauses.join(' AND ')}
@@ -1429,13 +1434,18 @@ export class HostRepository {
       SELECT id, owner_id, name, address, port, username, auth_type,
              credential_ciphertext, credential_version, credential_source, identity_id, host_key_algorithm,
              host_key_fingerprint, group_id, tags_json, is_favorite,
-             jump_host_ids_json, connection_profile_json, connection_profile_overrides_json,
+             jump_host_ids_json, connection_profile_json, connection_profile_overrides_json, terminal_profile_id,
              last_connected_at, created_at, updated_at
       FROM hosts
       WHERE owner_id = @ownerId
       ORDER BY id ASC
     `).all({ ownerId: this.ownerId }) as HostSqlRow[];
     return rows.map(toHostRow);
+  }
+
+  countTerminalProfileReferences(id: string): number {
+    assertIdentifier(id, 'HOST_VALIDATION_FAILED');
+    return (this.database.prepare('SELECT COUNT(*) AS count FROM hosts WHERE owner_id = @ownerId AND terminal_profile_id = @id').get({ ownerId: this.ownerId, id }) as { count: number }).count;
   }
 
   markConnected(id: string, connectedAt = now()): void {
@@ -1938,4 +1948,33 @@ export class TransferRepository {
       WHERE owner_id = @ownerId AND status IN ('paused', 'completed', 'failed', 'cancelled', 'interrupted') AND updated_at <= @cutoff
     `).run({ ownerId: this.ownerId, cutoff });
   }
+}
+
+
+interface TerminalProfileSqlRow { id: string; owner_id: string; name: string; appearance_json: string; created_at: string; updated_at: string; }
+const toTerminalProfile = (row: TerminalProfileSqlRow): TerminalProfile => {
+  const parsed = terminalAppearanceSchema.safeParse(JSON.parse(row.appearance_json));
+  if (!parsed.success) throw new AppError('INTERNAL_ERROR');
+  return { id: row.id, name: row.name, appearance: parsed.data, createdAt: row.created_at, updatedAt: row.updated_at };
+};
+
+export class TerminalProfileRepository {
+  constructor(private readonly database: SqliteDatabase, private readonly ownerId: string) { assertOwner(ownerId); }
+  get(id: string): TerminalProfile | null {
+    assertIdentifier(id, 'HOST_VALIDATION_FAILED');
+    const row = this.database.prepare('SELECT id, owner_id, name, appearance_json, created_at, updated_at FROM terminal_profiles WHERE id = @id AND owner_id = @ownerId').get({ id, ownerId: this.ownerId }) as TerminalProfileSqlRow | undefined;
+    return row ? toTerminalProfile(row) : null;
+  }
+  list(): TerminalProfile[] { return (this.database.prepare('SELECT id, owner_id, name, appearance_json, created_at, updated_at FROM terminal_profiles WHERE owner_id = @ownerId ORDER BY name COLLATE NOCASE').all({ ownerId: this.ownerId }) as TerminalProfileSqlRow[]).map(toTerminalProfile); }
+  create(input: TerminalProfile): TerminalProfile {
+    this.database.prepare('INSERT INTO terminal_profiles (id, owner_id, name, appearance_json, created_at, updated_at) VALUES (@id, @ownerId, @name, @appearance, @createdAt, @updatedAt)').run({ id: input.id, ownerId: this.ownerId, name: input.name, appearance: JSON.stringify(input.appearance), createdAt: input.createdAt, updatedAt: input.updatedAt });
+    return input;
+  }
+  delete(id: string): void { const result=this.database.prepare('DELETE FROM terminal_profiles WHERE id=@id AND owner_id=@ownerId').run({id,ownerId:this.ownerId}); if (!result.changes) throw new AppError('NOT_FOUND'); }
+}
+
+export class TerminalPreferenceRepository {
+  constructor(private readonly database: SqliteDatabase, private readonly ownerId: string) { assertOwner(ownerId); }
+  getDefaultProfileId(): string | null { const row=this.database.prepare('SELECT default_profile_id FROM terminal_preferences WHERE owner_id=@ownerId').get({ownerId:this.ownerId}) as {default_profile_id:string}|undefined; return row?.default_profile_id ?? null; }
+  setDefaultProfileId(defaultProfileId: string): void { const timestamp=now(); this.database.prepare('INSERT INTO terminal_preferences (owner_id, default_profile_id, updated_at) VALUES (@ownerId,@defaultProfileId,@timestamp) ON CONFLICT(owner_id) DO UPDATE SET default_profile_id=excluded.default_profile_id, updated_at=excluded.updated_at').run({ownerId:this.ownerId,defaultProfileId,timestamp}); }
 }

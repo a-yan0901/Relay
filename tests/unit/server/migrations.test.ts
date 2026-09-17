@@ -110,7 +110,7 @@ describe('database migrations', () => {
     const table = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transfer_jobs'").get() as { sql: string };
     expect(table.sql).toContain("'paused'");
     expect(database.prepare('SELECT status, checkpoint_offset, temporary_path FROM transfer_jobs WHERE id = ?').get('transfer-legacy')).toEqual({ status: 'interrupted', checkpoint_offset: 4, temporary_path: '/remote.bin.tmp' });
-    expect(database.pragma('user_version', { simple: true })).toBe(14);
+    expect(database.pragma('user_version', { simple: true })).toBe(15);
   });
 
   it('adds account metadata tables without rebuilding existing Vault and host data', () => {
@@ -134,7 +134,7 @@ describe('database migrations', () => {
       ]);
     expect(database.prepare('SELECT name, address, credential_ciphertext FROM hosts WHERE id = ?').get('legacy-host'))
       .toEqual({ name: 'Legacy host', address: '10.0.0.8', credential_ciphertext: 'ciphertext' });
-    expect(database.pragma('user_version', { simple: true })).toBe(14);
+    expect(database.pragma('user_version', { simple: true })).toBe(15);
   });
 
   it('adds the recoverable account deletion request table when upgrading the account schema', () => {
@@ -146,6 +146,6 @@ describe('database migrations', () => {
       .toEqual({ name: 'account_delete_requests' });
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_account_delete_requests_expiry'").get())
       .toEqual({ name: 'idx_account_delete_requests_expiry' });
-    expect(database.pragma('user_version', { simple: true })).toBe(14);
+    expect(database.pragma('user_version', { simple: true })).toBe(15);
   });
 });

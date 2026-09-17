@@ -77,6 +77,7 @@ export interface HostCreateRow {
   jumpHostIds?: string[];
   connectionProfile?: ConnectionProfileSettings;
   connectionProfileOverrides?: ConnectionProfileOverrides | null;
+  terminalProfileId?: string | null;
 }
 
 export interface HostPatch extends Partial<Pick<HostRow,
@@ -96,6 +97,7 @@ export interface HostPatch extends Partial<Pick<HostRow,
   | 'jumpHostIds'
   | 'connectionProfile'
   | 'connectionProfileOverrides'
+  | 'terminalProfileId'
 >> {
   credentialSource?: 'inline' | 'identity' | 'group';
   identityId?: string | null;

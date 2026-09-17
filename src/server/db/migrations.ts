@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from './database.js';
 
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 export const migrate = (database: SqliteDatabase): void => {
   const applyMigration = database.transaction(() => {
@@ -149,6 +149,7 @@ export const migrate = (database: SqliteDatabase): void => {
         host_key_algorithm TEXT,
         host_key_fingerprint TEXT,
         group_id TEXT REFERENCES groups(id) ON DELETE SET NULL,
+        terminal_profile_id TEXT,
         tags_json TEXT NOT NULL DEFAULT '[]',
         jump_host_ids_json TEXT NOT NULL DEFAULT '[]',
         connection_profile_json TEXT NOT NULL DEFAULT '{"keepaliveIntervalMs":10000,"keepaliveCountMax":3,"reconnect":{"enabled":true,"maxAttempts":5,"baseDelayMs":250,"maxDelayMs":5000}}',
@@ -346,6 +347,20 @@ export const migrate = (database: SqliteDatabase): void => {
     if (!groupColumns.some((column) => column.name === 'connection_profile_json')) {
       database.exec('ALTER TABLE groups ADD COLUMN connection_profile_json TEXT');
     }
+    if (!hostColumns.some((column) => column.name === 'terminal_profile_id')) {
+      database.exec('ALTER TABLE hosts ADD COLUMN terminal_profile_id TEXT');
+    }
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS terminal_profiles (
+        id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, name TEXT NOT NULL, appearance_json TEXT NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE (owner_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS terminal_preferences (
+        owner_id TEXT PRIMARY KEY, default_profile_id TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_terminal_profiles_owner_name ON terminal_profiles (owner_id, name COLLATE NOCASE);
+      CREATE INDEX IF NOT EXISTS idx_hosts_owner_terminal_profile ON hosts (owner_id, terminal_profile_id);
+    `);
     if (!hostColumns.some((column) => column.name === 'jump_host_ids_json')) {
       database.exec("ALTER TABLE hosts ADD COLUMN jump_host_ids_json TEXT NOT NULL DEFAULT '[]'");
     }
@@ -416,6 +431,11 @@ export const migrate = (database: SqliteDatabase): void => {
         CREATE INDEX IF NOT EXISTS idx_hosts_owner_identity ON hosts (owner_id, identity_id);
       `);
     }
+    const finalHostColumns = database.pragma('table_info(hosts)') as Array<{ name: string }>;
+    if (!finalHostColumns.some((column) => column.name === 'terminal_profile_id')) {
+      database.exec('ALTER TABLE hosts ADD COLUMN terminal_profile_id TEXT');
+    }
+    database.exec('CREATE INDEX IF NOT EXISTS idx_hosts_owner_terminal_profile ON hosts (owner_id, terminal_profile_id)');
     database.exec('CREATE INDEX IF NOT EXISTS idx_hosts_owner_identity ON hosts (owner_id, identity_id)');
 
     const auditColumns = database.pragma('table_info(audit_events)') as Array<{ name: string }>;
