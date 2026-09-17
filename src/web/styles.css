@@ -27,7 +27,7 @@
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
 }
 
-:root[data-theme='light'] {
+:root[data-relay-theme='light'] {
   color-scheme: light;
   --bg: #eef3f9;
   --bg-raised: #ffffff;
@@ -50,7 +50,7 @@
   --shadow: 0 24px 80px rgba(45, 72, 104, 0.15);
 }
 
-:root[data-theme='contrast'] {
+:root[data-relay-theme='contrast'] {
   color-scheme: dark;
   --bg: #000;
   --bg-raised: #090909;
@@ -85,9 +85,9 @@ body {
     var(--bg);
 }
 
-:root[data-theme='light'] body { background: radial-gradient(circle at 18% 0%, rgba(94, 159, 224, 0.18), transparent 34rem), var(--bg); }
+:root[data-relay-theme='light'] body { background: radial-gradient(circle at 18% 0%, rgba(94, 159, 224, 0.18), transparent 34rem), var(--bg); }
 
-:root[data-theme='contrast'] body { background: var(--bg); }
+:root[data-relay-theme='contrast'] body { background: var(--bg); }
 
 button, input, select, textarea { font: inherit; }
 
@@ -1245,13 +1245,13 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 
 .terminal-canvas { padding: 7px 9px; }
 
-:root[data-theme='light'] .terminal-topbar,
-:root[data-theme='light'] .terminal-pane-toolbar,
-:root[data-theme='light'] .terminal-host-picker { background: rgba(245, 248, 252, 0.98); }
+:root[data-relay-theme='light'] .terminal-topbar,
+:root[data-relay-theme='light'] .terminal-pane-toolbar,
+:root[data-relay-theme='light'] .terminal-host-picker { background: rgba(245, 248, 252, 0.98); }
 
-:root[data-theme='contrast'] .terminal-topbar,
-:root[data-theme='contrast'] .terminal-pane-toolbar,
-:root[data-theme='contrast'] .terminal-host-picker { background: #090909; }
+:root[data-relay-theme='contrast'] .terminal-topbar,
+:root[data-relay-theme='contrast'] .terminal-pane-toolbar,
+:root[data-relay-theme='contrast'] .terminal-host-picker { background: #090909; }
 
 .preferences-backdrop { align-items: flex-start; background: rgba(1, 7, 14, 0.42); display: flex; inset: 0; justify-content: flex-end; padding: 84px 28px 28px; position: fixed; z-index: 12; }
 
@@ -1343,15 +1343,15 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 
 .host-key-dialog { background: #12243b; border: 1px solid rgba(255, 195, 106, 0.28); border-radius: 13px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.48); max-height: calc(100vh - 44px); max-width: 430px; overflow-y: auto; padding: 26px; width: 100%; }
 
-:root[data-theme='light'] .host-key-dialog { background: #fff; }
+:root[data-relay-theme='light'] .host-key-dialog { background: #fff; }
 
-:root[data-theme='contrast'] .host-key-dialog { background: #000; }
+:root[data-relay-theme='contrast'] .host-key-dialog { background: #000; }
 
-:root[data-theme='light'] .terminal-tabs,
-:root[data-theme='light'] .terminal-search { background: rgba(233, 240, 249, 0.96); }
+:root[data-relay-theme='light'] .terminal-tabs,
+:root[data-relay-theme='light'] .terminal-search { background: rgba(233, 240, 249, 0.96); }
 
-:root[data-theme='contrast'] .terminal-tabs,
-:root[data-theme='contrast'] .terminal-search { background: #090909; }
+:root[data-relay-theme='contrast'] .terminal-tabs,
+:root[data-relay-theme='contrast'] .terminal-search { background: #090909; }
 
 .danger-icon { align-items: center; background: rgba(246, 198, 106, 0.14); border: 1px solid rgba(246, 198, 106, 0.24); border-radius: 50%; color: #f6c66a; display: flex; font-weight: 800; height: 32px; justify-content: center; margin-bottom: 16px; width: 32px; }
 

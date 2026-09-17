@@ -185,7 +185,7 @@ test.describe('host to terminal journey', () => {
     await page.getByRole('button', { name: '偏好设置' }).click();
     await expect(page.getByRole('region', { name: '快捷键' })).toBeVisible();
     await page.getByRole('combobox', { name: '色彩主题' }).selectOption('contrast');
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'contrast');
+    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'contrast');
     await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
     await page.getByRole('button', { name: '关闭偏好设置' }).click();
 

@@ -129,7 +129,7 @@ describe('App boot recovery', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: '色彩主题' }), 'light');
     await user.selectOptions(screen.getByRole('combobox', { name: '终端字号' }), '16');
 
-    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.dataset.relayTheme).toBe('light');
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
     expect(screen.getByText('MANAGEMENT')).toBeInTheDocument();
     expect(screen.getByText('最近活动')).toBeInTheDocument();
