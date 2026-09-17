@@ -21,7 +21,8 @@ const testState = vi.hoisted(() => ({
   diagnostics: [] as OperationDiagnostic[],
   credential: null as { hostId: string; authType: 'password' | 'private_key'; name: string; address: string; port: number; username: string } | null,
   submitCredential: vi.fn(),
-  sendInput: vi.fn()
+  sendInput: vi.fn(),
+  resize: vi.fn()
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -85,6 +86,8 @@ vi.mock('@xterm/xterm', () => ({
 
     clearSelection(): void {}
 
+    refresh(): void {}
+
     dispose(): void {}
   }
 }));
@@ -113,7 +116,7 @@ vi.mock('../../../src/web/hooks/use-terminal-session', () => ({
     testState.onOutput = options.onOutput ?? null;
     return {
       state: { state: testState.credential ? 'awaiting-credential' : 'connected', reconnectDelayMs: 0, error: null, hostKey: null, credential: testState.credential, diagnostics: testState.diagnostics },
-      resize: () => {},
+      resize: testState.resize,
       sendInput: testState.sendInput,
       decideHostKey: () => {},
       submitCredential: testState.submitCredential,
@@ -153,6 +156,7 @@ describe('TerminalPanel mobile selection', () => {
     testState.credential = null;
     testState.submitCredential.mockReset();
     testState.sendInput.mockReset();
+    testState.resize.mockReset();
     vi.stubGlobal('requestAnimationFrame', (callback: (timestamp: number) => void) => {
       callback(0);
       return 1;
@@ -163,6 +167,15 @@ describe('TerminalPanel mobile selection', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it('updates xterm colors and font size when the application theme changes', () => {
+    const { rerender } = render(<TerminalPanel terminalId="terminal-theme" host={host} active onClose={() => {}} preferences={{ theme: 'midnight', fontSize: 13 }} />);
+    const terminal = testState.terminalInstances[0] as unknown as { options: { theme: { background?: string }; fontSize: number } };
+    expect(terminal.options.theme.background).toBe('#07111f');
+    rerender(<TerminalPanel terminalId="terminal-theme" host={host} active onClose={() => {}} preferences={{ theme: 'light', fontSize: 16 }} />);
+    expect(terminal.options.theme.background).toBe('#f5f8fc');
+    expect(terminal.options.fontSize).toBe(16);
   });
 
   it('enables word selection for long-press context menus on touch devices', () => {

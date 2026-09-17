@@ -11,7 +11,8 @@ import type { FileTransport } from '../../../src/shared/core/ports';
 import type { TerminalSessionSnapshot } from '../../../src/web/hooks/use-terminal-session';
 import { HostKeyDialog } from '../../../src/web/components/HostKeyDialog';
 import { TerminalToolbar } from '../../../src/web/components/TerminalToolbar';
-import { TerminalWorkspace } from '../../../src/web/components/TerminalWorkspace';
+import { TerminalWorkspace, resolveTerminalProfileForHost } from '../../../src/web/components/TerminalWorkspace';
+import { BUILTIN_TERMINAL_PROFILES } from '../../../src/shared/terminal-appearance';
 
 vi.mock('../../../src/web/components/TerminalPanel', () => ({
   TerminalPanel: ({ terminalId, host, active, onClose, onStatusChange, onToolbarChange }: { terminalId: string; host: HostMetadataState; active: boolean; onClose: () => void; onStatusChange?: (snapshot: TerminalSessionSnapshot) => void; onToolbarChange?: (terminalId: string, toolbar: MockTerminalToolbar | null) => void }) => {
@@ -67,6 +68,13 @@ const host = (id: string, name: string): HostMetadataState => ({
 });
 
 describe('TerminalWorkspace', () => {
+  it('lets the global theme drive the baseline terminal profile', () => {
+    const midnight = BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === 'builtin:midnight');
+    const nord = BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === 'builtin:nord');
+    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, midnight, 'light')).toBeUndefined();
+    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, nord, 'midnight')?.id).toBe('builtin:nord');
+    expect(resolveTerminalProfileForHost({ ...host('host-1', 'Production'), terminalProfileId: 'builtin:midnight' }, BUILTIN_TERMINAL_PROFILES, nord, 'light')?.id).toBe('builtin:midnight');
+  });
   afterEach(() => cleanup());
 
   it('keeps multiple terminal panels mounted while switching active tabs', async () => {

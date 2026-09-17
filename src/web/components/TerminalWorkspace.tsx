@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 
-import { isBuiltinTerminalProfileId, type TerminalProfile } from '@shared/terminal-appearance';
+import { type TerminalProfile } from '@shared/terminal-appearance';
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
 import type { SftpEntry, TransferJob, WorkspaceLayout } from '../../shared/core/models';
 import type { ClipboardPort, FileTransport } from '../../shared/core/ports';
@@ -23,6 +23,23 @@ type SplitOrientation = 'horizontal' | 'vertical';
 type PaneKey = 'primary' | 'secondary';
 type TerminalAttention = 'completed' | 'error';
 const MAX_GRID_PANES = 4;
+
+export const resolveTerminalProfileForHost = (
+  host: HostMetadataState,
+  profiles: readonly TerminalProfile[],
+  defaultProfile: TerminalProfile | undefined,
+  theme: UiPreferences['theme'] = DEFAULT_PREFERENCES.theme
+): TerminalProfile | undefined => {
+  const assigned = host.terminalProfileId === undefined || host.terminalProfileId === null
+    ? undefined
+    : profiles.find((profile) => profile.id === host.terminalProfileId);
+  if (assigned) return assigned;
+  if (!defaultProfile) return undefined;
+  // Midnight is the baseline server default; allow the application theme to
+  // supply the corresponding palette when the user changes the global theme.
+  if (defaultProfile.id === 'builtin:midnight' && theme !== 'midnight') return undefined;
+  return defaultProfile;
+};
 const MIN_GRID_PANES = 3;
 
 interface SplitLayout {
@@ -608,7 +625,7 @@ export const TerminalWorkspace = ({
                     </label>
                   </div>
                 )}
-                {host ? <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} terminalProfile={terminalProfiles.find((profile) => profile.id === host.terminalProfileId) ?? (defaultTerminalProfile && !isBuiltinTerminalProfileId(defaultTerminalProfile.id) ? defaultTerminalProfile : undefined)} active={workspaceVisible && paneVisible} recoveryStatus={terminal.recoveryStatus} preferences={preferences} clipboard={clipboard} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onOpenSftp={(fileTransport || onListSftp) ? () => setFilePanelOpen(true) : undefined} onNewTerminal={onConnectHost ? openHostPicker : undefined} onStatusChange={(snapshot) => handleTerminalStatus(terminal.terminalId, snapshot)} /> : paneVisible && <div className="terminal-recovery-pane" role="status"><strong>Server 已不存在</strong><p>这个工作区标签关联的 Server 已不存在。</p><button className="button button-ghost button-small" type="button" onClick={() => onClose(terminal.terminalId)}>关闭标签</button></div>}
+                {host ? <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} terminalProfile={resolveTerminalProfileForHost(host, terminalProfiles, defaultTerminalProfile, preferences.theme)} active={workspaceVisible && paneVisible} recoveryStatus={terminal.recoveryStatus} preferences={preferences} clipboard={clipboard} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onOpenSftp={(fileTransport || onListSftp) ? () => setFilePanelOpen(true) : undefined} onNewTerminal={onConnectHost ? openHostPicker : undefined} onStatusChange={(snapshot) => handleTerminalStatus(terminal.terminalId, snapshot)} /> : paneVisible && <div className="terminal-recovery-pane" role="status"><strong>Server 已不存在</strong><p>这个工作区标签关联的 Server 已不存在。</p><button className="button button-ghost button-small" type="button" onClick={() => onClose(terminal.terminalId)}>关闭标签</button></div>}
               </div>
             );
           })}

@@ -220,7 +220,10 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     terminal.options.lineHeight = appearance?.lineHeight ?? 1.25;
     terminal.options.cursorBlink = appearance?.cursorBlink ?? true;
     terminal.options.cursorStyle = appearance?.cursorStyle ?? 'bar';
-    terminal.options.theme = appearance ? { ...appearance } : getTerminalTheme(preferences.theme);
+    terminal.options.theme = appearance ? { ...appearance } : { ...getTerminalTheme(preferences.theme) };
+    // xterm updates its palette through the options setter, but an explicit
+    // refresh is needed for already-rendered rows in some renderer versions.
+    terminal.refresh?.(0, Math.max(0, terminal.rows - 1));
     fitRef.current?.();
   }, [preferences, terminalProfile]);
 
