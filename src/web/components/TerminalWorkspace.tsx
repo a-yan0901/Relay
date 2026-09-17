@@ -12,6 +12,9 @@ import { SftpPanel } from './SftpPanel';
 import { TransferQueue } from './TransferQueue';
 import { SftpWorkspace } from './SftpWorkspace';
 import type { SftpOpenRequest } from './ServerContextMenu';
+import { ContextMenu } from './ContextMenu';
+import type { ContextMenuItem } from '../context-menu';
+import { useContextMenu } from '../hooks/use-context-menu';
 import { shortcutCommandForEvent } from '../state/shortcut-map';
 import { createHostSearchIndex, filterHostsByQuery } from '../state/navigation-state';
 
@@ -46,6 +49,7 @@ export interface TerminalWorkspaceProps {
   onDeleteSftp?: (hostId: string, path: string) => Promise<void>;
   onUploadSftp?: (hostId: string, file: File, path: string) => Promise<void>;
   onDownloadSftp?: (hostId: string, path: string, name: string) => Promise<void>;
+  onCopyText?: (value: string) => Promise<void> | void;
   fileTransport?: Pick<FileTransport, 'list' | 'createDirectory' | 'rename' | 'remove'>;
   transferJobs?: readonly TransferJob[];
   onCancelTransfer?: (id: string) => void;
@@ -121,6 +125,7 @@ export const TerminalWorkspace = ({
   onDeleteSftp,
   onUploadSftp,
   onDownloadSftp,
+  onCopyText,
   fileTransport,
   transferJobs = [],
   onCancelTransfer,
@@ -157,6 +162,7 @@ export const TerminalWorkspace = ({
   const [attentionByTerminalId, setAttentionByTerminalId] = useState<Record<string, TerminalAttention>>({});
   const [filePanelOpen, setFilePanelOpen] = useState(false);
   const [sftpPathByHostId, setSftpPathByHostId] = useState<Record<string, string>>({});
+  const terminalContextMenu = useContextMenu<string>();
   const hostSearchIndex = useMemo(() => createHostSearchIndex(hosts), [hosts]);
   const layoutRef = useRef<HTMLDivElement>(null);
   const pendingPaneRef = useRef<PaneKey | null>(null);
@@ -357,6 +363,34 @@ export const TerminalWorkspace = ({
     onActivate(terminalId);
   };
 
+  const terminalContextTarget = terminalContextMenu.state?.target;
+  const terminalContextHost = terminalContextTarget ? hostById.get(terminalById.get(terminalContextTarget)?.hostId ?? '') : undefined;
+  const terminalContextItems: readonly ContextMenuItem[] = terminalContextTarget && terminalById.has(terminalContextTarget)
+    ? [
+      { id: 'activate-terminal', label: '激活 Console', onSelect: () => activateTerminal(terminalContextTarget) },
+      ...(onEditHost && terminalContextHost ? [{ id: 'edit-host', label: '编辑 Server', onSelect: () => onEditHost(terminalContextHost) }] : []),
+      {
+        id: 'open-sftp',
+        label: '打开 SFTP',
+        disabled: !(fileTransport || onListSftp),
+        separatorBefore: true,
+        onSelect: () => {
+          activateTerminal(terminalContextTarget);
+          setFilePanelOpen(true);
+        }
+      },
+      { id: 'close-terminal', label: '关闭标签', separatorBefore: true, onSelect: () => onClose(terminalContextTarget) },
+      {
+        id: 'close-other-terminals',
+        label: '关闭其他标签',
+        disabled: terminals.length <= 1,
+        onSelect: () => terminals.forEach((terminal) => {
+          if (terminal.terminalId !== terminalContextTarget) onClose(terminal.terminalId);
+        })
+      }
+    ]
+    : [];
+
   const handleWorkspaceKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (shortcutCommandForEvent(event.nativeEvent, { terminalView: true }) !== 'focus-pane') return;
     const requestedIndex = Number(event.key) - 1;
@@ -483,7 +517,7 @@ export const TerminalWorkspace = ({
               const label = terminalLabels.get(terminal.terminalId) ?? host?.name ?? terminal.label ?? terminal.hostId;
               const selected = terminal.terminalId === activeTerminalId;
               return (
-                <div className={`terminal-tab ${selected ? 'is-active' : ''}`} key={terminal.terminalId}>
+                <div className={`terminal-tab ${selected ? 'is-active' : ''}`} key={terminal.terminalId} onContextMenu={(event) => terminalContextMenu.open(event, terminal.terminalId)}>
                   <button className="terminal-tab-trigger" type="button" role="tab" aria-selected={selected} aria-label={`切换 ${label}`} onClick={() => activateTerminal(terminal.terminalId)}>
                     <span className={`status-dot ${terminalStatusDotClass(terminal.state)}`} aria-hidden="true" />
                     <span className="terminal-tab-meta"><strong>{label}</strong><small>{host?.address ?? 'Server 已不存在'}</small></span>
@@ -608,6 +642,7 @@ export const TerminalWorkspace = ({
           )}
         </div>
       </section>
+      {terminalContextMenu.state && <ContextMenu state={terminalContextMenu.state} items={terminalContextItems} onClose={terminalContextMenu.close} ariaLabel="终端标签菜单" />}
       {filePanelOpen && activeHostId && (
         <aside className="terminal-file-panel" aria-label="远程文件面板">
           {fileTransport
@@ -631,9 +666,10 @@ export const TerminalWorkspace = ({
               resumeSupported={resumeSupported}
               onOpenTransferPath={handleOpenTransferPath}
               onBackToTerminal={() => setFilePanelOpen(false)}
+              onCopyText={onCopyText}
             />
             : onListSftp && <>
-              <SftpPanel hostId={activeHostId} remotePath={sftpPathByHostId[activeHostId] ?? '/'} onNavigate={handleRemotePathChange} onList={onListSftp} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={localFilesEnabled && onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} />
+              <SftpPanel hostId={activeHostId} remotePath={sftpPathByHostId[activeHostId] ?? '/'} onNavigate={handleRemotePathChange} onList={onListSftp} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={localFilesEnabled && onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} onCopyText={onCopyText} />
               <TransferQueue jobs={transferJobs} onCancel={onCancelTransfer} onRetry={onRetryTransfer} />
             </>}
         </aside>

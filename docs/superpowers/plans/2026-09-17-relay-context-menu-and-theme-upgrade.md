@@ -357,6 +357,9 @@ git commit -m "feat: add server and tag context actions"
 
 ## Task 4: 扩展终端标签和 SFTP 文件上下文操作
 
+**Status:** Done（2026-09-17）
+**Evidence:** `npm test -- --run tests/unit/web/terminal-workspace.dom.test.tsx tests/unit/web/sftp-panel.dom.test.tsx`、`npm run typecheck`、`npm run lint` 均通过。
+
 **Files:**
 
 - Modify: `src/web/components/TerminalWorkspace.tsx`
@@ -371,15 +374,15 @@ git commit -m "feat: add server and tag context actions"
 - Consumes: Task 1 的 `ContextMenu`、现有 `onClose`、SFTP mutation/transfer callbacks、`SftpEntry` 和当前目录过滤/选择状态。
 - Produces: 标签页和 SFTP 文件条目的上下文动作，不新增服务端 API。
 
-- [ ] **Step 1: 写终端标签菜单失败测试**
+- [x] **Step 1: 写终端标签菜单失败测试**
 
 右键 terminal tab 后断言可以激活标签、关闭当前标签、关闭其他标签和打开该标签 SFTP；关闭其他标签不能关闭当前目标以外的 tab，最后一个 tab 的行为沿用现有 `onClose` 约束。
 
-- [ ] **Step 2: 实现终端标签菜单**
+- [x] **Step 2: 实现终端标签菜单**
 
 在 tab 容器上绑定 `useContextMenu`，目标为 `terminalId`；动作调用 `activateTerminal`、已有 `onClose` 和 SFTP 请求桥接，不把标签关闭直接写入 DOM。
 
-- [ ] **Step 3: 写 SFTP 文件菜单失败测试**
+- [x] **Step 3: 写 SFTP 文件菜单失败测试**
 
 覆盖文件右键显示下载、复制远程路径、重命名、删除；目录右键显示进入目录；没有对应 callback 时菜单项 disabled；删除仍然打开现有 Dialog；当前 filter 下只对可见条目响应右键。
 
@@ -390,11 +393,11 @@ await user.click(screen.getByRole('menuitem', { name: '下载' }));
 expect(onDownload).toHaveBeenCalledWith('/etc/config.yml', 'config.yml');
 ```
 
-- [ ] **Step 4: 实现 SFTP 条目菜单**
+- [x] **Step 4: 实现 SFTP 条目菜单**
 
 复用当前 `selectedPaths`、`dialog` 和 `onNavigate`；复制路径只传给 `onCopyText`，下载/重命名/删除调用既有 callback。不得绕过 SFTP 路径规范化和 mutation capability。
 
-- [ ] **Step 5: 运行 SFTP/Workspace 验证**
+- [x] **Step 5: 运行 SFTP/Workspace 验证**
 
 Run:
 
@@ -404,7 +407,7 @@ npm run typecheck
 npm run lint
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/web/components/TerminalWorkspace.tsx src/web/components/SftpPanel.tsx src/web/components/SftpWorkspace.tsx src/web/styles.css tests/unit/web/terminal-workspace.dom.test.tsx tests/unit/web/sftp-panel.dom.test.tsx

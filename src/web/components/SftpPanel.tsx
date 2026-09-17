@@ -5,6 +5,9 @@ import type { SftpEntry } from '../../shared/core/models';
 import { sftpChildPath, sftpParentPath } from '../../shared/core/sftp-path';
 import { Dialog } from './Dialog';
 import { SftpBreadcrumbs } from './SftpBreadcrumbs';
+import { ContextMenu } from './ContextMenu';
+import type { ContextMenuItem } from '../context-menu';
+import { useContextMenu } from '../hooks/use-context-menu';
 
 type SftpAction = '读取' | '上传' | '下载' | '删除' | '新建目录' | '重命名';
 
@@ -33,6 +36,7 @@ export interface SftpPanelProps {
   onDelete?: (path: string) => Promise<void>;
   onUpload?: (file: File, path: string) => Promise<void>;
   onDownload?: (path: string, name: string) => Promise<void>;
+  onCopyText?: (value: string) => Promise<void> | void;
   onNavigate?: (path: string) => void;
 }
 
@@ -52,6 +56,7 @@ export const SftpPanel = ({
   onDelete,
   onUpload,
   onDownload,
+  onCopyText,
   onNavigate
 }: SftpPanelProps) => {
   const initialPath = remotePath?.trim() || '/';
@@ -68,6 +73,7 @@ export const SftpPanel = ({
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const loadSequence = useRef(0);
+  const fileContextMenu = useContextMenu<SftpEntry>();
 
   const load = useCallback(async (): Promise<void> => {
     const sequence = ++loadSequence.current;
@@ -254,6 +260,17 @@ export const SftpPanel = ({
     setDialog({ type: 'delete', paths });
   };
 
+  const fileContextEntry = fileContextMenu.state?.target;
+  const fileContextItems: readonly ContextMenuItem[] = fileContextEntry
+    ? [
+      { id: 'enter-directory', label: '进入目录', disabled: fileContextEntry.type !== 'directory', onSelect: () => navigate(fileContextEntry) },
+      { id: 'copy-remote-path', label: '复制远程路径', disabled: !onCopyText, onSelect: () => onCopyText?.(fileContextEntry.path) },
+      { id: 'download-entry', label: '下载', disabled: fileContextEntry.type !== 'file' || !onDownload, onSelect: () => void download(fileContextEntry) },
+      { id: 'rename-entry', label: '重命名', disabled: !onRename, separatorBefore: true, onSelect: () => openRename(fileContextEntry) },
+      { id: 'delete-entry', label: '删除', disabled: !onDelete, tone: 'danger', onSelect: () => openDelete([fileContextEntry.path]) }
+    ]
+    : [];
+
   return (
     <section className="sftp-panel" aria-label="远程文件">
       <div className="sftp-panel-heading">
@@ -275,7 +292,7 @@ export const SftpPanel = ({
       {!loading && !error && entries.length > 0 && visibleEntries.length === 0 && <p className="sftp-empty-state">没有匹配的文件</p>}
       {!loading && !error && visibleEntries.length > 0 && <>
         <label className="sftp-select-all"><input type="checkbox" aria-label={filterQuery.trim() ? '选择筛选结果' : '选择当前目录全部项目'} checked={allEntriesSelected} onChange={(event) => toggleAll(event.target.checked)} />{filterQuery.trim() ? '选择筛选结果' : '选择当前目录'}</label>
-        <ul className="sftp-entry-list">{visibleEntries.map((entry) => <li key={entry.path} className={`sftp-entry ${selectedPaths.has(entry.path) ? 'is-selected' : ''}`}>
+        <ul className="sftp-entry-list">{visibleEntries.map((entry) => <li key={entry.path} className={`sftp-entry ${selectedPaths.has(entry.path) ? 'is-selected' : ''}`} onContextMenu={(event) => fileContextMenu.open(event, entry)}>
           <input type="checkbox" aria-label={`选择 ${entry.name}`} checked={selectedPaths.has(entry.path)} onChange={(event) => toggleSelected(entry.path, event.target.checked)} />
           <button type="button" className="sftp-entry-name" aria-label={entry.type === 'directory' ? `打开目录 ${entry.name}` : entry.name} onClick={() => navigate(entry)} disabled={entry.type !== 'directory'}><span aria-hidden="true">{entry.type === 'directory' ? '▸' : '·'}</span>{entry.name}</button>
           <span className="sftp-entry-meta">{entry.type === 'directory' ? '目录' : `${entry.size} B`}</span>
@@ -284,6 +301,7 @@ export const SftpPanel = ({
           {onDelete && <button type="button" className="icon-button" aria-label={`删除 ${entry.name}`} title={`删除 ${entry.name}`} onClick={() => openDelete([entry.path])} disabled={busy}>×</button>}
         </li>)}</ul>
       </>}
+      {fileContextMenu.state && <ContextMenu state={fileContextMenu.state} items={fileContextItems} onClose={fileContextMenu.close} ariaLabel={`${fileContextEntry?.name ?? '远程文件'} 菜单`} />}
       {dialog?.type === 'create-directory' && <Dialog title="新建目录" onClose={() => setDialog(null)} closeOnBackdrop={false} initialFocusSelector="#sftp-new-directory-name"><label htmlFor="sftp-new-directory-name">目录名称</label><input id="sftp-new-directory-name" aria-label="新目录名称" value={directoryName} onChange={(event) => setDirectoryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createDirectory(); }} /><p className="dialog-copy">将在 {path} 下创建目录。</p><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-primary" type="button" disabled={busy} onClick={() => void createDirectory()}>创建目录</button></div></Dialog>}
       {dialog?.type === 'rename' && <Dialog title={`重命名 ${dialog.entry.name}`} onClose={() => setDialog(null)} closeOnBackdrop={false} initialFocusSelector="#sftp-rename-name"><label htmlFor="sftp-rename-name">新名称</label><input id="sftp-rename-name" aria-label="新名称" value={renameName} onChange={(event) => setRenameName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void renameEntry(); }} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-primary" type="button" disabled={busy} onClick={() => void renameEntry()}>确认重命名</button></div></Dialog>}
       {dialog?.type === 'delete' && <Dialog title={dialog.paths.length === 1 ? '删除远程文件？' : `删除 ${dialog.paths.length} 个远程项目？`} onClose={() => setDialog(null)} closeOnBackdrop={false} initialFocusSelector="#sftp-delete-confirm"><p className="dialog-copy">{dialog.paths.join('、')}</p><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-primary" id="sftp-delete-confirm" type="button" disabled={busy} onClick={() => void confirmDelete()}>确认删除</button></div></Dialog>}

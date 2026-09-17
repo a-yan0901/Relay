@@ -155,6 +155,27 @@ describe('TerminalWorkspace', () => {
     expect(onSftpRequestConsumed).toHaveBeenCalledWith('request-1');
   });
 
+  it('offers terminal tab actions from the tab context menu', async () => {
+    const user = userEvent.setup();
+    const hosts = [host('host-1', 'Production'), host('host-2', 'Staging')];
+    const terminals: TerminalTabState[] = [
+      { terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null },
+      { terminalId: 'tab-2', hostId: 'host-2', state: 'connected', reconnectDelayMs: 0, errorMessage: null }
+    ];
+    const onActivate = vi.fn();
+    const onClose = vi.fn();
+    render(<TerminalWorkspace hosts={hosts} terminals={terminals} activeTerminalId="tab-1" onActivate={onActivate} onClose={onClose} />);
+
+    fireEvent.contextMenu(screen.getByRole('tab', { name: '切换 Staging · 1' }), { clientX: 220, clientY: 80 });
+    expect(screen.getByRole('menuitem', { name: '关闭标签' })).toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: '激活 Console' }));
+    expect(onActivate).toHaveBeenCalledWith('tab-2');
+
+    fireEvent.contextMenu(screen.getByRole('tab', { name: '切换 Staging · 1' }), { clientX: 220, clientY: 80 });
+    await user.click(screen.getByRole('menuitem', { name: '关闭其他标签' }));
+    expect(onClose).toHaveBeenCalledWith('tab-1');
+  });
+
   it('offers Broadcast only when at least two sessions are writable', async () => {
     const user = userEvent.setup();
     const onOpenBroadcast = vi.fn();

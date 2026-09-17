@@ -1311,6 +1311,7 @@ export const App = ({ runtime }: AppProps) => {
             sftpMutationsEnabled={capabilities.supports('sftp.entry-mutations')}
             onUploadSftp={capabilities.supports('sftp.transfer') && capabilities.supports('sftp.local-files') ? handleUploadSftp : undefined}
             onDownloadSftp={capabilities.supports('sftp.transfer') ? handleDownloadSftp : undefined}
+            onCopyText={handleCopyText}
             transferJobs={capabilities.supports('sftp.transfer') ? transferJobs : []}
             onCancelTransfer={capabilities.supports('sftp.transfer') ? handleCancelTransfer : undefined}
             onPauseTransfer={capabilities.supports('sftp.transfer') ? handlePauseTransfer : undefined}

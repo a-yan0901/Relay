@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,6 +44,33 @@ describe('SftpPanel', () => {
 
     await user.clear(filter);
     expect(screen.getByText('release.txt')).toBeInTheDocument();
+  });
+
+  it('opens file and directory actions from the current entry context menu', async () => {
+    const user = userEvent.setup();
+    const onList = vi.fn(async () => [
+      { name: 'apps', path: '/apps', type: 'directory' as const, size: 0, mode: 0o755, modifiedAt: null },
+      { name: 'app.log', path: '/app.log', type: 'file' as const, size: 12, mode: 0o644, modifiedAt: null }
+    ]);
+    const onCopyText = vi.fn();
+    const onDownload = vi.fn(async () => {});
+    const onRename = vi.fn(async () => {});
+    const onDelete = vi.fn(async () => {});
+    render(<SftpPanel hostId="host-1" onList={onList} onCopyText={onCopyText} onDownload={onDownload} onRename={onRename} onDelete={onDelete} />);
+
+    await screen.findByText('app.log');
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'app.log' }), { clientX: 180, clientY: 140 });
+    expect(screen.getByRole('menuitem', { name: '下载' })).toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: '复制远程路径' }));
+    expect(onCopyText).toHaveBeenCalledWith('/app.log');
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'app.log' }), { clientX: 180, clientY: 140 });
+    await user.click(screen.getByRole('menuitem', { name: '下载' }));
+    expect(onDownload).toHaveBeenCalledWith('/app.log', 'app.log');
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: '打开目录 apps' }), { clientX: 180, clientY: 140 });
+    await user.click(screen.getByRole('menuitem', { name: '进入目录' }));
+    expect(onList).toHaveBeenLastCalledWith('host-1', '/apps');
   });
 
   it('wires upload and download actions to the active remote path', async () => {
