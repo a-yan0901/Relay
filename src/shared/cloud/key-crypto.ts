@@ -152,7 +152,11 @@ export const unwrapCloudDataKey = async (
   const privateKey = await importPrivateKey(recipientPrivateKey);
   const ephemeralPublicKey = await importPublicKey(wrapper.ephemeralPublicKey);
   const wrappingKey = await deriveWrappingKey(privateKey, ephemeralPublicKey);
-  const encrypted = new Uint8Array([...fromBase64Url(wrapper.ciphertext), ...fromBase64Url(wrapper.authTag)]);
+  const ciphertext = fromBase64Url(wrapper.ciphertext);
+  const authTag = fromBase64Url(wrapper.authTag);
+  const encrypted = new Uint8Array(ciphertext.byteLength + authTag.byteLength);
+  encrypted.set(ciphertext);
+  encrypted.set(authTag, ciphertext.byteLength);
   const plaintext = new Uint8Array(await globalThis.crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: toArrayBuffer(fromBase64Url(wrapper.nonce)), additionalData: aadBytes(aad), tagLength: TAG_BYTES * 8 },
     wrappingKey,

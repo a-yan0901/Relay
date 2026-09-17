@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const LIVE_PROTOCOL_VERSION = 1 as const;
 export const LIVE_MAX_FRAME_BYTES = 64 * 1024;
 export const LIVE_MAX_PAYLOAD_BYTES = 48 * 1024;
+export const LIVE_MAX_SCREEN_BYTES = 24 * 1024;
 export const LIVE_MAX_TERMINALS = 32;
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -14,6 +15,7 @@ export interface LiveTerminalDescriptor {
   status: 'connected' | 'needs-reopen' | 'closed';
   columns: number;
   rows: number;
+  screen?: string;
 }
 
 export type LiveFrame =
@@ -70,7 +72,8 @@ const terminalDescriptorSchema = z.object({
   title: z.string().min(1).max(256),
   status: z.enum(['connected', 'needs-reopen', 'closed']),
   columns: z.number().int().min(1).max(1_000),
-  rows: z.number().int().min(1).max(1_000)
+  rows: z.number().int().min(1).max(1_000),
+  screen: z.string().max(LIVE_MAX_SCREEN_BYTES).optional()
 }).strict();
 
 const commonSchema = {
@@ -107,7 +110,7 @@ const liveFrameSchema = z.discriminatedUnion('type', [
     type: z.literal('input-ack'),
     sessionId: idSchema,
     inputId: idSchema,
-    inputSequence: sequenceSchema.min(1),
+    inputSequence: sequenceSchema,
     outcome: z.enum(['accepted', 'duplicate', 'unknown'])
   }).strict(),
   z.object({

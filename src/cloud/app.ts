@@ -129,10 +129,15 @@ const parseIdempotencyKey = (request: FastifyRequest): string => {
   return key;
 };
 
-const asRawBuffer = (data: RawData): Uint8Array => {
-  if (Buffer.isBuffer(data)) return data;
-  if (Array.isArray(data)) return Buffer.concat(data.map((chunk) => Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-  return Buffer.from(data);
+const asRawBuffer = (data: RawData, maxBytes: number): Uint8Array | null => {
+  if (Buffer.isBuffer(data)) return data.byteLength <= maxBytes ? data : null;
+  if (Array.isArray(data)) {
+    const chunks = data.map((chunk) => Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+    return total <= maxBytes ? Buffer.concat(chunks, total) : null;
+  }
+  if (typeof data === 'string') return Buffer.byteLength(data, 'utf8') <= maxBytes ? Buffer.from(data) : null;
+  return data.byteLength <= maxBytes ? Buffer.from(data) : null;
 };
 
 const relayPeer = (socket: WebSocket): RelayPeer => ({
@@ -278,6 +283,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
     const parsed = deviceParamsSchema.safeParse(request.params);
     if (!parsed.success) throw new AppError('ACCOUNT_DEVICE_REVOKED');
     await dependencies.auth.revokeDevice(token, parsed.data.deviceId);
+    relay.closeDevice(parsed.data.deviceId);
     reply.code(204).send();
   });
 
@@ -473,13 +479,15 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
     socket.on('close', stopHeartbeat);
     socket.on('error', stopHeartbeat);
     socket.on('message', (data: RawData) => {
-      const frame = asRawBuffer(data);
-      if (role === 'owner') {
-        if (relay.forwardFromOwner(workspaceId, frame) === 0 && frame.byteLength > dependencies.config.relay.maxFrameBytes) {
-          socket.close(1009, 'frame too large');
-        }
-      } else if (!relay.forwardFromViewer(workspaceId, session.deviceId, frame) && frame.byteLength > dependencies.config.relay.maxFrameBytes) {
+      const frame = asRawBuffer(data, dependencies.config.relay.maxFrameBytes);
+      if (!frame) {
         socket.close(1009, 'frame too large');
+        return;
+      }
+      if (role === 'owner') {
+        relay.forwardFromOwner(workspaceId, frame);
+      } else {
+        relay.forwardFromViewer(workspaceId, session.deviceId, frame);
       }
     });
   };
