@@ -6,8 +6,8 @@ import type { ClipboardPort, FileTransport } from '../../shared/core/ports';
 import { sftpParentPath } from '../../shared/core/sftp-path';
 import type { TerminalSessionSnapshot } from '../hooks/use-terminal-session';
 import { DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
-import { terminalStatusDotClass, terminalStatusLabels, TerminalToolbar } from './TerminalToolbar';
-import { TerminalPanel, type TerminalPanelToolbarState } from './TerminalPanel';
+import { terminalStatusDotClass } from './TerminalToolbar';
+import { TerminalPanel } from './TerminalPanel';
 import { SftpPanel } from './SftpPanel';
 import { TransferQueue } from './TransferQueue';
 import { SftpWorkspace } from './SftpWorkspace';
@@ -149,7 +149,6 @@ export const TerminalWorkspace = ({
   const [focusedPane, setFocusedPane] = useState<PaneKey>('primary');
   const [splitRatio, setSplitRatio] = useState(() => clampSplitRatio(workspaceLayout?.ratio ?? 0.5));
   const [isDraggingDivider, setIsDraggingDivider] = useState(false);
-  const [toolbarByTerminalId, setToolbarByTerminalId] = useState<Record<string, TerminalPanelToolbarState | null>>({});
   const [attentionByTerminalId, setAttentionByTerminalId] = useState<Record<string, TerminalAttention>>({});
   const [filePanelOpen, setFilePanelOpen] = useState(false);
   const [sftpPathByHostId, setSftpPathByHostId] = useState<Record<string, string>>({});
@@ -185,10 +184,6 @@ export const TerminalWorkspace = ({
       setSplitLayout(splitLayoutFromWorkspace(workspaceLayout, workspaceTerminalIds));
     }
   }, [allowMultiPane, paneLimit, terminals, workspaceLayout?.mode, workspaceLayout?.ratio, workspaceLayout?.paneTabIds, workspaceTabIdByTerminalId]);
-
-  const handleToolbarChange = useCallback((terminalId: string, toolbar: TerminalPanelToolbarState | null): void => {
-    setToolbarByTerminalId((current) => current[terminalId] === toolbar ? current : { ...current, [terminalId]: toolbar });
-  }, []);
 
   const clearTerminalAttention = useCallback((terminalId: string): void => {
     setAttentionByTerminalId((current) => {
@@ -261,7 +256,6 @@ export const TerminalWorkspace = ({
       : secondaryCandidate
     : null;
   const visibleGridTerminalIds = gridTerminalIds.filter((terminalId) => terminalById.has(terminalId)).slice(0, paneLimit);
-  const activeToolbar = activeTerminalId ? toolbarByTerminalId[activeTerminalId] : null;
   const activeHostId = activeTerminalId ? terminalById.get(activeTerminalId)?.hostId ?? null : null;
   const hostAliases = useMemo(() => Object.fromEntries(hosts.map((host) => [host.id, host.name])), [hosts]);
   const writableHostCount = new Set(terminals
@@ -475,7 +469,6 @@ export const TerminalWorkspace = ({
                   <button className="terminal-tab-trigger" type="button" role="tab" aria-selected={selected} aria-label={`切换 ${label}`} onClick={() => activateTerminal(terminal.terminalId)}>
                     <span className={`status-dot ${terminalStatusDotClass(terminal.state)}`} aria-hidden="true" />
                     <span className="terminal-tab-meta"><strong>{label}</strong><small>{host?.address ?? 'Server 已不存在'}</small></span>
-                    <span className="terminal-tab-status">{terminal.recoveryStatus === 'missing-host' ? 'Server 已不存在' : terminalStatusLabels[terminal.state]}</span>
                     {attentionByTerminalId[terminal.terminalId] && <span className={`terminal-tab-attention terminal-tab-attention-${attentionByTerminalId[terminal.terminalId]}`} aria-label={attentionByTerminalId[terminal.terminalId] === 'error' ? '未读错误' : '未读完成'} title={attentionByTerminalId[terminal.terminalId] === 'error' ? '未读错误' : '未读完成'}>{attentionByTerminalId[terminal.terminalId] === 'error' ? '!' : '✓'}</span>}
                   </button>
                   <button className="terminal-tab-close" type="button" aria-label={`关闭 ${label}`} aria-keyshortcuts="Control+W Meta+W" title={`关闭 ${label}`} onClick={(event) => { event.stopPropagation(); onClose(terminal.terminalId); }}>×</button>
@@ -484,21 +477,6 @@ export const TerminalWorkspace = ({
             })}
           </div>
           <div className="terminal-topbar-actions">
-            {activeToolbar && activeTerminalId && <TerminalToolbar
-              state={activeToolbar.state}
-              reconnectDelayMs={activeToolbar.reconnectDelayMs}
-              networkOffline={activeToolbar.networkOffline}
-              diagnostic={activeToolbar.diagnostic}
-              onReconnect={activeToolbar.onReconnect}
-              onClose={() => onClose(activeTerminalId)}
-              onClear={activeToolbar.onClear}
-              onCopy={activeToolbar.onCopy}
-              onPaste={activeToolbar.onPaste}
-              onSearch={activeToolbar.onSearch}
-              onFullscreen={activeToolbar.onFullscreen}
-              searchActive={activeToolbar.searchActive}
-              showStatus
-            />}
             {onConnectHost && (
               <div className="terminal-host-picker-anchor">
                 <button id="terminal-new-terminal" className="terminal-topbar-button terminal-new-button" type="button" aria-label="新建终端" aria-keyshortcuts="Control+N Meta+N" aria-expanded={hostPickerOpen} onClick={openHostPicker}>＋<span>新建</span></button>
@@ -571,7 +549,7 @@ export const TerminalWorkspace = ({
                     </label>
                   </div>
                 )}
-                {host ? <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} recoveryStatus={terminal.recoveryStatus} preferences={preferences} clipboard={clipboard} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onStatusChange={(snapshot) => handleTerminalStatus(terminal.terminalId, snapshot)} onToolbarChange={handleToolbarChange} /> : paneVisible && <div className="terminal-recovery-pane" role="status"><strong>Server 已不存在</strong><p>这个工作区标签关联的 Server 已不存在。</p><button className="button button-ghost button-small" type="button" onClick={() => onClose(terminal.terminalId)}>关闭标签</button></div>}
+                {host ? <TerminalPanel key={terminal.terminalId} terminalId={terminal.terminalId} host={host} active={workspaceVisible && paneVisible} recoveryStatus={terminal.recoveryStatus} preferences={preferences} clipboard={clipboard} onClose={() => onClose(terminal.terminalId)} onEditHost={onEditHost} onStatusChange={(snapshot) => handleTerminalStatus(terminal.terminalId, snapshot)} /> : paneVisible && <div className="terminal-recovery-pane" role="status"><strong>Server 已不存在</strong><p>这个工作区标签关联的 Server 已不存在。</p><button className="button button-ghost button-small" type="button" onClick={() => onClose(terminal.terminalId)}>关闭标签</button></div>}
               </div>
             );
           })}

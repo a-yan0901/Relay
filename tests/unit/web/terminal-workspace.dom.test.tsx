@@ -120,7 +120,7 @@ describe('TerminalWorkspace', () => {
 
     expect(screen.getByRole('tab', { name: '切换 Production · 1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '切换 Production · 2' })).toBeInTheDocument();
-    expect(screen.getAllByText('重连中')).toHaveLength(1);
+    expect(screen.queryByText('重连中')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '新建终端' }));
     expect(screen.getByRole('dialog', { name: '选择 Server' })).toBeInTheDocument();
@@ -207,7 +207,7 @@ describe('TerminalWorkspace', () => {
     expect(screen.queryByRole('region', { name: 'SFTP 工作区' })).not.toBeInTheDocument();
   });
 
-  it('embeds the global header and session tools into the single terminal bar', async () => {
+  it('embeds the global header while keeping session actions out of the terminal bar', async () => {
     const user = userEvent.setup();
     const onLock = vi.fn();
     const onSettings = vi.fn();
@@ -235,13 +235,11 @@ describe('TerminalWorkspace', () => {
     expect(screen.getByText('Relay')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '偏好设置' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: '新建终端' })).toHaveLength(1);
-    expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '清屏' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '全屏' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重新连接' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '关闭终端' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '全屏' })).toHaveAttribute('title', '全屏');
-    expect(screen.getByRole('button', { name: '关闭终端' })).toHaveAttribute('title', '关闭终端');
+    expect(screen.queryByRole('button', { name: '搜索' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '清屏' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '全屏' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '重新连接' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '关闭终端' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '锁定' }));
     await user.click(screen.getByRole('button', { name: '偏好设置' }));
@@ -373,7 +371,7 @@ describe('TerminalWorkspace', () => {
       />
     );
 
-    expect(screen.getByRole('tab', { name: '切换 Production · 1' })).toHaveTextContent('Server 已不存在');
+    expect(screen.getByRole('tab', { name: '切换 Production · 1' })).toHaveTextContent('Production · 1');
     expect(screen.getByText('这个工作区标签关联的 Server 已不存在。')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '关闭 Production · 1' }));
     expect(onClose).toHaveBeenCalledWith('missing-terminal');

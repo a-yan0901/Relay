@@ -44,6 +44,10 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock('../../../src/web/api', () => apiMocks);
 
+vi.mock('../../../src/web/components/TerminalPanel', () => ({
+  TerminalPanel: () => <section data-testid="terminal-panel" />
+}));
+
 import { App } from '../../../src/web/App';
 import { createWebAdapters } from '../../../src/web/platform/web-adapters';
 
@@ -126,6 +130,10 @@ describe('App boot recovery', () => {
 
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
+    expect(screen.getByText('MANAGEMENT')).toBeInTheDocument();
+    expect(screen.getByText('最近活动')).toBeInTheDocument();
+    expect(screen.getByText('身份')).toBeInTheDocument();
+    expect(screen.getByText('片段')).toBeInTheDocument();
   });
 
   it('requests notification permission only after an explicit user action', async () => {
@@ -221,8 +229,27 @@ describe('App boot recovery', () => {
     const navigation = screen.getByRole('navigation', { name: '主导航' });
     expect(within(navigation).getByRole('button', { name: 'Server' })).toHaveAttribute('aria-current', 'page');
     expect(within(navigation).getByRole('button', { name: '工作区' })).toBeInTheDocument();
-    expect(within(navigation).getByRole('button', { name: '活动' })).toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: '活动' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /终端 \d+/u })).not.toBeInTheDocument();
+  });
+
+  it('restores the Console navigation entry after opening a terminal', async () => {
+    const user = userEvent.setup();
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([{
+      id: 'host-1', name: 'Production API', address: '10.0.0.8', port: 22, username: 'deploy', authType: 'password',
+      groupId: null, tags: [], isFavorite: false, hostKeyAlgorithm: null, hostKeyFingerprint: null,
+      lastConnectedAt: null, createdAt: '2026-09-14T00:00:00.000Z', updatedAt: '2026-09-14T00:00:00.000Z'
+    }]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    renderApp();
+
+    await user.click(await screen.findByRole('button', { name: '进入 Console：Production API' }));
+    await user.click(await screen.findByRole('button', { name: '← Server 列表' }));
+    expect(await screen.findByRole('button', { name: 'Console' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Console' }));
+    expect(await screen.findByRole('button', { name: '← Server 列表' })).toBeInTheDocument();
   });
 
   it('moves focus into overlays and closes them with Escape', async () => {
@@ -288,9 +315,11 @@ describe('App boot recovery', () => {
     renderApp();
 
     await screen.findByRole('heading', { name: 'Server', exact: true });
-    await user.click(screen.getByRole('button', { name: '活动' }));
+    await user.click(screen.getByRole('button', { name: '偏好设置' }));
+    await user.click(screen.getByRole('button', { name: '打开' }));
     await user.click(await screen.findByRole('button', { name: '查看结果' }));
-    await user.click(screen.getByRole('button', { name: '活动' }));
+    await user.click(screen.getByRole('button', { name: '偏好设置' }));
+    await user.click(screen.getByRole('button', { name: '打开' }));
 
     expect(await screen.findByRole('button', { name: '结果已过期，需要重新执行' })).toBeInTheDocument();
   });

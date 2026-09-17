@@ -106,25 +106,19 @@ const Brand = () => (
   </div>
 );
 
-const WorkspaceHeader = ({ destination, onLock, onServers, onQuickSwitcher, onSettings, onActivity, onIdentities, onSnippets, onWorkspaces, accountMenu, compact = false }: { destination: PrimaryDestination; onLock: () => void; onServers: () => void; onQuickSwitcher: () => void; onSettings: () => void; onActivity?: () => void; onIdentities?: () => void; onSnippets?: () => void; onWorkspaces?: () => void; accountMenu?: ReactNode; compact?: boolean }) => (
+const WorkspaceHeader = ({ destination, onLock, onServers, onConsole, onQuickSwitcher, onSettings, onWorkspaces, accountMenu, compact = false }: { destination: PrimaryDestination; onLock: () => void; onServers: () => void; onConsole?: () => void; onQuickSwitcher: () => void; onSettings: () => void; onWorkspaces?: () => void; accountMenu?: ReactNode; compact?: boolean }) => (
   <header className={`app-header ${compact ? 'app-header-embedded' : ''}`}>
     <div className="app-header-main">
       <Brand />
       {!compact && <nav className="primary-nav" aria-label="主导航">
         <button className={`primary-nav-item ${destination === 'servers' ? 'is-active' : ''}`} type="button" aria-current={destination === 'servers' ? 'page' : undefined} onClick={onServers}>Server</button>
+        {onConsole && <button className="primary-nav-item" type="button" onClick={onConsole}>Console</button>}
         {onWorkspaces && <button className={`primary-nav-item ${destination === 'workspaces' ? 'is-active' : ''}`} type="button" aria-current={destination === 'workspaces' ? 'page' : undefined} onClick={onWorkspaces}>工作区</button>}
-        {onActivity && <button className={`primary-nav-item ${destination === 'activity' ? 'is-active' : ''}`} type="button" aria-current={destination === 'activity' ? 'page' : undefined} onClick={onActivity}>活动</button>}
       </nav>}
     </div>
     <div className="app-header-actions">
       <button className="button button-ghost button-small quick-switcher-trigger" type="button" aria-label="快速切换" aria-keyshortcuts="Control+K Meta+K" onClick={onQuickSwitcher}><span aria-hidden="true">⌘K</span><span className="quick-switcher-trigger-label">快速切换</span></button>
-      <span className="secure-pill"><span className="status-dot status-dot-green" />Vault 已解锁</span>
-      <button className="button button-ghost button-small" type="button" onClick={onLock}>
-        <span aria-hidden="true">↥</span> 锁定
-      </button>
-      {onIdentities && <button className="button button-ghost button-small" type="button" onClick={onIdentities}>身份</button>}
-      {onSnippets && <button className="button button-ghost button-small" type="button" onClick={onSnippets}>片段</button>}
-      {compact && onActivity && <button className="button button-ghost button-small" type="button" onClick={onActivity}>活动</button>}
+      <button className="secure-pill secure-pill-action" type="button" aria-label="Vault 已解锁，点击锁定" title="锁定 Vault" onClick={onLock}><span className="status-dot status-dot-green" />Vault 已解锁</button>
       <button className="button button-ghost button-small" type="button" aria-label="偏好设置" title="偏好设置" onClick={onSettings}>⚙<span className="settings-label">偏好</span></button>
       {accountMenu ?? <span className="avatar" aria-label="本地用户">L</span>}
     </div>
@@ -138,9 +132,12 @@ interface PreferencesPanelProps {
   notifications?: NotificationPort;
   notificationPermission?: NotificationPermission;
   onRequestNotifications?: () => Promise<void>;
+  onOpenActivity?: () => void;
+  onOpenIdentities?: () => void;
+  onOpenSnippets?: () => void;
 }
 
-const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notificationPermission = 'denied', onRequestNotifications }: PreferencesPanelProps) => {
+const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notificationPermission = 'denied', onRequestNotifications, onOpenActivity, onOpenIdentities, onOpenSnippets }: PreferencesPanelProps) => {
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, true, onClose, '#theme-select');
 
@@ -174,6 +171,12 @@ const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notif
               ? <span className="preferences-system-status">浏览器未允许通知</span>
               : <button className="button button-ghost button-small" type="button" onClick={() => void onRequestNotifications?.()}>启用桌面通知</button>}
         </div>
+      </section>}
+      {(onOpenActivity || onOpenIdentities || onOpenSnippets) && <section className="preferences-system-section" aria-labelledby="preferences-management-title">
+        <p className="eyebrow" id="preferences-management-title">MANAGEMENT</p>
+        {onOpenActivity && <div className="preferences-system-row"><div><strong>最近活动</strong><span>查看连接与批量任务的安全摘要。</span></div><button className="button button-ghost button-small" type="button" onClick={onOpenActivity}>打开</button></div>}
+        {onOpenIdentities && <div className="preferences-system-row"><div><strong>身份</strong><span>管理可复用的 SSH 认证身份。</span></div><button className="button button-ghost button-small" type="button" onClick={onOpenIdentities}>管理</button></div>}
+        {onOpenSnippets && <div className="preferences-system-row"><div><strong>片段</strong><span>管理保存的命令片段。</span></div><button className="button button-ghost button-small" type="button" onClick={onOpenSnippets}>管理</button></div>}
       </section>}
       <ShortcutMap />
       <p className="preferences-note">偏好只保存在当前浏览器，不包含主密码、服务器密码或私钥。</p>
@@ -1201,11 +1204,9 @@ export const App = ({ runtime }: AppProps) => {
         destination={activityOpen ? 'activity' : workspaceSwitcherOpen ? 'workspaces' : 'servers'}
         onLock={() => void handleLock()}
         onServers={handleOpenServers}
+        onConsole={state.terminals.length > 0 ? () => setTerminalView(true) : undefined}
         onQuickSwitcher={handleOpenQuickSwitcher}
         onSettings={() => setPreferencesOpen(true)}
-        onActivity={capabilities.supports('audit.activity') ? handleOpenActivity : undefined}
-        onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined}
-        onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined}
         onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined}
         accountMenu={accountMenu}
       />}
@@ -1311,9 +1312,6 @@ export const App = ({ runtime }: AppProps) => {
               onServers={handleOpenServers}
               onQuickSwitcher={handleOpenQuickSwitcher}
               onSettings={() => setPreferencesOpen(true)}
-              onActivity={capabilities.supports('audit.activity') ? handleOpenActivity : undefined}
-              onIdentities={capabilities.supports('vault.identities') ? () => setIdentityOpen(true) : undefined}
-              onSnippets={capabilities.supports('automation.snippet-manager') ? handleOpenSnippetManager : undefined}
               onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined}
               accountMenu={accountMenu}
             />}
@@ -1328,7 +1326,11 @@ export const App = ({ runtime }: AppProps) => {
           </aside>
         </div>
       )}
-      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} notifications={notifications} notificationPermission={notificationPermission} onRequestNotifications={requestNotificationPermission} />}
+      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} notifications={notifications} notificationPermission={notificationPermission} onRequestNotifications={requestNotificationPermission}
+        onOpenActivity={capabilities.supports('audit.activity') ? () => { setPreferencesOpen(false); handleOpenActivity(); } : undefined}
+        onOpenIdentities={capabilities.supports('vault.identities') ? () => { setPreferencesOpen(false); setIdentityOpen(true); } : undefined}
+        onOpenSnippets={capabilities.supports('automation.snippet-manager') ? () => { setPreferencesOpen(false); handleOpenSnippetManager(); } : undefined}
+      />}
       {identityOpen && capabilities.supports('vault.identities') && <IdentityManager identities={identities} onCreate={handleCreateIdentity} onUpdate={handleUpdateIdentity} onDelete={async (id) => { if (window.confirm('确定删除这个身份吗？')) await handleDeleteIdentity(id); }} onClose={() => setIdentityOpen(false)} />}
       {snippetManagerOpen && capabilities.supports('automation.snippet-manager') && <SnippetManager snippets={snippets} onGet={(id) => runtime.snippets.get(id)} onCreate={handleCreateSnippet} onUpdate={handleUpdateSnippet} onDelete={handleDeleteSnippet} onClose={() => setSnippetManagerOpen(false)} />}
       {snippetPaletteOpen && capabilities.supports('automation.snippets') && <SnippetPalette snippets={snippets} onSelect={handleSelectSnippetFromPalette} onClose={() => setSnippetPaletteOpen(false)} />}
@@ -1357,7 +1359,7 @@ export const App = ({ runtime }: AppProps) => {
         onConfirm={handleStartCommandRun}
       />}
       {commandRun && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal" role="dialog" aria-modal="true" aria-labelledby="command-run-result-title"><CommandRunResults run={commandRun} hosts={state.hosts} onCancel={handleCancelCommandRun} onOpenHost={handleOpenHostFromResult} /><button className="button button-ghost" id="command-run-result-title" type="button" onClick={() => setCommandRun(null)}>关闭结果</button></section></div>}
-      {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} hosts={state.hosts} filter={activityFilter} loading={activityLoading} hasMore={activityNextCursor !== undefined} diagnostics={operationDiagnostics} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} onApplyFilter={handleApplyActivityFilter} onLoadMore={handleLoadMoreActivity} /><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setActivityOpen(false)}>关闭</button></div></section></div>}
+      {activityOpen && <div className="modal-backdrop" role="presentation"><section className="command-run-result-modal activity-modal" role="dialog" aria-modal="true" aria-label="最近活动"><ActivityPanel events={activityEvents} hosts={state.hosts} filter={activityFilter} loading={activityLoading} hasMore={activityNextCursor !== undefined} diagnostics={operationDiagnostics} expiredRunIds={expiredRunIds} onOpenRun={handleOpenRunFromActivity} onApplyFilter={handleApplyActivityFilter} onLoadMore={handleLoadMoreActivity} onClose={() => setActivityOpen(false)} /></section></div>}
       {syncCenterOpen && accountSession && runtime.sync && capabilities.supports('sync.encrypted') && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked={false} syncPort={runtime.sync} devicesPort={runtime.devices} clipboard={runtime.platformServices?.clipboard} fileSave={runtime.platformServices?.fileSave} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
       {workspaceSettingsMode && <WorkspaceSettings
         mode={workspaceSettingsMode}

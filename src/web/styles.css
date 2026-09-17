@@ -181,6 +181,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .quick-switcher-trigger > span:first-child { color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 
+.secure-pill-action { cursor: pointer; }
+
+.secure-pill-action:hover, .secure-pill-action:focus-visible { border-color: var(--border-strong); color: var(--text); }
+
 .secure-pill {
   background: rgba(82, 211, 154, 0.08);
   border: 1px solid rgba(82, 211, 154, 0.16);
@@ -1098,9 +1102,9 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 
 .terminal-back-button:hover { background: rgba(93, 168, 255, 0.08); color: var(--text); }
 
-.terminal-topbar .terminal-tabs { background: transparent; border-bottom: 0; flex: 1; min-height: 38px; min-width: 0; overflow-x: auto; padding: 0 4px; }
+.terminal-topbar .terminal-tabs { background: transparent; border-bottom: 0; flex: 1 1 auto; min-height: 38px; min-width: 0; overflow-x: auto; padding: 0 4px; }
 
-.terminal-tab { max-width: 220px; min-width: 148px; }
+.terminal-tab { flex: 1 0 230px; max-width: 360px; min-width: 210px; }
 
 .terminal-tab-trigger { gap: 7px; padding: 0 5px 0 10px; }
 
@@ -1110,21 +1114,9 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 
 .terminal-tab-meta small { font-size: 8px; }
 
-.terminal-tab-status { font-size: 8px; }
-
 .terminal-tab-close { font-size: 14px; margin-right: 4px; min-height: 24px; min-width: 24px; }
 
 .terminal-topbar-actions { align-items: center; display: flex; flex: 0 0 auto; gap: 3px; padding: 0 6px 0 4px; white-space: nowrap; }
-
-.terminal-topbar .terminal-toolbar { gap: 0; }
-
-.terminal-topbar .terminal-status { display: none; }
-
-.terminal-topbar .terminal-toolbar-actions { gap: 2px; }
-
-.terminal-topbar .toolbar-button { min-height: 28px; min-width: 28px; padding: 0 6px; }
-
-.terminal-topbar .toolbar-button span { display: none; }
 
 .terminal-topbar-button { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--faint); display: inline-flex; font-size: 12px; gap: 4px; justify-content: center; min-height: 28px; min-width: 28px; padding: 0 6px; }
 

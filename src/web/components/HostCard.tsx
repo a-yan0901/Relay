@@ -45,7 +45,7 @@ export const HostCard = ({ host, onConnect, onFavoriteToggle, onEdit, onDelete, 
       {onEdit && <button className="card-action" type="button" aria-label={`编辑 ${host.name}`} onClick={() => onEdit(host)}><span aria-hidden="true">✎</span> 编辑</button>}
       {onClearHostKey && host.hostKeyFingerprint && <button className="card-action" type="button" aria-label={`清除 Host Key 信任 ${host.name}`} onClick={() => onClearHostKey(host)}><span aria-hidden="true">⌫</span> 清除信任</button>}
       {onDelete && <button className="card-action card-action-danger" type="button" aria-label={`删除 ${host.name}`} onClick={() => onDelete(host)}><span aria-hidden="true">×</span> 删除</button>}
-      <button className="card-action card-action-connect" type="button" aria-label={`连接 ${host.name}`} onClick={() => onConnect(host)}><span aria-hidden="true">→</span> 连接</button>
+      <button className="card-action card-action-connect" type="button" aria-label={`进入 Console：${host.name}`} onClick={() => onConnect(host)}><span aria-hidden="true">→</span> 进入 Console</button>
     </div>
   </article>
 );

@@ -19,6 +19,7 @@ export interface ActivityPanelProps {
   hasMore?: boolean;
   onApplyFilter?: (filter: ActivityFilter) => void;
   onLoadMore?: () => void;
+  onClose?: () => void;
 }
 
 const DEFAULT_ACTIVITY_FILTER: ActivityFilter = { limit: 50 };
@@ -94,7 +95,8 @@ export const ActivityPanel = ({
   loading = false,
   hasMore = false,
   onApplyFilter,
-  onLoadMore
+  onLoadMore,
+  onClose
 }: ActivityPanelProps) => {
   const [draft, setDraft] = useState<ActivityDraft>(() => draftFromFilter(filter));
   const diagnosticByOperationId = new Map(diagnostics.map((diagnostic) => [diagnostic.operationId, diagnostic]));
@@ -121,7 +123,7 @@ export const ActivityPanel = ({
 
   return (
     <section className="activity-panel" aria-label="最近活动" aria-busy={loading}>
-      <div className="form-heading"><div><p className="eyebrow">ACTIVITY</p><h2>最近活动</h2></div></div>
+      <div className="form-heading"><div><p className="eyebrow">ACTIVITY</p><h2>最近活动</h2></div>{onClose && <button className="icon-button" type="button" aria-label="关闭最近活动" title="关闭最近活动" onClick={onClose}>×</button>}</div>
       <div className="activity-filters" aria-label="活动筛选">
         <label>类型<input aria-label="筛选活动类型" value={draft.eventType} onChange={(event) => updateDraft('eventType', event.target.value)} placeholder="例如 command_run_summary" /></label>
         <label>状态<select aria-label="筛选活动状态" value={draft.status} onChange={(event) => updateDraft('status', event.target.value as ActivityStatus | '')}><option value="">全部状态</option>{(Object.keys(activityStatusLabels) as ActivityStatus[]).map((status) => <option value={status} key={status}>{activityStatusLabels[status]}</option>)}</select></label>
