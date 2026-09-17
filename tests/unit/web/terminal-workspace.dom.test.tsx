@@ -202,13 +202,24 @@ describe('TerminalWorkspace', () => {
     await user.click(screen.getByRole('button', { name: '远程文件' }));
     expect(await screen.findByRole('region', { name: 'SFTP 工作区' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '终端标签工作区' }).parentElement).toHaveClass('is-sftp-fullscreen');
-    expect(screen.getByRole('region', { name: '终端标签工作区' }).querySelector('.terminal-layout')).toHaveAttribute('hidden');
+    const terminalWorkspace = screen.getByRole('region', { name: '终端标签工作区' });
+    const terminalLayout = terminalWorkspace.querySelector<HTMLElement>('.terminal-layout');
+    const terminalTabs = terminalWorkspace.querySelector<HTMLElement>('.terminal-tabs');
+    const terminalActions = terminalWorkspace.querySelector<HTMLElement>('.terminal-topbar-actions');
+    expect(terminalLayout).toHaveAttribute('hidden');
+    expect(terminalLayout?.style.display).toBe('none');
+    expect(terminalTabs?.style.display).toBe('none');
+    expect(terminalActions?.style.display).toBe('none');
     expect(screen.getByRole('heading', { name: '本地文件' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '传输中心' })).toHaveTextContent('暂无文件传输');
     await user.click(screen.getByRole('button', { name: '返回终端' }));
     expect(screen.queryByRole('region', { name: 'SFTP 工作区' })).not.toBeInTheDocument();
-    expect(screen.getByRole('region', { name: '终端标签工作区' }).parentElement).not.toHaveClass('is-sftp-fullscreen');
-    expect(screen.getByRole('region', { name: '终端标签工作区' }).querySelector('.terminal-layout')).not.toHaveAttribute('hidden');
+    const restoredTerminalWorkspace = screen.getByRole('region', { name: '终端标签工作区' });
+    expect(restoredTerminalWorkspace.parentElement).not.toHaveClass('is-sftp-fullscreen');
+    expect(restoredTerminalWorkspace.querySelector('.terminal-layout')).not.toHaveAttribute('hidden');
+    expect(restoredTerminalWorkspace.querySelector<HTMLElement>('.terminal-layout')?.style.display).toBe('');
+    expect(restoredTerminalWorkspace.querySelector<HTMLElement>('.terminal-tabs')?.style.display).toBe('');
+    expect(restoredTerminalWorkspace.querySelector<HTMLElement>('.terminal-topbar-actions')?.style.display).toBe('');
   });
 
   it('embeds the global header while keeping session actions out of the terminal bar', async () => {
