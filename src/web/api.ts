@@ -2,6 +2,7 @@ import { AppError, isAppErrorCode } from '@shared/errors';
 import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from '@shared/core/account-sync';
 import type { AccountSession, AccountDeletionState, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, Snippet, SnippetMetadata, SyncConflictExport, SyncDeletionState, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
 import { parseSyncConflictExport } from '@shared/core/sync-conflict-export';
+import type { TerminalProfile } from '@shared/terminal-appearance';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
 import type { VaultRecoveryInput } from '@shared/core/ports';
@@ -878,3 +879,10 @@ export const listAuditEvents = (filter: ActivityFilter = {}): Promise<AuditEvent
   const suffix = params.toString();
   return request<AuditEventsResponse>(`/api/audit${suffix ? `?${suffix}` : ''}`);
 };
+
+export interface TerminalProfilesResponse { profiles: TerminalProfile[]; defaultProfile: TerminalProfile; }
+
+export const listTerminalProfiles = (): Promise<TerminalProfilesResponse> => request<TerminalProfilesResponse>('/api/terminal-profiles');
+export const createTerminalProfile = (input: unknown): Promise<TerminalProfile> => request<TerminalProfile>('/api/terminal-profiles', { method: 'POST', body: JSON.stringify(input) });
+export const setDefaultTerminalProfile = (profileId: string): Promise<TerminalProfile> => request<TerminalProfile>('/api/terminal-profiles/default', { method: 'PUT', body: JSON.stringify({ profileId }) });
+export const deleteTerminalProfile = (profileId: string): Promise<void> => request<void>('/api/terminal-profiles/' + encodeURIComponent(profileId), { method: 'DELETE', acceptedStatuses: [204] });

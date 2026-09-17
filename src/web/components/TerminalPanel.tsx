@@ -7,6 +7,7 @@ import { Terminal } from '@xterm/xterm';
 
 import { AppError } from '@shared/errors';
 import type { OperationDiagnostic } from '@shared/core/models';
+import type { TerminalProfile } from '@shared/terminal-appearance';
 import type { ClipboardPort } from '@shared/core/ports';
 import type { TerminalCredentialRequiredEvent, TerminalStatus } from '@shared/protocol';
 import type { HostCredentialInput } from '@shared/validation';
@@ -80,10 +81,11 @@ export interface TerminalPanelProps {
   onNewTerminal?: () => void;
   clipboard?: ClipboardPort;
   preferences?: UiPreferences;
+  terminalProfile?: TerminalProfile;
   recoveryStatus?: WorkspaceRestoreStatus;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, onOpenSftp, onNewTerminal, clipboard, preferences = DEFAULT_PREFERENCES, recoveryStatus }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, onOpenSftp, onNewTerminal, clipboard, preferences = DEFAULT_PREFERENCES, terminalProfile, recoveryStatus }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
@@ -129,14 +131,16 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
 
   useEffect(() => {
     if (!mountRef.current || terminalRef.current) return;
+    const appearance = terminalProfile?.appearance;
     const terminal = new Terminal({
-      cursorBlink: true,
-      fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-      fontSize: preferences.fontSize,
-      lineHeight: 1.25,
+      cursorBlink: appearance?.cursorBlink ?? true,
+      cursorStyle: appearance?.cursorStyle ?? 'bar',
+      fontFamily: appearance?.fontFamily ?? '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+      fontSize: appearance?.fontSize ?? preferences.fontSize,
+      lineHeight: appearance?.lineHeight ?? 1.25,
       rightClickSelectsWord: isTouchDevice(),
-      scrollback: TERMINAL_SCROLLBACK_LINES,
-      theme: getTerminalTheme(preferences.theme)
+      scrollback: appearance?.scrollback ?? TERMINAL_SCROLLBACK_LINES,
+      theme: appearance ? { ...appearance } : getTerminalTheme(preferences.theme)
     });
     const fitAddon = new FitAddon();
     const searchAddon = new SearchAddon();
@@ -210,10 +214,15 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
-    terminal.options.fontSize = preferences.fontSize;
-    terminal.options.theme = getTerminalTheme(preferences.theme);
+    const appearance = terminalProfile?.appearance;
+    terminal.options.fontSize = appearance?.fontSize ?? preferences.fontSize;
+    terminal.options.fontFamily = appearance?.fontFamily ?? '"SFMono-Regular", Consolas, "Liberation Mono", monospace';
+    terminal.options.lineHeight = appearance?.lineHeight ?? 1.25;
+    terminal.options.cursorBlink = appearance?.cursorBlink ?? true;
+    terminal.options.cursorStyle = appearance?.cursorStyle ?? 'bar';
+    terminal.options.theme = appearance ? { ...appearance } : getTerminalTheme(preferences.theme);
     fitRef.current?.();
-  }, [preferences]);
+  }, [preferences, terminalProfile]);
 
   useEffect(() => {
     if (!active) return;

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../../shared/errors.js';
-import { terminalAppearanceSchema, type TerminalAppearance, type TerminalProfile } from '../../shared/terminal-appearance.js';
+import { terminalAppearanceSchema, type TerminalProfile } from '../../shared/terminal-appearance.js';
 import {
   connectionProfileSettingsSchema,
   connectionProfileSettingsPatchSchema,

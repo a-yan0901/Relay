@@ -8,6 +8,7 @@ import type {
   FileTransport,
   GroupStore,
   HostStore,
+  TerminalProfileStore,
   IdentityStore,
   ImportExportPort,
   PlatformServices,
@@ -35,6 +36,7 @@ export interface CoreRuntime {
   /** Optional new-device recovery; Local-only runtimes do not need it. */
   vaultRecovery?: VaultRecoveryPort;
   hosts: HostStore;
+  terminalProfiles: TerminalProfileStore;
   connection: ConnectionProbe;
   identities: IdentityStore;
   groups: GroupStore;

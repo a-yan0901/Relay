@@ -1,3 +1,4 @@
+import type { TerminalProfile } from '../terminal-appearance.js';
 import type {
   AccountSession,
   ActivityFilter,
@@ -124,6 +125,14 @@ export interface SessionHandle {
   resize(cols: number, rows: number): void;
   close(): void;
   subscribe(listener: (event: SessionEvent) => void): () => void;
+}
+
+export interface TerminalProfileStore {
+  list(): Promise<readonly TerminalProfile[]>;
+  getDefault(): Promise<TerminalProfile>;
+  create(input: unknown): Promise<TerminalProfile>;
+  setDefault(profileId: string): Promise<TerminalProfile>;
+  delete(profileId: string): Promise<void>;
 }
 
 export interface HostStore {

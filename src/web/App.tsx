@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 
 import { AppError } from '@shared/errors';
+import type { TerminalProfile } from '@shared/terminal-appearance';
 import type { HostCreateInput, HostPatchInput, IdentityCreateInput, IdentityUpdateInput, SnippetInput } from '@shared/validation';
 
 import { HostForm } from './components/HostForm';
@@ -215,6 +216,8 @@ export const App = ({ runtime }: AppProps) => {
   const [hostFormOpen, setHostFormOpen] = useState(false);
   const [editingHost, setEditingHost] = useState<HostMetadataState | null>(null);
   const [identities, setIdentities] = useState<IdentityMetadata[]>([]);
+  const [terminalProfiles, setTerminalProfiles] = useState<readonly TerminalProfile[]>([]);
+  const [defaultTerminalProfile, setDefaultTerminalProfile] = useState<TerminalProfile | undefined>();
   const [terminalView, setTerminalView] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
@@ -367,10 +370,12 @@ export const App = ({ runtime }: AppProps) => {
     try {
       const negotiatedCapabilities = await runtime.negotiateCapabilities().catch(() => runtime.capabilities);
       setCapabilities(negotiatedCapabilities);
-      const [hosts, groups, loadedIdentities] = await Promise.all([
+      const [hosts, groups, loadedIdentities, loadedTerminalProfiles, loadedDefaultTerminalProfile] = await Promise.all([
         runtime.hosts.list(),
         runtime.groups.list(),
-        runtime.identities.list().catch(() => [] as readonly IdentityMetadata[])
+        runtime.identities.list().catch(() => [] as readonly IdentityMetadata[]),
+        runtime.terminalProfiles.list().catch(() => [] as readonly TerminalProfile[]),
+        runtime.terminalProfiles.getDefault().catch(() => undefined)
       ]);
       let workspace: WorkspaceState;
       try {
@@ -381,6 +386,8 @@ export const App = ({ runtime }: AppProps) => {
       dispatch({ type: 'hostsLoaded', hosts: [...hosts] });
       dispatch({ type: 'groupsLoaded', groups: [...groups].map((group) => ({ ...group })) });
       setIdentities([...loadedIdentities]);
+      setTerminalProfiles([...loadedTerminalProfiles]);
+      setDefaultTerminalProfile(loadedDefaultTerminalProfile);
       void runtime.workspace.listTemplates().then((templates) => setWorkspaceTemplates([...templates])).catch(() => setWorkspaceTemplates([]));
       if (negotiatedCapabilities.supports('sftp.transfer')) {
         void runtime.files.listTransfers().then((jobs) => setTransferJobs([...jobs])).catch(() => setTransferJobs([]));
@@ -1344,6 +1351,8 @@ export const App = ({ runtime }: AppProps) => {
             workspaceTabIdByTerminalId={state.workspaceTabIdByTerminalId}
             onLayoutChange={(layout) => dispatch({ type: 'workspaceLayoutChanged', layout })}
             preferences={preferences}
+            terminalProfiles={terminalProfiles}
+            defaultTerminalProfile={defaultTerminalProfile}
             visible={terminalView}
             onBackToHosts={() => setTerminalView(false)}
             workspaceHeader={<WorkspaceHeader
@@ -1363,7 +1372,7 @@ export const App = ({ runtime }: AppProps) => {
       {hostFormOpen && (
         <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeHostForm(); }}>
           <aside ref={drawerRef} className="drawer" role="dialog" aria-modal="true" aria-labelledby="host-form-title" onMouseDown={(event) => event.stopPropagation()}>
-            {editingHost ? <HostForm mode="edit" initialHost={editingHost} groups={state.groups} hosts={state.hosts} identities={identities} onEditSubmit={handleUpdateHost} onCancel={closeHostForm} /> : <HostForm groups={state.groups} hosts={state.hosts} identities={identities} onSubmit={handleCreateHost} onCancel={closeHostForm} />}
+            {editingHost ? <HostForm mode="edit" initialHost={editingHost} groups={state.groups} hosts={state.hosts} identities={identities} terminalProfiles={terminalProfiles} onEditSubmit={handleUpdateHost} onCancel={closeHostForm} /> : <HostForm groups={state.groups} hosts={state.hosts} identities={identities} terminalProfiles={terminalProfiles} onSubmit={handleCreateHost} onCancel={closeHostForm} />}
           </aside>
         </div>
       )}

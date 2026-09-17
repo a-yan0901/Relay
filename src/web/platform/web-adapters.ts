@@ -1,3 +1,4 @@
+import type { TerminalProfile } from '../../shared/terminal-appearance';
 import type { CapabilitySet } from '../../shared/core/capabilities';
 import { createWebCapabilitySet, negotiateCapabilitySet, WEB_CLIENT_CAPABILITIES } from '../../shared/core/capabilities';
 import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from '../../shared/core/account-sync';
@@ -61,6 +62,7 @@ import type {
   VaultRecoveryPort,
   VaultSessionPort,
   WorkspaceStore,
+  TerminalProfileStore,
   OpenShellRequest
 } from '../../shared/core/ports';
 import type { CoreRuntime } from '../../shared/core/runtime';
@@ -111,6 +113,10 @@ export interface WebApiClient {
   applyExternalImport?: typeof api.applyExternalImport;
   exportOpenSshConfig?: typeof api.exportOpenSshConfig;
   exportSshCsv?: typeof api.exportSshCsv;
+  listTerminalProfiles?: typeof api.listTerminalProfiles;
+  createTerminalProfile?: typeof api.createTerminalProfile;
+  setDefaultTerminalProfile?: typeof api.setDefaultTerminalProfile;
+  deleteTerminalProfile?: typeof api.deleteTerminalProfile;
   listHosts?: typeof api.listHosts;
   getHost?: typeof api.getHost;
   createHost?: typeof api.createHost;
@@ -235,6 +241,15 @@ const profileFromHost = (host: HostMetadata): ConnectionProfile => ({
   hostKeyAlgorithm: host.hostKeyAlgorithm,
   hostKeyFingerprint: host.hostKeyFingerprint
 });
+
+export class WebTerminalProfileStore implements TerminalProfileStore {
+  constructor(private readonly client: Pick<WebApiClient, 'listTerminalProfiles'> & Partial<Pick<WebApiClient, 'createTerminalProfile' | 'setDefaultTerminalProfile' | 'deleteTerminalProfile'>> = api) {}
+  async list(): Promise<readonly TerminalProfile[]> { return (await requireApi(this.client.listTerminalProfiles)()).profiles; }
+  async getDefault(): Promise<TerminalProfile> { return (await requireApi(this.client.listTerminalProfiles)()).defaultProfile; }
+  create(input: unknown): Promise<TerminalProfile> { return requireApi(this.client.createTerminalProfile)(input); }
+  setDefault(profileId: string): Promise<TerminalProfile> { return requireApi(this.client.setDefaultTerminalProfile)(profileId); }
+  delete(profileId: string): Promise<void> { return requireApi(this.client.deleteTerminalProfile)(profileId); }
+}
 
 export class WebHostStore implements HostStore {
   constructor(private readonly client: Pick<WebApiClient, 'listHosts' | 'getHost'> & Partial<Pick<WebApiClient, 'createHost' | 'updateHost' | 'deleteHost' | 'clearHostKey'>> = api) {}
@@ -930,6 +945,7 @@ export const createWebAdapters = (options: {
     files: new WebFileTransport(client),
     commands: new WebCommandTransport(client),
     hosts: new WebHostStore(client as Pick<WebApiClient, 'listHosts' | 'getHost'>),
+    terminalProfiles: new WebTerminalProfileStore(client as Pick<WebApiClient, 'listTerminalProfiles'>),
     identities: new WebIdentityStore(client as Pick<WebApiClient, 'listIdentities'>),
     groups: new WebGroupStore(client as Pick<WebApiClient, 'listGroups'>),
     secrets: new WebSecretStore(),

@@ -11,6 +11,7 @@ import {
   type HostPatchInput
 } from '@shared/validation';
 import type { ConnectionProfileOverrides, IdentityMetadata } from '@shared/core/models';
+import type { TerminalProfile } from '@shared/terminal-appearance';
 
 import type { GroupSummary, HostMetadataState } from '../state/app-state';
 
@@ -23,6 +24,7 @@ export interface HostFormProps {
   groups?: GroupSummary[];
   hosts?: HostMetadataState[];
   identities?: readonly IdentityMetadata[];
+  terminalProfiles?: readonly TerminalProfile[];
 }
 
 interface HostFormState {
@@ -37,6 +39,7 @@ interface HostFormState {
   privateKey: string;
   passphrase: string;
   groupId: string;
+  terminalProfileId: string;
   tags: string;
   isFavorite: boolean;
   jumpHostIds: string[];
@@ -80,6 +83,7 @@ const initialForm: HostFormState = {
   privateKey: '',
   passphrase: '',
   groupId: '',
+  terminalProfileId: '',
   tags: '',
   isFavorite: false,
   jumpHostIds: [],
@@ -107,6 +111,7 @@ const formFromHost = (host: HostMetadataState): HostFormState => {
     privateKey: '',
     passphrase: '',
     groupId: host.groupId ?? '',
+    terminalProfileId: host.terminalProfileId ?? '',
     tags: host.tags.join(', '),
     isFavorite: host.isFavorite,
     jumpHostIds: [...(host.jumpHostIds ?? [])],
@@ -127,7 +132,8 @@ export const HostForm = ({
   initialHost,
   groups = [],
   hosts = [],
-  identities = []
+  identities = [],
+  terminalProfiles = []
 }: HostFormProps) => {
   const isEdit = mode === 'edit';
   const [form, setForm] = useState(() => initialHost ? formFromHost(initialHost) : initialForm);
@@ -193,6 +199,7 @@ export const HostForm = ({
       port: Number(form.port),
       username: form.username,
       groupId: form.groupId || null,
+      terminalProfileId: form.terminalProfileId || null,
       jumpHostIds: form.jumpHostIds,
       connectionProfile: {
         keepaliveIntervalMs: Number(form.keepaliveIntervalMs),
@@ -317,6 +324,14 @@ export const HostForm = ({
             <option value="">未分组</option>
             {groups.map((group) => <option value={group.id} key={group.id}>{group.name}</option>)}
           </select>
+        </div>
+        <div className="field field-wide">
+          <label htmlFor="host-terminal-profile">终端外观</label>
+          <select id="host-terminal-profile" value={form.terminalProfileId} onChange={(event) => update('terminalProfileId', event.target.value)}>
+            <option value="">跟随工作区默认</option>
+            {terminalProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}
+          </select>
+          <small className="field-help">可为此 Server 单独指定字体、颜色和光标样式。</small>
         </div>
         <div className="field field-wide">
           <label htmlFor="host-jump-hosts">跳板机（可选，按连接顺序）</label>
