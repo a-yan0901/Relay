@@ -945,7 +945,7 @@ export const createWebAdapters = (options: {
     files: new WebFileTransport(client),
     commands: new WebCommandTransport(client),
     hosts: new WebHostStore(client as Pick<WebApiClient, 'listHosts' | 'getHost'>),
-    terminalProfiles: new WebTerminalProfileStore(client as Pick<WebApiClient, 'listTerminalProfiles'>),
+    terminalProfiles: new WebTerminalProfileStore(client as Pick<WebApiClient, 'listTerminalProfiles'> & Partial<Pick<WebApiClient, 'createTerminalProfile' | 'setDefaultTerminalProfile' | 'deleteTerminalProfile'>>),
     identities: new WebIdentityStore(client as Pick<WebApiClient, 'listIdentities'>),
     groups: new WebGroupStore(client as Pick<WebApiClient, 'listGroups'>),
     secrets: new WebSecretStore(),
