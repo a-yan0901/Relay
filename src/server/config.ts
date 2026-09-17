@@ -9,6 +9,8 @@ export interface AppRuntimeConfig {
   maxSessions: number;
   /** Optional for backwards-compatible test/embedding configs; loadConfig always supplies a boolean. */
   accountSyncEnabled?: boolean;
+  /** Optional cloud API base URL. Local-only mode remains unchanged when absent. */
+  cloudApiUrl?: string;
   rateLimitMax?: number;
   logLevel: string;
 }
@@ -50,6 +52,30 @@ const parseAccountSyncEnabled = (value: string | undefined): boolean => {
   if (value === 'true' || value === '1') return true;
   if (value === 'false' || value === '0') return false;
   throw new Error('ACCOUNT_SYNC_ENABLED must be true, false, 1, or 0');
+};
+
+const parseCloudApiUrl = (value: string | undefined, nodeEnv: AppRuntimeConfig['nodeEnv']): string | undefined => {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error('CLOUD_API_URL must be a valid HTTP(S) URL');
+  }
+  if (
+    (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    parsed.search !== '' ||
+    parsed.hash !== ''
+  ) {
+    throw new Error('CLOUD_API_URL must be a valid HTTP(S) URL');
+  }
+  if (nodeEnv === 'production' && parsed.protocol !== 'https:') {
+    throw new Error('CLOUD_API_URL must use HTTPS in production');
+  }
+  return parsed.toString().replace(/\/$/u, '');
 };
 
 const parseDataDir = (value: string | undefined): string => {
@@ -137,6 +163,7 @@ export const loadConfig = (env: Environment = process.env): AppRuntimeConfig => 
     sessionIdleTimeoutMs,
     maxSessions,
     accountSyncEnabled: parseAccountSyncEnabled(env.ACCOUNT_SYNC_ENABLED),
+    cloudApiUrl: parseCloudApiUrl(env.CLOUD_API_URL, nodeEnv),
     rateLimitMax,
     logLevel
   };

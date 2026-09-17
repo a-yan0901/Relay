@@ -12,6 +12,7 @@ describe('loadConfig', () => {
       maxSessions: 8,
       rateLimitMax: 120,
       accountSyncEnabled: false,
+      cloudApiUrl: undefined,
       logLevel: 'info'
     });
   });
@@ -32,6 +33,7 @@ describe('loadConfig', () => {
       SESSION_IDLE_TIMEOUT: '60000',
       MAX_SESSIONS: '12',
       RATE_LIMIT_MAX: '240',
+      CLOUD_API_URL: 'https://api.example.test/',
       LOG_LEVEL: 'debug'
     })).toMatchObject({
       port: 4173,
@@ -39,6 +41,7 @@ describe('loadConfig', () => {
       trustedOrigins: ['http://localhost:4173'],
       sessionIdleTimeoutMs: 60_000,
       maxSessions: 12,
+      cloudApiUrl: 'https://api.example.test',
       rateLimitMax: 240,
       logLevel: 'debug'
     });
@@ -53,5 +56,7 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ RATE_LIMIT_MAX: '0' })).toThrow('RATE_LIMIT_MAX');
     expect(() => loadConfig({ TRUSTED_ORIGINS: 'ssh.example' })).toThrow('TRUSTED_ORIGINS');
     expect(() => loadConfig({ ACCOUNT_SYNC_ENABLED: 'yes' })).toThrow('ACCOUNT_SYNC_ENABLED');
+    expect(() => loadConfig({ CLOUD_API_URL: 'not-a-url' })).toThrow('CLOUD_API_URL');
+    expect(() => loadConfig({ NODE_ENV: 'production', TRUSTED_ORIGINS: 'https://ssh.example', CLOUD_API_URL: 'http://127.0.0.1:8787' })).toThrow('CLOUD_API_URL');
   });
 });
