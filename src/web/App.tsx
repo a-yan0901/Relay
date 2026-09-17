@@ -140,16 +140,10 @@ interface PreferencesPanelProps {
   onOpenActivity?: () => void;
   onOpenIdentities?: () => void;
   onOpenSnippets?: () => void;
-  terminalProfiles?: readonly TerminalProfile[];
-  defaultTerminalProfile?: TerminalProfile;
-  onDefaultTerminalProfileChange?: (id: string) => void;
-  onDeleteTerminalProfile?: (id: string) => void;
-  onCreateTerminalProfile?: (name: string) => void;
 }
 
-const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notificationPermission = 'denied', onRequestNotifications, onOpenActivity, onOpenIdentities, onOpenSnippets, terminalProfiles = [], defaultTerminalProfile, onDefaultTerminalProfileChange, onDeleteTerminalProfile, onCreateTerminalProfile }: PreferencesPanelProps) => {
+const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notificationPermission = 'denied', onRequestNotifications, onOpenActivity, onOpenIdentities, onOpenSnippets }: PreferencesPanelProps) => {
   const dialogRef = useRef<HTMLElement>(null);
-  const [newProfileName, setNewProfileName] = useState('');
   useDialogFocus(dialogRef, true, onClose, '.theme-preview-card');
 
   return (
@@ -186,12 +180,6 @@ const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notif
           {fontSizeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
         </select>
       </div>
-      {terminalProfiles.length > 0 && <section className="preferences-system-section" aria-labelledby="terminal-profile-title">
-        <p className="eyebrow" id="terminal-profile-title">CONSOLE APPEARANCE</p>
-        <div className="preferences-system-row"><div><strong>工作区默认外观</strong><span>未单独设置的 Server 会继承此终端主题。</span></div><select aria-label="工作区默认终端外观" value={defaultTerminalProfile?.id ?? ''} onChange={(event) => onDefaultTerminalProfileChange?.(event.target.value)}>{terminalProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></div>
-        <div className="preferences-system-row"><div><strong>新建自定义外观</strong><span>复制当前默认外观，再按需调整。</span></div><div className="preferences-inline-form"><input aria-label="自定义外观名称" value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} placeholder="例如：生产环境" maxLength={80} /><button className="button button-ghost button-small" type="button" disabled={!newProfileName.trim()} onClick={() => { onCreateTerminalProfile?.(newProfileName.trim()); setNewProfileName(''); }}>创建</button></div></div>
-        {terminalProfiles.filter((profile) => !profile.id.startsWith('builtin:')).map((profile) => <div className="preferences-system-row" key={profile.id}><div><strong>{profile.name}</strong><span>{profile.appearance.fontFamily} · {profile.appearance.fontSize}px</span></div><button className="button button-ghost button-small" type="button" onClick={() => onDeleteTerminalProfile?.(profile.id)}>删除</button></div>)}
-      </section>}
       {notifications && <section className="preferences-system-section" aria-labelledby="preferences-system-title">
         <p className="eyebrow" id="preferences-system-title">PLATFORM</p>
         <div className="preferences-system-row">
@@ -1186,25 +1174,14 @@ export const App = ({ runtime }: AppProps) => {
       });
   };
 
-  const handleCreateTerminalProfile = useCallback((name: string): void => {
-    const appearance = defaultTerminalProfile?.appearance;
-    if (!appearance) return;
-    void runtime.terminalProfiles.create({ name, appearance }).then((profile) => setTerminalProfiles((profiles) => [...profiles, profile])).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
-  }, [defaultTerminalProfile, runtime]);
-  const handleDefaultTerminalProfileChange = useCallback((id: string): void => {
-    void runtime.terminalProfiles.setDefault(id).then((profile) => setDefaultTerminalProfile(profile)).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
-  }, [runtime]);
   const handlePreferencesChange = useCallback((next: UiPreferences): void => {
     setPreferences(next);
-    if (next.theme === preferences.theme || !defaultTerminalProfile?.id.startsWith('builtin:')) return;
+    if (next.theme === preferences.theme) return;
     const profile = BUILTIN_TERMINAL_PROFILES.find((candidate) => candidate.id === `builtin:${next.theme}`);
     if (!profile) return;
     setDefaultTerminalProfile(profile);
     void runtime.terminalProfiles.setDefault(profile.id).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
-  }, [defaultTerminalProfile, preferences.theme, runtime]);
-  const handleDeleteTerminalProfile = useCallback((id: string): void => {
-    void runtime.terminalProfiles.delete(id).then(() => runtime.terminalProfiles.list()).then((profiles) => setTerminalProfiles([...profiles])).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
-  }, [runtime]);
+  }, [preferences.theme, runtime]);
 
   const handleLock = async (): Promise<void> => {
     try {
@@ -1410,7 +1387,7 @@ export const App = ({ runtime }: AppProps) => {
           </aside>
         </div>
       )}
-      {preferencesOpen && <PreferencesPanel terminalProfiles={terminalProfiles} defaultTerminalProfile={defaultTerminalProfile} onDefaultTerminalProfileChange={handleDefaultTerminalProfileChange} onDeleteTerminalProfile={handleDeleteTerminalProfile} onCreateTerminalProfile={handleCreateTerminalProfile} preferences={preferences} onChange={handlePreferencesChange} onClose={() => setPreferencesOpen(false)} notifications={notifications} notificationPermission={notificationPermission} onRequestNotifications={requestNotificationPermission}
+      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={handlePreferencesChange} onClose={() => setPreferencesOpen(false)} notifications={notifications} notificationPermission={notificationPermission} onRequestNotifications={requestNotificationPermission}
         onOpenActivity={capabilities.supports('audit.activity') ? () => { setPreferencesOpen(false); handleOpenActivity(); } : undefined}
         onOpenIdentities={capabilities.supports('vault.identities') ? () => { setPreferencesOpen(false); setIdentityOpen(true); } : undefined}
         onOpenSnippets={capabilities.supports('automation.snippet-manager') ? () => { setPreferencesOpen(false); handleOpenSnippetManager(); } : undefined}

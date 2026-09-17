@@ -16,6 +16,8 @@ const apiMocks = vi.hoisted(() => ({
   listGroups: vi.fn(),
   listHosts: vi.fn(),
   listIdentities: vi.fn(),
+  listTerminalProfiles: vi.fn(),
+  setDefaultTerminalProfile: vi.fn(),
   lockVault: vi.fn(),
   setupVault: vi.fn(),
   unlockVault: vi.fn(),
@@ -57,6 +59,7 @@ const renderApp = (platformServices?: PlatformServices) => render(<App runtime={
 describe('App boot recovery', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    apiMocks.setDefaultTerminalProfile.mockImplementation(async (profileId: string) => ({ id: profileId, name: profileId, appearance: {}, createdAt: '', updatedAt: '' }));
   });
 
   afterEach(() => cleanup());
@@ -142,13 +145,17 @@ describe('App boot recovery', () => {
     apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
     apiMocks.listHosts.mockResolvedValue([]);
     apiMocks.listGroups.mockResolvedValue([]);
+    apiMocks.listTerminalProfiles.mockResolvedValue({ profiles: [{ id: 'builtin:termius', name: 'Termius Dark', appearance: {}, createdAt: '', updatedAt: '' }], defaultProfile: { id: 'builtin:termius', name: 'Termius Dark', appearance: {}, createdAt: '', updatedAt: '' } });
     renderApp();
 
     await screen.findByRole('heading', { name: 'Server', exact: true });
+    await waitFor(() => expect(apiMocks.listTerminalProfiles).toHaveBeenCalled());
     await user.click(screen.getByRole('button', { name: '偏好设置' }));
 
     expect(screen.getAllByRole('button', { name: /^预览主题：/u })).toHaveLength(5);
     expect(screen.queryByRole('combobox', { name: '色彩主题' })).not.toBeInTheDocument();
+    expect(screen.queryByText('工作区默认外观')).not.toBeInTheDocument();
+    expect(screen.queryByText('新建自定义外观')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '预览主题：Tokyo Day' }));
 
     expect(screen.getByRole('button', { name: '预览主题：Tokyo Day' })).toHaveAttribute('aria-pressed', 'true');
