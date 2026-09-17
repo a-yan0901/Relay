@@ -7,6 +7,8 @@ import {
   bootstrapPreferences,
   loadPreferences,
   savePreferences,
+  getThemeDefinition,
+  themeOptions,
   type UiPreferences
 } from '../../../src/web/theme';
 
@@ -18,6 +20,8 @@ describe('UI preferences', () => {
     document.documentElement.removeAttribute('data-relay-theme');
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.style.removeProperty('--terminal-font-size');
+    document.documentElement.style.removeProperty('--panel');
+    document.documentElement.style.removeProperty('--panel-active');
     document.documentElement.style.removeProperty('color-scheme');
     document.head.querySelector('meta[name="theme-color"]')?.remove();
   });
@@ -26,6 +30,10 @@ describe('UI preferences', () => {
     expect(loadPreferences()).toEqual({ theme: 'midnight', fontSize: 13 });
     window.localStorage.setItem('relay.ui.preferences.v1', JSON.stringify(preferences));
     expect(loadPreferences()).toEqual(preferences);
+    window.localStorage.setItem('relay.ui.preferences.v1', JSON.stringify({ theme: 'nord', fontSize: 14 }));
+    expect(loadPreferences()).toEqual({ theme: 'nord', fontSize: 14 });
+    window.localStorage.setItem('relay.ui.preferences.v1', JSON.stringify({ theme: 'unknown', fontSize: 14 }));
+    expect(loadPreferences()).toEqual({ theme: 'midnight', fontSize: 13 });
     window.localStorage.setItem('relay.ui.preferences.v1', '{bad json');
     expect(loadPreferences()).toEqual({ theme: 'midnight', fontSize: 13 });
   });
@@ -39,6 +47,31 @@ describe('UI preferences', () => {
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
     expect(JSON.parse(window.localStorage.getItem('relay.ui.preferences.v1') ?? '{}')).toEqual(preferences);
     expect(window.localStorage.getItem('relay.ui.preferences.v1')).not.toContain('password');
+  });
+
+  it('exposes modern theme presets with semantic UI and terminal definitions', () => {
+    expect(themeOptions.map((option) => option.value)).toEqual([
+      'midnight', 'light', 'contrast', 'nord', 'dracula', 'solarized-dark', 'oled'
+    ]);
+    expect(getThemeDefinition('nord').tokens.panelActive).not.toBe('');
+    expect(getThemeDefinition('dracula').terminal.background).toBe('#282a36');
+    expect(getThemeDefinition('solarized-dark').terminal.blue).toBe('#268bd2');
+    expect(getThemeDefinition('oled').colorScheme).toBe('dark');
+  });
+
+  it('applies semantic tokens for a selected preset without touching data-theme', () => {
+    const meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    document.head.append(meta);
+
+    applyPreferences({ theme: 'nord', fontSize: 14 });
+
+    expect(document.documentElement.dataset.relayTheme).toBe('nord');
+    expect(document.documentElement.style.getPropertyValue('--panel')).not.toBe('');
+    expect(document.documentElement.style.getPropertyValue('--panel-active')).not.toBe('');
+    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('dark');
+    expect(meta.content).toBe(getThemeDefinition('nord').themeColor);
+    expect(document.documentElement.dataset.theme).toBeUndefined();
   });
 
   it('keeps Relay theme isolated from third-party data-theme attributes', () => {

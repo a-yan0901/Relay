@@ -416,6 +416,9 @@ git commit -m "feat: add terminal tab and sftp context actions"
 
 ## Task 5: 将主题改为语义化 Token 和现代预设
 
+**Status:** Done（2026-09-17）
+**Evidence:** `npm test -- --run tests/unit/web/theme.test.ts tests/unit/web/terminal-panel.dom.test.tsx`、`npm run typecheck`、`npm run lint`、`npm run build:web` 均通过。
+
 **Files:**
 
 - Modify: `src/web/theme.ts`
@@ -465,7 +468,7 @@ export interface ThemeDefinition {
 }
 ```
 
-- [ ] **Step 1: 写主题预设和兼容性失败测试**
+- [x] **Step 1: 写主题预设和兼容性失败测试**
 
 测试七个预设都能被 `loadPreferences` 接受；旧的 `midnight`、`light`、`contrast` JSON 不变；未知主题回退默认；`applyPreferences` 设置 `data-relay-theme`、CSS Token、color-scheme、字号和 meta theme-color；设置 `data-theme="light"` 不影响 Relay 属性。
 
@@ -476,7 +479,7 @@ expect(document.documentElement.style.getPropertyValue('--panel')).not.toBe('');
 expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('dark');
 ```
 
-- [ ] **Step 2: 运行主题聚焦测试确认缺口**
+- [x] **Step 2: 运行主题聚焦测试确认缺口**
 
 Run:
 
@@ -486,19 +489,19 @@ npm test -- --run tests/unit/web/theme.test.ts
 
 Expected: 新主题校验和 CSS Token 断言在实现前失败。
 
-- [ ] **Step 3: 建立 ThemeDefinition 注册表**
+- [x] **Step 3: 建立 ThemeDefinition 注册表**
 
 将现有三套 `terminalThemes` 和 `themeColors` 合并到 `themeDefinitions`；为 Nord、Dracula、Solarized Dark、OLED 增加完整 UI Token 和 ANSI 16 色；`getTerminalTheme(theme)` 从注册表返回终端调色板，保留现有调用签名。
 
-- [ ] **Step 4: 让 applyPreferences 写入语义变量**
+- [x] **Step 4: 让 applyPreferences 写入语义变量**
 
 `applyPreferences()` 继续写 `document.documentElement.dataset.relayTheme`，并逐项写入 `ThemeTokens` 对应的 CSS 自定义属性；同时设置 `color-scheme`、`--terminal-font-size` 和 meta theme-color。禁止修改 `data-theme`。
 
-- [ ] **Step 5: 迁移 CSS 的跨主题硬编码颜色**
+- [x] **Step 5: 迁移 CSS 的跨主题硬编码颜色**
 
 将菜单、终端 tab、toolbar、host card、dialog、SFTP toolbar 和状态提示中影响主题的背景、边框、文本颜色迁移到语义变量；保留只表达 ANSI/状态的颜色，但确保浅色、高对比和 OLED 下文本对比度可读。
 
-- [ ] **Step 6: 运行主题验证**
+- [x] **Step 6: 运行主题验证**
 
 Run:
 
@@ -511,7 +514,7 @@ npm run build:web
 
 Expected: 预设、xterm 颜色、CSS Token、第三方 `data-theme` 隔离和 Web 构建全部通过。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/web/theme.ts src/web/styles.css src/web/components/TerminalPanel.tsx tests/unit/web/theme.test.ts tests/unit/web/terminal-panel.dom.test.tsx
