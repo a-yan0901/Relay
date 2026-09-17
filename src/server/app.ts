@@ -28,6 +28,9 @@ import { registerSftpRoutes } from './api/sftp-routes.js';
 import { registerCommandRoutes } from './api/command-routes.js';
 import { registerAuditRoutes } from './api/audit-routes.js';
 import { SessionStore } from './auth/session-store.js';
+import { DEFAULT_OWNER_ID, currentOwnerId, enterOwnerContext } from './auth/owner-context.js';
+import { getAccountSessionId } from './auth/account-cookie.js';
+import { getSessionId } from './auth/session-cookie.js';
 import { AccountSessionStore } from './account/account-session-store.js';
 import { AccountService } from './account/account-service.js';
 import { registerAccountRoutes } from './account/account-routes.js';
@@ -125,16 +128,22 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     sessionStore: accountSessionStore
   });
   const vaultService = dependencies.vaultService ?? new VaultService();
-  const hostRepository = dependencies.hostRepository ?? new HostRepository(dependencies.database, 'default');
-  const groupRepository = dependencies.groupRepository ?? new GroupRepository(dependencies.database, 'default');
-  const auditRepository = dependencies.auditRepository ?? new AuditRepository(dependencies.database, 'default');
+  const ownerIdProvider = currentOwnerId;
+  const withOwnerId = <T extends object>(value: T): T & { readonly ownerId: string } => Object.defineProperty(value, 'ownerId', {
+    enumerable: true,
+    configurable: false,
+    get: () => currentOwnerId()
+  }) as T & { readonly ownerId: string };
+  const hostRepository = dependencies.hostRepository ?? new HostRepository(dependencies.database, ownerIdProvider);
+  const groupRepository = dependencies.groupRepository ?? new GroupRepository(dependencies.database, ownerIdProvider);
+  const auditRepository = dependencies.auditRepository ?? new AuditRepository(dependencies.database, ownerIdProvider);
   const auditService = dependencies.auditService ?? new AuditService(auditRepository);
   const identityService = dependencies.identityService ?? new IdentityService({ database: dependencies.database, vaultService });
   const terminalProfileService = dependencies.terminalProfileService ?? new TerminalProfileService({ database: dependencies.database });
   const workspaceRepository = new WorkspaceRepository(dependencies.database);
   const workspaceService = dependencies.workspaceService ?? new WorkspaceService(workspaceRepository);
   const vaultBundleService = dependencies.vaultBundleService ?? new VaultBundleService({
-    ownerId: 'default',
+    ownerId: ownerIdProvider,
     database: dependencies.database,
     hostRepository,
     groupRepository,
@@ -142,19 +151,19 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     identityService
   });
   const sshImportService = dependencies.sshImportService ?? new SshImportService({
-    ownerId: 'default', database: dependencies.database, hostRepository, groupRepository, vaultService, identityService
+    ownerId: ownerIdProvider, database: dependencies.database, hostRepository, groupRepository, vaultService, identityService
   });
   const sshSessionManager = dependencies.sshSessionManager ?? new SshSessionManager({
     adapter: new Ssh2Adapter(),
     maxSessions: dependencies.config.maxSessions
   });
   const connectionPathResolver = dependencies.connectionPathResolver ?? new ConnectionPathResolver({
-    get: (id, ownerId) => ownerId === 'default' ? hostRepository.getForConnection(id) : null,
-    list: (ownerId) => ownerId === 'default' ? hostRepository.listMetadata() : []
+    get: (id, ownerId) => ownerId === currentOwnerId() ? hostRepository.getForConnection(id) : null,
+    list: (ownerId) => ownerId === currentOwnerId() ? hostRepository.listMetadata() : []
   });
   const connectionAdapter = new Ssh2ResourceAdapter();
   const connectionResourceProvider = createConnectionResourceProvider({
-    ownerId: 'default',
+    ownerId: ownerIdProvider,
     hostRepository,
     connectionPathResolver,
     vaultService,
@@ -177,23 +186,23 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   };
   const operationBus = dependencies.operationBus ?? new OperationEventBus();
   const sftpService = dependencies.sftpService ?? new SftpService({
-    ownerId: 'default',
-    hostLookup: { hasHost: (hostId, ownerId) => ownerId === 'default' && hostRepository.getForConnection(hostId) !== null },
+    ownerId: ownerIdProvider,
+    hostLookup: { hasHost: (hostId, ownerId) => ownerId === currentOwnerId() && hostRepository.getForConnection(hostId) !== null },
     resourceProvider: sftpResourceProvider
   });
-  const transferManager = dependencies.transferManager ?? new TransferManager({ resourceProvider: sftpResourceProvider, ownerId: 'default', database: dependencies.database });
-  const snippetService = dependencies.snippetService ?? new SnippetService({ ownerId: 'default', database: dependencies.database, vaultService });
+  const transferManager = dependencies.transferManager ?? new TransferManager({ resourceProvider: sftpResourceProvider, ownerId: ownerIdProvider, database: dependencies.database });
+  const snippetService = dependencies.snippetService ?? new SnippetService({ ownerId: ownerIdProvider, database: dependencies.database, vaultService });
   const syncSnapshotService = new SyncSnapshotService({
-    ownerId: 'default',
+    ownerId: ownerIdProvider,
     database: dependencies.database,
     bundleService: vaultBundleService,
     workspaceService,
     workspaceRepository,
     snippetService,
-    snippetRepository: new SnippetRepository(dependencies.database, 'default'),
+    snippetRepository: new SnippetRepository(dependencies.database, ownerIdProvider),
     hostRepository,
     groupRepository,
-    identityRepository: new IdentityRepository(dependencies.database, 'default'),
+    identityRepository: new IdentityRepository(dependencies.database, ownerIdProvider),
     vaultService
   });
   const syncService = dependencies.syncService ?? new SyncService({
@@ -209,10 +218,10 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     transport: dependencies.syncTransport
   });
   const commandRunner = dependencies.commandRunner ?? new CommandRunner({
-    ownerId: 'default',
-    hostLookup: { get: (hostId, ownerId) => ownerId === 'default' ? hostRepository.getForConnection(hostId) : null },
+    ownerId: ownerIdProvider,
+    hostLookup: { get: (hostId, ownerId) => ownerId === currentOwnerId() ? hostRepository.getForConnection(hostId) : null },
     resourceProvider: connectionResourceProvider,
-    store: new CommandRunStore({ ownerId: 'default', database: dependencies.database, vaultService }),
+    store: new CommandRunStore({ ownerId: ownerIdProvider, database: dependencies.database, vaultService }),
     operationBus,
     onCompleted: async (run) => { await auditService.recordCommandSummary(run); }
   });
@@ -266,6 +275,15 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   app.addContentTypeParser('application/octet-stream', (_request, payload, done) => done(null, payload));
 
   app.addHook('onRequest', async (request) => {
+    const accountSessionId = getAccountSessionId(request);
+    const account = accountSessionId ? accountService.status(accountSessionId) : null;
+    const vaultSessionId = getSessionId(request);
+    const vaultSession = vaultSessionId ? sessionStore.get(vaultSessionId) : null;
+    if (account && vaultSession && vaultSession.ownerId === DEFAULT_OWNER_ID) {
+      sessionStore.bindOwner(vaultSession.id, account.accountId);
+    }
+    enterOwnerContext(account?.accountId ?? vaultSession?.ownerId ?? DEFAULT_OWNER_ID);
+
     if (!isMutatingMethod(request.method) || !request.headers.origin) {
       return;
     }
@@ -336,25 +354,23 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     secureCookie: dependencies.config.nodeEnv === 'production',
     syncCoordinator
   });
-  await registerSyncRoutes(app, {
+  await registerSyncRoutes(app, withOwnerId({
     enabled: dependencies.config.accountSyncEnabled === true,
-    ownerId: 'default',
     accountService,
     appConfigRepository,
     sessionStore,
     syncService,
     syncCoordinator,
     auditRepository
-  });
-  await registerGroupRoutes(app, {
+  }));
+  await registerGroupRoutes(app, withOwnerId({
     groupRepository,
     sessionStore,
     syncCoordinator
-  });
-  await registerIdentityRoutes(app, { ownerId: 'default', sessionStore, identityService, syncCoordinator });
-  await registerTerminalProfileRoutes(app, { ownerId: 'default', sessionStore, terminalProfileService, syncCoordinator });
-  await registerHostRoutes(app, {
-    ownerId: 'default',
+  }));
+  await registerIdentityRoutes(app, withOwnerId({ sessionStore, identityService, syncCoordinator }));
+  await registerTerminalProfileRoutes(app, withOwnerId({ sessionStore, terminalProfileService, syncCoordinator }));
+  await registerHostRoutes(app, withOwnerId({
     hostRepository,
     groupRepository,
     sessionStore,
@@ -364,28 +380,25 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     terminalProfileService,
     sshSessionManager,
     syncCoordinator
-  });
-  await registerWorkspaceRoutes(app, {
-    ownerId: 'default',
+  }));
+  await registerWorkspaceRoutes(app, withOwnerId({
     workspaceService,
     sessionStore,
     auditRepository,
     syncCoordinator
-  });
-  await registerVaultRoutes(app, {
-    ownerId: 'default',
+  }));
+  await registerVaultRoutes(app, withOwnerId({
     vaultBundleService,
     sessionStore,
     auditRepository,
     syncCoordinator
-  });
-  await registerSshImportRoutes(app, { sessionStore, auditRepository, sshImportService, syncCoordinator });
-  await registerSftpRoutes(app, { ownerId: 'default', sessionStore, sftpService, transferManager, operationBus, auditRepository });
-  await registerCommandRoutes(app, { ownerId: 'default', sessionStore, snippetService, commandRunner, auditRepository, syncCoordinator });
+  }));
+  await registerSshImportRoutes(app, withOwnerId({ sessionStore, auditRepository, sshImportService, syncCoordinator }));
+  await registerSftpRoutes(app, withOwnerId({ sessionStore, sftpService, transferManager, operationBus, auditRepository }));
+  await registerCommandRoutes(app, withOwnerId({ sessionStore, snippetService, commandRunner, auditRepository, syncCoordinator }));
   await registerAuditRoutes(app, { sessionStore, auditService });
-  await registerOperationGateway(app, { ownerId: 'default', config: dependencies.config, sessionStore, eventBus: operationBus });
-  await registerTerminalGateway(app, {
-    ownerId: 'default',
+  await registerOperationGateway(app, withOwnerId({ config: dependencies.config, sessionStore, eventBus: operationBus }));
+  await registerTerminalGateway(app, withOwnerId({
     config: dependencies.config,
     serviceInstanceId: dependencies.serviceInstanceId ?? randomUUID(),
     sessionStore,
@@ -396,7 +409,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     identityService,
     sessionManager: sshSessionManager,
     connectionPathResolver
-  });
+  }));
 
   return app;
 };

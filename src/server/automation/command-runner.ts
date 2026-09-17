@@ -9,6 +9,8 @@ import type { HostMetadata } from '../../shared/validation.js';
 import type { CommandRunOperationEvent, OperationDiagnosticEvent } from '../../shared/protocol.js';
 import type { SshConnectionResource } from '../ssh/types.js';
 import { CommandRunStore } from './command-run-store.js';
+import type { OwnerIdProvider } from '../db/repositories.js';
+import { resolveOwnerId } from '../db/repositories.js';
 
 export const expandCommandTemplate = expandTemplate;
 
@@ -33,7 +35,7 @@ export interface CommandRunEventPublisher {
 }
 
 export interface CommandRunnerOptions {
-  ownerId: string;
+  ownerId: OwnerIdProvider;
   hostLookup: CommandHostLookup;
   resourceProvider: CommandResourceProvider;
   store?: CommandRunStore;
@@ -84,6 +86,8 @@ export class CommandRunner {
   private readonly defaultConcurrency: number;
   private readonly controls = new Map<string, RunControl>();
 
+  private get ownerId(): string { return resolveOwnerId(this.options.ownerId); }
+
   constructor(private readonly options: CommandRunnerOptions) {
     this.store = options.store ?? new CommandRunStore({ ownerId: options.ownerId });
     this.operationBus = options.operationBus;
@@ -101,7 +105,7 @@ export class CommandRunner {
     }
     const hosts: HostMetadata[] = [];
     for (const hostId of request.hostIds) {
-      const host = this.options.hostLookup.get(hostId, this.options.ownerId);
+      const host = this.options.hostLookup.get(hostId, this.ownerId);
       if (!host) throw new AppError('HOST_NOT_FOUND');
       hosts.push(host);
     }
@@ -279,7 +283,7 @@ export class CommandRunner {
 
   private publish(run: CommandRun): void {
     if (!this.operationBus) return;
-    this.operationBus.publish(this.options.ownerId, { type: 'command-run', run });
+    this.operationBus.publish(this.ownerId, { type: 'command-run', run });
     for (const target of run.targets) {
       if (target.status === 'queued') continue;
       const state: OperationDiagnostic['state'] = target.status;
@@ -296,8 +300,8 @@ export class CommandRunner {
         startedAt: target.startedAt ?? run.createdAt,
         ...(target.finishedAt === undefined ? {} : { endedAt: target.finishedAt })
       };
-      if (this.operationBus.publishDiagnostic) this.operationBus.publishDiagnostic(this.options.ownerId, diagnostic);
-      else this.operationBus.publish(this.options.ownerId, { type: 'diagnostic', diagnostic });
+      if (this.operationBus.publishDiagnostic) this.operationBus.publishDiagnostic(this.ownerId, diagnostic);
+      else this.operationBus.publish(this.ownerId, { type: 'diagnostic', diagnostic });
     }
   }
 }

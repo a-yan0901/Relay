@@ -13,7 +13,7 @@ import {
   storedHostCredentialSchema,
   type StoredHostCredential
 } from '../../shared/validation.js';
-import { GroupRepository, HostRepository, IdentityRepository, TerminalPreferenceRepository, TerminalProfileRepository } from '../db/repositories.js';
+import { GroupRepository, HostRepository, IdentityRepository, TerminalPreferenceRepository, TerminalProfileRepository, type OwnerIdProvider, resolveOwnerId } from '../db/repositories.js';
 import { BUILTIN_TERMINAL_PROFILES, terminalAppearanceSchema, type TerminalProfile } from '../../shared/terminal-appearance.js';
 import type { SqliteDatabase } from '../db/database.js';
 import {
@@ -337,7 +337,7 @@ const hostCredentialAad = (id: string): string => `host:${id}:credentials:v1`;
 const parseStoredCredential = (value: string): EncryptedJson => parseEncryptedJson(parseJson(value));
 
 export interface VaultBundleServiceOptions {
-  ownerId: string;
+  ownerId: OwnerIdProvider;
   database: SqliteDatabase;
   hostRepository: HostRepository;
   groupRepository: GroupRepository;
@@ -349,6 +349,8 @@ export interface VaultBundleServiceOptions {
 
 export class VaultBundleService {
   private readonly previews = new Map<string, PendingPreview>();
+
+  private get ownerId(): string { return resolveOwnerId(this.options.ownerId); }
 
   constructor(private readonly options: VaultBundleServiceOptions) {}
 
@@ -364,17 +366,17 @@ export class VaultBundleService {
       defaultIdentityId: group.defaultIdentityId,
       connectionProfile: group.connectionProfile
     }));
-    const identityMetadata = this.options.identityService ? await this.options.identityService.list(this.options.ownerId) : [];
+    const identityMetadata = this.options.identityService ? await this.options.identityService.list(this.ownerId) : [];
     if (!this.options.identityService && groupNodes.some((group) => group.defaultIdentityId !== null)) throw new AppError('IDENTITY_NOT_FOUND');
     const identityCredentials = new Map<string, StoredHostCredential>();
     const identities: BundleIdentity[] = [];
     for (const identity of identityMetadata) {
-      const auth = await this.options.identityService!.getCredential(this.options.ownerId, identity.id, sessionKey);
+      const auth = await this.options.identityService!.getCredential(this.ownerId, identity.id, sessionKey);
       identityCredentials.set(identity.id, auth);
       identities.push({ id: identity.id, name: identity.name, type: identity.type, username: identity.username, keyFingerprint: identity.keyFingerprint, auth });
     }
-    const terminalProfileRepository = this.options.terminalProfileRepository ?? new TerminalProfileRepository(this.options.database, this.options.ownerId);
-    const terminalPreferenceRepository = this.options.terminalPreferenceRepository ?? new TerminalPreferenceRepository(this.options.database, this.options.ownerId);
+    const terminalProfileRepository = this.options.terminalProfileRepository ?? new TerminalProfileRepository(this.options.database, this.ownerId);
+    const terminalPreferenceRepository = this.options.terminalPreferenceRepository ?? new TerminalPreferenceRepository(this.options.database, this.ownerId);
     const terminalProfiles = terminalProfileRepository.list();
     const terminalDefaultProfileId = terminalPreferenceRepository.getDefaultProfileId() ?? 'builtin:midnight';
     const hostRows = this.options.hostRepository.listForBundle();
@@ -388,7 +390,7 @@ export class VaultBundleService {
         : row.credentialSource?.type === 'group' ? resolved.identityId : null;
       if (identityId) {
         if (!this.options.identityService) throw new AppError('IDENTITY_NOT_FOUND');
-        auth = identityCredentials.get(identityId) ?? await this.options.identityService.getCredential(this.options.ownerId, identityId, sessionKey);
+        auth = identityCredentials.get(identityId) ?? await this.options.identityService.getCredential(this.ownerId, identityId, sessionKey);
       } else {
         if (row.credentialSource?.type === 'group') throw new AppError('IDENTITY_NOT_FOUND');
         if (row.credentialCiphertext === null) throw new AppError('VAULT_BUNDLE_INVALID');
@@ -470,7 +472,7 @@ export class VaultBundleService {
     this.prunePreviews();
     const payload = await this.decryptBundle(exportPassword, bundle);
     const conflicts: ImportConflict[] = [];
-    const identityRepository = new IdentityRepository(this.options.database, this.options.ownerId);
+    const identityRepository = new IdentityRepository(this.options.database, this.ownerId);
     for (const identity of payload.identities ?? []) {
       if (identityRepository.get(identity.id)) conflicts.push({ type: 'identity', id: identity.id, name: identity.name });
     }
@@ -494,7 +496,7 @@ export class VaultBundleService {
     if (!['skip', 'replace'].includes(resolution.hostConflicts) || !['reuse', 'replace'].includes(resolution.groupConflicts) || (resolution.identityConflicts !== undefined && !['reuse', 'replace'].includes(resolution.identityConflicts))) throw new AppError('VAULT_BUNDLE_INVALID');
     validateImportedJumpGraph(pending.payload.hosts, this.options.hostRepository.listMetadata(), resolution.hostConflicts);
     const identityConflicts = resolution.identityConflicts ?? 'reuse';
-    const identityRepository = new IdentityRepository(this.options.database, this.options.ownerId);
+    const identityRepository = new IdentityRepository(this.options.database, this.ownerId);
     const identities: Array<BundleIdentity & { existing: ReturnType<IdentityRepository['get']>; credentialCiphertext: string }> = [];
     for (const identity of pending.payload.identities ?? []) {
       const encrypted = await this.options.vaultService.encryptJson(sessionKey, `identity:${identity.id}:credentials:v1`, identity.auth);
@@ -538,7 +540,7 @@ export class VaultBundleService {
         } else {
           identityRepository.create({
             id: identity.id,
-            ownerId: this.options.ownerId,
+            ownerId: this.ownerId,
             name: identity.name,
             type: identity.type,
             username: identity.username,
@@ -551,8 +553,8 @@ export class VaultBundleService {
           importedIdentities += 1;
         }
       }
-      const terminalProfileRepository = this.options.terminalProfileRepository ?? new TerminalProfileRepository(this.options.database, this.options.ownerId);
-      const terminalPreferenceRepository = this.options.terminalPreferenceRepository ?? new TerminalPreferenceRepository(this.options.database, this.options.ownerId);
+      const terminalProfileRepository = this.options.terminalProfileRepository ?? new TerminalProfileRepository(this.options.database, this.ownerId);
+      const terminalPreferenceRepository = this.options.terminalPreferenceRepository ?? new TerminalPreferenceRepository(this.options.database, this.ownerId);
       for (const profile of pending.payload.terminalProfiles ?? []) {
         if (!terminalProfileRepository.get(profile.id)) terminalProfileRepository.create(profile);
       }
@@ -597,7 +599,7 @@ export class VaultBundleService {
         }
         const connectionProfileOverrides = host.connectionProfileOverrides === undefined ? host.connectionProfile : host.connectionProfileOverrides;
         this.options.hostRepository.createHost({
-          id: host.id, ownerId: this.options.ownerId, name: host.name, address: host.address, port: host.port, username: host.username,
+          id: host.id, ownerId: this.ownerId, name: host.name, address: host.address, port: host.port, username: host.username,
           authType: host.auth.type === 'pending' ? host.auth.authType : host.auth.type, credentialCiphertext: host.credentialCiphertext, credentialVersion: 1,
           credentialSource: source, identityId,
           hostKeyAlgorithm: host.hostKeyAlgorithm, hostKeyFingerprint: host.hostKeyFingerprint, groupId: host.groupId, terminalProfileId: host.terminalProfileId ?? null, jumpHostIds: host.jumpHostIds, tags: host.tags,

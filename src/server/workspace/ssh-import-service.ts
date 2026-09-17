@@ -29,7 +29,7 @@ import {
   type HostCredentialInput,
   type StoredHostCredential
 } from '../../shared/validation.js';
-import { GroupRepository, HostRepository } from '../db/repositories.js';
+import { GroupRepository, HostRepository, type OwnerIdProvider, resolveOwnerId } from '../db/repositories.js';
 import type { SqliteDatabase } from '../db/database.js';
 import { VaultService, type EncryptedJson } from '../vault/vault-service.js';
 import { VAULT_KEY_LENGTH } from '../vault/types.js';
@@ -50,7 +50,7 @@ interface PendingPreview {
 }
 
 export interface SshImportServiceOptions {
-  ownerId: string;
+  ownerId: OwnerIdProvider;
   database: SqliteDatabase;
   hostRepository: HostRepository;
   groupRepository: GroupRepository;
@@ -173,6 +173,8 @@ const safeGroupName = (path: string[]): string | null => {
 };
 
 export class SshImportService {
+  private get ownerId(): string { return resolveOwnerId(this.options.ownerId); }
+
   private readonly previews = new Map<string, PendingPreview>();
   private readonly now: () => number;
   private readonly previewTtlMs: number;
@@ -366,7 +368,7 @@ export class SshImportService {
             isFavorite: input.isFavorite
           });
         } else {
-          this.options.hostRepository.createHost({ id: plan.hostId, ownerId: this.options.ownerId, ...input });
+          this.options.hostRepository.createHost({ id: plan.hostId, ownerId: this.ownerId, ...input });
         }
         importedHosts += 1;
       }
@@ -404,7 +406,7 @@ export class SshImportService {
         : row.credentialSource?.type === 'group' ? resolved.identityId : null;
       if (identityId) {
         if (!this.options.identityService) throw new AppError('IDENTITY_NOT_FOUND');
-        decrypted = await this.options.identityService.getCredential(this.options.ownerId, identityId, sessionKey);
+        decrypted = await this.options.identityService.getCredential(this.ownerId, identityId, sessionKey);
       } else {
         if (row.credentialSource?.type === 'group') throw new AppError('IDENTITY_NOT_FOUND');
         if (row.credentialCiphertext === null) throw new AppError('IMPORT_RECORD_INVALID', '请先在连接时补录凭据');

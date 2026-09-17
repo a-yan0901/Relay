@@ -1,7 +1,7 @@
 import { AppError } from '../../shared/errors.js';
 import type { CommandRun, CommandTargetResult, TargetSelectionSnapshot } from '../../shared/core/models.js';
 import { summarizeCommandTargets } from '../../shared/core/command-results.js';
-import { CommandRunRepository } from '../db/repositories.js';
+import { CommandRunRepository, type OwnerIdProvider, resolveOwnerId } from '../db/repositories.js';
 import type { SqliteDatabase } from '../db/database.js';
 import { VAULT_KEY_LENGTH, type EncryptedJson } from '../vault/types.js';
 import { VaultService } from '../vault/vault-service.js';
@@ -16,7 +16,7 @@ interface StoredRun {
 }
 
 export interface CommandRunStoreOptions {
-  ownerId: string;
+  ownerId: OwnerIdProvider;
   database?: SqliteDatabase;
   repository?: CommandRunRepository;
   vaultService?: VaultService;
@@ -61,6 +61,8 @@ export class CommandRunStore {
   private readonly now: () => number;
   private readonly runs = new Map<string, StoredRun>();
 
+  private get ownerId(): string { return resolveOwnerId(this.options.ownerId); }
+
   constructor(private readonly options: CommandRunStoreOptions) {
     this.repository = options.repository ?? (options.database ? new CommandRunRepository(options.database, options.ownerId) : undefined);
     this.vaultService = options.vaultService;
@@ -81,7 +83,7 @@ export class CommandRunStore {
         ...(run.targetSelection === undefined ? {} : { targetSelection: run.targetSelection })
       }, sessionKey);
       this.repository.createRun({
-        ownerId: this.options.ownerId,
+        ownerId: this.ownerId,
         id: run.id,
         commandCiphertext,
         hostIds: [...run.hostIds],
@@ -92,7 +94,7 @@ export class CommandRunStore {
       });
       for (const target of run.targets) {
         this.repository.createTarget({
-          ownerId: this.options.ownerId,
+          ownerId: this.ownerId,
           runId: run.id,
           hostId: target.hostId,
           status: target.status,

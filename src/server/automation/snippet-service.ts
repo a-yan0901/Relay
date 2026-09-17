@@ -8,7 +8,7 @@ import {
   parseSnippetPatchInput,
   type SnippetInput,
 } from '../../shared/validation.js';
-import { SnippetRepository, type SnippetPatchRow } from '../db/repositories.js';
+import { SnippetRepository, type OwnerIdProvider, type SnippetPatchRow, resolveOwnerId } from '../db/repositories.js';
 import type { SqliteDatabase } from '../db/database.js';
 import { VAULT_KEY_LENGTH, type EncryptedJson } from '../vault/types.js';
 import { VaultService } from '../vault/vault-service.js';
@@ -50,7 +50,7 @@ const validateSnippet = <T extends SnippetInput>(input: T): T => {
 };
 
 export interface SnippetServiceOptions {
-  ownerId: string;
+  ownerId: OwnerIdProvider;
   database?: SqliteDatabase;
   repository?: SnippetRepository;
   vaultService: VaultService;
@@ -58,6 +58,8 @@ export interface SnippetServiceOptions {
 
 export class SnippetService {
   private readonly repository: SnippetRepository;
+
+  private get ownerId(): string { return resolveOwnerId(this.options.ownerId); }
 
   constructor(private readonly options: SnippetServiceOptions) {
     if (options.repository) this.repository = options.repository;
@@ -72,7 +74,7 @@ export class SnippetService {
     const timestamp = new Date().toISOString();
     const encrypted = await this.options.vaultService.encryptJson(sessionKey, payloadAad(id), { command: parsed.command, variables: parsed.variables } satisfies SnippetPayload);
     const row = this.repository.create({
-      ownerId: this.options.ownerId,
+      ownerId: this.ownerId,
       id,
       name: parsed.name,
       description: parsed.description ?? null,

@@ -7,8 +7,11 @@ import { requireUnlockedSession } from './route-helpers.js';
 import { SessionStore } from '../auth/session-store.js';
 import { GroupRepository } from '../db/repositories.js';
 import type { SyncCoordinatorPort } from '../sync/sync-service.js';
+import type { OwnerIdProvider } from '../db/repositories.js';
+import { resolveOwnerId } from '../db/repositories.js';
 
 export interface GroupRouteDependencies {
+  ownerId: OwnerIdProvider;
   groupRepository: GroupRepository;
   sessionStore: SessionStore;
   syncCoordinator?: SyncCoordinatorPort;
@@ -45,7 +48,7 @@ export const registerGroupRoutes = async (
     const input: GroupMutationInput = parseGroupMutationInput(request.body);
 
     const created = dependencies.groupRepository.create(input);
-    dependencies.syncCoordinator?.markDirtyFromRequest(request, 'default');
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, resolveOwnerId(dependencies.ownerId));
     reply.code(201).send(created);
   });
 
@@ -54,14 +57,14 @@ export const registerGroupRoutes = async (
     const patch: GroupPatchInput = parseGroupPatchInput(request.body);
 
     const updated = dependencies.groupRepository.update(routeId(request.params), patch);
-    dependencies.syncCoordinator?.markDirtyFromRequest(request, 'default');
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, resolveOwnerId(dependencies.ownerId));
     reply.send(updated);
   });
 
   app.delete('/api/groups/:id', async (request, reply) => {
     requireUnlockedSession(request, dependencies.sessionStore);
     dependencies.groupRepository.delete(routeId(request.params));
-    dependencies.syncCoordinator?.markDirtyFromRequest(request, 'default');
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, resolveOwnerId(dependencies.ownerId));
     reply.code(204).send();
   });
 };

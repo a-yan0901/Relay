@@ -5,12 +5,13 @@ import { AppError } from '../../shared/errors.js';
 import { hostCredentialSchema } from '../../shared/validation.js';
 import type { ImportApplyRequest, ImportFormat, ImportSourceFile } from '../../shared/import/types.js';
 import { SessionStore } from '../auth/session-store.js';
-import { AuditRepository } from '../db/repositories.js';
+import { AuditRepository, type OwnerIdProvider, resolveOwnerId } from '../db/repositories.js';
 import { SshImportService } from '../workspace/ssh-import-service.js';
 import { requireUnlockedSession } from './route-helpers.js';
 import type { SyncCoordinatorPort } from '../sync/sync-service.js';
 
 export interface SshImportRouteDependencies {
+  ownerId: OwnerIdProvider;
   sessionStore: SessionStore;
   auditRepository: AuditRepository;
   sshImportService: SshImportService;
@@ -96,7 +97,7 @@ export const registerSshImportRoutes = async (app: FastifyInstance, dependencies
     const body = parseApplyBody(request.body);
     const result = await dependencies.sshImportService.apply(session.record.vaultKey, body.previewId, body);
     dependencies.auditRepository.insert({ eventType: 'ssh_import_applied', requestId: request.id, metadata: { targetCount: body.selectedSourceIds.length, successCount: result.importedHosts } });
-    dependencies.syncCoordinator?.markDirtyFromRequest(request, 'default');
+    dependencies.syncCoordinator?.markDirtyFromRequest(request, resolveOwnerId(dependencies.ownerId));
     reply.send(result);
   });
 

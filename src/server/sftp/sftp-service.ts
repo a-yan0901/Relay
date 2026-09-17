@@ -3,6 +3,8 @@ import { normalizeSftpPath } from '../../shared/validation.js';
 import type { SftpEntry } from '../../shared/core/models.js';
 import type { SftpResource, SftpResourceLease } from './types.js';
 import { mapSftpError } from './error-mapping.js';
+import type { OwnerIdProvider } from '../db/repositories.js';
+import { resolveOwnerId } from '../db/repositories.js';
 
 export interface SftpResourceProvider {
   open(hostId: string, sessionKey?: Buffer): Promise<SftpResourceLease>;
@@ -13,7 +15,7 @@ export interface SftpHostLookup {
 }
 
 export interface SftpServiceOptions {
-  ownerId: string;
+  ownerId: OwnerIdProvider;
   hostLookup: SftpHostLookup;
   resourceProvider: SftpResourceProvider;
 }
@@ -27,12 +29,14 @@ const sortEntries = (entries: readonly SftpEntry[]): SftpEntry[] => [...entries]
 export class SftpService {
   private readonly options: SftpServiceOptions;
 
+  private get ownerId(): string { return resolveOwnerId(this.options.ownerId); }
+
   constructor(options: SftpServiceOptions) {
     this.options = options;
   }
 
   assertHost(hostId: string): void {
-    if (!this.options.hostLookup.hasHost(hostId, this.options.ownerId)) throw new AppError('HOST_NOT_FOUND');
+    if (!this.options.hostLookup.hasHost(hostId, this.ownerId)) throw new AppError('HOST_NOT_FOUND');
   }
 
   async listEntries(hostId: string, path: string, sessionKey?: Buffer): Promise<SftpEntry[]> {

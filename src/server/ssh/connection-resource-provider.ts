@@ -2,7 +2,8 @@ import { AppError } from '../../shared/errors.js';
 import { storedHostCredentialSchema, type HostCredentialInput } from '../../shared/validation.js';
 import { resolveConnectionConfiguration } from '../../shared/core/connection-resolution.js';
 import type { GroupNode } from '../../shared/core/models.js';
-import type { HostRepository } from '../db/repositories.js';
+import type { HostRepository, OwnerIdProvider } from '../db/repositories.js';
+import { resolveOwnerId } from '../db/repositories.js';
 import type { GroupRepository } from '../db/repositories.js';
 import { VaultService } from '../vault/vault-service.js';
 import type { IdentityService } from '../identity/identity-service.js';
@@ -16,7 +17,7 @@ export interface ConnectionResourceLease {
 }
 
 export interface ConnectionResourceProviderOptions {
-  ownerId: string;
+  ownerId: OwnerIdProvider;
   hostRepository: HostRepository;
   connectionPathResolver: ConnectionPathResolver;
   vaultService: VaultService;
@@ -85,10 +86,11 @@ const toConfig = async (
 export const createConnectionResourceProvider = (options: ConnectionResourceProviderOptions) => ({
   async open(hostId: string, sessionKey?: Buffer): Promise<ConnectionResourceLease> {
     if (!sessionKey || !Buffer.isBuffer(sessionKey)) throw new AppError('SESSION_INVALID');
-    const path = options.connectionPathResolver.resolve(hostId, options.ownerId);
+    const ownerId = resolveOwnerId(options.ownerId);
+    const path = options.connectionPathResolver.resolve(hostId, ownerId);
     const groups = options.groupRepository?.list() ?? [];
     const configs: SshConnectConfig[] = [];
-    for (const hop of path.hops) configs.push(await toConfig(options.hostRepository, options.vaultService, sessionKey, hop.id, options.ownerId, options.identityService, groups));
+    for (const hop of path.hops) configs.push(await toConfig(options.hostRepository, options.vaultService, sessionKey, hop.id, ownerId, options.identityService, groups));
     const target = configs.at(-1);
     if (!target) throw new AppError('HOST_NOT_FOUND');
     const connection = await options.adapter.connect({

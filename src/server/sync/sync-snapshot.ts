@@ -7,7 +7,7 @@ import {
   workspaceStateSchema
 } from '../../shared/validation.js';
 import type { SqliteDatabase } from '../db/database.js';
-import { GroupRepository, HostRepository, IdentityRepository, SnippetRepository } from '../db/repositories.js';
+import { GroupRepository, HostRepository, IdentityRepository, SnippetRepository, type OwnerIdProvider, resolveOwnerId } from '../db/repositories.js';
 import { VaultService } from '../vault/vault-service.js';
 import { VaultBundleService, parsePayload, type BundlePayload } from '../workspace/vault-bundle-service.js';
 import { WorkspaceRepository } from '../workspace/workspace-repository.js';
@@ -41,7 +41,7 @@ export interface SyncSnapshotSummary {
 }
 
 export interface SyncSnapshotServiceOptions {
-  ownerId: string;
+  ownerId: OwnerIdProvider;
   database: SqliteDatabase;
   bundleService: VaultBundleService;
   workspaceService: WorkspaceService;
@@ -138,6 +138,8 @@ const toSnapshotBundle = (snapshot: SyncSnapshot): BundlePayload => ({
 const snippetAad = (id: string): string => `snippet:${id}:payload:v1`;
 
 export class SyncSnapshotService {
+  private get ownerId(): string { return resolveOwnerId(this.options.ownerId); }
+
   constructor(private readonly options: SyncSnapshotServiceOptions) {}
 
   async create(ownerId: string, vaultKey: Buffer): Promise<Buffer> {
@@ -287,6 +289,6 @@ export class SyncSnapshotService {
 
   private assertOwner(ownerId: string): void {
     assertOwner(ownerId);
-    if (ownerId !== this.options.ownerId) throw new AppError('SYNC_PAYLOAD_INVALID');
+    if (ownerId !== this.ownerId) throw new AppError('SYNC_PAYLOAD_INVALID');
   }
 }

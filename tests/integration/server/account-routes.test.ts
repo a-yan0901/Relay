@@ -140,6 +140,46 @@ describe('optional account routes', () => {
     expect(auditRows.every((row) => !row.metadata_json.includes('long enough password'))).toBe(true);
   });
 
+  it('isolates local connection data between signed-in accounts', async () => {
+    const { app } = await makeApp(true);
+    const setup = await app.inject({
+      method: 'POST',
+      url: '/api/setup',
+      headers: { origin: ORIGIN },
+      payload: { masterPassword: MASTER_PASSWORD }
+    });
+    const vaultCookie = cookieFrom(setup, 'webssh_session');
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/account/register',
+      headers: { origin: ORIGIN },
+      payload: { email: 'first@example.com', password: 'long enough password' }
+    });
+    const firstCookie = cookieFrom(first, 'relay_account_session');
+    const firstHost = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { origin: ORIGIN, cookie: `${firstCookie}; ${vaultCookie}` },
+      payload: { name: 'First account host', address: '10.0.0.1', username: 'deploy', auth: { type: 'password', password: 'first-secret' } }
+    });
+    expect(firstHost.statusCode).toBe(201);
+
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/account/register',
+      headers: { origin: ORIGIN },
+      payload: { email: 'second@example.com', password: 'long enough password' }
+    });
+    const secondCookie = cookieFrom(second, 'relay_account_session');
+    const secondHosts = await app.inject({ method: 'GET', url: '/api/hosts', headers: { cookie: `${secondCookie}; ${vaultCookie}` } });
+    expect(secondHosts.statusCode).toBe(200);
+    expect(secondHosts.json()).toEqual([]);
+
+    const firstHosts = await app.inject({ method: 'GET', url: '/api/hosts', headers: { cookie: `${firstCookie}; ${vaultCookie}` } });
+    expect(firstHosts.statusCode).toBe(200);
+    expect(firstHosts.json()).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'First account host' })]));
+  });
+
   it('rejects unauthorized, malformed, and untrusted account requests without exposing secrets', async () => {
     const { app } = await makeApp(true);
     expect((await app.inject({ method: 'GET', url: '/api/account/devices' })).statusCode).toBe(401);

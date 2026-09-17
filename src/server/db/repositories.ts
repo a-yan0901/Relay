@@ -210,6 +210,14 @@ const assertIdentifier = (value: string, code: 'HOST_VALIDATION_FAILED' | 'INTER
 
 const assertOwner = (ownerId: string): void => assertIdentifier(ownerId);
 
+export type OwnerIdProvider = string | (() => string);
+
+export const resolveOwnerId = (provider: OwnerIdProvider): string => {
+  const ownerId = typeof provider === 'function' ? provider() : provider;
+  assertOwner(ownerId);
+  return ownerId;
+};
+
 const assertAccountEmail = (email: string): void => {
   if (
     typeof email !== 'string' ||
@@ -903,12 +911,17 @@ export class AccountRepository {
 }
 
 export class GroupRepository {
+  private readonly ownerIdProvider: OwnerIdProvider;
+
   constructor(
     private readonly database: SqliteDatabase,
-    private readonly ownerId: string
+    ownerId: OwnerIdProvider
   ) {
-    assertOwner(ownerId);
+    this.ownerIdProvider = ownerId;
+    resolveOwnerId(ownerId);
   }
+
+  private get ownerId(): string { return resolveOwnerId(this.ownerIdProvider); }
 
   create(input: GroupCreateInput): GroupRow {
     const id = input.id ?? randomUUID();
@@ -1083,12 +1096,17 @@ export class GroupRepository {
 }
 
 export class IdentityRepository {
+  private readonly ownerIdProvider: OwnerIdProvider;
+
   constructor(
     private readonly database: SqliteDatabase,
-    readonly ownerId: string
+    ownerId: OwnerIdProvider
   ) {
-    assertOwner(ownerId);
+    this.ownerIdProvider = ownerId;
+    resolveOwnerId(ownerId);
   }
+
+  get ownerId(): string { return resolveOwnerId(this.ownerIdProvider); }
 
   create(input: IdentityCreateRow): IdentityRow {
     assertIdentifier(input.id, 'HOST_VALIDATION_FAILED');
@@ -1180,12 +1198,17 @@ export class IdentityRepository {
 }
 
 export class HostRepository {
+  private readonly ownerIdProvider: OwnerIdProvider;
+
   constructor(
     private readonly database: SqliteDatabase,
-    private readonly ownerId: string
+    ownerId: OwnerIdProvider
   ) {
-    assertOwner(ownerId);
+    this.ownerIdProvider = ownerId;
+    resolveOwnerId(ownerId);
   }
+
+  private get ownerId(): string { return resolveOwnerId(this.ownerIdProvider); }
 
   private assertGroupBelongsToOwner(groupId: string | null): void {
     if (groupId === null) {
@@ -1500,12 +1523,17 @@ export class HostRepository {
 }
 
 export class AuditRepository {
+  private readonly ownerIdProvider: OwnerIdProvider;
+
   constructor(
     private readonly database: SqliteDatabase,
-    private readonly ownerId: string
+    ownerId: OwnerIdProvider
   ) {
-    assertOwner(ownerId);
+    this.ownerIdProvider = ownerId;
+    resolveOwnerId(ownerId);
   }
+
+  private get ownerId(): string { return resolveOwnerId(this.ownerIdProvider); }
 
   insert(input: AuditEventInput): AuditEventRow {
     const id = randomUUID();
@@ -1610,12 +1638,17 @@ export class AuditRepository {
 export type SnippetPatchRow = Partial<Pick<SnippetRow, 'name' | 'description' | 'tags' | 'commandCiphertext' | 'variables' | 'updatedAt'>>;
 
 export class SnippetRepository {
+  private readonly ownerIdProvider: OwnerIdProvider;
+
   constructor(
     private readonly database: SqliteDatabase,
-    private readonly ownerId: string
+    ownerId: OwnerIdProvider
   ) {
-    assertOwner(ownerId);
+    this.ownerIdProvider = ownerId;
+    resolveOwnerId(ownerId);
   }
+
+  private get ownerId(): string { return resolveOwnerId(this.ownerIdProvider); }
 
   create(input: SnippetRow): SnippetRow {
     assertIdentifier(input.id, 'HOST_VALIDATION_FAILED');
@@ -1695,12 +1728,17 @@ export type CommandRunPatchRow = Partial<Pick<CommandRunRow, 'commandCiphertext'
 export type CommandRunTargetPatchRow = Partial<Pick<CommandRunTargetRow, 'status' | 'exitCode' | 'outputCiphertext' | 'outputBytes' | 'outputTruncated' | 'errorCode' | 'startedAt' | 'finishedAt'>>;
 
 export class CommandRunRepository {
+  private readonly ownerIdProvider: OwnerIdProvider;
+
   constructor(
     private readonly database: SqliteDatabase,
-    private readonly ownerId: string
+    ownerId: OwnerIdProvider
   ) {
-    assertOwner(ownerId);
+    this.ownerIdProvider = ownerId;
+    resolveOwnerId(ownerId);
   }
+
+  private get ownerId(): string { return resolveOwnerId(this.ownerIdProvider); }
 
   createRun(input: CommandRunRow): void {
     assertIdentifier(input.id, 'HOST_VALIDATION_FAILED');
@@ -1854,12 +1892,17 @@ export class CommandRunRepository {
 }
 
 export class TransferRepository {
+  private readonly ownerIdProvider: OwnerIdProvider;
+
   constructor(
     private readonly database: SqliteDatabase,
-    private readonly ownerId: string
+    ownerId: OwnerIdProvider
   ) {
-    assertOwner(ownerId);
+    this.ownerIdProvider = ownerId;
+    resolveOwnerId(ownerId);
   }
+
+  private get ownerId(): string { return resolveOwnerId(this.ownerIdProvider); }
 
   create(input: TransferJobCreateRow): TransferJobRow {
     assertIdentifier(input.id, 'HOST_VALIDATION_FAILED');
@@ -1959,7 +2002,9 @@ const toTerminalProfile = (row: TerminalProfileSqlRow): TerminalProfile => {
 };
 
 export class TerminalProfileRepository {
-  constructor(private readonly database: SqliteDatabase, private readonly ownerId: string) { assertOwner(ownerId); }
+  private readonly ownerIdProvider: OwnerIdProvider;
+  constructor(private readonly database: SqliteDatabase, ownerId: OwnerIdProvider) { this.ownerIdProvider = ownerId; resolveOwnerId(ownerId); }
+  private get ownerId(): string { return resolveOwnerId(this.ownerIdProvider); }
   get(id: string): TerminalProfile | null {
     assertIdentifier(id, 'HOST_VALIDATION_FAILED');
     const row = this.database.prepare('SELECT id, owner_id, name, appearance_json, created_at, updated_at FROM terminal_profiles WHERE id = @id AND owner_id = @ownerId').get({ id, ownerId: this.ownerId }) as TerminalProfileSqlRow | undefined;
@@ -1980,7 +2025,9 @@ export class TerminalProfileRepository {
 }
 
 export class TerminalPreferenceRepository {
-  constructor(private readonly database: SqliteDatabase, private readonly ownerId: string) { assertOwner(ownerId); }
+  private readonly ownerIdProvider: OwnerIdProvider;
+  constructor(private readonly database: SqliteDatabase, ownerId: OwnerIdProvider) { this.ownerIdProvider = ownerId; resolveOwnerId(ownerId); }
+  private get ownerId(): string { return resolveOwnerId(this.ownerIdProvider); }
   getDefaultProfileId(): string | null { const row=this.database.prepare('SELECT default_profile_id FROM terminal_preferences WHERE owner_id=@ownerId').get({ownerId:this.ownerId}) as {default_profile_id:string}|undefined; return row?.default_profile_id ?? null; }
   setDefaultProfileId(defaultProfileId: string): void { const timestamp=now(); this.database.prepare('INSERT INTO terminal_preferences (owner_id, default_profile_id, updated_at) VALUES (@ownerId,@defaultProfileId,@timestamp) ON CONFLICT(owner_id) DO UPDATE SET default_profile_id=excluded.default_profile_id, updated_at=excluded.updated_at').run({ownerId:this.ownerId,defaultProfileId,timestamp}); }
 }

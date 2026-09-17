@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { AppError } from '../../shared/errors.js';
 import { AppConfigRepository } from '../db/repositories.js';
 import { clearSessionCookie, getSessionId, setSessionCookie } from '../auth/session-cookie.js';
+import { currentOwnerId } from '../auth/owner-context.js';
 import { SessionStore } from '../auth/session-store.js';
 import { VaultService } from '../vault/vault-service.js';
 import { parseRecoveryKey, unwrapVaultKeyWithRecoveryKey } from '../sync/sync-crypto.js';
@@ -187,7 +188,7 @@ export const registerSetupRoutes = async (
 
     try {
       dependencies.appConfigRepository.create(created.config);
-      const sessionId = dependencies.sessionStore.create(created.vaultKey);
+      const sessionId = dependencies.sessionStore.create(created.vaultKey, currentOwnerId());
       sessionTransferred = true;
       setSessionCookie(reply, sessionId, { secure: dependencies.config.nodeEnv === 'production' });
       reply.code(201).send({ initialized: true, locked: false });
@@ -207,7 +208,7 @@ export const registerSetupRoutes = async (
     let sessionTransferred = false;
     try {
       dependencies.appConfigRepository.create(vaultConfig);
-      const sessionId = dependencies.sessionStore.create(vaultKey);
+      const sessionId = dependencies.sessionStore.create(vaultKey, currentOwnerId());
       sessionTransferred = true;
       setSessionCookie(reply, sessionId, { secure: dependencies.config.nodeEnv === 'production' });
       reply.code(201).send({ initialized: true, locked: false });
@@ -226,7 +227,7 @@ export const registerSetupRoutes = async (
     const input = parseRecoveryInput(request.body);
     const vaultKey = await deriveRecoveryVaultKey(input, descriptor, dependencies.vaultService);
     try {
-      reply.header('cache-control', 'no-store').send(await syncService.previewRecovery(account.accountId, account.deviceId, 'default', vaultKey));
+      reply.header('cache-control', 'no-store').send(await syncService.previewRecovery(account.accountId, account.deviceId, currentOwnerId(), vaultKey));
     } finally {
       vaultKey.fill(0);
     }
@@ -246,12 +247,12 @@ export const registerSetupRoutes = async (
       await syncService.applyRecovery(
         account.accountId,
         account.deviceId,
-        'default',
+        currentOwnerId(),
         vaultKey,
         previewId,
         () => { dependencies.appConfigRepository.create(vaultConfigFromEnvelope(descriptor.vaultUnlockEnvelope)); }
       );
-      const sessionId = dependencies.sessionStore.create(vaultKey);
+      const sessionId = dependencies.sessionStore.create(vaultKey, currentOwnerId());
       sessionTransferred = true;
       setSessionCookie(reply, sessionId, { secure: dependencies.config.nodeEnv === 'production' });
       reply.header('cache-control', 'no-store').code(201).send({ initialized: true, locked: false });
@@ -271,7 +272,7 @@ export const registerSetupRoutes = async (
     let sessionTransferred = false;
 
     try {
-      const sessionId = dependencies.sessionStore.create(vaultKey);
+      const sessionId = dependencies.sessionStore.create(vaultKey, currentOwnerId());
       sessionTransferred = true;
       setSessionCookie(reply, sessionId, { secure: dependencies.config.nodeEnv === 'production' });
       reply.send({ initialized: true, locked: false });

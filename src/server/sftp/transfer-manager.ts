@@ -4,15 +4,16 @@ import { AppError } from '../../shared/errors.js';
 import { transitionTransfer } from '../../shared/core/state-machines.js';
 import type { TransferCheckpoint, TransferJob, TransferRequest, TransferResumeRequest } from '../../shared/core/models.js';
 import { parseTransferRequest } from '../../shared/validation.js';
-import { TransferRepository } from '../db/repositories.js';
+import { TransferRepository, type OwnerIdProvider, resolveOwnerId } from '../db/repositories.js';
 import type { SqliteDatabase } from '../db/database.js';
 import type { TransferJobPatch, TransferJobRow } from '../db/types.js';
 import type { SftpResourceProvider } from './sftp-service.js';
 import { mapSftpError } from './error-mapping.js';
+import { DEFAULT_OWNER_ID } from '../auth/owner-context.js';
 
 export interface TransferManagerOptions {
   resourceProvider: SftpResourceProvider;
-  ownerId?: string;
+  ownerId?: OwnerIdProvider;
   database?: SqliteDatabase;
   repository?: TransferRepository;
   maxConcurrentPerHost?: number;
@@ -73,6 +74,8 @@ export class TransferManager {
   private readonly waitersByHost = new Map<string, Array<() => void>>();
   private readonly repository?: TransferRepository;
 
+  private get ownerId(): string { return resolveOwnerId(this.options.ownerId ?? DEFAULT_OWNER_ID); }
+
   constructor(options: TransferManagerOptions) {
     const maxConcurrentPerHost = options.maxConcurrentPerHost ?? 2;
     if (!Number.isInteger(maxConcurrentPerHost) || maxConcurrentPerHost < 1 || maxConcurrentPerHost > 8) throw new AppError('SFTP_TRANSFER_FAILED');
@@ -111,7 +114,7 @@ export class TransferManager {
       createdAt: now,
       updatedAt: now
     };
-    this.repository?.create({ ownerId: this.options.ownerId ?? 'default', ...job, checkpointOffset: 0, checkpointChecksum: null, temporaryPath: null });
+    this.repository?.create({ ownerId: this.ownerId, ...job, checkpointOffset: 0, checkpointChecksum: null, temporaryPath: null });
     this.jobs.set(id, { job, controller: new AbortController(), running: false, cancelRequested: false, pauseRequested: false });
     return { ...job };
   }

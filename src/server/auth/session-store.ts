@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { AppError } from '../../shared/errors.js';
 import { VAULT_KEY_LENGTH } from '../vault/types.js';
+import { DEFAULT_OWNER_ID } from './owner-context.js';
 
 export interface SessionStoreOptions {
   idleTimeoutMs?: number;
@@ -10,6 +11,7 @@ export interface SessionStoreOptions {
 
 export interface SessionRecord {
   id: string;
+  ownerId: string;
   vaultKey: Buffer;
   createdAt: number;
   lastUsedAt: number;
@@ -33,7 +35,7 @@ export class SessionStore {
     this.clock = options.now ?? Date.now;
   }
 
-  create(vaultKey: Buffer): string {
+  create(vaultKey: Buffer, ownerId = DEFAULT_OWNER_ID): string {
     if (!Buffer.isBuffer(vaultKey) || vaultKey.length !== VAULT_KEY_LENGTH) {
       throw new AppError('VAULT_CRYPTO_FAILED');
     }
@@ -46,6 +48,7 @@ export class SessionStore {
     const timestamp = this.clock();
     this.sessions.set(id, {
       id,
+      ownerId,
       vaultKey,
       createdAt: timestamp,
       lastUsedAt: timestamp,
@@ -77,6 +80,15 @@ export class SessionStore {
 
     session.vaultKey.fill(0);
     this.sessions.delete(id);
+    return true;
+  }
+
+  /** Bind an existing local vault session to the signed-in account once. */
+  bindOwner(id: string, ownerId: string): boolean {
+    const session = this.sessions.get(id);
+    if (!session || typeof ownerId !== 'string' || ownerId.length === 0) return false;
+    if (session.ownerId !== DEFAULT_OWNER_ID && session.ownerId !== ownerId) return false;
+    session.ownerId = ownerId;
     return true;
   }
 
