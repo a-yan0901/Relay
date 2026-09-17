@@ -1,4 +1,4 @@
-export type ThemeName = 'midnight' | 'light' | 'contrast' | 'nord' | 'dracula' | 'solarized-dark' | 'oled' | 'termius';
+export type ThemeName = 'midnight' | 'light' | 'contrast' | 'nord' | 'dracula' | 'solarized-dark' | 'oled' | 'termius' | 'termius-light';
 export type TerminalFontSize = 12 | 13 | 14 | 16;
 export type ServerViewMode = 'list' | 'grid';
 
@@ -72,7 +72,7 @@ export const DEFAULT_PREFERENCES: UiPreferences = {
   serverViewMode: 'list'
 };
 
-const themeNames = ['midnight', 'light', 'contrast', 'nord', 'dracula', 'solarized-dark', 'oled', 'termius'] as const satisfies readonly ThemeName[];
+const themeNames = ['midnight', 'light', 'contrast', 'nord', 'dracula', 'solarized-dark', 'oled', 'termius', 'termius-light'] as const satisfies readonly ThemeName[];
 
 export const themeOptions: ReadonlyArray<{ value: ThemeName; label: string }> = [
   { value: 'midnight', label: '深夜蓝' },
@@ -82,7 +82,8 @@ export const themeOptions: ReadonlyArray<{ value: ThemeName; label: string }> = 
   { value: 'dracula', label: 'Dracula 紫夜' },
   { value: 'solarized-dark', label: 'Solarized 暗色' },
   { value: 'oled', label: 'OLED 纯黑' },
-  { value: 'termius', label: 'Termius 经典' }
+  { value: 'termius', label: 'Termius Dark' },
+  { value: 'termius-light', label: 'Termius Light' }
 ];
 
 export const fontSizeOptions: ReadonlyArray<{ value: TerminalFontSize; label: string }> = [
@@ -100,10 +101,16 @@ const terminalThemes: Record<ThemeName, TerminalTheme> = {
     magenta: '#c59bff', brightMagenta: '#ddc5ff', white: '#d9e7f7', brightWhite: '#ffffff'
   },
   termius: {
-    background: '#141729', foreground: '#21b568', cursor: '#21b568', selectionBackground: 'rgba(33, 181, 104, 0.28)',
-    black: '#141729', brightBlack: '#3a3f52', blue: '#2092f6', brightBlue: '#56a8ff', green: '#21b568', brightGreen: '#44d98b',
-    red: '#f24e50', brightRed: '#ff6b6d', yellow: '#d9b44a', brightYellow: '#f0d36b', cyan: '#28c7a0', brightCyan: '#5de6c5',
-    magenta: '#d24f9c', brightMagenta: '#f06bc0', white: '#d8dbea', brightWhite: '#ffffff'
+    background: '#141728', foreground: '#5cc97c', cursor: '#92a0a7', selectionBackground: 'rgba(238, 123, 121, 0.38)',
+    black: '#141728', brightBlack: '#333649', blue: '#225388', brightBlue: '#346baf', green: '#5cc97c', brightGreen: '#5cc97c',
+    red: '#e05b57', brightRed: '#e16866', yellow: '#e7ebed', brightYellow: '#ffffff', cyan: '#478fef', brightCyan: '#5d9fef',
+    magenta: '#ee7b79', brightMagenta: '#ee7b79', white: '#d6dde0', brightWhite: '#ffffff'
+  },
+  'termius-light': {
+    background: '#d6dde0', foreground: '#333649', cursor: '#92a0a7', selectionBackground: 'rgba(238, 123, 121, 0.38)',
+    black: '#141728', brightBlack: '#333649', blue: '#1c4774', brightBlue: '#1c4774', green: '#57b26f', brightGreen: '#57b26f',
+    red: '#c24c48', brightRed: '#e05b57', yellow: '#346baf', brightYellow: '#346baf', cyan: '#3166a6', brightCyan: '#346baf',
+    magenta: '#e16866', brightMagenta: '#e16866', white: '#a7b2b9', brightWhite: '#f8f9fa'
   },
   light: {
     background: '#f5f8fc', foreground: '#1f2f46', cursor: '#1f6fc7', selectionBackground: 'rgba(49, 126, 219, 0.24)',
@@ -205,14 +212,14 @@ const themeDefinitions: Record<ThemeName, ThemeDefinition> = {
     swatches: ['#002b36', '#0b3b46', '#268bd2', '#b58900']
   },
   termius: {
-    id: 'termius', label: 'Termius 经典', colorScheme: 'dark', themeColor: '#141729',
-    tokens: {
-      bg: '#141729', bgRaised: '#202436', panel: '#202436', panelSoft: '#1a1d30', panelHover: '#292d43', panelActive: '#303650',
-      border: 'rgba(216, 219, 234, 0.16)', borderStrong: 'rgba(216, 219, 234, 0.3)', text: '#d8dbea', muted: '#a6abc0', faint: '#71778f',
-      blue: '#2092f6', blueStrong: '#1676ce', primaryText: '#ffffff', focusRing: '#56a8ff', green: '#21b568', yellow: '#d9b44a', red: '#f24e50', terminalBg: '#141729', shadow: '0 24px 80px rgba(0, 0, 0, 0.38)'
-    },
-    terminal: terminalThemes.termius,
-    swatches: ['#141729', '#202436', '#21b568', '#2092f6']
+    id: 'termius', label: 'Termius Dark', colorScheme: 'dark', themeColor: '#141728',
+    tokens: { bg: '#141728', bgRaised: '#202236', panel: '#202236', panelSoft: '#191c2d', panelHover: '#292d43', panelActive: '#333649', border: 'rgba(216, 221, 224, 0.16)', borderStrong: 'rgba(216, 221, 224, 0.3)', text: '#d6dde0', muted: '#a7b2b9', faint: '#737b8e', blue: '#478fef', blueStrong: '#346baf', primaryText: '#ffffff', focusRing: '#5cc97c', green: '#5cc97c', yellow: '#e7ebed', red: '#e05b57', terminalBg: '#141728', shadow: '0 24px 80px rgba(0, 0, 0, 0.4)' },
+    terminal: terminalThemes.termius, swatches: ['#141728', '#202236', '#5cc97c', '#478fef']
+  },
+  'termius-light': {
+    id: 'termius-light', label: 'Termius Light', colorScheme: 'light', themeColor: '#d6dde0',
+    tokens: { bg: '#d6dde0', bgRaised: '#f8f9fa', panel: '#eef1f3', panelSoft: '#e4e8eb', panelHover: '#ffffff', panelActive: '#c4d0d8', border: 'rgba(51, 54, 73, 0.2)', borderStrong: 'rgba(51, 54, 73, 0.34)', text: '#333649', muted: '#596174', faint: '#737b8e', blue: '#1c4774', blueStrong: '#16395f', primaryText: '#ffffff', focusRing: '#e05b57', green: '#57b26f', yellow: '#346baf', red: '#c24c48', terminalBg: '#d6dde0', shadow: '0 24px 80px rgba(51, 54, 73, 0.16)' },
+    terminal: terminalThemes['termius-light'], swatches: ['#d6dde0', '#f8f9fa', '#333649', '#57b26f']
   },
   oled: {
     id: 'oled', label: 'OLED 纯黑', colorScheme: 'dark', themeColor: '#000000',

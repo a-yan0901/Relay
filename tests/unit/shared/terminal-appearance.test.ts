@@ -23,7 +23,7 @@ describe('terminal appearance profiles', () => {
   it('provides the built-in color schemes as immutable built-ins', () => {
     expect(BUILTIN_TERMINAL_PROFILE_ID).toBe('builtin:midnight');
     expect(BUILTIN_TERMINAL_PROFILES.map((candidate) => candidate.id)).toEqual([
-      'builtin:midnight', 'builtin:termius', 'builtin:light', 'builtin:contrast', 'builtin:nord', 'builtin:dracula', 'builtin:solarized-dark', 'builtin:oled'
+      'builtin:midnight', 'builtin:termius', 'builtin:termius-light', 'builtin:light', 'builtin:contrast', 'builtin:nord', 'builtin:dracula', 'builtin:solarized-dark', 'builtin:oled'
     ]);
   });
 

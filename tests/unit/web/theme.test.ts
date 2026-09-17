@@ -51,13 +51,14 @@ describe('UI preferences', () => {
 
   it('exposes modern theme presets with semantic UI and terminal definitions', () => {
     expect(themeOptions.map((option) => option.value)).toEqual([
-      'midnight', 'light', 'contrast', 'nord', 'dracula', 'solarized-dark', 'oled', 'termius'
+      'midnight', 'light', 'contrast', 'nord', 'dracula', 'solarized-dark', 'oled', 'termius', 'termius-light'
     ]);
     expect(getThemeDefinition('nord').tokens.panelActive).not.toBe('');
     expect(getThemeDefinition('dracula').terminal.background).toBe('#282a36');
     expect(getThemeDefinition('solarized-dark').terminal.blue).toBe('#268bd2');
     expect(getThemeDefinition('oled').colorScheme).toBe('dark');
-    expect(getThemeDefinition('termius').terminal.foreground).toBe('#21b568');
+    expect(getThemeDefinition('termius').terminal.foreground).toBe('#5cc97c');
+    expect(getThemeDefinition('termius-light').terminal.foreground).toBe('#333649');
   });
 
   it('applies semantic tokens for a selected preset without touching data-theme', () => {
