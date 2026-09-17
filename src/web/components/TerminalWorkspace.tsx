@@ -454,12 +454,12 @@ export const TerminalWorkspace = ({
   const layoutStyle: CSSProperties | undefined = splitLayout || gridLayout ? { '--split-ratio': `${splitRatio * 100}%` } as CSSProperties : undefined;
 
   return (
-    <div className="terminal-workspace-shell" onKeyDownCapture={handleWorkspaceKeyDownCapture}>
+    <div className={`terminal-workspace-shell${filePanelOpen ? ' is-sftp-fullscreen' : ''}`} onKeyDownCapture={handleWorkspaceKeyDownCapture}>
       <section className="terminal-main" aria-label="终端标签工作区">
         <div className="terminal-topbar" role="toolbar" aria-label="终端导航与工作区操作">
           {workspaceHeader}
           {onBackToHosts && <button className="terminal-back-button" type="button" aria-label="← Server 列表" onClick={onBackToHosts}>← Server</button>}
-          <div className="terminal-tabs" role="tablist" aria-label="终端标签">
+          <div className="terminal-tabs" role="tablist" aria-label="终端标签" hidden={filePanelOpen}>
             {terminals.map((terminal) => {
               const host = hostById.get(terminal.hostId);
               const label = terminalLabels.get(terminal.terminalId) ?? host?.name ?? terminal.label ?? terminal.hostId;
@@ -476,7 +476,7 @@ export const TerminalWorkspace = ({
               );
             })}
           </div>
-          <div className="terminal-topbar-actions">
+          <div className="terminal-topbar-actions" hidden={filePanelOpen}>
             {onConnectHost && (
               <div className="terminal-host-picker-anchor">
                 <button id="terminal-new-terminal" className="terminal-topbar-button terminal-new-button" type="button" aria-label="新建终端" aria-keyshortcuts="Control+N Meta+N" aria-expanded={hostPickerOpen} onClick={openHostPicker}>＋<span>新建</span></button>
@@ -508,6 +508,8 @@ export const TerminalWorkspace = ({
           className={`terminal-layout ${gridLayout ? 'is-grid' : splitLayout ? `is-split-${splitLayout.orientation}` : 'is-single'} ${isDraggingDivider ? 'is-dragging' : ''}`}
           ref={layoutRef}
           style={layoutStyle}
+          hidden={filePanelOpen}
+          aria-hidden={filePanelOpen}
         >
           {terminals.map((terminal) => {
             const host = hostById.get(terminal.hostId);

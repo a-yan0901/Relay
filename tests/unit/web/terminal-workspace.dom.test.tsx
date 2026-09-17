@@ -201,10 +201,14 @@ describe('TerminalWorkspace', () => {
 
     await user.click(screen.getByRole('button', { name: '远程文件' }));
     expect(await screen.findByRole('region', { name: 'SFTP 工作区' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '终端标签工作区' }).parentElement).toHaveClass('is-sftp-fullscreen');
+    expect(screen.getByRole('region', { name: '终端标签工作区' }).querySelector('.terminal-layout')).toHaveAttribute('hidden');
     expect(screen.getByRole('heading', { name: '本地文件' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '传输中心' })).toHaveTextContent('暂无文件传输');
     await user.click(screen.getByRole('button', { name: '返回终端' }));
     expect(screen.queryByRole('region', { name: 'SFTP 工作区' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '终端标签工作区' }).parentElement).not.toHaveClass('is-sftp-fullscreen');
+    expect(screen.getByRole('region', { name: '终端标签工作区' }).querySelector('.terminal-layout')).not.toHaveAttribute('hidden');
   });
 
   it('embeds the global header while keeping session actions out of the terminal bar', async () => {
