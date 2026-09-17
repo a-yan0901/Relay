@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto';
 
 import type { AccountSession } from '../../shared/core/models.js';
+import type { CloudDeviceKeyPair } from '../../shared/cloud/key-crypto.js';
 import { AppError } from '../../shared/errors.js';
 
 export interface CloudBrowserSession {
   token: string;
   account: AccountSession;
+  deviceKeyPair?: CloudDeviceKeyPair;
   readonly createdAt: number;
   readonly expiresAt: number;
   lastUsedAt: number;
@@ -71,7 +73,7 @@ export class CloudBrowserSessionStore {
     this.clock = options.now ?? Date.now;
   }
 
-  create(token: string, account: AccountSession, at = this.clock()): string {
+  create(token: string, account: AccountSession, at = this.clock(), deviceKeyPair?: CloudDeviceKeyPair): string {
     if (!TOKEN_PATTERN.test(token) || !Number.isSafeInteger(at)) throw new AppError('ACCOUNT_SESSION_INVALID');
     assertAccount(account);
     this.sweep(at);
@@ -88,6 +90,7 @@ export class CloudBrowserSessionStore {
     this.sessions.set(id, {
       token,
       account: { ...account },
+      ...(deviceKeyPair === undefined ? {} : { deviceKeyPair: { ...deviceKeyPair } }),
       createdAt: at,
       expiresAt: at + this.absoluteTimeoutMs,
       lastUsedAt: at
@@ -107,7 +110,8 @@ export class CloudBrowserSessionStore {
     session.lastUsedAt = at;
     return {
       ...session,
-      account: { ...session.account }
+      account: { ...session.account },
+      ...(session.deviceKeyPair === undefined ? {} : { deviceKeyPair: { ...session.deviceKeyPair } })
     };
   }
 

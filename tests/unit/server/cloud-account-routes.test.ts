@@ -15,8 +15,9 @@ const account = {
 };
 
 const makeClient = () => ({
-  async register() { return { account, token: 'a'.repeat(43) }; },
-  async signIn() { return { account, token: 'b'.repeat(43) }; },
+  lastDevice: undefined as { publicKey?: string | null } | undefined,
+  async register(_email: string, _password: string, device: { publicKey?: string | null }) { this.lastDevice = device; return { account, token: 'a'.repeat(43) }; },
+  async signIn(_email: string, _password: string, device: { publicKey?: string | null }) { this.lastDevice = device; return { account, token: 'b'.repeat(43) }; },
   async getSession() { return { account }; },
   async refresh() { return { account, token: 'c'.repeat(43) }; },
   async signOut() {},
@@ -44,7 +45,8 @@ describe('web cloud account BFF routes', () => {
       enabled: true,
       client,
       sessions: new CloudBrowserSessionStore(),
-      secureCookie: false
+      secureCookie: false,
+      createDeviceKeyPair: async () => ({ publicKey: 'public-key', privateKey: 'private-key' })
     });
 
     const registered = await app.inject({
@@ -55,6 +57,7 @@ describe('web cloud account BFF routes', () => {
     expect(registered.statusCode).toBe(201);
     expect(registered.body).not.toContain('a'.repeat(43));
     expect(registered.json()).toEqual({ account });
+    expect(client.lastDevice).toEqual(expect.objectContaining({ publicKey: 'public-key' }));
     const sessionCookie = cookieValue(registered);
     expect(registered.headers['set-cookie']).toMatch(/HttpOnly/iu);
     expect(registered.headers['set-cookie']).toMatch(/SameSite=Strict/iu);

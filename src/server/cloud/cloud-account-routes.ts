@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AccountSession } from '../../shared/core/models.js';
 import type { CloudApiClient, CloudAuthResponse, CloudWorkspaceDescriptor } from '../../shared/cloud/client.js';
+import { generateCloudDeviceKeyPair, type CloudDeviceKeyPair } from '../../shared/cloud/key-crypto.js';
 import { AppError } from '../../shared/errors.js';
 import { CloudBrowserSessionStore } from './cloud-session-store.js';
 
@@ -15,6 +16,7 @@ export interface CloudAccountRouteDependencies {
   client: CloudAccountRouteClient;
   sessions: CloudBrowserSessionStore;
   secureCookie: boolean;
+  createDeviceKeyPair?: () => Promise<CloudDeviceKeyPair>;
 }
 
 const authBodySchema = z.object({
@@ -99,29 +101,35 @@ export const registerCloudAccountRoutes = async (
   app: FastifyInstance,
   dependencies: CloudAccountRouteDependencies
 ): Promise<void> => {
+  const createDeviceKeyPair = dependencies.createDeviceKeyPair ?? generateCloudDeviceKeyPair;
+
   app.post('/api/cloud/account/register', async (request, reply) => {
     requireEnabled(dependencies.enabled);
     const input = authInput(request.body);
+    const deviceKeyPair = await createDeviceKeyPair();
     const result = await dependencies.client.register(input.email, input.password, {
       platform: 'web',
+      publicKey: deviceKeyPair.publicKey,
       ...(input.deviceLabel === undefined ? {} : { label: input.deviceLabel })
     });
     const oldId = cookieId(request);
     if (oldId) dependencies.sessions.revoke(oldId);
-    setCloudCookie(reply, dependencies.sessions.create(result.token, result.account), dependencies.secureCookie);
+    setCloudCookie(reply, dependencies.sessions.create(result.token, result.account, undefined, deviceKeyPair), dependencies.secureCookie);
     reply.header('cache-control', 'no-store').code(201).send(authResponse(result));
   });
 
   app.post('/api/cloud/account/session', async (request, reply) => {
     requireEnabled(dependencies.enabled);
     const input = authInput(request.body);
+    const deviceKeyPair = await createDeviceKeyPair();
     const result = await dependencies.client.signIn(input.email, input.password, {
       platform: 'web',
+      publicKey: deviceKeyPair.publicKey,
       ...(input.deviceLabel === undefined ? {} : { label: input.deviceLabel })
     });
     const oldId = cookieId(request);
     if (oldId) dependencies.sessions.revoke(oldId);
-    setCloudCookie(reply, dependencies.sessions.create(result.token, result.account), dependencies.secureCookie);
+    setCloudCookie(reply, dependencies.sessions.create(result.token, result.account, undefined, deviceKeyPair), dependencies.secureCookie);
     reply.header('cache-control', 'no-store').send(authResponse(result));
   });
 
