@@ -251,7 +251,7 @@ describe('blind sync storage and snapshot bridge', () => {
 
     const plaintext = await snapshotService.create(ownerId, vaultKey);
     const parsed = JSON.parse(plaintext.toString('utf8')) as Record<string, unknown> & { groups: unknown[]; hosts: unknown[] };
-    expect(Object.keys(parsed).sort()).toEqual(['groups', 'hosts', 'identities', 'schemaVersion', 'snippets', 'workspace'].sort());
+    expect(Object.keys(parsed).sort()).toEqual(['groups', 'hosts', 'identities', 'schemaVersion', 'snippets', 'terminalDefaultProfileId', 'terminalProfiles', 'workspace'].sort());
     expect(parsed).not.toHaveProperty('transferJobs');
     expect(parsed).not.toHaveProperty('commandRuns');
     expect(parsed).not.toHaveProperty('activity');
@@ -685,8 +685,8 @@ describe('blind sync storage and snapshot bridge', () => {
     try {
       const localSnapshot = JSON.parse(localPlaintext.toString('utf8')) as Record<string, unknown>;
       const remoteSnapshot = JSON.parse(remotePlaintext.toString('utf8')) as Record<string, unknown>;
-      expect(Object.keys(localSnapshot).sort()).toEqual(['groups', 'hosts', 'identities', 'schemaVersion', 'snippets', 'workspace'].sort());
-      expect(Object.keys(remoteSnapshot).sort()).toEqual(['groups', 'hosts', 'identities', 'schemaVersion', 'snippets', 'workspace'].sort());
+      expect(Object.keys(localSnapshot).sort()).toEqual(['groups', 'hosts', 'identities', 'schemaVersion', 'snippets', 'terminalDefaultProfileId', 'terminalProfiles', 'workspace'].sort());
+      expect(Object.keys(remoteSnapshot).sort()).toEqual(['groups', 'hosts', 'identities', 'schemaVersion', 'snippets', 'terminalDefaultProfileId', 'terminalProfiles', 'workspace'].sort());
       expect(JSON.stringify(remoteSnapshot)).toContain(hostMarker);
     } finally {
       localPlaintext.fill(0);

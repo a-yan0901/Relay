@@ -13,7 +13,8 @@ import {
   storedHostCredentialSchema,
   type StoredHostCredential
 } from '../../shared/validation.js';
-import { GroupRepository, HostRepository, IdentityRepository } from '../db/repositories.js';
+import { GroupRepository, HostRepository, IdentityRepository, TerminalPreferenceRepository, TerminalProfileRepository } from '../db/repositories.js';
+import { BUILTIN_TERMINAL_PROFILES, terminalAppearanceSchema, type TerminalProfile } from '../../shared/terminal-appearance.js';
 import type { SqliteDatabase } from '../db/database.js';
 import {
   ARGON2ID_PARAMS,
@@ -68,12 +69,15 @@ export interface BundleHost {
   credentialSource?: 'inline' | 'identity' | 'group';
   identityId?: string | null;
   connectionProfileOverrides?: ConnectionProfileOverrides | null;
+  terminalProfileId?: string | null;
 }
 
 export interface BundlePayload {
   groups: BundleGroup[];
   hosts: BundleHost[];
   identities?: BundleIdentity[];
+  terminalProfiles?: TerminalProfile[];
+  terminalDefaultProfileId?: string;
 }
 
 interface VaultBundleEnvelope {
@@ -224,13 +228,27 @@ export const parsePayload = (value: unknown): BundlePayload => {
   }
   if (new Set(groups.map((group) => group.id)).size !== groups.length) throw new AppError('VAULT_BUNDLE_INVALID');
 
+  const terminalProfiles: TerminalProfile[] = [];
+  if (candidate.terminalProfiles !== undefined) {
+    if (!Array.isArray(candidate.terminalProfiles) || candidate.terminalProfiles.length > 100) throw new AppError('VAULT_BUNDLE_INVALID');
+    for (const value of candidate.terminalProfiles) {
+      if (typeof value !== 'object' || value === null) throw new AppError('VAULT_BUNDLE_INVALID');
+      const profile = value as Record<string, unknown>;
+      const appearance = terminalAppearanceSchema.safeParse(profile.appearance);
+      if (!appearance.success || typeof profile.id !== 'string' || !bundleIdentifier.test(profile.id) || typeof profile.name !== 'string' || !profile.name || typeof profile.createdAt !== 'string' || typeof profile.updatedAt !== 'string') throw new AppError('VAULT_BUNDLE_INVALID');
+      terminalProfiles.push({ id: profile.id, name: profile.name, appearance: appearance.data, createdAt: profile.createdAt, updatedAt: profile.updatedAt });
+    }
+    if (new Set(terminalProfiles.map((profile) => profile.id)).size !== terminalProfiles.length) throw new AppError('VAULT_BUNDLE_INVALID');
+  }
+  const terminalDefaultProfileId = candidate.terminalDefaultProfileId === undefined ? undefined : typeof candidate.terminalDefaultProfileId === 'string' && bundleIdentifier.test(candidate.terminalDefaultProfileId) ? candidate.terminalDefaultProfileId : (() => { throw new AppError('VAULT_BUNDLE_INVALID'); })();
+
   const hosts: BundleHost[] = [];
   for (const value of candidate.hosts) {
     if (typeof value !== 'object' || value === null) throw new AppError('VAULT_BUNDLE_INVALID');
     const host = value as Record<string, unknown>;
     const parsed = hostMetadataInputSchema.safeParse({
       name: host.name, address: host.address, port: host.port, username: host.username,
-      groupId: host.groupId, jumpHostIds: host.jumpHostIds, connectionProfile: host.connectionProfile,
+      groupId: host.groupId, terminalProfileId: host.terminalProfileId, jumpHostIds: host.jumpHostIds, connectionProfile: host.connectionProfile,
       tags: host.tags, isFavorite: host.isFavorite
     });
     const parsedAuth = storedHostCredentialSchema.safeParse(host.auth);
@@ -261,7 +279,8 @@ export const parsePayload = (value: unknown): BundlePayload => {
       hostKeyFingerprint: typeof host.hostKeyFingerprint === 'string' ? host.hostKeyFingerprint : null,
       ...(credentialSource === undefined ? {} : { credentialSource }),
       ...(identityId === undefined ? {} : { identityId }),
-      ...(connectionProfileOverrides === undefined ? {} : { connectionProfileOverrides })
+      ...(connectionProfileOverrides === undefined ? {} : { connectionProfileOverrides }),
+      terminalProfileId: parsed.data.terminalProfileId ?? null
     };
     hosts.push(parsedHost);
   }
@@ -269,7 +288,7 @@ export const parsePayload = (value: unknown): BundlePayload => {
   const identityIds = new Set(identities.map((identity) => identity.id));
   for (const group of groups) if (group.defaultIdentityId && !identityIds.has(group.defaultIdentityId)) throw new AppError('VAULT_BUNDLE_INVALID');
   for (const host of hosts) if (host.credentialSource === 'identity' && (!host.identityId || !identityIds.has(host.identityId))) throw new AppError('VAULT_BUNDLE_INVALID');
-  return { groups, hosts, identities };
+  return { groups, hosts, identities, terminalProfiles, ...(terminalDefaultProfileId === undefined ? {} : { terminalDefaultProfileId }) };
 };
 
 const orderBundleGroups = (groups: readonly BundleGroup[]): BundleGroup[] => {
@@ -324,6 +343,8 @@ export interface VaultBundleServiceOptions {
   groupRepository: GroupRepository;
   vaultService: VaultService;
   identityService?: IdentityService;
+  terminalProfileRepository?: TerminalProfileRepository;
+  terminalPreferenceRepository?: TerminalPreferenceRepository;
 }
 
 export class VaultBundleService {
@@ -352,6 +373,10 @@ export class VaultBundleService {
       identityCredentials.set(identity.id, auth);
       identities.push({ id: identity.id, name: identity.name, type: identity.type, username: identity.username, keyFingerprint: identity.keyFingerprint, auth });
     }
+    const terminalProfileRepository = this.options.terminalProfileRepository ?? new TerminalProfileRepository(this.options.database, this.options.ownerId);
+    const terminalPreferenceRepository = this.options.terminalPreferenceRepository ?? new TerminalPreferenceRepository(this.options.database, this.options.ownerId);
+    const terminalProfiles = terminalProfileRepository.list();
+    const terminalDefaultProfileId = terminalPreferenceRepository.getDefaultProfileId() ?? 'builtin:midnight';
     const hostRows = this.options.hostRepository.listForBundle();
     if (!this.options.identityService && hostRows.some((row) => row.credentialSource?.type !== 'inline')) throw new AppError('IDENTITY_NOT_FOUND');
     const hosts: BundleHost[] = [];
@@ -382,6 +407,7 @@ export class VaultBundleService {
         jumpHostIds: [...(row.jumpHostIds ?? [])],
         connectionProfile: row.connectionProfile ?? mergeConnectionProfileSettings(undefined),
         connectionProfileOverrides: row.connectionProfileOverrides ?? null,
+        terminalProfileId: row.terminalProfileId ?? null,
         tags: [...row.tags],
         isFavorite: row.isFavorite,
         hostKeyAlgorithm: row.hostKeyAlgorithm,
@@ -390,7 +416,7 @@ export class VaultBundleService {
         ...(credentialSource === 'identity' ? { identityId: row.identityId } : {})
       });
     }
-    return { groups, hosts, identities };
+    return { groups, hosts, identities, terminalProfiles, terminalDefaultProfileId };
   }
 
   async export(sessionKey: Buffer, exportPassword: string): Promise<string> {
@@ -525,6 +551,13 @@ export class VaultBundleService {
           importedIdentities += 1;
         }
       }
+      const terminalProfileRepository = this.options.terminalProfileRepository ?? new TerminalProfileRepository(this.options.database, this.options.ownerId);
+      const terminalPreferenceRepository = this.options.terminalPreferenceRepository ?? new TerminalPreferenceRepository(this.options.database, this.options.ownerId);
+      for (const profile of pending.payload.terminalProfiles ?? []) {
+        if (!terminalProfileRepository.get(profile.id)) terminalProfileRepository.create(profile);
+      }
+      const importedDefault = pending.payload.terminalDefaultProfileId;
+      if (importedDefault && (BUILTIN_TERMINAL_PROFILES.some((profile) => profile.id === importedDefault) || terminalProfileRepository.get(importedDefault))) terminalPreferenceRepository.setDefaultProfileId(importedDefault);
       for (const group of groups) {
         if (group.existing) {
           if (resolution.groupConflicts === 'reuse') { skippedGroups += 1; continue; }
@@ -567,7 +600,7 @@ export class VaultBundleService {
           id: host.id, ownerId: this.options.ownerId, name: host.name, address: host.address, port: host.port, username: host.username,
           authType: host.auth.type === 'pending' ? host.auth.authType : host.auth.type, credentialCiphertext: host.credentialCiphertext, credentialVersion: 1,
           credentialSource: source, identityId,
-          hostKeyAlgorithm: host.hostKeyAlgorithm, hostKeyFingerprint: host.hostKeyFingerprint, groupId: host.groupId, jumpHostIds: host.jumpHostIds, tags: host.tags,
+          hostKeyAlgorithm: host.hostKeyAlgorithm, hostKeyFingerprint: host.hostKeyFingerprint, groupId: host.groupId, terminalProfileId: host.terminalProfileId ?? null, jumpHostIds: host.jumpHostIds, tags: host.tags,
           connectionProfile: mergeConnectionProfileSettings(connectionProfileOverrides ?? undefined),
           connectionProfileOverrides: connectionProfileOverrides ?? null,
           isFavorite: host.isFavorite, lastConnectedAt: null

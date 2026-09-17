@@ -68,7 +68,8 @@ export interface SyncSnapshotServiceOptions {
 
 const SAFE_OWNER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const SNAPSHOT_KEYS = new Set(['schemaVersion', 'groups', 'hosts', 'identities', 'snippets', 'workspace']);
+const SNAPSHOT_KEYS = new Set(['schemaVersion', 'groups', 'hosts', 'identities', 'snippets', 'workspace', 'terminalProfiles', 'terminalDefaultProfileId']);
+const LEGACY_SNAPSHOT_KEYS = new Set(['schemaVersion', 'groups', 'hosts', 'identities', 'snippets', 'workspace']);
 const SNIPPET_KEYS = new Set(['id', 'name', 'description', 'tags', 'command', 'variables', 'createdAt', 'updatedAt']);
 
 const assertOwner = (ownerId: string): void => {
@@ -169,7 +170,8 @@ export class SyncSnapshotService {
   validate(plaintext: Buffer): SyncSnapshot {
     const candidate = parseJson(plaintext);
     const keys = Object.keys(candidate);
-    if (keys.length !== SNAPSHOT_KEYS.size || keys.some((key) => !SNAPSHOT_KEYS.has(key))) failSnapshot();
+    const isLegacy = keys.length === LEGACY_SNAPSHOT_KEYS.size && keys.every((key) => LEGACY_SNAPSHOT_KEYS.has(key));
+    if ((!isLegacy && keys.length !== SNAPSHOT_KEYS.size) || keys.some((key) => !SNAPSHOT_KEYS.has(key))) failSnapshot();
     const snippetValues: unknown[] = candidate.schemaVersion === SYNC_SNAPSHOT_SCHEMA_VERSION && Array.isArray(candidate.snippets)
       ? candidate.snippets
       : failSnapshot();
@@ -179,7 +181,9 @@ export class SyncSnapshotService {
         return parsePayload({
           groups: candidate.groups,
           hosts: candidate.hosts,
-          identities: candidate.identities
+          identities: candidate.identities,
+          terminalProfiles: candidate.terminalProfiles,
+          terminalDefaultProfileId: candidate.terminalDefaultProfileId
         });
       } catch {
         return failSnapshot();
