@@ -51,6 +51,7 @@ import type {
 import type { RecoveryKeyState, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate, WorkspaceTemplateInput, VaultStatus } from './models.js';
 import type { AccountDeletionState, SyncDeletionState } from './models.js';
 import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from './account-sync.js';
+import type { CloudWorkspaceDirectorySnapshot } from '../cloud/directory.js';
 
 export type SecretRef =
   | { kind: 'host'; id: string }
@@ -234,6 +235,11 @@ export interface WorkspaceStore {
   listTemplates(): Promise<readonly WorkspaceTemplate[]>;
   createTemplate(input: WorkspaceTemplateInput): Promise<WorkspaceTemplate>;
   deleteTemplate(templateId: string): Promise<void>;
+}
+
+/** Optional account-scoped directory of independent device workspaces. */
+export interface WorkspaceDirectoryPort {
+  refresh(): Promise<CloudWorkspaceDirectorySnapshot>;
 }
 
 export interface SnippetStore {

@@ -1,4 +1,5 @@
 import type { TerminalProfile } from '../../shared/terminal-appearance';
+import { buildCloudWorkspaceDirectorySnapshot, type CloudWorkspaceDirectorySnapshot } from '../../shared/cloud/directory.js';
 import type { CapabilitySet } from '../../shared/core/capabilities';
 import { createWebCapabilitySet, negotiateCapabilitySet, WEB_CLIENT_CAPABILITIES } from '../../shared/core/capabilities';
 import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from '../../shared/core/account-sync';
@@ -61,6 +62,7 @@ import type {
   VaultRecoveryInput,
   VaultRecoveryPort,
   VaultSessionPort,
+  WorkspaceDirectoryPort,
   WorkspaceStore,
   TerminalProfileStore,
   OpenShellRequest
@@ -227,6 +229,12 @@ const hasCloudDeviceApi = (client: WebApiClient): boolean => (
   hasFunction(client, 'listCloudDevices')
   && hasFunction(client, 'revokeCloudDevice')
   && hasFunction(client, 'trustCloudDevice')
+);
+
+const hasCloudWorkspaceDirectoryApi = (client: WebApiClient): boolean => (
+  hasFunction(client, 'getCloudAccountSession')
+  && hasFunction(client, 'listCloudDevices')
+  && hasFunction(client, 'listCloudWorkspaces')
 );
 
 const hasSyncApi = (client: WebApiClient): boolean => (
@@ -616,6 +624,22 @@ export class WebCloudDeviceTrust implements DeviceTrustPort {
   }
 }
 
+type WebCloudWorkspaceDirectoryClient = Pick<WebApiClient, 'getCloudAccountSession' | 'listCloudDevices' | 'listCloudWorkspaces'>;
+
+export class WebCloudWorkspaceDirectory implements WorkspaceDirectoryPort {
+  constructor(private readonly client: WebCloudWorkspaceDirectoryClient = api) {}
+
+  async refresh(): Promise<CloudWorkspaceDirectorySnapshot> {
+    const account = (await requireApi(this.client.getCloudAccountSession)()).account;
+    if (!account) return { devices: [], workspaces: [], cards: [] };
+    const [devices, workspaces] = await Promise.all([
+      requireApi(this.client.listCloudDevices)(),
+      requireApi(this.client.listCloudWorkspaces)()
+    ]);
+    return buildCloudWorkspaceDirectorySnapshot(devices, workspaces, account.deviceId);
+  }
+}
+
 type WebSyncClient = Pick<WebApiClient, 'getSyncState' | 'getSyncDescriptor' | 'enableSync' | 'retrySync' | 'previewPull' | 'resolveConflict'> & Partial<Pick<WebApiClient, 'getSyncEnvelope' | 'pushSyncEnvelope' | 'issueRecoveryKey' | 'confirmRecoveryKey' | 'exportConflict' | 'requestCloudDeletion' | 'restoreCloudDeletion'>>;
 
 export class WebSync implements SyncPort {
@@ -998,6 +1022,7 @@ export const createWebAdapters = (options: {
   const deviceAdapter = hasDeviceApi(client) ? new WebDeviceTrust(client) : undefined;
   const cloudAccountAdapter = hasCloudAccountApi(client) ? new WebCloudAccountSession(client) : undefined;
   const cloudDeviceAdapter = hasCloudDeviceApi(client) ? new WebCloudDeviceTrust(client) : undefined;
+  const cloudWorkspaceDirectoryAdapter = hasCloudWorkspaceDirectoryApi(client) ? new WebCloudWorkspaceDirectory(client) : undefined;
   const syncAdapter = hasSyncApi(client) ? new WebSync(client) : undefined;
   const vaultRecoveryAdapter = hasVaultRecoveryApi(client) ? new WebVaultRecovery(client) : undefined;
   const browserSystemServices = createBrowserSystemServices();
@@ -1030,6 +1055,7 @@ export const createWebAdapters = (options: {
     account: undefined,
     devices: undefined,
     sync: undefined,
+    workspaceDirectory: undefined,
     capabilityAdapter,
     accountMode: 'none' as const,
     negotiateCapabilities: async (): Promise<CapabilitySet> => {
@@ -1041,6 +1067,7 @@ export const createWebAdapters = (options: {
       runtime.devices = runtime.capabilities.supports('device.trust')
         ? runtime.accountMode === 'cloud' ? cloudDeviceAdapter : deviceAdapter
         : undefined;
+      runtime.workspaceDirectory = runtime.accountMode === 'cloud' ? cloudWorkspaceDirectoryAdapter : undefined;
       runtime.sync = runtime.capabilities.supports('sync.encrypted') ? syncAdapter : undefined;
       runtime.vaultRecovery = runtime.capabilities.supports('sync.encrypted') ? vaultRecoveryAdapter : undefined;
       return runtime.capabilities;

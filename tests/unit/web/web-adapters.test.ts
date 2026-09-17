@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { assertAccountSyncContract, assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
 import type { AccountSession, AccountDeletionState, DeviceDescriptor, SyncConflictExport, SyncDeletionState, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest, VaultRecoveryPreview } from '../../../src/shared/core/models.js';
 import type { HostMetadata } from '../../../src/shared/validation.js';
-import { createWebAdapters, WebAccountSession, WebCloudAccountSession, WebCloudDeviceTrust, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync, WebVaultRecovery } from '../../../src/web/platform/web-adapters.js';
+import { createWebAdapters, WebAccountSession, WebCloudAccountSession, WebCloudDeviceTrust, WebCloudWorkspaceDirectory, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync, WebVaultRecovery } from '../../../src/web/platform/web-adapters.js';
 import type { TerminalSocketLike } from '../../../src/web/hooks/use-terminal-session.js';
 
 const host: HostMetadata = {
@@ -215,6 +215,23 @@ describe('web adapters', () => {
     expect(runtime.devices).toBeInstanceOf(WebCloudDeviceTrust);
     expect(runtime.sync).toBeUndefined();
     await expect(runtime.account?.status()).resolves.toEqual(account);
+  });
+
+  it('exposes a bounded cloud workspace directory without exposing a bearer token to the adapter', async () => {
+    const account = { accountId: 'account-1', deviceId: 'device-current', state: 'signed-in' as const, expiresAt: '2026-09-17T00:00:00.000Z', trusted: true };
+    const client = {
+      getCapabilities: async () => ({ client: 'web' as const, version: 1 as const, accountMode: 'cloud' as const, capabilities: ['workspace.persistence', 'account.auth', 'device.trust'] as const }),
+      getCloudAccountSession: async () => ({ account }),
+      listCloudDevices: async () => [{ id: 'device-current', label: '当前浏览器', platform: 'web' as const, lastSeenAt: null, current: true, revokedAt: null, trustedAt: '2026-09-17T00:00:00.000Z' }],
+      listCloudWorkspaces: async () => [{ id: 'workspace-1', accountId: 'account-1', ownerDeviceId: 'device-current', encryptedTitle: 'opaque', createdAt: '2026-09-17T00:00:00.000Z', updatedAt: '2026-09-17T00:00:00.000Z', deletedAt: null, online: true, activeViewerCount: 0 }]
+    };
+    const runtime = createWebAdapters({ api: client });
+    await runtime.negotiateCapabilities();
+
+    expect(runtime.workspaceDirectory).toBeInstanceOf(WebCloudWorkspaceDirectory);
+    const snapshot = await runtime.workspaceDirectory?.refresh();
+    expect(snapshot?.cards).toEqual([expect.objectContaining({ workspaceId: 'workspace-1', status: 'current' })]);
+    expect(client).not.toHaveProperty('token');
   });
 
   it('keeps WebSocket lifecycle behind the SessionTransport port', async () => {

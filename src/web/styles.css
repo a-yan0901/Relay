@@ -403,6 +403,36 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .host-pane { min-width: 0; }
 
+.workspace-directory {
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin: 0 0 22px;
+  padding: 17px;
+}
+
+.workspace-directory-heading { align-items: flex-start; display: flex; gap: 18px; justify-content: space-between; }
+.workspace-directory-heading h2 { font-size: 18px; letter-spacing: -0.035em; margin: 0; }
+.workspace-directory-copy { color: var(--muted); font-size: 11px; line-height: 1.55; margin: 7px 0 0; }
+.workspace-directory-actions { align-items: center; display: flex; gap: 8px; }
+.workspace-directory-search { min-width: 170px; }
+.workspace-directory-search input { min-height: 32px; }
+.workspace-directory-error { align-items: center; background: rgba(255, 125, 125, 0.08); border: 1px solid rgba(255, 125, 125, 0.2); border-radius: 8px; color: var(--red); display: flex; font-size: 11px; justify-content: space-between; margin-top: 13px; padding: 8px 10px; }
+.workspace-directory-loading, .workspace-directory-empty { border: 1px dashed var(--border-strong); border-radius: 9px; color: var(--faint); font-size: 11px; margin-top: 14px; padding: 16px; text-align: center; }
+.workspace-directory-grid { display: grid; gap: 9px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-top: 14px; }
+.workspace-directory-card { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; min-height: 132px; padding: 12px; }
+.workspace-directory-card-green { border-color: rgba(82, 211, 154, 0.22); }
+.workspace-directory-card-blue { border-color: rgba(93, 168, 255, 0.22); }
+.workspace-directory-card-amber { border-color: rgba(246, 198, 106, 0.22); }
+.workspace-directory-card-red { border-color: rgba(255, 125, 125, 0.22); }
+.workspace-directory-card-top { align-items: center; display: flex; gap: 7px; }
+.workspace-directory-status, .workspace-directory-viewers { color: var(--muted); font-size: 10px; }
+.workspace-directory-viewers { margin-left: auto; }
+.workspace-directory-owner { font-size: 13px; margin-top: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-directory-platform { color: var(--faint); font-size: 10px; margin-top: 4px; }
+.workspace-directory-open { margin-top: auto; width: 100%; }
+.workspace-directory-hint { color: var(--faint); font-size: 10px; margin-top: auto; }
+
 .host-pane-header { align-items: flex-end; display: flex; justify-content: space-between; margin-bottom: 26px; }
 
 .host-pane-header h1 { font-size: clamp(30px, 4vw, 44px); letter-spacing: -0.055em; line-height: 0.95; margin: 0; }
@@ -1432,6 +1462,9 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
   .nav-item { margin: 0; min-width: max-content; width: auto; }
   .sidebar-footer { display: none; }
   .host-toolbar { align-items: stretch; flex-direction: column; gap: 10px; }
+  .workspace-directory-heading { flex-direction: column; }
+  .workspace-directory-actions { width: 100%; }
+  .workspace-directory-search { flex: 1; min-width: 0; }
   .search-field { max-width: none; }
   .host-count { align-self: flex-end; }
   .host-card { align-items: flex-start; flex-direction: column; width: 100%; }

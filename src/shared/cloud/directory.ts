@@ -75,6 +75,20 @@ const sortCards = (left: CloudWorkspaceCard, right: CloudWorkspaceCard): number 
   return left.ownerLabel.localeCompare(right.ownerLabel) || left.workspaceId.localeCompare(right.workspaceId);
 };
 
+export const buildCloudWorkspaceDirectorySnapshot = (
+  devices: readonly CloudDeviceDescriptor[],
+  workspaces: readonly CloudWorkspaceDescriptor[],
+  currentDeviceId: string
+): CloudWorkspaceDirectorySnapshot => {
+  assertBoundedList(devices, 'cloud directory response too large');
+  assertUniqueIds(devices as readonly { id: string }[], 'invalid cloud directory devices');
+  assertBoundedList(workspaces, 'cloud directory response too large');
+  assertUniqueIds(workspaces as readonly { id: string }[], 'invalid cloud directory workspaces');
+  const deviceMap = new Map(devices.map((device) => [device.id, device]));
+  const cards = workspaces.map((workspace) => toCard(workspace, deviceMap, currentDeviceId)).sort(sortCards);
+  return { devices, workspaces, cards };
+};
+
 export class CloudWorkspaceDirectory {
   private inFlight: InFlightRefresh | null = null;
 
@@ -98,13 +112,7 @@ export class CloudWorkspaceDirectory {
 
   private async load(token: string, currentDeviceId: string): Promise<CloudWorkspaceDirectorySnapshot> {
     const devices = await this.api.listDevices(token);
-    assertBoundedList(devices, 'cloud directory response too large');
-    assertUniqueIds(devices as readonly { id: string }[], 'invalid cloud directory devices');
     const workspaces = await this.api.listWorkspaces(token);
-    assertBoundedList(workspaces, 'cloud directory response too large');
-    assertUniqueIds(workspaces as readonly { id: string }[], 'invalid cloud directory workspaces');
-    const deviceMap = new Map(devices.map((device) => [device.id, device]));
-    const cards = workspaces.map((workspace) => toCard(workspace, deviceMap, currentDeviceId)).sort(sortCards);
-    return { devices, workspaces, cards };
+    return buildCloudWorkspaceDirectorySnapshot(devices, workspaces, currentDeviceId);
   }
 }

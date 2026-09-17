@@ -18,6 +18,7 @@ import type {
   SyncPort,
   VaultRecoveryPort,
   VaultSessionPort,
+  WorkspaceDirectoryPort,
   WorkspaceStore
 } from './ports.js';
 import type { ClientPlatform } from './models.js';
@@ -54,4 +55,5 @@ export interface CoreRuntime {
   account?: AccountSessionPort;
   devices?: DeviceTrustPort;
   sync?: SyncPort;
+  workspaceDirectory?: WorkspaceDirectoryPort;
 }

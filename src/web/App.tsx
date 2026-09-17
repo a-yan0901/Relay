@@ -22,6 +22,7 @@ import { ShortcutMap } from './components/ShortcutMap';
 import { BroadcastPreview } from './components/BroadcastPreview';
 import { AccountMenu } from './components/AccountMenu';
 import { SyncCenter } from './components/SyncCenter';
+import { WorkspaceDirectory } from './components/WorkspaceDirectory';
 import type { SftpOpenRequest } from './components/ServerContextMenu';
 import type { AccountSession, ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, SyncState, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
@@ -44,6 +45,7 @@ import {
 import { createFreshTerminalIds, restoreWorkspace, workspaceStateFromAppState } from './state/workspace-state';
 import { createQuickSwitcherItems, type PrimaryDestination, type QuickSwitcherItem } from './state/navigation-state';
 import type { WorkspaceState } from '../shared/core/models';
+import type { CloudWorkspaceDirectorySnapshot } from '../shared/cloud/directory';
 import {
   applyPreferences,
   fontSizeOptions,
@@ -52,7 +54,6 @@ import {
   savePreferences,
   themeOptions,
   type TerminalFontSize,
-  type ThemeName,
   type ServerViewMode,
   type UiPreferences
 } from './theme';
@@ -230,6 +231,9 @@ export const App = ({ runtime }: AppProps) => {
   const [capabilities, setCapabilities] = useState<CapabilitySet>(() => runtime.capabilities);
   const [accountSession, setAccountSession] = useState<AccountSession | null>(null);
   const [syncState, setSyncState] = useState<SyncState | null>(null);
+  const [workspaceDirectory, setWorkspaceDirectory] = useState<CloudWorkspaceDirectorySnapshot | null>(null);
+  const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
+  const [workspaceDirectoryError, setWorkspaceDirectoryError] = useState<string | null>(null);
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('denied');
   const [preferencesOpen, setPreferencesOpen] = useState(false);
@@ -484,6 +488,30 @@ export const App = ({ runtime }: AppProps) => {
 
     return () => { cancelled = true; };
   }, [capabilities, runtime]);
+
+  const refreshWorkspaceDirectory = useCallback(async (): Promise<void> => {
+    const directory = runtime.workspaceDirectory;
+    if (!directory || !accountSession) {
+      setWorkspaceDirectory(null);
+      setWorkspaceDirectoryError(null);
+      setWorkspaceDirectoryLoading(false);
+      return;
+    }
+    setWorkspaceDirectoryLoading(true);
+    setWorkspaceDirectoryError(null);
+    try {
+      setWorkspaceDirectory(await directory.refresh());
+    } catch (error: unknown) {
+      setWorkspaceDirectoryError(messageFromError(error));
+    } finally {
+      setWorkspaceDirectoryLoading(false);
+    }
+  }, [accountSession, runtime]);
+
+  useEffect(() => {
+    if (!workspaceHydrated || state.phase !== 'ready') return;
+    void refreshWorkspaceDirectory();
+  }, [refreshWorkspaceDirectory, state.phase, workspaceHydrated]);
 
   useEffect(() => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
@@ -1297,6 +1325,12 @@ export const App = ({ runtime }: AppProps) => {
       )}
       <div className={`app-body ${terminalView ? 'app-body-terminal' : ''}`}>
         <div className="app-view" hidden={terminalView} aria-hidden={terminalView}>
+          {accountSession && runtime.workspaceDirectory && <WorkspaceDirectory
+            snapshot={workspaceDirectory}
+            loading={workspaceDirectoryLoading}
+            error={workspaceDirectoryError}
+            onRefresh={() => void refreshWorkspaceDirectory()}
+          />}
           <HostWorkspace
             hosts={state.hosts}
             groups={state.groups}
