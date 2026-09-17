@@ -139,9 +139,13 @@ interface PreferencesPanelProps {
   onOpenActivity?: () => void;
   onOpenIdentities?: () => void;
   onOpenSnippets?: () => void;
+  terminalProfiles?: readonly TerminalProfile[];
+  defaultTerminalProfile?: TerminalProfile;
+  onDefaultTerminalProfileChange?: (id: string) => void;
+  onDeleteTerminalProfile?: (id: string) => void;
 }
 
-const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notificationPermission = 'denied', onRequestNotifications, onOpenActivity, onOpenIdentities, onOpenSnippets }: PreferencesPanelProps) => {
+const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notificationPermission = 'denied', onRequestNotifications, onOpenActivity, onOpenIdentities, onOpenSnippets, terminalProfiles = [], defaultTerminalProfile, onDefaultTerminalProfileChange, onDeleteTerminalProfile }: PreferencesPanelProps) => {
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, true, onClose, '#theme-select');
 
@@ -180,6 +184,11 @@ const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notif
           {fontSizeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
         </select>
       </div>
+      {terminalProfiles.length > 0 && <section className="preferences-system-section" aria-labelledby="terminal-profile-title">
+        <p className="eyebrow" id="terminal-profile-title">CONSOLE APPEARANCE</p>
+        <div className="preferences-system-row"><div><strong>工作区默认外观</strong><span>未单独设置的 Server 会继承此终端主题。</span></div><select aria-label="工作区默认终端外观" value={defaultTerminalProfile?.id ?? ''} onChange={(event) => onDefaultTerminalProfileChange?.(event.target.value)}>{terminalProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></div>
+        {terminalProfiles.filter((profile) => !profile.id.startsWith('builtin:')).map((profile) => <div className="preferences-system-row" key={profile.id}><div><strong>{profile.name}</strong><span>{profile.appearance.fontFamily} · {profile.appearance.fontSize}px</span></div><button className="button button-ghost button-small" type="button" onClick={() => onDeleteTerminalProfile?.(profile.id)}>删除</button></div>)}
+      </section>}
       {notifications && <section className="preferences-system-section" aria-labelledby="preferences-system-title">
         <p className="eyebrow" id="preferences-system-title">PLATFORM</p>
         <div className="preferences-system-row">
@@ -1174,6 +1183,13 @@ export const App = ({ runtime }: AppProps) => {
       });
   };
 
+  const handleDefaultTerminalProfileChange = useCallback((id: string): void => {
+    void runtime.terminalProfiles.setDefault(id).then((profile) => setDefaultTerminalProfile(profile)).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
+  }, [runtime]);
+  const handleDeleteTerminalProfile = useCallback((id: string): void => {
+    void runtime.terminalProfiles.delete(id).then(() => runtime.terminalProfiles.list()).then((profiles) => setTerminalProfiles([...profiles])).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
+  }, [runtime]);
+
   const handleLock = async (): Promise<void> => {
     try {
       await runtime.vault.lock();
@@ -1376,7 +1392,7 @@ export const App = ({ runtime }: AppProps) => {
           </aside>
         </div>
       )}
-      {preferencesOpen && <PreferencesPanel preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} notifications={notifications} notificationPermission={notificationPermission} onRequestNotifications={requestNotificationPermission}
+      {preferencesOpen && <PreferencesPanel terminalProfiles={terminalProfiles} defaultTerminalProfile={defaultTerminalProfile} onDefaultTerminalProfileChange={handleDefaultTerminalProfileChange} onDeleteTerminalProfile={handleDeleteTerminalProfile} preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} notifications={notifications} notificationPermission={notificationPermission} onRequestNotifications={requestNotificationPermission}
         onOpenActivity={capabilities.supports('audit.activity') ? () => { setPreferencesOpen(false); handleOpenActivity(); } : undefined}
         onOpenIdentities={capabilities.supports('vault.identities') ? () => { setPreferencesOpen(false); setIdentityOpen(true); } : undefined}
         onOpenSnippets={capabilities.supports('automation.snippet-manager') ? () => { setPreferencesOpen(false); handleOpenSnippetManager(); } : undefined}
