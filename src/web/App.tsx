@@ -388,6 +388,8 @@ export const App = ({ runtime }: AppProps) => {
       setIdentities([...loadedIdentities]);
       setTerminalProfiles([...loadedTerminalProfiles]);
       setDefaultTerminalProfile(loadedDefaultTerminalProfile);
+      const savedTheme = themeOptions.find((option) => loadedDefaultTerminalProfile?.id === `builtin:${option.value}`)?.value;
+      if (savedTheme) setPreferences((current) => current.theme === savedTheme ? current : { ...current, theme: savedTheme });
       void runtime.workspace.listTemplates().then((templates) => setWorkspaceTemplates([...templates])).catch(() => setWorkspaceTemplates([]));
       if (negotiatedCapabilities.supports('sftp.transfer')) {
         void runtime.files.listTransfers().then((jobs) => setTransferJobs([...jobs])).catch(() => setTransferJobs([]));
