@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AppError } from '../../../src/shared/errors.js';
+import { BUILTIN_TERMINAL_PROFILE_ID } from '../../../src/shared/terminal-appearance.js';
 import { TerminalProfileService } from '../../../src/server/terminal/terminal-profile-service.js';
 import { openDatabase } from '../../../src/server/db/database.js';
 import { migrate } from '../../../src/server/db/migrations.js';
@@ -16,10 +17,10 @@ const appearance = {
 };
 
 describe('TerminalProfileService', () => {
-  it('uses midnight by default and prevents deletion of the configured default', () => {
+  it('uses the built-in default and prevents deletion of the configured default', () => {
     const database = openDatabase(':memory:'); databases.push(database); migrate(database);
     const service = new TerminalProfileService({ database });
-    expect(service.getDefault('default').id).toBe('builtin:midnight');
+    expect(service.getDefault('default').id).toBe(BUILTIN_TERMINAL_PROFILE_ID);
     const created = service.create('default', { name: 'Ops', appearance });
     service.setDefault('default', created.id);
     expect(() => service.delete('default', created.id)).toThrow(expect.objectContaining<AppError>({ code: 'TERMINAL_PROFILE_IN_USE' }));

@@ -67,6 +67,6 @@
 - `npm run typecheck` 通过。
 - `npm run build:windows` 通过，包含 web、Electron main 和 preload 三段构建；`npx cap sync android` 通过。
 - `./gradlew :app:compileDebugKotlin --no-daemon --max-workers=1 --console=plain` 和 `./gradlew :app:assembleDebug --no-daemon --max-workers=1 --console=plain` 通过；debug APK 已生成。当前没有 Android 真机/模拟器，因此安装、连接、生命周期和 SSH/SFTP 任务仍无设备证据。
-- `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 159 个测试文件、695 个测试，其中 693 通过；剩余 2 个失败均来自本次未修改的既有测试/实现不一致：`terminal-profile-service.test.ts` 的默认主题断言，以及 `core-boundary.test.ts` 对既有 cloud WebSocket 文件的静态断言。它们不属于本次原生壳/文件流改动，已由上述受影响范围测试覆盖本次变更。
+- `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 159 个测试文件、695 个测试，695 个全部通过。期间修正了 bundle 导出仍回退到旧内置主题 ID 的实现缺陷，并将 shared core 边界测试收敛到真正的 `src/shared/core` 目录，避免把 cloud WebSocket 适配器误判为 core 依赖。
 
 当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及 Android 原生 SSH/SFTP executor、Keystore、URI 流和真机可行性门槛；在这些完成前，代码只能称为可测试的跨端基础设施和原生壳增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。

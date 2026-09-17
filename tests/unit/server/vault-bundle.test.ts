@@ -5,6 +5,7 @@ import { GroupRepository, HostRepository } from '../../../src/server/db/reposito
 import { VaultService } from '../../../src/server/vault/vault-service.js';
 import { VaultBundleService } from '../../../src/server/workspace/vault-bundle-service.js';
 import { IdentityService } from '../../../src/server/identity/identity-service.js';
+import { BUILTIN_TERMINAL_PROFILE_ID } from '../../../src/shared/terminal-appearance.js';
 import type { EncryptedJson } from '../../../src/server/vault/types.js';
 
 const EXPORT_PASSWORD = 'bundle-export-password';
@@ -46,6 +47,8 @@ describe('VaultBundleService', () => {
     const source = await createFixture();
     const target = await createFixture(false);
     const bundle = await source.service.export(source.sessionKey, EXPORT_PASSWORD);
+    const payload = await source.service.createPayload(source.sessionKey);
+    expect(payload.terminalDefaultProfileId).toBe(BUILTIN_TERMINAL_PROFILE_ID);
     expect(bundle).not.toContain(HOST_PASSWORD);
     const preview = await target.service.previewImport(target.sessionKey, EXPORT_PASSWORD, bundle);
     expect(preview).toEqual(expect.objectContaining({ hostCount: 1, groupCount: 1, conflicts: [] }));

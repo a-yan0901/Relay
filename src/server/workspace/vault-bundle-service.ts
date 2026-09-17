@@ -14,7 +14,7 @@ import {
   type StoredHostCredential
 } from '../../shared/validation.js';
 import { GroupRepository, HostRepository, IdentityRepository, TerminalPreferenceRepository, TerminalProfileRepository, type OwnerIdProvider, resolveOwnerId } from '../db/repositories.js';
-import { BUILTIN_TERMINAL_PROFILES, terminalAppearanceSchema, type TerminalProfile } from '../../shared/terminal-appearance.js';
+import { BUILTIN_TERMINAL_PROFILE_ID, BUILTIN_TERMINAL_PROFILES, terminalAppearanceSchema, type TerminalProfile } from '../../shared/terminal-appearance.js';
 import type { SqliteDatabase } from '../db/database.js';
 import {
   ARGON2ID_PARAMS,
@@ -378,7 +378,7 @@ export class VaultBundleService {
     const terminalProfileRepository = this.options.terminalProfileRepository ?? new TerminalProfileRepository(this.options.database, this.ownerId);
     const terminalPreferenceRepository = this.options.terminalPreferenceRepository ?? new TerminalPreferenceRepository(this.options.database, this.ownerId);
     const terminalProfiles = terminalProfileRepository.list();
-    const terminalDefaultProfileId = terminalPreferenceRepository.getDefaultProfileId() ?? 'builtin:midnight';
+    const terminalDefaultProfileId = terminalPreferenceRepository.getDefaultProfileId() ?? BUILTIN_TERMINAL_PROFILE_ID;
     const hostRows = this.options.hostRepository.listForBundle();
     if (!this.options.identityService && hostRows.some((row) => row.credentialSource?.type !== 'inline')) throw new AppError('IDENTITY_NOT_FOUND');
     const hosts: BundleHost[] = [];
