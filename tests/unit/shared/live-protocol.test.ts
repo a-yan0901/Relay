@@ -44,6 +44,14 @@ describe('live console protocol', () => {
       sequence: 1,
       terminals: [{ sessionId: 'session-1', hostId: 'host-1', title: 'bad', status: 'connected', columns: 0, rows: 40 }]
     })).toThrow();
+    expect(() => parseLiveFrame({
+      protocolVersion: 1,
+      type: 'workspace-snapshot',
+      workspaceId: 'workspace-1',
+      ownerEpoch: 1,
+      sequence: 1,
+      terminals: [{ sessionId: 'session-1', hostId: 'host-1', title: 'unicode', status: 'connected', columns: 80, rows: 24, screen: '界'.repeat(12 * 1024 + 1) }]
+    })).toThrow();
   });
 
   it('does not decode malformed or oversized wire bytes', () => {

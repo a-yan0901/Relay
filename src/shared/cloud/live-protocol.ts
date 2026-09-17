@@ -65,6 +65,7 @@ export type LiveFrame =
 const sequenceSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const idSchema = z.string().regex(SAFE_ID);
 const boundedPayloadSchema = z.string().min(1).max(LIVE_MAX_PAYLOAD_BYTES);
+const boundedScreenSchema = z.string().refine((value) => new globalThis.TextEncoder().encode(value).byteLength <= LIVE_MAX_SCREEN_BYTES, 'screen too large');
 
 const terminalDescriptorSchema = z.object({
   sessionId: idSchema,
@@ -73,7 +74,7 @@ const terminalDescriptorSchema = z.object({
   status: z.enum(['connected', 'needs-reopen', 'closed']),
   columns: z.number().int().min(1).max(1_000),
   rows: z.number().int().min(1).max(1_000),
-  screen: z.string().max(LIVE_MAX_SCREEN_BYTES).optional()
+  screen: boundedScreenSchema.optional()
 }).strict();
 
 const commonSchema = {
