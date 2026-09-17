@@ -1,7 +1,9 @@
 # Relay PWA、桌面与 Android 平台 Shell 设计规范
 
 **Date:** 2026-09-16
-**Status:** Draft — 待用户审阅
+**Status:** 历史草案；Android server-mediated 首版方案已被 2026-09-17 独立客户端设计取代。
+
+> 当前 Windows/Android 实施以 [独立客户端设计](./2026-09-17-relay-windows-android-unified-experience-design.md) 为准：两端本地 SSH/SFTP 和本地数据，云端同步服务后续实现。本草案保留为历史决策记录。
 **Scope:** X-02；只定义跨端产品化边界、平台适配契约、生命周期和威胁模型，不在本任务创建原生工程或交付平台实现。
 
 ## 1. 设计结论
@@ -12,7 +14,7 @@ Relay 采用“统一 shared core + 平台 shell + 可替换 adapter”的跨端
 2. Web/PWA 和 Android 首版以 server-mediated SSH 为基线。浏览器和移动端不直接持有服务器凭据，也不在离线时新建 SSH/SFTP/命令请求。
 3. Desktop 首版同样支持 server-mediated transport；后续可在完成安全评审后增加 local SSH transport。local SSH 只替换 transport 和 secret store，不改变 Host Key、任务状态和恢复语义。
 4. PWA 的离线能力只覆盖 app shell、非敏感本地工作区意图、已知状态和恢复提示；“已安装”不等于“离线 SSH 客户端”。
-5. 账号与云同步是可选扩展。未登录时始终完整支持 Local-only；登录且 Vault 解锁后才启用加密同步，遵循 [`relay-account-and-encrypted-sync-design.md`](./relay-account-and-encrypted-sync-design.md)。
+5. 账号与云同步是可选扩展。未登录时始终完整支持 Local-only；登录且 Vault 解锁后才启用加密同步，遵循 [`relay-account-and-encrypted-sync-design.md`](./2026-09-16-relay-account-and-encrypted-sync-design.md)。
 
 这是一份边界规范，不是桌面或 Android 的实现承诺。任何原生工程、manifest、service worker、系统 keychain 接入或新的平台 UI 都必须在本规范通过后另立 implementation plan。
 
@@ -324,7 +326,7 @@ X-02 之后拆为独立 implementation plans，顺序如下：
 ## 12. 相关文档
 
 - [`cross-platform.md`](../../architecture/cross-platform.md)：统一核心、当前能力协商和 adapter 现状。
-- [`relay-account-and-encrypted-sync-design.md`](./relay-account-and-encrypted-sync-design.md)：账号、设备信任、Vault 包装、加密同步、冲突和恢复。
+- [`relay-account-and-encrypted-sync-design.md`](./2026-09-16-relay-account-and-encrypted-sync-design.md)：账号、设备信任、Vault 包装、加密同步、冲突和恢复。
 - [`2026-09-16-relay-long-term-roadmap.md`](../plans/2026-09-16-relay-long-term-roadmap.md)：X-02 任务状态、后续实现计划和发布门槛。
 - [`2026-09-15-ux-audit.md`](../../ux/2026-09-15-ux-audit.md)：现有 UI/交互基线和 U-04 token 方向。
 

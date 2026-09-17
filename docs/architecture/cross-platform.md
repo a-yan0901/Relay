@@ -1,5 +1,7 @@
 # 统一核心与跨端/跨平台基础
 
+> 2026-09-17 产品决策更新：Windows 与 Android 本期均为独立本地客户端，SSH/SFTP 和数据保存在设备上；云端服务仅为后续同步预留。此前“Android 首版 server-mediated”是历史草案，不再适用于本期实施。当前实施边界见 [独立客户端设计](../superpowers/specs/2026-09-17-relay-windows-android-unified-experience-design.md) 与 [实施计划](../superpowers/plans/2026-09-17-relay-windows-android-implementation.md)。下文仍保留既有 Web 实现与原始架构记录。
+
 Relay 当前以 Web app 为核心客户端，服务端负责 SSH、SFTP、批量命令和 Vault 的执行边界。桌面版后续覆盖 Windows 和 Linux，Android 版复用同一套 shared core、错误码和 wire protocol，再替换 transport 与 secret store；账号与加密同步已作为登录后的可选扩展层接入 Web，本地 Local-only 模式始终保留。本阶段不绑定 Tauri、Electron 或移动 UI 框架，也不提前实现原生 UI。
 
 ## Review 结论
