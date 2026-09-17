@@ -58,6 +58,25 @@ const NATIVE_CAPABILITIES: readonly Capability[] = [
   'session.lifecycle-status'
 ];
 
+/**
+ * Android only advertises the operations backed by the current native slice.
+ * Keeping this list explicit prevents the UI from exposing identities,
+ * snippets, templates or other unsupported automation while their native
+ * ports are not present.
+ */
+export const ANDROID_LOCAL_CAPABILITIES: readonly Capability[] = [
+  'workspace.persistence',
+  'ssh.shell',
+  'ssh.reconnect',
+  'ssh.proxy-jump',
+  'sftp.browse',
+  'sftp.transfer',
+  'transfer.resume',
+  'sftp.local-files',
+  'sftp.entry-mutations',
+  'session.lifecycle-status'
+];
+
 const asRecord = (value: unknown): Record<string, unknown> | null => (
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
 );

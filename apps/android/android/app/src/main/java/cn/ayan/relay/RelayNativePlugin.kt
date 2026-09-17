@@ -1,16 +1,24 @@
 package cn.ayan.relay
 
+import android.app.Activity
+import android.content.Intent
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
+import android.os.Handler
+import android.os.Looper
+import androidx.activity.result.ActivityResult
+import androidx.appcompat.app.AlertDialog
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Capacitor-facing boundary only. SSH/Vault/SFTP executors are injected by the
- * Android application after the native feasibility gate selects a library.
- * Keeping this class small prevents arbitrary WebView calls from becoming
- * native filesystem or process access.
+ * Capacitor-facing boundary. Only this class can turn a user-approved Android
+ * activity result into a native file writer; ordinary WebView payloads never
+ * carry a content URI or an arbitrary native path.
  */
 @CapacitorPlugin(name = "RelayNative")
 class RelayNativePlugin : Plugin() {
@@ -43,11 +51,38 @@ class RelayNativePlugin : Plugin() {
 
     interface Executor {
         fun invoke(request: JSObject, complete: (JSObject) -> Unit)
+        fun invokeFileSaveSelection(request: JSObject, uri: String, complete: (JSObject) -> Unit)
+        fun close() {}
     }
 
     private var executor: Executor? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val pendingEvents = ArrayBlockingQueue<JSObject>(8)
+    private val eventDrainScheduled = AtomicBoolean(false)
+    private val confirmInFlight = AtomicBoolean(false)
+    private val fileSaveInFlight = AtomicBoolean(false)
+    @Volatile
+    private var confirmDialog: AlertDialog? = null
+
+    override fun load() {
+        super.load()
+        attachExecutor(AndroidLocalExecutor(getContext(), ::emitNativeEvent))
+    }
+
+    override fun handleOnDestroy() {
+        executor?.close()
+        executor = null
+        confirmDialog?.dismiss()
+        confirmDialog = null
+        confirmInFlight.set(false)
+        fileSaveInFlight.set(false)
+        pendingEvents.clear()
+        mainHandler.removeCallbacksAndMessages(null)
+        super.handleOnDestroy()
+    }
 
     fun attachExecutor(next: Executor) {
+        executor?.close()
         executor = next
     }
 
@@ -73,12 +108,45 @@ class RelayNativePlugin : Plugin() {
             call.reject("CAPABILITY_UNAVAILABLE")
             return
         }
-        activeExecutor.invoke(request) { response -> call.resolve(response) }
+        if (operation == "system.confirm") {
+            showConfirm(call, request)
+            return
+        }
+        if (operation == "system.fileSave.open") {
+            beginFileSave(call, request)
+            return
+        }
+        try {
+            activeExecutor.invoke(request) { response ->
+                mainHandler.post { call.resolve(response) }
+            }
+        } catch (_: Exception) {
+            call.reject("INTERNAL_ERROR")
+        }
     }
 
     fun emitNativeEvent(event: JSObject) {
         if (event.toString().toByteArray(Charsets.UTF_8).size > MAX_FRAME_BYTES) return
-        notifyListeners("event", JSObject().put("event", event))
+        if (!pendingEvents.offer(event)) {
+            // Output is lossy under a saturated WebView queue, while control
+            // events must still be delivered so sessions can be closed.
+            if (event.optString("kind") == "terminal.output" || event.optString("kind") == "transfer.progress") return
+            pendingEvents.poll()
+            if (!pendingEvents.offer(event)) return
+        }
+        scheduleEventDrain()
+    }
+
+    private fun scheduleEventDrain() {
+        if (!eventDrainScheduled.compareAndSet(false, true)) return
+        mainHandler.post {
+            repeat(4) {
+                val event = pendingEvents.poll() ?: return@repeat
+                notifyListeners("event", JSObject().put("event", event))
+            }
+            eventDrainScheduled.set(false)
+            if (pendingEvents.isNotEmpty()) scheduleEventDrain()
+        }
     }
 
     private fun isSafeId(value: String?): Boolean = value != null && SAFE_ID.matches(value)
@@ -87,15 +155,116 @@ class RelayNativePlugin : Plugin() {
 
     private fun operationAllowlisted(operation: String): Boolean = operation in ALLOWED_OPERATIONS
 
+    private fun showConfirm(call: PluginCall, request: JSObject) {
+        val message = request.optJSONObject("payload")?.optString("message", "") ?: ""
+        if (message.isEmpty() || message.length > 4 * 1024 || message.any { it.code <= 0x1f || it.code == 0x7f }) {
+            call.resolve(failureResponse(request, "PROTOCOL_INVALID_MESSAGE"))
+            return
+        }
+        if (!confirmInFlight.compareAndSet(false, true)) {
+            call.resolve(failureResponse(request, "OPERATION_INTERRUPTED", "已有确认对话框正在显示"))
+            return
+        }
+        val completed = AtomicBoolean(false)
+        fun finish(confirmed: Boolean) {
+            if (!completed.compareAndSet(false, true)) return
+            confirmInFlight.set(false)
+            confirmDialog = null
+            call.resolve(successResponse(request, JSObject().put("confirmed", confirmed)))
+        }
+        val dialog = AlertDialog.Builder(getActivity())
+            .setTitle("Relay")
+            .setMessage(message)
+            .setNegativeButton("取消") { _, _ -> finish(false) }
+            .setPositiveButton("确认") { _, _ -> finish(true) }
+            .create()
+        dialog.setOnCancelListener { finish(false) }
+        dialog.setOnDismissListener { finish(false) }
+        confirmDialog = dialog
+        try {
+            dialog.show()
+        } catch (_: Exception) {
+            confirmDialog = null
+            confirmInFlight.set(false)
+            call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE"))
+        }
+    }
+
+    private fun beginFileSave(call: PluginCall, request: JSObject) {
+        if (!fileSaveInFlight.compareAndSet(false, true)) {
+            call.resolve(failureResponse(request, "OPERATION_INTERRUPTED", "已有文件保存对话框正在显示"))
+            return
+        }
+        val payload = request.optJSONObject("payload")
+        val name = payload?.optString("name", "") ?: ""
+        val mimeType = payload?.optString("mimeType", "") ?: ""
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mimeType
+            putExtra(Intent.EXTRA_TITLE, name)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(call, intent, "fileSaveActivity")
+        } catch (_: Exception) {
+            fileSaveInFlight.set(false)
+            call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE"))
+        }
+    }
+
+    @ActivityCallback
+    fun fileSaveActivity(call: PluginCall, result: ActivityResult) {
+        fileSaveInFlight.set(false)
+        val request = call.data
+        val uri = if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
+        if (uri == null) {
+            call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE", "已取消文件保存"))
+            return
+        }
+        val activeExecutor = executor
+        if (activeExecutor == null) {
+            call.resolve(failureResponse(request, "SERVICE_RESTARTED"))
+            return
+        }
+        try {
+            activeExecutor.invokeFileSaveSelection(request, uri.toString()) { response ->
+                mainHandler.post { call.resolve(response) }
+            }
+        } catch (_: Exception) {
+            call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE"))
+        }
+    }
+
+    private fun successResponse(request: JSObject, result: JSObject): JSObject = JSObject()
+        .put("version", BRIDGE_VERSION)
+        .put("requestId", request.optString("requestId", "invalid"))
+        .put("ok", true)
+        .put("result", result)
+
+    private fun failureResponse(request: JSObject, code: String, message: String = "本机操作失败"): JSObject = JSObject()
+        .put("version", BRIDGE_VERSION)
+        .put("requestId", request.optString("requestId", "invalid"))
+        .put("ok", false)
+        .put("error", JSObject().put("code", code).put("message", message.take(4096)))
+
     private fun payloadIsBounded(request: JSObject): Boolean {
         val payload = request.optJSONObject("payload") ?: return false
         val operation = request.getString("operation") ?: return false
+        if (operation == "system.confirm") {
+            val message = payload.optString("message", "")
+            if (message.isEmpty() || message.length > 4 * 1024 || message.any { it.code <= 0x1f || it.code == 0x7f }) return false
+        }
         if (operation == "system.fileSave.write") {
             val data = payload.optString("data", "")
             if (data.length > MAX_ENCODED_CHUNK_BYTES) return false
             val writerId = payload.optString("writerId", "")
             if (!isSafeId(writerId)) return false
         }
+        if (operation == "sessions.write") {
+            if (payload.optString("data", "").toByteArray(Charsets.UTF_8).size > MAX_CHUNK_BYTES) return false
+            if (!isSafeId(payload.optString("sessionId", ""))) return false
+        }
+        if (operation == "files.upload" && payload.optString("data", "").length > MAX_ENCODED_CHUNK_BYTES) return false
         if (operation == "system.fileSave.seek") {
             val writerId = payload.optString("writerId", "")
             if (!isSafeId(writerId) || payload.optLong("position", -1L) < 0L) return false

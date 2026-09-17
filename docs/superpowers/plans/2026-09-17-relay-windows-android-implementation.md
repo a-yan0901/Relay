@@ -57,7 +57,7 @@
 
 - M0/共享边界：已加入 `NativeOperationPort`、事件代际/序列、Android bridge、共享 native `CoreRuntime` 和原生终端 socket 适配；平台 ports 还覆盖确认对话框、外链和有界文件写入。Web 仍默认使用 Web adapter，浏览器 File System Access API 不可用时回退到小文件下载。
 - M1/Windows：已加入实际 Electron main/preload shell、版本化 IPC allowlist、sender 校验、窗口导航防护、本地 SQLite/Vault/SSH/SFTP/命令/导入导出组合、剪贴板桥接，以及 Host Key/凭据交互和 ECONNRESET 回归测试。文件导出使用临时文件句柄、32 KiB 分块写入和关闭后替换；`npm run build:windows` 已通过，但真实 Windows 安装、原生 ABI、升级迁移和实机任务走查仍未完成。
-- M2/Android：已生成 Capacitor Android 工程，注册 Kotlin `RelayNative` 插件并接入共享操作/文件流边界；JDK 21、Gradle 8.14.3、Android API 36、Build Tools 35.0.0 已在当前环境可用，Kotlin 编译和 debug APK 打包已通过。插件当前仍是安全边界，尚未接入 Android Vault/Keystore、SSH/SFTP executor、URI 文件流和真实设备验证，因此不能宣称 Android 独立 SSH/SFTP 客户端完成。
+- M2/Android：已生成 Capacitor Android 工程，注册 Kotlin `RelayNative` 插件并接入共享操作/文件流边界；已加入 JSch 2.27.7 候选、app-private SQLite Host/Workspace store、Android Keystore + AES-GCM Vault、inline 凭据、逐跳 Host Key 确认、PTY Shell、断线重连、ProxyJump、SFTP 浏览/目录变更/有界上传下载，以及 Android Confirm/SAF 文件写入。native capability 只广告当前已接入的本地工作区、SSH/ProxyJump、SFTP 和有限断点能力。Kotlin 编译与 Android JVM 单元测试已通过，但身份/分组/Snippet/批量命令/import bundle、传输持久化、后台/进程恢复、真实设备与发布 ABI/签名仍未完成，不能宣称 Android 独立客户端交付。
 - 内存预算：原生文件与终端传输使用 32 KiB 单块；终端输入使用每会话最多 8 条、总量 64 KiB 的有界队列，超限显式报错；Windows 默认最多 4 个 SSH 会话、每会话 64 KiB 脱离缓冲、最多 4 个下载流、最多 32 个可重连请求；IPC/事件订阅和 payload 也有上限。验证默认关闭文件并行并限制 worker，避免在无 Swap 主机上同时启动多份 Node/Vite。
 
 验证记录（2026-09-18）：
@@ -66,7 +66,7 @@
 - `npm exec tsc -- -p tsconfig.native.json --noEmit` 通过；改动的 Windows/native/Web TS/TSX 文件 ESLint 在 `--max-warnings 0` 下通过。
 - `npm run typecheck` 通过。
 - `npm run build:windows` 通过，包含 web、Electron main 和 preload 三段构建；`npx cap sync android` 通过。
-- `./gradlew :app:compileDebugKotlin --no-daemon --max-workers=1 --console=plain` 和 `./gradlew :app:assembleDebug --no-daemon --max-workers=1 --console=plain` 通过；debug APK 已生成。当前没有 Android 真机/模拟器，因此安装、连接、生命周期和 SSH/SFTP 任务仍无设备证据。
+- `./gradlew :app:compileDebugKotlin --offline --no-daemon --max-workers=1 --console=plain`、`./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain` 和 `./gradlew :app:assembleDebug --offline --no-daemon --max-workers=1 --console=plain` 通过；当前 debug APK 约 8 MB。当前没有 Android 真机/模拟器，因此安装、连接、生命周期和 SSH/SFTP 任务仍无设备证据。Android 构建统一使用 `-Xmx768m`、单 worker、无并行，避免本机内存峰值叠加。
 - `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 159 个测试文件、695 个测试，695 个全部通过。期间修正了 bundle 导出仍回退到旧内置主题 ID 的实现缺陷，并将 shared core 边界测试收敛到真正的 `src/shared/core` 目录，避免把 cloud WebSocket 适配器误判为 core 依赖。
 
-当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及 Android 原生 SSH/SFTP executor、Keystore、URI 流和真机可行性门槛；在这些完成前，代码只能称为可测试的跨端基础设施和原生壳增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。
+当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及 Android 真机上的 SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。
