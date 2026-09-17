@@ -53,6 +53,8 @@ import { CommandRunner } from './automation/command-runner.js';
 import { AuditService } from './audit/audit-service.js';
 import { IdentityService } from './identity/identity-service.js';
 import { registerIdentityRoutes } from './api/identity-routes.js';
+import { registerTerminalProfileRoutes } from './api/terminal-profile-routes.js';
+import { TerminalProfileService } from './terminal/terminal-profile-service.js';
 import { registerSyncRoutes } from './sync/sync-routes.js';
 import {
   SyncCoordinator,
@@ -86,6 +88,7 @@ export interface AppDependencies {
   commandRunner?: CommandRunner;
   auditService?: AuditService;
   identityService?: IdentityService;
+  terminalProfileService?: TerminalProfileService;
   syncService?: SyncServiceContract;
   syncCoordinator?: SyncCoordinatorPort;
   syncTransport?: SyncTransport;
@@ -103,6 +106,7 @@ export interface BuiltAppDependencies {
   groupRepository: GroupRepository;
   auditRepository: AuditRepository;
   identityService: IdentityService;
+  terminalProfileService: TerminalProfileService;
   syncService: SyncServiceContract;
   syncCoordinator: SyncCoordinatorPort;
 }
@@ -126,6 +130,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   const auditRepository = dependencies.auditRepository ?? new AuditRepository(dependencies.database, 'default');
   const auditService = dependencies.auditService ?? new AuditService(auditRepository);
   const identityService = dependencies.identityService ?? new IdentityService({ database: dependencies.database, vaultService });
+  const terminalProfileService = dependencies.terminalProfileService ?? new TerminalProfileService({ database: dependencies.database });
   const workspaceRepository = new WorkspaceRepository(dependencies.database);
   const workspaceService = dependencies.workspaceService ?? new WorkspaceService(workspaceRepository);
   const vaultBundleService = dependencies.vaultBundleService ?? new VaultBundleService({
@@ -221,6 +226,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     groupRepository,
     auditRepository,
     identityService,
+    terminalProfileService,
     syncService,
     syncCoordinator
   };
@@ -343,6 +349,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     syncCoordinator
   });
   await registerIdentityRoutes(app, { ownerId: 'default', sessionStore, identityService, syncCoordinator });
+  await registerTerminalProfileRoutes(app, { ownerId: 'default', sessionStore, terminalProfileService, syncCoordinator });
   await registerHostRoutes(app, {
     ownerId: 'default',
     hostRepository,
@@ -351,6 +358,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     vaultService,
     auditRepository,
     identityService,
+    terminalProfileService,
     sshSessionManager,
     syncCoordinator
   });

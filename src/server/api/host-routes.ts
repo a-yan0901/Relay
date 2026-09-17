@@ -25,6 +25,7 @@ import type { HostPatch } from '../db/types.js';
 import type { SshConnectConfig, SshHostKeyChallenge, SshSessionManagerPort } from '../ssh/types.js';
 import { HostKeyPolicy } from '../ssh/host-key-policy.js';
 import { IdentityService } from '../identity/identity-service.js';
+import { TerminalProfileService } from '../terminal/terminal-profile-service.js';
 import { requireUnlockedSession, toHostMetadataDto } from './route-helpers.js';
 import type { IdentityMetadata } from '../../shared/core/models.js';
 import type { SyncCoordinatorPort } from '../sync/sync-service.js';
@@ -37,6 +38,7 @@ export interface HostRouteDependencies {
   vaultService: VaultService;
   auditRepository: AuditRepository;
   identityService?: IdentityService;
+  terminalProfileService?: TerminalProfileService;
   sshSessionManager?: SshSessionManagerPort;
   syncCoordinator?: SyncCoordinatorPort;
 }
@@ -252,6 +254,7 @@ export const registerHostRoutes = async (
       authType = input.auth.type;
       credentialCiphertext = serializeEncryptedCredential(encrypted);
     }
+    if (input.terminalProfileId !== undefined && input.terminalProfileId !== null && !dependencies.terminalProfileService?.get(dependencies.ownerId, input.terminalProfileId)) throw new AppError('NOT_FOUND');
     const created = dependencies.hostRepository.createHost({
       id,
       ownerId: dependencies.ownerId,
@@ -267,6 +270,7 @@ export const registerHostRoutes = async (
       hostKeyAlgorithm: null,
       hostKeyFingerprint: null,
       groupId: input.groupId ?? null,
+      terminalProfileId: input.terminalProfileId ?? null,
       jumpHostIds: input.jumpHostIds,
       connectionProfile: mergeConnectionProfileSettings(input.connectionProfile),
       connectionProfileOverrides: input.connectionProfile ?? null,
@@ -284,6 +288,7 @@ export const registerHostRoutes = async (
     const id = hostId(request.params);
     const current = readHost(dependencies, id);
     const input = parseHostPatchInput(request.body);
+    if (input.terminalProfileId !== undefined && input.terminalProfileId !== null && !dependencies.terminalProfileService?.get(dependencies.ownerId, input.terminalProfileId)) throw new AppError('NOT_FOUND');
     if (input.jumpHostIds !== undefined) validateJumpHostGraph(dependencies, id, input.jumpHostIds);
     const patch: HostPatch = {
       name: input.name,
@@ -291,6 +296,7 @@ export const registerHostRoutes = async (
       port: input.port,
       username: input.username,
       groupId: input.groupId,
+      terminalProfileId: input.terminalProfileId,
       jumpHostIds: input.jumpHostIds,
       tags: input.tags,
       isFavorite: input.isFavorite

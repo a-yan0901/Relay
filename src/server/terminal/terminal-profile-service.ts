@@ -11,6 +11,8 @@ export class TerminalProfileService {
   private preferences(ownerId: string) { return new TerminalPreferenceRepository(this.options.database, ownerId); }
   private hosts(ownerId: string) { return new HostRepository(this.options.database, ownerId); }
   private find(ownerId: string, id: string): TerminalProfile | undefined { return BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === id) ?? this.profiles(ownerId).get(id) ?? undefined; }
+  list(ownerId: string): TerminalProfile[] { return [...BUILTIN_TERMINAL_PROFILES, ...this.profiles(ownerId).list()]; }
+  get(ownerId: string, id: string): TerminalProfile | null { return this.find(ownerId, id) ?? null; }
   getDefault(ownerId: string): TerminalProfile { return resolveTerminalProfile(null, this.profiles(ownerId).list(), this.preferences(ownerId).getDefaultProfileId()); }
   create(ownerId: string, input: unknown): TerminalProfile {
     const parsed=terminalProfileInputSchema.safeParse(input); if (!parsed.success) throw new AppError('HOST_VALIDATION_FAILED');

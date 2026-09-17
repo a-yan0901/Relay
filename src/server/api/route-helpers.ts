@@ -29,6 +29,7 @@ export const toHostMetadataDto = (row: HostRow | HostMetadata): HostMetadata => 
   username: row.username,
   authType: row.authType,
   groupId: row.groupId,
+  ...(row.terminalProfileId === undefined ? {} : { terminalProfileId: row.terminalProfileId }),
   tags: [...row.tags],
   isFavorite: row.isFavorite,
   hostKeyAlgorithm: row.hostKeyAlgorithm,
