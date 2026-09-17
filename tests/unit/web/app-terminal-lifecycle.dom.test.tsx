@@ -65,7 +65,7 @@ describe('App terminal lifecycle', () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(await screen.findByRole('button', { name: '连接 Production' }));
+    await user.click(await screen.findByRole('button', { name: '进入 Console：Production' }));
     expect(screen.getByTestId('terminal-workspace')).toBeInTheDocument();
     expect(lifecycle.mounts).toBe(1);
 

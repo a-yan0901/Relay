@@ -57,9 +57,11 @@ describe('audit routes', () => {
 
     const requestId = first.headers['x-request-id'];
     expect(typeof requestId).toBe('string');
+    const from = new Date(Date.now() - 60_000).toISOString();
+    const to = new Date(Date.now() + 60_000).toISOString();
     const filtered = await app.inject({
       method: 'GET',
-      url: `/api/audit?requestId=${encodeURIComponent(String(requestId))}&status=succeeded&from=2026-09-15T00%3A00%3A00.000Z&to=2026-09-17T00%3A00%3A00.000Z`,
+      url: `/api/audit?requestId=${encodeURIComponent(String(requestId))}&status=succeeded&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       headers: { cookie }
     });
     expect(filtered.statusCode).toBe(200);

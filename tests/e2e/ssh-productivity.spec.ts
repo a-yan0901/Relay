@@ -57,7 +57,7 @@ const trustAndWaitForConnection = async (page: Page): Promise<void> => {
   } catch {
     // Reconnecting to a previously trusted host does not show a prompt.
   }
-  await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
+  await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(1, { timeout: 15_000 });
 };
 
 const clearWorkspace = async (page: Page): Promise<void> => {
@@ -136,7 +136,7 @@ test.describe('SSH productivity boundaries', () => {
     const firstHost = 'Productivity SSH A';
     const secondHost = 'Productivity SSH B';
     await addHost(page, firstHost, fixture);
-    await page.getByRole('button', { name: `连接 ${firstHost}`, exact: true }).click();
+    await page.getByRole('button', { name: `进入 Console：${firstHost}`, exact: true }).click();
     await trustAndWaitForConnection(page);
 
     await page.getByRole('button', { name: '新建终端' }).click();
@@ -166,6 +166,10 @@ test.describe('SSH productivity boundaries', () => {
     await filePanel.getByRole('textbox', { name: '远程路径', exact: true }).fill(fixture.remoteDirectory);
     await filePanel.getByRole('button', { name: '跳转' }).click();
     await expect(filePanel.getByRole('button', { name: fixture.knownFileName, exact: true })).toBeVisible({ timeout: 15_000 });
+    await filePanel.locator('.sftp-entry').filter({ hasText: fixture.knownFileName }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: '下载' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: '复制远程路径' })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     await page.locator('.local-file-panel').getByLabel('选择本地文件').setInputFiles({
       name: 'browser-upload.txt',
@@ -199,7 +203,7 @@ test.describe('SSH productivity boundaries', () => {
     await page.getByRole('button', { name: '← Server 列表' }).click();
     await clearWorkspace(page);
     await addHost(page, secondHost, fixture);
-    await page.getByRole('button', { name: `连接 ${firstHost}`, exact: true }).click();
+    await page.getByRole('button', { name: `进入 Console：${firstHost}`, exact: true }).click();
     await trustAndWaitForConnection(page);
     await page.getByRole('button', { name: '新建终端' }).click();
     await page.getByRole('dialog', { name: '选择 Server' }).getByRole('button', { name: `新建终端：${secondHost}` }).click();
@@ -230,7 +234,8 @@ test.describe('SSH productivity boundaries', () => {
     await results.getByRole('button', { name: '关闭结果' }).click();
 
     await page.waitForTimeout(1_000);
-    await page.getByRole('button', { name: '活动' }).click();
+    await page.getByRole('button', { name: '偏好设置' }).click();
+    await page.getByRole('region', { name: 'MANAGEMENT' }).getByRole('button', { name: '打开' }).click();
     const activity = page.getByRole('dialog', { name: '最近活动' });
     await expect(activity).toContainText('批量任务', { timeout: 15_000 });
     await expect(activity).not.toContainText('e2e-ok');
@@ -247,7 +252,7 @@ test.describe('SSH productivity boundaries', () => {
       const sockets = (window as Window & { __relaySockets?: WebSocket[] }).__relaySockets ?? [];
       for (const socket of sockets.filter((candidate) => candidate.url.includes('/ws/terminal'))) socket.close();
     });
-    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText(/重连中|已断开|连接失败|需要重新连接/u, { timeout: 1_000 });
+    await expect(page.locator('.terminal-tab.is-active .status-dot-blue, .terminal-tab.is-active .status-dot-red, .terminal-tab.is-active .status-dot-amber')).toHaveCount(1, { timeout: 1_000 });
     await expect(page.getByRole('button', { name: '新建终端' })).toBeVisible();
   });
 });

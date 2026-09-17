@@ -72,11 +72,11 @@ const addHost = async (page: Page, name: string, fixture: E2eSshFixture, passwor
 };
 
 const connectHost = async (page: Page, name: string, fixture: E2eSshFixture): Promise<void> => {
-  await page.getByRole('button', { name: `连接 ${name}`, exact: true }).click();
+  await page.getByRole('button', { name: `进入 Console：${name}`, exact: true }).click();
   const hostKeyDialog = page.getByRole('dialog').filter({ hasText: 'SHA256:' });
   await expect(hostKeyDialog).toBeVisible({ timeout: 15_000 });
   await hostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
-  await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
+  await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(1, { timeout: 15_000 });
   expect(fixture.port).toBeGreaterThan(0);
 };
 
@@ -351,7 +351,7 @@ test.describe('account and encrypted sync boundaries', () => {
 
       await firstAccountMenu.getByRole('button', { name: '退出登录' }).click();
       await expect(page.getByRole('button', { name: '账号菜单', exact: true })).toContainText('仅本地');
-      await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接');
+      await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(1);
       await expect(page.getByText('Account sync local host', { exact: true })).toBeVisible();
     } finally {
       await secondContext.close();

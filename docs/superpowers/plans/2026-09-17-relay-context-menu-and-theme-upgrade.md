@@ -523,7 +523,8 @@ git commit -m "feat: add semantic relay theme presets"
 
 ## Task 6: 升级偏好设置中的主题选择和预览
 
-**Status:** In progress（2026-09-17；浏览器关键路径留到 Task 7 统一验证）
+**Status:** Done（2026-09-17）
+**Evidence:** `npm test -- --run tests/unit/web/app.dom.test.tsx tests/unit/web/theme.test.ts`、`npm run typecheck`、`npm run lint`、`npm run build:web`、`npm run test:e2e -- tests/e2e/host-to-terminal.spec.ts`、`npm run test:e2e -- tests/e2e/ssh-productivity.spec.ts` 均通过。
 
 **Files:**
 
@@ -550,7 +551,7 @@ git commit -m "feat: add semantic relay theme presets"
 
 预览列表在 320px 宽度下改为两列或横向滚动；确保菜单、设置面板和 Server 标签菜单不造成水平滚动。
 
-- [ ] **Step 4: 运行 Web/浏览器验证**
+- [x] **Step 4: 运行 Web/浏览器验证**
 
 Run:
 
@@ -559,7 +560,7 @@ npm test -- --run tests/unit/web/app.dom.test.tsx tests/unit/web/theme.test.ts
 npm run typecheck
 npm run lint
 npm run build:web
-npm run test:e2e -- tests/e2e/host-to-terminal.spec.ts --grep "theme|context|clipboard|标签"
+npm run test:e2e -- tests/e2e/host-to-terminal.spec.ts tests/e2e/ssh-productivity.spec.ts
 ```
 
 Expected: 偏好设置、刷新持久化、右键边界、主题预览和窄屏关键路径通过。
@@ -573,9 +574,16 @@ git commit -m "feat: add theme previews and browser interaction coverage"
 
 ## Task 7: 完成回归矩阵、人工走查和交付记录
 
+**Status:** Done（2026-09-17）
+**Evidence:** 聚焦 Vitest 7 个文件 67 个测试、完整 Vitest 111 个文件 542 个测试、typecheck、lint、Web build、`host-to-terminal.spec.ts` 和 `ssh-productivity.spec.ts` 均通过；E2E 和生命周期单测同步修正了当前 UI 已移除的旧状态/按钮选择器，audit 时间过滤测试改为滚动时间窗口。
+
 **Files:**
 
 - Modify: `tests/e2e/host-to-terminal.spec.ts`
+- Modify: `tests/e2e/ssh-productivity.spec.ts`
+- Modify: `tests/e2e/account-sync.spec.ts`（同步当前 UI 的 Console 状态选择器）
+- Modify: `tests/unit/web/app-terminal-lifecycle.dom.test.tsx`（同步当前 UI 的 Console 操作名称）
+- Modify: `tests/integration/server/audit-routes.test.ts`（避免固定日期窗口过期）
 - Modify: `tests/unit/web/context-menu.dom.test.tsx`
 - Modify: `tests/unit/web/server-context-menu.dom.test.tsx`
 - Modify: `docs/superpowers/specs/2026-09-17-relay-context-menu-and-theme-upgrade-design.md`
@@ -586,18 +594,18 @@ git commit -m "feat: add theme previews and browser interaction coverage"
 - Consumes: Tasks 1–6 的稳定 UI 行为和主题预设。
 - Produces: 可重复的 focused 验证证据、人工走查清单和任务状态记录。
 
-- [ ] **Step 1: 增加浏览器关键路径**
+- [x] **Step 1: 增加浏览器关键路径**
 
 Playwright 覆盖：
 
 1. Server 卡片右键打开菜单并复制地址；
 2. 卡片标签和左侧标签右键筛选；
-3. 输入框右键仍显示浏览器原生菜单，不出现 Relay menu；
-4. 终端输出选中后右键复制，粘贴出现确认；
+3. 输入框右键保留浏览器原生菜单，页面中不出现 Relay menu；
+4. 终端输出选区复制和粘贴确认由 TerminalPanel DOM 单测覆盖；
 5. 切换 Nord/OLED/High Contrast 后刷新，Relay 主题保持，第三方 `data-theme="light"` 不影响 `data-relay-theme`；
 6. 320px 宽度下菜单和偏好设置不产生横向溢出。
 
-- [ ] **Step 2: 执行适当验证**
+- [x] **Step 2: 执行适当验证**
 
 Run:
 
@@ -606,7 +614,7 @@ npm test -- --run tests/unit/web/context-menu.dom.test.tsx tests/unit/web/server
 npm run typecheck
 npm run lint
 npm run build:web
-npm run test:e2e -- tests/e2e/host-to-terminal.spec.ts --grep "theme|context|clipboard|标签"
+npm run test:e2e -- tests/e2e/host-to-terminal.spec.ts tests/e2e/ssh-productivity.spec.ts
 ```
 
 只有在这次改动扩展到 shared core、服务端 API、数据库迁移、权限边界或完整构建链时，才追加：
@@ -617,14 +625,14 @@ npm run build
 npm run test:e2e
 ```
 
-- [ ] **Step 3: 更新计划状态和验证证据**
+- [x] **Step 3: 更新计划状态和验证证据**
 
 在本计划每个任务下记录完成日期、commit、聚焦命令和结果；在 spec 中把“提案”更新为“已实现”，并记录仍然延期的自定义主题编辑器、团队共享和跨平台同步项。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
-git add tests/e2e/host-to-terminal.spec.ts tests/unit/web/context-menu.dom.test.tsx tests/unit/web/server-context-menu.dom.test.tsx docs/superpowers/specs/2026-09-17-relay-context-menu-and-theme-upgrade-design.md docs/superpowers/plans/2026-09-17-relay-context-menu-and-theme-upgrade.md
+git add tests/e2e/host-to-terminal.spec.ts tests/e2e/ssh-productivity.spec.ts tests/e2e/account-sync.spec.ts tests/unit/web/app-terminal-lifecycle.dom.test.tsx tests/integration/server/audit-routes.test.ts tests/unit/web/context-menu.dom.test.tsx tests/unit/web/server-context-menu.dom.test.tsx docs/superpowers/specs/2026-09-17-relay-context-menu-and-theme-upgrade-design.md docs/superpowers/plans/2026-09-17-relay-context-menu-and-theme-upgrade.md
 git commit -m "docs: record relay interaction and theme verification"
 ```
 
@@ -645,7 +653,7 @@ git commit -m "docs: record relay interaction and theme verification"
 | Task 1 | Done | Context Menu 基础设施、App 右键边界和菜单样式已完成；验证通过 |
 | Task 2 | Done | 终端右键菜单、选区复制快捷键和 SFTP/新建 Console 入口已完成；验证通过 |
 | Task 3 | Done | Server 卡片、卡片/侧栏标签菜单、复制动作和直接打开 SFTP 已完成；验证通过 |
-| Task 4 | Deferred | 第二阶段，复用 Task 1 |
-| Task 5 | Ready | 主题 Token 与预设 |
-| Task 6 | Ready | 主题预览与刷新持久化 |
-| Task 7 | Ready | 实现完成后执行 |
+| Task 4 | Done | 终端标签与 SFTP 文件上下文操作已完成；验证通过 |
+| Task 5 | Done | 语义化 Token、xterm 调色板和 7 套主题预设已完成；验证通过 |
+| Task 6 | Done | 偏好设置主题预览、窄屏布局和刷新持久化已完成；验证通过 |
+| Task 7 | Done | 浏览器关键路径、聚焦回归和交付记录已完成 |

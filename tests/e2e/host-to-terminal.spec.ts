@@ -32,6 +32,8 @@ test.describe('host to terminal journey', () => {
     await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: '添加第一台 Server' }).click();
+    await page.getByLabel('服务器名称', { exact: true }).click({ button: 'right' });
+    await expect(page.getByRole('menu')).toHaveCount(0);
     await page.getByLabel('服务器名称').press('Control+Shift+P');
     await expect(page.getByRole('dialog', { name: '命令片段' })).toHaveCount(0);
     await page.getByLabel('服务器名称').fill('Fixture SSH A');
@@ -47,7 +49,7 @@ test.describe('host to terminal journey', () => {
     await expect(page.locator('#quick-switcher-search')).toBeFocused();
     await page.keyboard.press('Escape');
 
-    await page.getByRole('button', { name: '连接 Fixture SSH A', exact: true }).click();
+    await page.getByRole('button', { name: '进入 Console：Fixture SSH A', exact: true }).click();
     const hostKeyDialog = page.getByRole('dialog');
     await expect(hostKeyDialog).toContainText('127.0.0.1:');
     await expect(hostKeyDialog).toContainText('SHA256:');
@@ -61,14 +63,13 @@ test.describe('host to terminal journey', () => {
     expect(dialogBox.y).toBeGreaterThanOrEqual(0);
     expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewportHeight);
     await hostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
-    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(1, { timeout: 15_000 });
     await expect(page.locator('.terminal-topbar .app-header-embedded')).toBeVisible();
     await expect(page.locator('.terminal-topbar .brand-lockup strong')).toHaveText('Relay');
     await expect(page.getByRole('toolbar', { name: '终端导航与工作区操作' })).toBeVisible();
     await expect(page.getByRole('button', { name: '锁定' })).toBeVisible();
     await expect(page.getByRole('button', { name: '偏好设置' })).toBeVisible();
     await expect(page.getByRole('button', { name: '新建终端' })).toHaveCount(1);
-    await expect(page.locator('.terminal-topbar .terminal-toolbar')).toBeVisible();
     await expect(page.locator('.terminal-panel.is-active .terminal-panel-heading')).toHaveCount(0);
     const terminalTopbarHeight = await page.locator('.terminal-topbar').evaluate((element) => element.getBoundingClientRect().height);
     expect(terminalTopbarHeight).toBeLessThanOrEqual(44);
@@ -77,6 +78,9 @@ test.describe('host to terminal journey', () => {
     await terminalInput.pressSequentially("printf '\\033[2J\\033[Hmobile-copy-target\\n'");
     await terminalInput.press('Enter');
     await expect(page.locator('.terminal-panel.is-active .terminal-canvas')).toContainText('mobile-copy-target', { timeout: 15_000 });
+    await page.getByRole('tab', { name: '切换 Fixture SSH A · 1' }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: '关闭标签' })).toBeVisible();
+    await page.keyboard.press('Escape');
     const terminalElement = page.locator('.terminal-panel.is-active .xterm-screen');
     const terminalBounds = await terminalElement.boundingBox();
     if (!terminalBounds) throw new Error('terminal should have a layout box');
@@ -87,7 +91,9 @@ test.describe('host to terminal journey', () => {
       terminalBounds.y + cellHeight * 0.5,
       { button: 'right' }
     );
-    await expect(terminalInput).toHaveValue('mobile-copy-target');
+    await expect(page.getByRole('menuitem', { name: /^复制/u })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await terminalInput.click();
     await expect(terminalInput).toBeFocused();
     const scrollPolicy = await page.locator('.terminal-panel.is-active .terminal-canvas .xterm-viewport').evaluate((element) => ({
       rootOverscroll: getComputedStyle(document.documentElement).overscrollBehaviorY,
@@ -125,7 +131,7 @@ test.describe('host to terminal journey', () => {
     await page.getByRole('button', { name: '新建终端' }).first().click();
     await page.getByRole('dialog', { name: '选择 Server' }).getByRole('button', { name: '新建终端：Fixture SSH A' }).click();
     await expect(page.getByRole('tab', { name: '切换 Fixture SSH A · 2' })).toBeVisible();
-    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(1, { timeout: 15_000 });
     const workspaceHeight = await page.locator('.terminal-workspace-shell').evaluate((element) => element.getBoundingClientRect().height);
     expect(workspaceHeight).toBeGreaterThan(580);
 
@@ -141,11 +147,11 @@ test.describe('host to terminal journey', () => {
     await page.getByLabel('用户名').fill(fixture.username);
     await page.getByLabel('密码').fill(fixture.password);
     await page.getByRole('button', { name: '保存 Server' }).click();
-    await page.getByRole('button', { name: '连接 Fixture SSH B', exact: true }).click();
+    await page.getByRole('button', { name: '进入 Console：Fixture SSH B', exact: true }).click();
     const secondHostKeyDialog = page.getByRole('dialog');
     await expect(secondHostKeyDialog).toBeVisible();
     await secondHostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
-    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(1, { timeout: 15_000 });
     await expect(page.getByRole('tab')).toHaveCount(3);
     await page.keyboard.press('Control+W');
     await expect(page.getByRole('tab')).toHaveCount(2);
@@ -165,7 +171,7 @@ test.describe('host to terminal journey', () => {
 
     await page.getByRole('button', { name: '锁定' }).click();
     await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '连接 Fixture SSH A' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '进入 Console：Fixture SSH A' })).toHaveCount(0);
     await page.getByLabel('主密码', { exact: true }).fill(MASTER_PASSWORD);
     await page.getByRole('button', { name: '解锁 Vault' }).click();
     await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible();
@@ -174,6 +180,7 @@ test.describe('host to terminal journey', () => {
     await page.getByLabel('IP / 域名').fill('very-long-hostname.internal.example.com');
     await page.getByLabel('用户名').fill('ops');
     await page.getByLabel('密码').fill('fixture-password');
+    await page.getByRole('textbox', { name: '标签' }).fill('prod, ui');
     await page.getByRole('button', { name: '保存 Server' }).click();
     await page.setViewportSize({ width: 320, height: 720 });
     const narrowCard = page.locator('.host-card').filter({ hasText: 'Long Hostname' });
@@ -182,16 +189,44 @@ test.describe('host to terminal journey', () => {
     expect(narrowCardRight).toBeLessThanOrEqual(320);
 
     await page.setViewportSize({ width: 1024, height: 720 });
+    await narrowCard.click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: '复制地址' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: '复制 SSH 命令' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await narrowCard.getByRole('button', { name: '筛选标签 prod' }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: '按此标签筛选' })).toBeVisible();
+    await page.getByRole('menuitem', { name: '按此标签筛选' }).click();
+    await expect(page.getByRole('button', { name: '标签 prod', exact: true })).toHaveClass(/is-active/u);
+    await page.getByRole('button', { name: '标签 prod', exact: true }).click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: '清除当前标签筛选' })).toBeVisible();
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '偏好设置' }).click();
     await expect(page.getByRole('region', { name: '快捷键' })).toBeVisible();
     await page.getByRole('combobox', { name: '色彩主题' }).selectOption('contrast');
     await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'contrast');
+    await page.getByRole('combobox', { name: '色彩主题' }).selectOption('nord');
+    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'nord');
+    await page.getByRole('button', { name: '预览主题：OLED 纯黑' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'oled');
     await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
     await page.getByRole('button', { name: '关闭偏好设置' }).click();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'oled');
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'oled');
 
+    if (await page.getByRole('button', { name: '← Server 列表' }).count()) await page.getByRole('button', { name: '← Server 列表' }).click();
+    await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 430 });
+    await page.getByRole('button', { name: '偏好设置' }).click();
+    await expect(page.getByRole('dialog', { name: '偏好设置' })).toBeVisible();
+    const preferencesLayout = await page.evaluate(() => ({ width: window.innerWidth, documentWidth: document.documentElement.scrollWidth }));
+    expect(preferencesLayout.documentWidth).toBeLessThanOrEqual(preferencesLayout.width);
+    await page.getByRole('button', { name: '关闭偏好设置' }).click();
     await page.setViewportSize({ width: 390, height: 430 });
-    await page.getByRole('button', { name: '连接 Fixture SSH A', exact: true }).click();
-    await expect(page.locator('.terminal-tab.is-active .terminal-tab-status')).toHaveText('已连接', { timeout: 15_000 });
+    await page.getByRole('button', { name: '进入 Console：Fixture SSH A', exact: true }).click();
+    await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(1, { timeout: 15_000 });
     for (const width of [320, 390]) {
       await page.setViewportSize({ width, height: 430 });
       const shortViewportLayout = await page.evaluate(() => ({
