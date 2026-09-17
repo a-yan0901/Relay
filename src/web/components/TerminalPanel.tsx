@@ -167,6 +167,11 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
         fitFrame = null;
         try {
           fitAddon.fit();
+          const xtermElement = mountRef.current?.querySelector<HTMLElement>('.xterm');
+          const screenElement = xtermElement?.querySelector<HTMLElement>('.xterm-screen');
+          if (xtermElement && screenElement && screenElement.getBoundingClientRect().height > xtermElement.getBoundingClientRect().height + 0.5 && terminal.rows > 1) {
+            terminal.resize(terminal.cols, terminal.rows - 1);
+          }
           sendResizeIfChanged(terminal.cols, terminal.rows);
         } catch {
           // The browser may report zero dimensions while a tab is being mounted.

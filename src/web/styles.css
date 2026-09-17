@@ -1263,7 +1263,7 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 
 .terminal-divider:hover::after, .terminal-layout.is-dragging .terminal-divider::after { opacity: 1; }
 
-.terminal-canvas { padding: 7px 9px 10px; }
+.terminal-canvas { padding: 7px 9px 12px; }
 
 .terminal-topbar, .terminal-pane-toolbar, .terminal-host-picker { background: var(--panel-soft); }
 

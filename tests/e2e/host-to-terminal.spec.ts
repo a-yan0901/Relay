@@ -64,6 +64,12 @@ test.describe('host to terminal journey', () => {
     expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewportHeight);
     await hostKeyDialog.getByRole('button', { name: '信任并连接' }).click();
     await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(1, { timeout: 15_000 });
+    const terminalGeometry = await page.locator('.terminal-panel.is-active').evaluate((panel) => {
+      const screen = panel.querySelector('.xterm-screen')?.getBoundingClientRect();
+      const viewport = panel.querySelector('.xterm-viewport')?.getBoundingClientRect();
+      return { screenBottom: screen?.bottom ?? 0, viewportBottom: viewport?.bottom ?? 0 };
+    });
+    expect(terminalGeometry.screenBottom).toBeLessThanOrEqual(terminalGeometry.viewportBottom + 0.5);
     await expect(page.locator('.terminal-topbar .app-header-embedded')).toBeVisible();
     await expect(page.locator('.terminal-topbar .brand-lockup strong')).toHaveText('Relay');
     await expect(page.getByRole('toolbar', { name: '终端导航与工作区操作' })).toBeVisible();
