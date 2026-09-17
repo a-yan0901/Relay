@@ -256,7 +256,10 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   await app.register(rateLimit, {
     global: true,
     max: dependencies.config.rateLimitMax ?? 120,
-    timeWindow: '1 minute'
+    timeWindow: '1 minute',
+    // Interactive terminal reconnects can open several sockets at once; they
+    // must not consume the request budget for the rest of the workspace.
+    allowList: (request) => request.url.startsWith('/ws/')
   });
   await app.register(websocket);
   await app.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 * 1024 } });
