@@ -589,7 +589,8 @@ describe('web adapters', () => {
       exportSshCsv: vi.fn(async () => new Blob(['name,address']))
     };
     const imports = new WebImportExportAdapter(api);
-    await imports.previewExternalImport([{ filename: 'config', content: 'Host app' }], 'openssh-config');
+    const previewExternalImport = imports.previewExternalImport;
+    await previewExternalImport([{ filename: 'config', content: 'Host app' }], 'openssh-config');
     await imports.applyExternalImport('preview-1', { selectedSourceIds: [], conflictPolicy: 'skip' });
     await imports.exportOpenSshConfig();
     await imports.exportCsv();

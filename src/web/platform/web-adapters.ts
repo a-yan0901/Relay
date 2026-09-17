@@ -762,7 +762,17 @@ const toWebFile = (source: ImportSourceFile): File => new File([
 const blobToBytes = async (blob: Blob): Promise<Uint8Array> => new Uint8Array(await blob.arrayBuffer());
 
 export class WebImportExportAdapter implements ImportExportPort {
-  constructor(private readonly client: Pick<WebApiClient, 'previewExternalImport' | 'applyExternalImport' | 'exportOpenSshConfig' | 'exportSshCsv' | 'exportVaultBundle' | 'previewVaultImport' | 'applyVaultImport'> = api) {}
+  constructor(private readonly client: Pick<WebApiClient, 'previewExternalImport' | 'applyExternalImport' | 'exportOpenSshConfig' | 'exportSshCsv' | 'exportVaultBundle' | 'previewVaultImport' | 'applyVaultImport'> = api) {
+    // Import/export methods are passed directly to React components as callbacks.
+    // Bind them so the adapter remains safe when invoked without its receiver.
+    this.previewExternalImport = this.previewExternalImport.bind(this);
+    this.applyExternalImport = this.applyExternalImport.bind(this);
+    this.exportOpenSshConfig = this.exportOpenSshConfig.bind(this);
+    this.exportCsv = this.exportCsv.bind(this);
+    this.exportVaultBundle = this.exportVaultBundle.bind(this);
+    this.previewVaultImport = this.previewVaultImport.bind(this);
+    this.applyVaultImport = this.applyVaultImport.bind(this);
+  }
 
   previewExternalImport(files: readonly ImportSourceFile[], formatHint?: ImportFormat): Promise<ImportPreview> {
     return requireApi(this.client.previewExternalImport)(files.map(toWebFile), formatHint);
