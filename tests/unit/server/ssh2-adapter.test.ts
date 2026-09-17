@@ -158,4 +158,24 @@ describe('Ssh2Adapter', () => {
     channel.close();
     resource.close();
   });
+
+  it('contains a post-ready ECONNRESET without throwing and closes the active shell once', async () => {
+    const client = new FakeClient();
+    const statuses: string[] = [];
+    const diagnostics: Array<{ status: string; code?: string }> = [];
+    const resource = await new Ssh2ResourceAdapter({ clientFactory: () => client }).connect(config({ type: 'password', password: 'fixture-password' }), {
+      onHostKey: async () => true,
+      onStatus: (status) => statuses.push(status),
+      onDiagnostic: (event) => diagnostics.push({ status: event.status, code: event.code })
+    });
+    const channel = await resource.openShell();
+    let channelClosed = 0;
+    channel.on('close', () => { channelClosed += 1; });
+
+    expect(() => client.emit('error', Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))).not.toThrow();
+    expect(channelClosed).toBe(1);
+    expect(client.endCalls).toBe(1);
+    expect(statuses.at(-1)).toBe('closed');
+    expect(diagnostics).toContainEqual(expect.objectContaining({ status: 'failed', code: 'SSH_CONNECTION_FAILED' }));
+  });
 });

@@ -144,6 +144,18 @@ class SshChannelBridge extends EventEmitter implements SshChannel {
     }
   }
 
+  failFromConnection(error: Error): void {
+    if (this.closed) return;
+    this.emitChannelError(error);
+    try {
+      this.rawChannel.close();
+    } catch {
+      // The underlying channel may already be closed by ssh2.
+    } finally {
+      this.emitClosed();
+    }
+  }
+
   private emitClosed(): void {
     if (this.closed) return;
     this.closed = true;
@@ -157,6 +169,9 @@ class SshChannelBridge extends EventEmitter implements SshChannel {
 
 class Ssh2ConnectionResource implements SshConnectionResource {
   private closed = false;
+  private failureNotified = false;
+  private closedStatusNotified = false;
+  private readonly channels = new Set<SshChannelBridge>();
 
   constructor(
     private readonly clients: readonly Ssh2ClientLike[],
@@ -165,7 +180,7 @@ class Ssh2ConnectionResource implements SshConnectionResource {
     private readonly targetConfig: SshConnectConfig,
     private readonly targetHopIndex: number
   ) {
-    finalClient.on('close', () => callbacks.onStatus?.('closed'));
+    finalClient.on('close', () => this.terminate());
   }
 
   openShell(options: SshShellOptions = {}): Promise<SshChannel> {
@@ -188,7 +203,10 @@ class Ssh2ConnectionResource implements SshConnectionResource {
             return;
           }
           this.callbacks.onDiagnostic?.(diagnostic(this.targetConfig.hostId, 'channel', 'succeeded', this.targetHopIndex));
-          resolve(new SshChannelBridge(rawChannel, () => this.close()));
+          const bridge = new SshChannelBridge(rawChannel, () => this.close());
+          this.channels.add(bridge);
+          bridge.on('close', () => this.channels.delete(bridge));
+          resolve(bridge);
         });
       } catch (error) {
         const mapped = mapError(error);
@@ -268,11 +286,39 @@ class Ssh2ConnectionResource implements SshConnectionResource {
   }
 
   close(): void {
-    if (this.closed) return;
+    this.terminate();
+  }
+
+  handleClientError(error: unknown): void {
+    this.terminate(mapError(error));
+  }
+
+  private terminate(error?: AppError): void {
+    if (this.closed) {
+      this.notifyClosedStatus();
+      return;
+    }
     this.closed = true;
+    if (error && !this.failureNotified) {
+      this.failureNotified = true;
+      this.callbacks.onDiagnostic?.(diagnostic(this.targetConfig.hostId, 'channel', 'failed', this.targetHopIndex, error.code));
+    }
+    const channels = [...this.channels];
+    this.channels.clear();
+    for (const channel of channels) {
+      if (error) channel.failFromConnection(error);
+      else channel.close();
+    }
     for (const client of [...this.clients].reverse()) {
       try { client.end(); } catch { /* already closed */ }
     }
+    this.notifyClosedStatus();
+  }
+
+  private notifyClosedStatus(): void {
+    if (this.closedStatusNotified) return;
+    this.closedStatusNotified = true;
+    this.callbacks.onStatus?.('closed');
   }
 }
 
@@ -297,21 +343,36 @@ export class Ssh2ResourceAdapter implements SshResourceAdapter {
     const clients: Ssh2ClientLike[] = [];
     let upstream: Ssh2ClientLike | undefined;
     let upstreamSocket: unknown;
+    let resource: Ssh2ConnectionResource | undefined;
+    let postReadyError: unknown;
+    const onPostReadyError = (client: Ssh2ClientLike, error: unknown): void => {
+      if (resource) {
+        resource.handleClientError(error);
+        return;
+      }
+      postReadyError ??= error;
+      const mapped = mapError(error);
+      callbacks.onDiagnostic?.(diagnostic(config.hostId, 'tcp', 'failed', path.length - 1, mapped.code));
+      try { client.end(); } catch { /* connection may already be closed */ }
+    };
     try {
       for (const [hopIndex, hop] of path.entries()) {
+        if (postReadyError) throw postReadyError;
         if (upstream) {
           callbacks.onDiagnostic?.(diagnostic(hop.hostId, 'jump', 'started', hopIndex));
           upstreamSocket = await this.forwardOut(upstream, hop);
           callbacks.onDiagnostic?.(diagnostic(hop.hostId, 'jump', 'succeeded', hopIndex));
         }
-        const client = await this.connectClient(hop, callbacks, hopIndex, upstreamSocket);
+        const client = await this.connectClient(hop, callbacks, hopIndex, upstreamSocket, onPostReadyError);
         clients.push(client);
         upstream = client;
       }
+      if (postReadyError) throw postReadyError;
       const finalClient = clients.at(-1);
       if (!finalClient) throw new AppError('CONNECTION_STAGE_FAILED');
       callbacks.onStatus?.('connected');
-      return new Ssh2ConnectionResource(clients, finalClient, callbacks, config, path.length - 1);
+      resource = new Ssh2ConnectionResource(clients, finalClient, callbacks, config, path.length - 1);
+      return resource;
     } catch (error) {
       for (const client of [...clients].reverse()) {
         try { client.end(); } catch { /* best effort cleanup */ }
@@ -333,7 +394,13 @@ export class Ssh2ResourceAdapter implements SshResourceAdapter {
     });
   }
 
-  private connectClient(config: SshConnectConfig, callbacks: SshConnectCallbacks, hopIndex: number, socket?: unknown): Promise<Ssh2ClientLike> {
+  private connectClient(
+    config: SshConnectConfig,
+    callbacks: SshConnectCallbacks,
+    hopIndex: number,
+    socket: unknown,
+    onPostReadyError: (client: Ssh2ClientLike, error: unknown) => void
+  ): Promise<Ssh2ClientLike> {
     const client = this.clientFactory();
     callbacks.onDiagnostic?.(diagnostic(config.hostId, 'tcp', 'started', hopIndex));
     return new Promise<Ssh2ClientLike>((resolve, reject) => {
@@ -353,14 +420,21 @@ export class Ssh2ResourceAdapter implements SshResourceAdapter {
         try { client.end(); } catch { /* connection may already be closed */ }
         reject(mapped);
       };
-      const onError = (error: Error): void => fail(error);
+      const onError = (error: Error): void => {
+        if (ready) {
+          onPostReadyError(client, error);
+          return;
+        }
+        fail(error);
+      };
       const onClose = (): void => { if (!ready) fail(new Error('SSH connection closed before ready')); };
       const onReady = (): void => {
         ready = true;
         callbacks.onDiagnostic?.(diagnostic(config.hostId, 'tcp', 'succeeded', hopIndex));
         callbacks.onDiagnostic?.(diagnostic(config.hostId, 'authentication', 'succeeded', hopIndex));
         settled = true;
-        cleanup();
+        client.removeListener('ready', onReady);
+        client.removeListener('close', onClose);
         resolve(client);
       };
       const hostVerifier = (value: string | Buffer, verify: (accepted: boolean) => void): void => {
@@ -390,7 +464,7 @@ export class Ssh2ResourceAdapter implements SshResourceAdapter {
         });
       };
       client.once('ready', onReady);
-      client.once('error', onError);
+      client.on('error', onError);
       client.once('close', onClose);
       try {
         client.connect(createClientOptions(config, this.options, hostVerifier, socket));
