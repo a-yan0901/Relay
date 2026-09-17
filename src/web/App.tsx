@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 
 import { AppError } from '@shared/errors';
 import type { HostCreateInput, HostPatchInput, IdentityCreateInput, IdentityUpdateInput, SnippetInput } from '@shared/validation';
@@ -28,6 +28,7 @@ import type { CoreRuntime } from '../shared/core/runtime';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
 import { shortcutCommandForEvent } from './state/shortcut-map';
+import { isNativeContextMenuTarget } from './context-menu';
 import {
   appReducer,
   clearTerminalDescriptors,
@@ -1184,6 +1185,10 @@ export const App = ({ runtime }: AppProps) => {
     pendingCount: 0
   }, [state.phase, syncState]);
 
+  const handleAppContextMenu = (event: ReactMouseEvent<HTMLElement>): void => {
+    if (!isNativeContextMenuTarget(event.target)) event.preventDefault();
+  };
+
   if (state.phase === 'loading') return <LoadingView errorMessage={state.errorMessage} onRetry={retryBoot} />;
   if (state.phase === 'setup') return <SetupGate onSubmit={completeSetup} errorMessage={state.errorMessage} headerSlot={accountMenu} account={accountSession} recoveryPort={runtime.vaultRecovery} onRecovered={completeSyncRecovery} />;
   if (state.phase === 'locked') return <>
@@ -1199,7 +1204,7 @@ export const App = ({ runtime }: AppProps) => {
   </>;
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" onContextMenu={handleAppContextMenu}>
       {!terminalView && <WorkspaceHeader
         destination={activityOpen ? 'activity' : workspaceSwitcherOpen ? 'workspaces' : 'servers'}
         onLock={() => void handleLock()}

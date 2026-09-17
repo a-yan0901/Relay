@@ -53,6 +53,9 @@
 
 ## Task 1: 建立 Context Menu 基础设施和浏览器右键边界
 
+**Status:** Done（2026-09-17）
+**Evidence:** `npm test -- --run tests/unit/web/context-menu.dom.test.tsx`、`npm run typecheck`、`npm run lint` 均通过。
+
 **Files:**
 
 - Create: `src/web/context-menu.ts`
@@ -100,7 +103,7 @@ export const useContextMenu = <T>(): ContextMenuController<T>;
 export const isNativeContextMenuTarget = (target: EventTarget | null): boolean => boolean;
 ```
 
-- [ ] **Step 1: 写失败的菜单行为测试**
+- [x] **Step 1: 写失败的菜单行为测试**
 
 在 `context-menu.dom.test.tsx` 覆盖：打开后第一个可用项获得焦点；ArrowDown 跳过 disabled 项；Enter 执行动作并关闭；Escape 关闭；菜单靠近右下角时不超出 viewport；点击 `input`、`textarea`、`select`、链接和 `[data-native-context-menu="true"]` 时 `isNativeContextMenuTarget()` 返回 `true`。
 
@@ -108,12 +111,15 @@ export const isNativeContextMenuTarget = (target: EventTarget | null): boolean =
 fireEvent.contextMenu(screen.getByTestId('custom-surface'), { clientX: 780, clientY: 580 });
 expect(screen.getByRole('menu')).toBeInTheDocument();
 expect(screen.getByRole('menuitem', { name: '复制' })).toHaveFocus();
-await user.keyboard('{ArrowDown}{Enter}');
+await user.keyboard('{Enter}');
 expect(onCopy).toHaveBeenCalledOnce();
 expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+fireEvent.contextMenu(screen.getByTestId('custom-surface'), { clientX: 780, clientY: 580 });
+await user.keyboard('{ArrowDown}');
+expect(screen.getByRole('menuitem', { name: '清除' })).toHaveFocus();
 ```
 
-- [ ] **Step 2: 运行聚焦测试确认缺口**
+- [x] **Step 2: 运行聚焦测试确认缺口**
 
 Run:
 
@@ -123,17 +129,17 @@ npm test -- --run tests/unit/web/context-menu.dom.test.tsx
 
 Expected: 测试因缺少 `ContextMenu`、hook 或原生菜单判断而失败。
 
-- [ ] **Step 3: 实现最小通用菜单**
+- [x] **Step 3: 实现最小通用菜单**
 
 在 `src/web/context-menu.ts` 实现目标类型和 `isNativeContextMenuTarget()`；在 `use-context-menu.ts` 实现 `open(event, target)`、`close()` 和 document click/scroll/blur 清理；在 `ContextMenu.tsx` 实现 `role="menu"`、`role="menuitem"`、禁用项跳过、Escape 和定位边界。
 
 在 App 的 `<main className="app-shell">` 增加工作区边界处理：非原生目标 `preventDefault()`，但不在这里决定业务菜单项。菜单组件通过业务组件在触发点渲染，避免 App 持有所有对象类型。
 
-- [ ] **Step 4: 增加菜单视觉 Token**
+- [x] **Step 4: 增加菜单视觉 Token**
 
 在 `styles.css` 增加 `.context-menu`、`.context-menu-item`、`.context-menu-separator`、`.context-menu-shortcut` 和危险状态样式，颜色全部使用已有语义变量，不直接写午夜蓝或白色常量。
 
-- [ ] **Step 5: 运行通过验证**
+- [x] **Step 5: 运行通过验证**
 
 Run:
 
@@ -145,7 +151,7 @@ npm run lint
 
 Expected: 菜单单元/DOM 测试通过；TypeScript 和 ESLint 无新增错误。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/web/context-menu.ts src/web/hooks/use-context-menu.ts src/web/components/ContextMenu.tsx src/web/App.tsx src/web/styles.css tests/unit/web/context-menu.dom.test.tsx
