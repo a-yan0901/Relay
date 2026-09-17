@@ -46,6 +46,35 @@ const cryptoKey = (key: Uint8Array): Promise<globalThis.CryptoKey> => (
   globalThis.crypto.subtle.importKey('raw', toArrayBuffer(key), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
 );
 
+export interface LiveSessionKeyContext {
+  workspaceId: string;
+  ownerDeviceId: string;
+  viewerDeviceId: string;
+  ownerEpoch: number;
+}
+
+/** Derive a short-lived per-viewer key without retaining a key registry in the relay. */
+export const deriveLiveSessionKey = async (baseKey: Uint8Array, context: LiveSessionKeyContext): Promise<Uint8Array> => {
+  assertKey(baseKey);
+  if (
+    typeof context.workspaceId !== 'string' || context.workspaceId.length === 0 || context.workspaceId.length > 128
+    || typeof context.ownerDeviceId !== 'string' || context.ownerDeviceId.length === 0 || context.ownerDeviceId.length > 128
+    || typeof context.viewerDeviceId !== 'string' || context.viewerDeviceId.length === 0 || context.viewerDeviceId.length > 128
+    || !Number.isSafeInteger(context.ownerEpoch) || context.ownerEpoch < 1
+  ) throw new Error('invalid live session key context');
+  const hmacKey = await globalThis.crypto.subtle.importKey(
+    'raw',
+    toArrayBuffer(baseKey),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const material = new globalThis.TextEncoder().encode(
+    `relay-live-key:v1:${context.workspaceId}:${context.ownerDeviceId}:${context.viewerDeviceId}:${context.ownerEpoch}`
+  );
+  return new Uint8Array(await globalThis.crypto.subtle.sign('HMAC', hmacKey, toArrayBuffer(material)));
+};
+
 const associatedData = (frame: LiveFrame): string => `relay-live:v${LIVE_CRYPTO_VERSION}:${frame.workspaceId}`;
 
 const parseCipherEnvelope = (bytes: Uint8Array): LiveCipherEnvelope => {

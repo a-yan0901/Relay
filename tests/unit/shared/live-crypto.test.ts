@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decryptLiveFrame, encryptLiveFrame } from '../../../src/shared/cloud/live-crypto.js';
+import { decryptLiveFrame, deriveLiveSessionKey, encryptLiveFrame } from '../../../src/shared/cloud/live-crypto.js';
 
 const frame = {
   protocolVersion: 1 as const,
@@ -33,5 +33,17 @@ describe('live frame encryption', () => {
 
   it('requires a 256-bit session key', async () => {
     await expect(encryptLiveFrame(new Uint8Array(16), frame)).rejects.toThrow();
+  });
+
+  it('derives a different bounded session key for each viewer and owner epoch', async () => {
+    const baseKey = new Uint8Array(32).fill(9);
+    const first = await deriveLiveSessionKey(baseKey, { workspaceId: 'workspace-1', ownerDeviceId: 'device-owner', viewerDeviceId: 'device-a', ownerEpoch: 1 });
+    const same = await deriveLiveSessionKey(baseKey, { workspaceId: 'workspace-1', ownerDeviceId: 'device-owner', viewerDeviceId: 'device-a', ownerEpoch: 1 });
+    const otherViewer = await deriveLiveSessionKey(baseKey, { workspaceId: 'workspace-1', ownerDeviceId: 'device-owner', viewerDeviceId: 'device-b', ownerEpoch: 1 });
+    const otherEpoch = await deriveLiveSessionKey(baseKey, { workspaceId: 'workspace-1', ownerDeviceId: 'device-owner', viewerDeviceId: 'device-a', ownerEpoch: 2 });
+    expect(first).toEqual(same);
+    expect(first).not.toEqual(otherViewer);
+    expect(first).not.toEqual(otherEpoch);
+    expect(first.byteLength).toBe(32);
   });
 });

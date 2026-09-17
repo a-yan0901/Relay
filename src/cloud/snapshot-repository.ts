@@ -36,6 +36,26 @@ export interface PutCloudSnapshotInput {
   now: string;
 }
 
+export interface CloudIdempotencyRecord {
+  revision: number;
+  parentRevision: number | null;
+  writerDeviceId: string;
+  keyVersion: number;
+  nonce: string;
+  ciphertext: string;
+  authTag: string;
+  aad: string;
+  payloadHash: string;
+  byteLength: number;
+}
+
+export const assertCloudIdempotentReplay = (existing: CloudIdempotencyRecord, envelope: CloudDataEnvelope): void => {
+  const fields: readonly (keyof CloudIdempotencyRecord)[] = [
+    'revision', 'parentRevision', 'writerDeviceId', 'keyVersion', 'nonce', 'ciphertext', 'authTag', 'aad', 'payloadHash', 'byteLength'
+  ];
+  if (fields.some((field) => existing[field] !== envelope[field])) throw new AppError('SYNC_CONFLICT');
+};
+
 export const hashCloudIdempotencyKey = (value: string): string => {
   if (typeof value !== 'string' || value.length === 0 || value.length > 256) {
     throw new AppError('SYNC_PAYLOAD_INVALID');
@@ -152,8 +172,8 @@ export class CloudSnapshotRepository {
     resourceId: string
   ): Promise<CloudSnapshotHead> {
     const names = tableNames(domain);
-    const idempotentRows = await executor.query<Array<{ revision: number }>>(
-      `SELECT revision FROM ${names.revisions} WHERE ${names.idColumn} = ? AND idempotency_key_hash = ? LIMIT 1`,
+    const idempotentRows = await executor.query<CloudIdempotencyRecord[]>(
+      `SELECT revision, parent_revision AS parentRevision, writer_device_id AS writerDeviceId, key_version AS keyVersion, nonce, ciphertext, auth_tag AS authTag, aad, payload_hash AS payloadHash, byte_length AS byteLength FROM ${names.revisions} WHERE ${names.idColumn} = ? AND idempotency_key_hash = ? LIMIT 1`,
       [resourceId, input.idempotencyKeyHash]
     );
     const current = await executor.query<HeadSqlRow[]>(
@@ -162,12 +182,15 @@ export class CloudSnapshotRepository {
     );
     const currentRow = current[0];
     const currentHead = currentRow ? headFromRow(domain, resourceId, currentRow) : null;
-    if (idempotentRows[0]) return currentHead ?? headFromRow(domain, resourceId, {
-      revision: idempotentRows[0].revision,
-      payload_hash: envelope.payloadHash,
-      key_version: envelope.keyVersion,
-      updated_at: input.now
-    });
+    if (idempotentRows[0]) {
+      assertCloudIdempotentReplay(idempotentRows[0], envelope);
+      return currentHead ?? headFromRow(domain, resourceId, {
+        revision: idempotentRows[0].revision,
+        payload_hash: idempotentRows[0].payloadHash,
+        key_version: idempotentRows[0].keyVersion,
+        updated_at: input.now
+      });
+    }
 
     assertCloudRevisionChain(currentHead?.revision ?? null, envelope);
     await executor.execute(

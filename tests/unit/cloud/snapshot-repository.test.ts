@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertCloudRevisionChain,
+  assertCloudIdempotentReplay,
   hashCloudIdempotencyKey,
   type CloudRevisionInput
 } from '../../../src/cloud/snapshot-repository.js';
@@ -28,5 +29,22 @@ describe('cloud snapshot CAS', () => {
     expect(hashed).toMatch(/^[a-f0-9]+$/u);
     expect(hashed).not.toContain('request-1');
     expect(hashCloudIdempotencyKey('request-1')).toBe(hashed);
+  });
+
+  it('only treats an idempotency key as a replay when the complete envelope matches', () => {
+    const envelope = {
+      revision: 2,
+      parentRevision: 1,
+      writerDeviceId: 'device-1',
+      keyVersion: 1,
+      nonce: 'nonce-2',
+      ciphertext: 'ciphertext-2',
+      authTag: 'tag-2',
+      aad: 'aad-2',
+      payloadHash: 'b'.repeat(64),
+      byteLength: 12
+    };
+    expect(() => assertCloudIdempotentReplay(envelope, envelope)).not.toThrow();
+    expect(() => assertCloudIdempotentReplay(envelope, { ...envelope, ciphertext: 'different' })).toThrowError(expect.objectContaining({ code: 'SYNC_CONFLICT' }));
   });
 });
