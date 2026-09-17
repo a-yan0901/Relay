@@ -108,7 +108,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     reconnectMaxMs: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.maxDelayMs,
     reattachOnly: recoveryStatus === 'restored',
     networkAware: true,
-    autoConnect: recoveryStatus !== 'needs-reopen',
+    autoConnect: true,
     getSize: () => ({
       cols: terminalRef.current?.cols ?? 80,
       rows: terminalRef.current?.rows ?? 24
