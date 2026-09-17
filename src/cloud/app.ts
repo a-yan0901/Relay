@@ -217,6 +217,12 @@ const requireKeyApi = (dependencies: CloudAppDependencies): CloudKeyApi => {
   return dependencies.keys;
 };
 
+const withWorkspacePresence = (descriptor: CloudWorkspaceDescriptor, relay: BoundedRelayHub): CloudWorkspaceDescriptor & { online: boolean; activeViewerCount: number } => ({
+  ...descriptor,
+  online: relay.hasOwner(descriptor.id, descriptor.ownerDeviceId),
+  activeViewerCount: relay.viewerCount(descriptor.id)
+});
+
 export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise<FastifyInstance> => {
   const app = Fastify({
     bodyLimit: dependencies.config.relay.maxPayloadBytes,
@@ -329,7 +335,8 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
 
   app.get('/v2/workspaces', async (request, reply) => {
     const { session } = await requireTrustedSession(request, dependencies.auth);
-    reply.send(dependencies.workspaces ? await dependencies.workspaces.list(session.accountId) : []);
+    const descriptors = dependencies.workspaces ? await dependencies.workspaces.list(session.accountId) : [];
+    reply.send(descriptors.map((descriptor) => withWorkspacePresence(descriptor, relay)));
   });
 
   app.get('/v2/workspaces/:workspaceId/descriptor', async (request, reply) => {
@@ -339,7 +346,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
     await requireWorkspaceAccess(session, parsed.data.workspaceId, dependencies, 'viewer');
     const descriptor = await dependencies.workspaces.get(session.accountId, parsed.data.workspaceId);
     if (!descriptor) throw new AppError('SYNC_NOT_FOUND');
-    reply.send(descriptor);
+    reply.send(withWorkspacePresence(descriptor, relay));
   });
 
   app.get('/v2/workspaces/:workspaceId/keys', async (request, reply) => {

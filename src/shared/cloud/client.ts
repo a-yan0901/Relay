@@ -15,6 +15,9 @@ export interface CloudWorkspaceDescriptor {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Live status is ephemeral and is omitted by older cloud deployments. */
+  online?: boolean;
+  activeViewerCount?: number;
 }
 
 export interface CloudSnapshotHead {

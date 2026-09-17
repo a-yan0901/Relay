@@ -5,6 +5,7 @@ import { loadCloudConfig } from '../../../src/cloud/config.js';
 import type { AccountSession, DeviceDescriptor } from '../../../src/shared/core/models.js';
 import { createCloudDataAad, type CloudDataEnvelope, type CloudKeyGrant } from '../../../src/shared/cloud/protocol.js';
 import type { CloudSnapshotHead } from '../../../src/cloud/snapshot-repository.js';
+import type { CloudWorkspaceDescriptor } from '../../../src/cloud/workspace-repository.js';
 
 const session: AccountSession = {
   accountId: 'account-1',
@@ -65,6 +66,16 @@ const denyWorkspaces: CloudWorkspaceApi = {
   async list() { return []; },
   async canOwn() { return false; },
   async canView() { return false; }
+};
+
+const workspace: CloudWorkspaceDescriptor = {
+  id: 'workspace-1',
+  accountId: 'account-1',
+  ownerDeviceId: 'device-1',
+  encryptedTitle: 'relay-title',
+  createdAt: '2026-09-17T00:00:00.000Z',
+  updatedAt: '2026-09-17T00:00:00.000Z',
+  deletedAt: null
 };
 
 const keyGrant: CloudKeyGrant = {
@@ -212,5 +223,24 @@ describe('cloud API', () => {
       headers: { origin: 'https://evil.example.test', 'access-control-request-method': 'GET' }
     });
     expect(denied.statusCode).toBe(403);
+  });
+
+  it('adds bounded ephemeral presence to workspace directory data', async () => {
+    const workspaces: CloudWorkspaceApi = {
+      async list() { return [workspace]; },
+      async canOwn() { return true; },
+      async canView() { return true; }
+    };
+    const app = await buildCloudApp({ config, auth: createAuth(), snapshots: createSnapshots(), workspaces });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v2/workspaces',
+      headers: { authorization: `Bearer ${validToken}` }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([{ ...workspace, online: false, activeViewerCount: 0 }]);
   });
 });
