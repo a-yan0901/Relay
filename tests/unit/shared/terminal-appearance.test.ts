@@ -21,15 +21,15 @@ const profile = (id: string): TerminalProfile => ({ id, name: 'Ops', appearance:
 
 describe('terminal appearance profiles', () => {
   it('provides the built-in color schemes as immutable built-ins', () => {
-    expect(BUILTIN_TERMINAL_PROFILE_ID).toBe('builtin:midnight');
+    expect(BUILTIN_TERMINAL_PROFILE_ID).toBe('builtin:termius');
     expect(BUILTIN_TERMINAL_PROFILES.map((candidate) => candidate.id)).toEqual([
-      'builtin:midnight', 'builtin:termius', 'builtin:termius-light', 'builtin:light', 'builtin:contrast', 'builtin:nord', 'builtin:dracula', 'builtin:solarized-dark', 'builtin:oled'
+      'builtin:termius', 'builtin:termius-light', 'builtin:everforest-dark', 'builtin:tokyo-day', 'builtin:monokai'
     ]);
   });
 
   it('resolves an assigned custom profile before the inherited built-in default', () => {
     expect(resolveTerminalProfile('profile-ops', [profile('profile-ops')], BUILTIN_TERMINAL_PROFILE_ID).id).toBe('profile-ops');
-    expect(resolveTerminalProfile(null, [], 'builtin:nord').id).toBe('builtin:nord');
+    expect(resolveTerminalProfile(null, [], 'builtin:tokyo-day').id).toBe('builtin:tokyo-day');
     expect(resolveTerminalProfile('missing', [], 'missing-default').id).toBe(BUILTIN_TERMINAL_PROFILE_ID);
   });
 

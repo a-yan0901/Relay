@@ -126,10 +126,10 @@ describe('App boot recovery', () => {
 
     await screen.findByRole('heading', { name: 'Server', exact: true });
     await user.click(screen.getByRole('button', { name: '偏好设置' }));
-    await user.selectOptions(screen.getByRole('combobox', { name: '色彩主题' }), 'light');
+    await user.click(screen.getByRole('button', { name: '预览主题：Termius Light' }));
     await user.selectOptions(screen.getByRole('combobox', { name: '终端字号' }), '16');
 
-    expect(document.documentElement.dataset.relayTheme).toBe('light');
+    expect(document.documentElement.dataset.relayTheme).toBe('termius-light');
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
     expect(screen.getByText('MANAGEMENT')).toBeInTheDocument();
     expect(screen.getByText('最近活动')).toBeInTheDocument();
@@ -147,12 +147,12 @@ describe('App boot recovery', () => {
     await screen.findByRole('heading', { name: 'Server', exact: true });
     await user.click(screen.getByRole('button', { name: '偏好设置' }));
 
-    expect(screen.getAllByRole('button', { name: /^预览主题：/u })).toHaveLength(7);
-    await user.click(screen.getByRole('button', { name: '预览主题：Dracula 紫夜' }));
+    expect(screen.getAllByRole('button', { name: /^预览主题：/u })).toHaveLength(5);
+    expect(screen.queryByRole('combobox', { name: '色彩主题' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '预览主题：Tokyo Day' }));
 
-    expect(screen.getByRole('combobox', { name: '色彩主题' })).toHaveValue('dracula');
-    expect(screen.getByRole('button', { name: '预览主题：Dracula 紫夜' })).toHaveAttribute('aria-pressed', 'true');
-    expect(document.documentElement.dataset.relayTheme).toBe('dracula');
+    expect(screen.getByRole('button', { name: '预览主题：Tokyo Day' })).toHaveAttribute('aria-pressed', 'true');
+    expect(document.documentElement.dataset.relayTheme).toBe('tokyo-day');
     expect(document.documentElement.style.getPropertyValue('--panel')).not.toBe('');
   });
 
@@ -314,7 +314,7 @@ describe('App boot recovery', () => {
     expect(document.activeElement).toBe(addHost);
 
     await user.click(screen.getByRole('button', { name: '偏好设置' }));
-    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: '色彩主题' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '预览主题：Termius Dark' }));
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: '偏好设置' })).not.toBeInTheDocument();
   });

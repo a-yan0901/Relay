@@ -69,11 +69,11 @@ const host = (id: string, name: string): HostMetadataState => ({
 
 describe('TerminalWorkspace', () => {
   it('lets the global theme drive the baseline terminal profile', () => {
-    const midnight = BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === 'builtin:midnight');
-    const nord = BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === 'builtin:nord');
-    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, midnight)?.id).toBe('builtin:midnight');
-    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, nord)?.id).toBe('builtin:nord');
-    expect(resolveTerminalProfileForHost({ ...host('host-1', 'Production'), terminalProfileId: 'builtin:midnight' }, BUILTIN_TERMINAL_PROFILES, nord, 'light')?.id).toBe('builtin:midnight');
+    const termius = BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === 'builtin:termius');
+    const tokyoDay = BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === 'builtin:tokyo-day');
+    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, termius)?.id).toBe('builtin:termius');
+    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, tokyoDay)?.id).toBe('builtin:tokyo-day');
+    expect(resolveTerminalProfileForHost({ ...host('host-1', 'Production'), terminalProfileId: 'builtin:termius' }, BUILTIN_TERMINAL_PROFILES, tokyoDay, 'termius-light')?.id).toBe('builtin:termius');
   });
   afterEach(() => cleanup());
 

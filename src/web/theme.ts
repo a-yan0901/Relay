@@ -1,4 +1,4 @@
-export type ThemeName = 'midnight' | 'light' | 'contrast' | 'nord' | 'dracula' | 'solarized-dark' | 'oled' | 'termius' | 'termius-light';
+export type ThemeName = 'termius' | 'termius-light' | 'everforest-dark' | 'tokyo-day' | 'monokai';
 export type TerminalFontSize = 12 | 13 | 14 | 16;
 export type ServerViewMode = 'list' | 'grid';
 
@@ -67,23 +67,19 @@ export interface ThemeDefinition {
 export const UI_PREFERENCES_STORAGE_KEY = 'relay.ui.preferences.v1';
 
 export const DEFAULT_PREFERENCES: UiPreferences = {
-  theme: 'midnight',
+  theme: 'termius',
   fontSize: 13,
   serverViewMode: 'list'
 };
 
-const themeNames = ['midnight', 'light', 'contrast', 'nord', 'dracula', 'solarized-dark', 'oled', 'termius', 'termius-light'] as const satisfies readonly ThemeName[];
+const themeNames = ['termius', 'termius-light', 'everforest-dark', 'tokyo-day', 'monokai'] as const satisfies readonly ThemeName[];
 
 export const themeOptions: ReadonlyArray<{ value: ThemeName; label: string }> = [
-  { value: 'midnight', label: '深夜蓝' },
-  { value: 'light', label: '浅色' },
-  { value: 'contrast', label: '高对比' },
-  { value: 'nord', label: 'Nord 极光' },
-  { value: 'dracula', label: 'Dracula 紫夜' },
-  { value: 'solarized-dark', label: 'Solarized 暗色' },
-  { value: 'oled', label: 'OLED 纯黑' },
   { value: 'termius', label: 'Termius Dark' },
-  { value: 'termius-light', label: 'Termius Light' }
+  { value: 'termius-light', label: 'Termius Light' },
+  { value: 'everforest-dark', label: 'Everforest Dark' },
+  { value: 'tokyo-day', label: 'Tokyo Day' },
+  { value: 'monokai', label: 'Monokai' }
 ];
 
 export const fontSizeOptions: ReadonlyArray<{ value: TerminalFontSize; label: string }> = [
@@ -94,12 +90,6 @@ export const fontSizeOptions: ReadonlyArray<{ value: TerminalFontSize; label: st
 ];
 
 const terminalThemes: Record<ThemeName, TerminalTheme> = {
-  midnight: {
-    background: '#07111f', foreground: '#d9e7f7', cursor: '#73b7ff', selectionBackground: 'rgba(93, 168, 255, 0.35)',
-    black: '#07111f', brightBlack: '#5e7490', blue: '#5da8ff', brightBlue: '#8bc7ff', green: '#52d39a', brightGreen: '#83e9ba',
-    red: '#ff7d7d', brightRed: '#ffacac', yellow: '#f6c66a', brightYellow: '#ffe3a2', cyan: '#6ad9d1', brightCyan: '#9af3ec',
-    magenta: '#c59bff', brightMagenta: '#ddc5ff', white: '#d9e7f7', brightWhite: '#ffffff'
-  },
   termius: {
     background: '#141728', foreground: '#5cc97c', cursor: '#92a0a7', selectionBackground: 'rgba(238, 123, 121, 0.38)',
     black: '#141728', brightBlack: '#333649', blue: '#225388', brightBlue: '#346baf', green: '#5cc97c', brightGreen: '#5cc97c',
@@ -112,105 +102,27 @@ const terminalThemes: Record<ThemeName, TerminalTheme> = {
     red: '#c24c48', brightRed: '#e05b57', yellow: '#346baf', brightYellow: '#346baf', cyan: '#3166a6', brightCyan: '#346baf',
     magenta: '#e16866', brightMagenta: '#e16866', white: '#a7b2b9', brightWhite: '#f8f9fa'
   },
-  light: {
-    background: '#f5f8fc', foreground: '#1f2f46', cursor: '#1f6fc7', selectionBackground: 'rgba(49, 126, 219, 0.24)',
-    black: '#1f2f46', brightBlack: '#71829a', blue: '#1f6fc7', brightBlue: '#15549e', green: '#087f57', brightGreen: '#056443',
-    red: '#b52828', brightRed: '#8d1717', yellow: '#936100', brightYellow: '#765000', cyan: '#087b82', brightCyan: '#055c62',
-    magenta: '#7047a4', brightMagenta: '#563182', white: '#eef3f9', brightWhite: '#ffffff'
+  'everforest-dark': {
+    background: '#2d353b', foreground: '#d3c6aa', cursor: '#d3c6aa', selectionBackground: 'rgba(127, 187, 179, 0.34)',
+    black: '#475258', brightBlack: '#859289', red: '#e67e80', brightRed: '#e69875', green: '#a7c080', brightGreen: '#a7c080',
+    yellow: '#dbbc7f', brightYellow: '#dbbc7f', blue: '#7fbbb3', brightBlue: '#7fbbb3', magenta: '#d699b6', brightMagenta: '#d699b6',
+    cyan: '#83c092', brightCyan: '#83c092', white: '#d3c6aa', brightWhite: '#d3c6aa'
   },
-  contrast: {
-    background: '#000000', foreground: '#ffffff', cursor: '#ffffff', selectionBackground: 'rgba(255, 255, 255, 0.32)',
-    black: '#000000', brightBlack: '#aaaaaa', blue: '#66b3ff', brightBlue: '#b3dcff', green: '#63e6be', brightGreen: '#b5f5df',
-    red: '#ff7b7b', brightRed: '#ffc1c1', yellow: '#ffda75', brightYellow: '#fff0b8', cyan: '#74e6e0', brightCyan: '#bffaf6',
-    magenta: '#d2a8ff', brightMagenta: '#ecd8ff', white: '#eeeeee', brightWhite: '#ffffff'
+  'tokyo-day': {
+    background: '#e1e2e7', foreground: '#3760bf', cursor: '#3760bf', selectionBackground: 'rgba(52, 84, 138, 0.24)',
+    black: '#0f0f14', brightBlack: '#4c505e', red: '#8c4351', brightRed: '#a33c43', green: '#33635c', brightGreen: '#485e30',
+    yellow: '#8f5e15', brightYellow: '#8f5e15', blue: '#34548a', brightBlue: '#34548a', magenta: '#5a4a78', brightMagenta: '#5a4a78',
+    cyan: '#0f4b6e', brightCyan: '#0f4b6e', white: '#828594', brightWhite: '#4c505e'
   },
-  nord: {
-    background: '#2e3440', foreground: '#d8dee9', cursor: '#88c0d0', selectionBackground: 'rgba(136, 192, 208, 0.32)',
-    black: '#2e3440', brightBlack: '#4c566a', blue: '#5e81ac', brightBlue: '#81a1c1', green: '#a3be8c', brightGreen: '#b8d49b',
-    red: '#bf616a', brightRed: '#d5777f', yellow: '#ebcb8b', brightYellow: '#f0d49f', cyan: '#8fbcbb', brightCyan: '#a3d6d4',
-    magenta: '#b48ead', brightMagenta: '#c49cbe', white: '#d8dee9', brightWhite: '#eceff4'
-  },
-  dracula: {
-    background: '#282a36', foreground: '#f8f8f2', cursor: '#f8f8f2', selectionBackground: 'rgba(189, 147, 249, 0.34)',
-    black: '#21222c', brightBlack: '#6272a4', blue: '#8be9fd', brightBlue: '#a4ffff', green: '#50fa7b', brightGreen: '#69ff94',
-    red: '#ff5555', brightRed: '#ff6e6e', yellow: '#f1fa8c', brightYellow: '#ffffa5', cyan: '#8be9fd', brightCyan: '#a4ffff',
-    magenta: '#bd93f9', brightMagenta: '#d6acff', white: '#f8f8f2', brightWhite: '#ffffff'
-  },
-  'solarized-dark': {
-    background: '#002b36', foreground: '#839496', cursor: '#93a1a1', selectionBackground: 'rgba(38, 139, 210, 0.32)',
-    black: '#073642', brightBlack: '#586e75', blue: '#268bd2', brightBlue: '#839496', green: '#859900', brightGreen: '#b4c400',
-    red: '#dc322f', brightRed: '#f05b58', yellow: '#b58900', brightYellow: '#d7ad22', cyan: '#2aa198', brightCyan: '#69d1c8',
-    magenta: '#d33682', brightMagenta: '#e56ca5', white: '#eee8d5', brightWhite: '#fdf6e3'
-  },
-  oled: {
-    background: '#000000', foreground: '#f5f5f5', cursor: '#ffffff', selectionBackground: 'rgba(108, 182, 255, 0.34)',
-    black: '#000000', brightBlack: '#666666', blue: '#6cb6ff', brightBlue: '#9dccff', green: '#56d364', brightGreen: '#7ee787',
-    red: '#ff7b72', brightRed: '#ffa198', yellow: '#e3b341', brightYellow: '#f2cc60', cyan: '#76e3ea', brightCyan: '#b3f5f7',
-    magenta: '#d2a8ff', brightMagenta: '#e2c5ff', white: '#f0f0f0', brightWhite: '#ffffff'
+  monokai: {
+    background: '#272822', foreground: '#f8f8f2', cursor: '#f8f8f0', selectionBackground: 'rgba(174, 129, 255, 0.34)',
+    black: '#272822', brightBlack: '#75715e', red: '#f92672', brightRed: '#f92672', green: '#a6e22e', brightGreen: '#a6e22e',
+    yellow: '#f4bf75', brightYellow: '#f4bf75', blue: '#66d9ef', brightBlue: '#66d9ef', magenta: '#ae81ff', brightMagenta: '#ae81ff',
+    cyan: '#a1efe4', brightCyan: '#a1efe4', white: '#f8f8f2', brightWhite: '#f9f8f5'
   }
 };
 
 const themeDefinitions: Record<ThemeName, ThemeDefinition> = {
-  midnight: {
-    id: 'midnight', label: '深夜蓝', colorScheme: 'dark', themeColor: '#07111f',
-    tokens: {
-      bg: '#07111f', bgRaised: '#0b1728', panel: '#102035', panelSoft: '#0e1b2f', panelHover: '#152a45', panelActive: '#1d3555',
-      border: 'rgba(154, 181, 215, 0.14)', borderStrong: 'rgba(154, 181, 215, 0.26)', text: '#e9eef7', muted: '#8ea1ba', faint: '#5f748f',
-      blue: '#5da8ff', blueStrong: '#3187e8', primaryText: '#ffffff', focusRing: '#8bc7ff', green: '#52d39a', yellow: '#f6c66a', red: '#ff7d7d', terminalBg: '#07111f', shadow: '0 24px 80px rgba(0, 0, 0, 0.28)'
-    },
-    terminal: terminalThemes.midnight,
-    swatches: ['#07111f', '#102035', '#5da8ff', '#52d39a']
-  },
-  light: {
-    id: 'light', label: '浅色', colorScheme: 'light', themeColor: '#eef3f9',
-    tokens: {
-      bg: '#eef3f9', bgRaised: '#ffffff', panel: '#ffffff', panelSoft: '#f5f8fc', panelHover: '#edf5ff', panelActive: '#e3effb',
-      border: 'rgba(61, 88, 121, 0.18)', borderStrong: 'rgba(61, 88, 121, 0.32)', text: '#1f2f46', muted: '#536985', faint: '#7589a3',
-      blue: '#1f6fc7', blueStrong: '#15549e', primaryText: '#ffffff', focusRing: '#1f6fc7', green: '#087f57', yellow: '#936100', red: '#b52828', terminalBg: '#f5f8fc', shadow: '0 24px 80px rgba(45, 72, 104, 0.15)'
-    },
-    terminal: terminalThemes.light,
-    swatches: ['#eef3f9', '#ffffff', '#1f6fc7', '#087f57']
-  },
-  contrast: {
-    id: 'contrast', label: '高对比', colorScheme: 'dark', themeColor: '#000000',
-    tokens: {
-      bg: '#000000', bgRaised: '#090909', panel: '#0a0a0a', panelSoft: '#101010', panelHover: '#1d1d1d', panelActive: '#292929',
-      border: 'rgba(255, 255, 255, 0.42)', borderStrong: 'rgba(255, 255, 255, 0.72)', text: '#ffffff', muted: '#e2e2e2', faint: '#bdbdbd',
-      blue: '#66b3ff', blueStrong: '#b3dcff', primaryText: '#000000', focusRing: '#ffffff', green: '#63e6be', yellow: '#ffda75', red: '#ff7b7b', terminalBg: '#000000', shadow: '0 24px 80px rgba(0, 0, 0, 0.7)'
-    },
-    terminal: terminalThemes.contrast,
-    swatches: ['#000000', '#1d1d1d', '#66b3ff', '#ffffff']
-  },
-  nord: {
-    id: 'nord', label: 'Nord 极光', colorScheme: 'dark', themeColor: '#2e3440',
-    tokens: {
-      bg: '#2e3440', bgRaised: '#3b4252', panel: '#434c5e', panelSoft: '#3b4252', panelHover: '#4c566a', panelActive: '#5e81ac',
-      border: 'rgba(216, 222, 233, 0.16)', borderStrong: 'rgba(216, 222, 233, 0.3)', text: '#eceff4', muted: '#d8dee9', faint: '#aeb9c8',
-      blue: '#88c0d0', blueStrong: '#81a1c1', primaryText: '#2e3440', focusRing: '#8fbcbb', green: '#a3be8c', yellow: '#ebcb8b', red: '#bf616a', terminalBg: '#2e3440', shadow: '0 24px 80px rgba(20, 24, 32, 0.34)'
-    },
-    terminal: terminalThemes.nord,
-    swatches: ['#2e3440', '#434c5e', '#88c0d0', '#a3be8c']
-  },
-  dracula: {
-    id: 'dracula', label: 'Dracula 紫夜', colorScheme: 'dark', themeColor: '#282a36',
-    tokens: {
-      bg: '#282a36', bgRaised: '#303241', panel: '#343746', panelSoft: '#303241', panelHover: '#44475a', panelActive: '#6272a4',
-      border: 'rgba(248, 248, 242, 0.16)', borderStrong: 'rgba(248, 248, 242, 0.3)', text: '#f8f8f2', muted: '#c7c9d9', faint: '#9699ab',
-      blue: '#8be9fd', blueStrong: '#bd93f9', primaryText: '#282a36', focusRing: '#ff79c6', green: '#50fa7b', yellow: '#f1fa8c', red: '#ff5555', terminalBg: '#282a36', shadow: '0 24px 80px rgba(16, 16, 24, 0.4)'
-    },
-    terminal: terminalThemes.dracula,
-    swatches: ['#282a36', '#44475a', '#bd93f9', '#50fa7b']
-  },
-  'solarized-dark': {
-    id: 'solarized-dark', label: 'Solarized 暗色', colorScheme: 'dark', themeColor: '#002b36',
-    tokens: {
-      bg: '#002b36', bgRaised: '#073642', panel: '#0b3b46', panelSoft: '#073642', panelHover: '#124b58', panelActive: '#1f5965',
-      border: 'rgba(147, 161, 161, 0.2)', borderStrong: 'rgba(147, 161, 161, 0.34)', text: '#eee8d5', muted: '#93a1a1', faint: '#657b83',
-      blue: '#268bd2', blueStrong: '#2aa198', primaryText: '#fdf6e3', focusRing: '#b58900', green: '#859900', yellow: '#b58900', red: '#dc322f', terminalBg: '#002b36', shadow: '0 24px 80px rgba(0, 25, 32, 0.4)'
-    },
-    terminal: terminalThemes['solarized-dark'],
-    swatches: ['#002b36', '#0b3b46', '#268bd2', '#b58900']
-  },
   termius: {
     id: 'termius', label: 'Termius Dark', colorScheme: 'dark', themeColor: '#141728',
     tokens: { bg: '#141728', bgRaised: '#202236', panel: '#202236', panelSoft: '#191c2d', panelHover: '#292d43', panelActive: '#333649', border: 'rgba(216, 221, 224, 0.16)', borderStrong: 'rgba(216, 221, 224, 0.3)', text: '#d6dde0', muted: '#a7b2b9', faint: '#737b8e', blue: '#478fef', blueStrong: '#346baf', primaryText: '#ffffff', focusRing: '#5cc97c', green: '#5cc97c', yellow: '#e7ebed', red: '#e05b57', terminalBg: '#141728', shadow: '0 24px 80px rgba(0, 0, 0, 0.4)' },
@@ -221,15 +133,20 @@ const themeDefinitions: Record<ThemeName, ThemeDefinition> = {
     tokens: { bg: '#d6dde0', bgRaised: '#f8f9fa', panel: '#eef1f3', panelSoft: '#e4e8eb', panelHover: '#ffffff', panelActive: '#c4d0d8', border: 'rgba(51, 54, 73, 0.2)', borderStrong: 'rgba(51, 54, 73, 0.34)', text: '#333649', muted: '#596174', faint: '#737b8e', blue: '#1c4774', blueStrong: '#16395f', primaryText: '#ffffff', focusRing: '#e05b57', green: '#57b26f', yellow: '#346baf', red: '#c24c48', terminalBg: '#d6dde0', shadow: '0 24px 80px rgba(51, 54, 73, 0.16)' },
     terminal: terminalThemes['termius-light'], swatches: ['#d6dde0', '#f8f9fa', '#333649', '#57b26f']
   },
-  oled: {
-    id: 'oled', label: 'OLED 纯黑', colorScheme: 'dark', themeColor: '#000000',
-    tokens: {
-      bg: '#000000', bgRaised: '#060606', panel: '#0a0a0a', panelSoft: '#050505', panelHover: '#171717', panelActive: '#252525',
-      border: 'rgba(255, 255, 255, 0.14)', borderStrong: 'rgba(255, 255, 255, 0.3)', text: '#f5f5f5', muted: '#b9b9b9', faint: '#777777',
-      blue: '#6cb6ff', blueStrong: '#1f8fff', primaryText: '#ffffff', focusRing: '#9dccff', green: '#56d364', yellow: '#e3b341', red: '#ff7b72', terminalBg: '#000000', shadow: '0 24px 80px rgba(0, 0, 0, 0.72)'
-    },
-    terminal: terminalThemes.oled,
-    swatches: ['#000000', '#171717', '#6cb6ff', '#56d364']
+  'everforest-dark': {
+    id: 'everforest-dark', label: 'Everforest Dark', colorScheme: 'dark', themeColor: '#2d353b',
+    tokens: { bg: '#2d353b', bgRaised: '#343f44', panel: '#343f44', panelSoft: '#2f3a3f', panelHover: '#3d484d', panelActive: '#475258', border: 'rgba(211, 198, 170, 0.16)', borderStrong: 'rgba(211, 198, 170, 0.3)', text: '#d3c6aa', muted: '#a7c080', faint: '#859289', blue: '#7fbbb3', blueStrong: '#83c092', primaryText: '#2d353b', focusRing: '#a7c080', green: '#a7c080', yellow: '#dbbc7f', red: '#e67e80', terminalBg: '#2d353b', shadow: '0 24px 80px rgba(24, 31, 32, 0.42)' },
+    terminal: terminalThemes['everforest-dark'], swatches: ['#2d353b', '#343f44', '#a7c080', '#7fbbb3']
+  },
+  'tokyo-day': {
+    id: 'tokyo-day', label: 'Tokyo Day', colorScheme: 'light', themeColor: '#e1e2e7',
+    tokens: { bg: '#e1e2e7', bgRaised: '#f7f7f9', panel: '#f7f7f9', panelSoft: '#ebecef', panelHover: '#ffffff', panelActive: '#d3d5dc', border: 'rgba(55, 96, 191, 0.18)', borderStrong: 'rgba(55, 96, 191, 0.32)', text: '#3760bf', muted: '#6172a6', faint: '#7f849c', blue: '#34548a', blueStrong: '#0f4b6e', primaryText: '#ffffff', focusRing: '#34548a', green: '#33635c', yellow: '#8f5e15', red: '#8c4351', terminalBg: '#e1e2e7', shadow: '0 24px 80px rgba(70, 78, 112, 0.18)' },
+    terminal: terminalThemes['tokyo-day'], swatches: ['#e1e2e7', '#f7f7f9', '#3760bf', '#33635c']
+  },
+  monokai: {
+    id: 'monokai', label: 'Monokai', colorScheme: 'dark', themeColor: '#272822',
+    tokens: { bg: '#272822', bgRaised: '#34352d', panel: '#34352d', panelSoft: '#2d2e27', panelHover: '#3e3f35', panelActive: '#49483e', border: 'rgba(248, 248, 242, 0.15)', borderStrong: 'rgba(248, 248, 242, 0.3)', text: '#f8f8f2', muted: '#c5c5b8', faint: '#9a9a8d', blue: '#66d9ef', blueStrong: '#a1efe4', primaryText: '#272822', focusRing: '#a6e22e', green: '#a6e22e', yellow: '#f4bf75', red: '#f92672', terminalBg: '#272822', shadow: '0 24px 80px rgba(0, 0, 0, 0.46)' },
+    terminal: terminalThemes.monokai, swatches: ['#272822', '#34352d', '#a6e22e', '#66d9ef']
   }
 };
 

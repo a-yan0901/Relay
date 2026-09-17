@@ -150,7 +150,7 @@ interface PreferencesPanelProps {
 const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notificationPermission = 'denied', onRequestNotifications, onOpenActivity, onOpenIdentities, onOpenSnippets, terminalProfiles = [], defaultTerminalProfile, onDefaultTerminalProfileChange, onDeleteTerminalProfile, onCreateTerminalProfile }: PreferencesPanelProps) => {
   const dialogRef = useRef<HTMLElement>(null);
   const [newProfileName, setNewProfileName] = useState('');
-  useDialogFocus(dialogRef, true, onClose, '#theme-select');
+  useDialogFocus(dialogRef, true, onClose, '.theme-preview-card');
 
   return (
   <div className="preferences-backdrop" role="presentation" onMouseDown={onClose}>
@@ -160,10 +160,6 @@ const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notif
         <button className="icon-button" type="button" aria-label="关闭偏好设置" title="关闭偏好设置" onClick={onClose}>×</button>
       </div>
       <div className="preferences-fields">
-        <label htmlFor="theme-select">色彩主题</label>
-        <select id="theme-select" aria-label="色彩主题" value={preferences.theme} onChange={(event) => onChange({ ...preferences, theme: event.target.value as ThemeName })}>
-          {themeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
-        </select>
         <div className="theme-preview-grid" aria-label="主题预览">
           {themeOptions.map((option) => {
             const definition = getThemeDefinition(option.value);
