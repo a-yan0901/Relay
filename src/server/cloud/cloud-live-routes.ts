@@ -12,7 +12,7 @@ import { CLOUD_ACCOUNT_SESSION_COOKIE_NAME } from './cloud-account-routes.js';
 import { CloudBrowserSessionStore } from './cloud-session-store.js';
 import { createNodeCloudLiveSocketFactory } from './node-cloud-live-socket.js';
 
-export interface CloudLiveRouteClient extends Pick<CloudApiClient, 'getWorkspace' | 'listDevices' | 'listWorkspaceKeys' | 'putWorkspaceKey'> {}
+export interface CloudLiveRouteClient extends Pick<CloudApiClient, 'getWorkspace' | 'listDevices' | 'listWorkspaceKeys' | 'putWorkspaceKey' | 'listAccountDataKeys' | 'putAccountDataKey'> {}
 
 export interface CloudLiveRouteDependencies {
   enabled: boolean;

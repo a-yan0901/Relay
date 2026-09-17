@@ -23,6 +23,7 @@ export default [
   },
   { files: ['src/server/**/*.ts'], languageOptions: { globals: globals.node } },
   { files: ['src/cloud/**/*.ts'], languageOptions: { globals: globals.node } },
+  { files: ['apps/windows/**/*.ts'], languageOptions: { globals: { ...globals.node, ...globals.browser } } },
   { files: ['src/web/**/*.{ts,tsx}'], languageOptions: { globals: globals.browser } },
   { files: ['*.config.{ts,js}'], languageOptions: { globals: globals.node } },
   { files: ['tests/**/*.{ts,tsx}'], languageOptions: { globals: { ...globals.node, ...globals.browser } } }

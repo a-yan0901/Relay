@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node", "@fastify/cookie", "@fastify/websocket"]
+  },
+  "include": ["apps/windows/**/*.ts", "apps/android/**/*.ts", "src/shared/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

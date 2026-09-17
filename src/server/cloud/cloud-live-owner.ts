@@ -31,7 +31,7 @@ interface OwnerEntry {
 export interface CloudLiveOwnerRegistryOptions {
   baseUrl: string;
   sessions: CloudBrowserSessionStore;
-  client: Pick<CloudApiClient, 'listWorkspaces' | 'listDevices' | 'listWorkspaceKeys' | 'putWorkspaceKey'>;
+  client: Pick<CloudApiClient, 'listWorkspaces' | 'listDevices' | 'listWorkspaceKeys' | 'putWorkspaceKey' | 'listAccountDataKeys' | 'putAccountDataKey'>;
   socketFactory?: CloudLiveSocketFactory;
   maxOwners?: number;
   idleReleaseMs?: number;

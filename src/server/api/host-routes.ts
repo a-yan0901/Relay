@@ -59,9 +59,9 @@ const hostId = (params: unknown): string => {
   return parsed.data.id;
 };
 
-const credentialAad = (id: string): string => `host:${id}:credentials:v1`;
+export const credentialAad = (id: string): string => `host:${id}:credentials:v1`;
 
-const serializeEncryptedCredential = (value: EncryptedJson): string => JSON.stringify(value);
+export const serializeEncryptedCredential = (value: EncryptedJson): string => JSON.stringify(value);
 
 const parseEncryptedCredential = (value: string): EncryptedJson => {
   try {
@@ -95,7 +95,7 @@ const mergeConnectionProfileOverrides = (
     : {})
 });
 
-const readHost = (dependencies: HostRouteDependencies, id: string) => {
+export const readHost = (dependencies: HostRouteDependencies, id: string) => {
   const row = dependencies.hostRepository.getForConnection(id);
   if (!row) {
     throw new AppError('HOST_NOT_FOUND');
@@ -103,7 +103,7 @@ const readHost = (dependencies: HostRouteDependencies, id: string) => {
   return row;
 };
 
-const enrichHostMetadata = async (
+export const enrichHostMetadata = async (
   dependencies: HostRouteDependencies,
   row: HostMetadata
 ): Promise<HostMetadata> => {
@@ -121,7 +121,7 @@ const enrichHostMetadata = async (
   };
 };
 
-const requireGroupIdentity = async (
+export const requireGroupIdentity = async (
   dependencies: HostRouteDependencies,
   groupId: string | null | undefined
 ): Promise<IdentityMetadata> => {
@@ -133,7 +133,7 @@ const requireGroupIdentity = async (
   return identity;
 };
 
-const validateJumpHostGraph = (
+export const validateJumpHostGraph = (
   dependencies: HostRouteDependencies,
   targetHostId: string,
   jumpHostIds: readonly string[]
@@ -179,7 +179,7 @@ const decryptHostCredential = async (
   return parsed.data;
 };
 
-const toSshConfig = async (
+export const toSshConfig = async (
   dependencies: HostRouteDependencies,
   sessionKey: Buffer,
   row: Exclude<ReturnType<HostRepository['getForConnection']>, null>

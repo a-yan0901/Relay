@@ -42,7 +42,13 @@ Android React UI 通过 `CoreRuntime` 调用 TypeScript adapter；adapter 调用
 
 Shell 使用 `sessionId` 和单调 `sequence` 发送输出/状态/退出事件；订阅先建立再启动连接，迟到事件按会话代际丢弃，`close` 和取消幂等。`SessionHandle.write/resize/close` 的同步签名在 adapter 中入队，原生失败通过 `diagnostic`/`close` 事件回传；队列有上限，满时不能静默丢输入。Host Key 首次/变化逐跳暂停认证，只有用户确认当前挑战的指纹后才继续；事件重放或旧挑战不能放行新连接。进程被回收后旧句柄失效，恢复必须查询本地持久任务状态，Shell 显示 `needs-reopen`。
 
-文件选择由系统 URI 授权；SFTP 数据在原生插件与 URI 流之间传输，WebView 不接收整文件或无限 base64 队列。`FileTransport` 的 `BinarySource`/`ByteStream` 需要经受限分块协议适配：首版上限 64 KiB/块、最多 8 个未确认块，按 `transferId + sequence + ack` 控制背压，取消/失败时释放 URI 和 SSH 句柄；如平台插件使用原生到原生流，应保持同等有界内存和取消语义。Android 原生层同时执行 Host Key、ProxyJump、远端路径规范化及任务限制，返回 shared 状态，不以 UI 隐藏按钮代替授权。
+文件选择由系统 URI 授权；SFTP 数据在原生插件与 URI 流之间传输，WebView 不接收整文件或无限 base64 队列。`FileTransport` 的 `BinarySource`/`ByteStream` 需要经受限分块协议适配：首版上限 32 KiB/块、最多 4 个未确认块，按 `transferId + sequence + ack` 控制背压，取消/失败时释放 URI 和 SSH 句柄；如平台插件使用原生到原生流，应保持同等有界内存和取消语义。Android 原生层同时执行 Host Key、ProxyJump、远端路径规范化及任务限制，返回 shared 状态，不以 UI 隐藏按钮代替授权。
+
+### 低内存运行预算
+
+原生客户端以固定预算工作：单个 IPC/bridge frame 不超过 64 KiB，终端输出和文件传输单块不超过 32 KiB；Windows 默认最多 4 个活动 SSH 会话，每个脱离会话最多保留 64 KiB 输出，最多 4 个正在分片下载的迭代器。上传必须从 `AsyncIterable<Uint8Array>` 顺序消费，不能先拼接成整文件；下载必须由调用方逐块消费，取消或窗口销毁时释放迭代器和 SSH 资源。事件订阅、待处理会话请求、pending Host Key/凭据和任务进度都设置数量上限，超过上限返回稳定错误，不以无界队列换取“看起来不卡”。
+
+该预算是可靠性约束而不是 UI 提示：超限请求应被拒绝或进入明确的重试状态，不能静默丢终端输入、重复发送文件块或把整个 payload 写入日志。低内存开发机上的验证默认使用单进程/单 worker；真实 Electron/Android 构建仍需在对应平台单独测量峰值 RSS。
 
 两个原生 adapter 对 UI 暴露相同 `SessionEvent` 文本与诊断语义：原生输出字节以持续的 UTF-8 decoder 解码，避免分块切断多字节字符；`exit`、`close` 每会话至多一次，收到 `close` 后不得再发 `data`。所有长任务使用独立 task id，重试必须能解释是继续还是从头开始；缺少断点能力时不广告 `transfer.resume`。进程被系统杀死或窗口重建时，只有持久的传输/命令状态可重新查询，Shell 不承诺跨进程恢复。此行为在 Web/Windows/Android 任务矩阵中使用相同文案与下一步动作。
 

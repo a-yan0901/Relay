@@ -122,4 +122,14 @@ describe('SshSessionManager', () => {
     expect(manager.reattach('tab-1')).toBeNull();
     expect(manager.reattach('tab-2')).toBeNull();
   });
+
+  it('contains an adapter channel error and releases the remote session', async () => {
+    const adapter = new FakeAdapter();
+    const manager = new SshSessionManager({ adapter, maxSessions: 2, detachGraceMs: 30_000 });
+    const channel = await manager.open('tab-reset', config, { onHostKey: async () => true });
+
+    expect(() => channel.emit('error', new Error('ECONNRESET'))).not.toThrow();
+    expect(manager.reattach('tab-reset')).toBeNull();
+    expect((channel as FakeChannel).closeCalls).toBe(1);
+  });
 });

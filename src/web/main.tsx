@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { webAdapters } from './platform/web-adapters';
 import { registerPwaServiceWorker } from './platform/pwa-registration';
+import { createPlatformRuntime } from './platform/runtime-bootstrap';
 import { bootstrapPreferences } from './theme';
 import './styles.css';
 import '@xterm/xterm/css/xterm.css';
@@ -15,10 +16,11 @@ if (!root) {
 }
 
 bootstrapPreferences();
-void registerPwaServiceWorker();
+const runtime = createPlatformRuntime();
+if (runtime === webAdapters) void registerPwaServiceWorker();
 
 createRoot(root).render(
   <StrictMode>
-    <App runtime={webAdapters} />
+    <App runtime={runtime} />
   </StrictMode>
 );

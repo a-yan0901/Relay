@@ -85,6 +85,10 @@ export class SshSessionManager implements SshSessionManagerPort {
       this.sessions.set(sessionId, managed);
       channel.on('data', (data) => this.appendOutput(managed, data));
       channel.on('stderr', (data) => this.appendOutput(managed, data));
+      // Every adapter must be allowed to signal a post-connect transport
+      // failure without triggering EventEmitter's unhandled `error` path.
+      // ssh2 normally reports ECONNRESET here when the remote closes first.
+      channel.on('error', () => this.close(sessionId));
       channel.on('close', () => this.release(sessionId, managed));
       return channel;
     } catch (error) {

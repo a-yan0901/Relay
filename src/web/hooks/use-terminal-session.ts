@@ -10,6 +10,8 @@ import type {
   TerminalStatus
 } from '@shared/protocol';
 import type { HostCredentialInput } from '@shared/validation';
+import { getNativePlatformPort } from '../platform/native-port';
+import { createNativeTerminalSocket } from '../platform/native-terminal-socket';
 
 const TERMINAL_STATES: readonly TerminalStatus[] = [
   'connecting',
@@ -129,7 +131,10 @@ export interface TerminalSessionControllerOptions {
 const defaultSize = (): TerminalSize => ({ cols: 80, rows: 24 });
 
 const defaultWebSocketFactory = (url: string): TerminalSocketLike => (
-  new WebSocket(url) as unknown as TerminalSocketLike
+  (() => {
+    const native = getNativePlatformPort();
+    return native ? createNativeTerminalSocket(native.port, url) : new WebSocket(url) as unknown as TerminalSocketLike;
+  })()
 );
 
 const validDimension = (value: number): boolean => Number.isInteger(value) && value >= 1 && value <= 500;

@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 export const NATIVE_BRIDGE_VERSION = 1 as const;
 export const NATIVE_BRIDGE_MAX_FRAME_BYTES = 64 * 1024;
-export const BOUNDED_NATIVE_CHUNK_BYTES = 64 * 1024;
-export const BOUNDED_NATIVE_IN_FLIGHT_CHUNKS = 8;
+export const BOUNDED_NATIVE_CHUNK_BYTES = 32 * 1024;
+export const BOUNDED_NATIVE_IN_FLIGHT_CHUNKS = 4;
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const operationSchema = z.object({

@@ -13,6 +13,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
-    setupFiles: ['./tests/setup.ts']
+    setupFiles: ['./tests/setup.ts'],
+    // The development host has limited RAM and no swap. Keep native/SSH
+    // tests deterministic without multiplying Node/Vite workers.
+    fileParallelism: false,
+    maxWorkers: 1
   }
 });
