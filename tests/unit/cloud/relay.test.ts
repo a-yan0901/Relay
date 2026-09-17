@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BoundedRelayHub, type RelayPeer } from '../../../src/cloud/relay.js';
+import { encryptLiveTransportFrame, decodeLiveTransportEnvelope } from '../../../src/shared/cloud/live-transport.js';
 
 const peer = () => {
   const received: Uint8Array[] = [];
@@ -64,5 +65,34 @@ describe('bounded live relay hub', () => {
     expect(owner.isClosed()).toBe(true);
     expect(otherOwner.isClosed()).toBe(true);
     expect(hub.hasOwner('workspace-2')).toBe(false);
+  });
+
+  it('binds visible transport sender metadata to the authenticated relay connection', async () => {
+    const hub = new BoundedRelayHub({ maxFrameBytes: 64 * 1024, maxBufferedBytes: 256 * 1024, maxSubscribersPerWorkspace: 2 });
+    const owner = peer();
+    const viewer = peer();
+    hub.registerOwner('workspace-1', 'device-owner', owner);
+    hub.subscribeViewer('workspace-1', 'device-viewer', viewer);
+    const wire = await encryptLiveTransportFrame({
+      baseKey: new Uint8Array(32).fill(5),
+      frame: {
+        protocolVersion: 1,
+        type: 'terminal-input',
+        workspaceId: 'workspace-1',
+        sessionId: 'session-1',
+        participantDeviceId: 'device-spoofed',
+        inputId: 'input-1',
+        payload: 'whoami\n'
+      },
+      workspaceId: 'workspace-1',
+      ownerDeviceId: 'device-owner',
+      senderDeviceId: 'device-spoofed',
+      recipientDeviceId: 'device-owner',
+      ownerEpoch: 1,
+      direction: 'viewer-to-owner'
+    });
+
+    expect(hub.forwardFromViewer('workspace-1', 'device-viewer', wire)).toBe(true);
+    expect(decodeLiveTransportEnvelope(owner.received[0] as Uint8Array).senderDeviceId).toBe('device-viewer');
   });
 });

@@ -1,3 +1,5 @@
+import { decodeLiveTransportEnvelope, encodeLiveTransportEnvelope } from '../shared/cloud/live-transport.js';
+
 export interface RelayPeer {
   /** Current socket buffered amount; the hub never creates an unbounded queue. */
   readonly bufferedBytes: number;
@@ -25,6 +27,31 @@ interface OwnerRoute {
 const assertFrame = (frame: Uint8Array, maxFrameBytes: number): boolean => (
   frame.byteLength <= maxFrameBytes
 );
+
+/**
+ * The relay does not inspect encrypted content. It does, however, bind the
+ * visible sender metadata to the already-authenticated WebSocket session so a
+ * client cannot impersonate another device in the end-to-end envelope.
+ */
+const bindAuthenticatedSender = (workspaceId: string, deviceId: string, frame: Uint8Array, maxFrameBytes: number): Uint8Array | null => {
+  if (!assertFrame(frame, maxFrameBytes)) return null;
+  try {
+    const envelope = decodeLiveTransportEnvelope(frame);
+    if (envelope.workspaceId !== workspaceId || envelope.senderDeviceId === deviceId) return frame;
+    const bound = encodeLiveTransportEnvelope({
+      workspaceId: envelope.workspaceId,
+      ownerEpoch: envelope.ownerEpoch,
+      senderDeviceId: deviceId,
+      recipientDeviceId: envelope.recipientDeviceId,
+      encrypted: envelope.ciphertext
+    });
+    return assertFrame(bound, maxFrameBytes) ? bound : null;
+  } catch {
+    // Keep the hub transport-agnostic for callers that use opaque test or
+    // future protocol frames; the channel boundary will reject malformed data.
+    return frame;
+  }
+};
 
 export class BoundedRelayHub {
   private readonly routes = new Map<string, OwnerRoute>();
@@ -65,26 +92,27 @@ export class BoundedRelayHub {
   }
 
   forwardFromViewer(workspaceId: string, deviceId: string, frame: Uint8Array): boolean {
-    if (!assertFrame(frame, this.limits.maxFrameBytes)) return false;
     const route = this.routes.get(workspaceId);
     if (!route || !route.viewers.has(deviceId)) return false;
-    if (route.peer.bufferedBytes + frame.byteLength > this.limits.maxBufferedBytes) return false;
-    route.peer.send(frame);
+    const bound = bindAuthenticatedSender(workspaceId, deviceId, frame, this.limits.maxFrameBytes);
+    if (!bound || route.peer.bufferedBytes + bound.byteLength > this.limits.maxBufferedBytes) return false;
+    route.peer.send(bound);
     return true;
   }
 
   forwardFromOwner(workspaceId: string, frame: Uint8Array): number {
-    if (!assertFrame(frame, this.limits.maxFrameBytes)) return 0;
     const route = this.routes.get(workspaceId);
     if (!route) return 0;
+    const bound = bindAuthenticatedSender(workspaceId, route.deviceId, frame, this.limits.maxFrameBytes);
+    if (!bound) return 0;
     let forwarded = 0;
     for (const [deviceId, viewer] of route.viewers) {
-      if (viewer.bufferedBytes + frame.byteLength > this.limits.maxBufferedBytes) {
+      if (viewer.bufferedBytes + bound.byteLength > this.limits.maxBufferedBytes) {
         viewer.close(4003, 'relay buffer limit');
         route.viewers.delete(deviceId);
         continue;
       }
-      viewer.send(frame);
+      viewer.send(bound);
       forwarded += 1;
     }
     return forwarded;

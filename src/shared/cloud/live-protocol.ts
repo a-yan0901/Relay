@@ -29,6 +29,12 @@ export type LiveFrame =
   }
   | {
     protocolVersion: typeof LIVE_PROTOCOL_VERSION;
+    type: 'participant-hello' | 'participant-leave';
+    workspaceId: string;
+    participantDeviceId: string;
+  }
+  | {
+    protocolVersion: typeof LIVE_PROTOCOL_VERSION;
     type: 'terminal-output';
     workspaceId: string;
     sessionId: string;
@@ -89,6 +95,11 @@ const liveFrameSchema = z.discriminatedUnion('type', [
     ownerEpoch: sequenceSchema.min(1),
     sequence: sequenceSchema,
     terminals: z.array(terminalDescriptorSchema).max(LIVE_MAX_TERMINALS)
+  }).strict(),
+  z.object({
+    ...commonSchema,
+    type: z.enum(['participant-hello', 'participant-leave']),
+    participantDeviceId: idSchema
   }).strict(),
   z.object({
     ...commonSchema,
