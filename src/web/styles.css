@@ -1288,6 +1288,8 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 .theme-preview-card.is-selected { background: var(--panel-active); border-color: var(--blue); color: var(--text); }
 
 .theme-preview-swatches { display: flex; gap: 3px; height: 24px; overflow: hidden; }
+.theme-preview-ansi { display: grid; gap: 2px; grid-template-columns: repeat(9, minmax(0, 1fr)); }
+.theme-preview-ansi-swatch { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 2px; height: 5px; min-width: 0; }
 
 .theme-preview-swatch { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 4px; flex: 1; min-width: 0; }
 

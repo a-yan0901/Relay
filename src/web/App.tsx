@@ -178,6 +178,9 @@ const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notif
               <span className="theme-preview-swatches" aria-hidden="true">
                 {definition.swatches.map((swatch) => <span className="theme-preview-swatch" style={{ backgroundColor: swatch }} key={swatch} />)}
               </span>
+              <span className="theme-preview-ansi" aria-label={`${option.label} 终端文字颜色预览`}>
+                {[definition.terminal.foreground, definition.terminal.black, definition.terminal.red, definition.terminal.green, definition.terminal.yellow, definition.terminal.blue, definition.terminal.magenta, definition.terminal.cyan, definition.terminal.white, definition.terminal.brightBlack, definition.terminal.brightRed, definition.terminal.brightGreen, definition.terminal.brightYellow, definition.terminal.brightBlue, definition.terminal.brightMagenta, definition.terminal.brightCyan, definition.terminal.brightWhite].map((color, index) => <span className="theme-preview-ansi-swatch" style={{ backgroundColor: color }} key={`${option.value}-ansi-${index}`} />)}
+              </span>
               <span className="theme-preview-copy"><strong>{option.label}</strong><small>{definition.colorScheme === 'light' ? 'Light' : 'Dark'}</small></span>
             </button>;
           })}
