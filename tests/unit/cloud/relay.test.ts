@@ -47,4 +47,22 @@ describe('bounded live relay hub', () => {
     expect(hub.forwardFromOwner('workspace-1', new Uint8Array([1, 2, 3, 4]))).toBe(0);
     expect(slow.isClosed()).toBe(true);
   });
+
+  it('closes every live route belonging to a revoked device', () => {
+    const hub = new BoundedRelayHub({ maxFrameBytes: 64, maxBufferedBytes: 256, maxSubscribersPerWorkspace: 2 });
+    const owner = peer();
+    const viewer = peer();
+    const otherOwner = peer();
+    hub.registerOwner('workspace-1', 'device-owner', owner);
+    hub.subscribeViewer('workspace-1', 'device-viewer', viewer);
+    hub.registerOwner('workspace-2', 'device-owner', otherOwner);
+
+    expect(hub.closeDevice('device-viewer')).toBe(1);
+    expect(viewer.isClosed()).toBe(true);
+    expect(hub.viewerCount('workspace-1')).toBe(0);
+    expect(hub.closeDevice('device-owner')).toBe(2);
+    expect(owner.isClosed()).toBe(true);
+    expect(otherOwner.isClosed()).toBe(true);
+    expect(hub.hasOwner('workspace-2')).toBe(false);
+  });
 });

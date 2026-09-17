@@ -98,4 +98,27 @@ export class BoundedRelayHub {
   viewerCount(workspaceId: string): number {
     return this.routes.get(workspaceId)?.viewers.size ?? 0;
   }
+
+  closeDevice(deviceId: string, code = 4004, reason = 'device revoked'): number {
+    let closed = 0;
+    for (const [workspaceId, route] of this.routes) {
+      if (route.deviceId === deviceId) {
+        route.peer.close(code, reason);
+        closed += 1;
+        for (const viewer of route.viewers.values()) {
+          viewer.close(code, reason);
+          closed += 1;
+        }
+        this.routes.delete(workspaceId);
+        continue;
+      }
+      const viewer = route.viewers.get(deviceId);
+      if (viewer) {
+        viewer.close(code, reason);
+        route.viewers.delete(deviceId);
+        closed += 1;
+      }
+    }
+    return closed;
+  }
 }
