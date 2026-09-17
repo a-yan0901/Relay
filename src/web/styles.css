@@ -785,7 +785,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-workspace-shell.is-sftp-fullscreen .local-file-dropzone { min-height: 220px; }
 
-.terminal-workspace-shell.is-sftp-fullscreen .sftp-remote-pane { overflow: auto; padding: 16px; }
+.terminal-workspace-shell.is-sftp-fullscreen .sftp-remote-pane { overflow-x: hidden; overflow-y: auto; padding: 16px; }
 
 .terminal-workspace-shell.is-sftp-fullscreen .sftp-path-input input { min-height: 32px; }
 
@@ -801,11 +801,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-workspace-shell.is-sftp-fullscreen .transfer-center > ul { max-height: 180px; }
 
-.sftp-workspace { display: flex; flex: 1; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow-y: auto; padding: 14px; }
+.sftp-workspace { display: flex; flex: 1; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: hidden; padding: 14px; }
 .sftp-workspace-heading { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; min-width: 0; }
 .sftp-workspace-heading h2 { font-size: 16px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sftp-workspace-context { color: var(--faint); display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sftp-workspace-columns { display: grid; gap: 10px; grid-template-columns: minmax(140px, 0.78fr) minmax(0, 1.22fr); min-height: 0; min-width: 0; }
+.sftp-workspace-columns { display: grid; gap: 10px; grid-template-columns: minmax(140px, 0.78fr) minmax(0, 1.22fr); min-height: 0; min-width: 0; overflow: hidden; }
 .local-file-panel, .sftp-remote-pane { background: rgba(5, 15, 28, 0.2); border: 1px solid var(--border); border-radius: 9px; min-width: 0; }
 .local-file-panel { padding: 11px; }
 .local-file-panel-unavailable { border-style: dashed; }
@@ -823,10 +823,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .local-file-dropzone small { color: var(--faint); font-size: 9px; }
 .local-file-dropzone input { height: 1px; opacity: 0; overflow: hidden; position: absolute; width: 1px; }
 .local-file-panel-hint { color: var(--faint); font-size: 9px; line-height: 1.5; margin: 9px 0 0; }
-.sftp-remote-pane { min-height: 0; overflow: auto; padding: 11px; }
+.sftp-remote-pane { min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 11px; }
 .sftp-panel, .transfer-queue { min-width: 0; }
 .sftp-panel-heading, .transfer-queue .form-heading { align-items: center; display: flex; justify-content: space-between; gap: 8px; }
-.sftp-panel-actions { align-items: center; display: flex; gap: 5px; min-width: 0; }
+.sftp-panel-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
 .sftp-upload-button { cursor: pointer; position: relative; }
 .sftp-upload-button input { height: 1px; opacity: 0; overflow: hidden; position: absolute; width: 1px; }
 .sftp-panel-heading h2, .transfer-queue h2 { font-size: 15px; margin: 0; }
@@ -834,6 +834,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sftp-path-input { min-width: 0; }
 .sftp-path-input input { background: transparent; border: 1px solid transparent; border-radius: 4px; min-height: 25px; padding: 3px 5px; width: 100%; }
 .sftp-path-input input:focus { border-color: var(--border-strong); color: var(--text); outline: none; }
+.sftp-filter-input { flex: 1 1 170px; min-width: 140px; }
+.sftp-filter-input input { background: rgba(5, 15, 28, 0.42); border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-size: 10px; min-height: 30px; min-width: 0; padding: 0 8px; width: 100%; }
+.sftp-filter-input input::placeholder { color: var(--faint); }
+.sftp-filter-input input:focus { border-color: var(--border-strong); outline: none; }
 .sftp-breadcrumbs { align-items: center; color: var(--faint); display: flex; flex-wrap: wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; gap: 2px; margin: 10px 0 4px; min-height: 20px; }
 .sftp-breadcrumb { align-items: center; display: inline-flex; gap: 2px; }
 .sftp-breadcrumb button { background: transparent; border: 0; color: var(--muted); cursor: pointer; font: inherit; padding: 2px 3px; }
@@ -845,7 +849,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sftp-select-all { align-items: center; color: var(--faint); display: flex; font-size: 9px; gap: 6px; margin: 6px 0 2px; }
 .sftp-select-all input, .sftp-entry > input { accent-color: var(--accent); }
 .sftp-entry-list, .transfer-queue ul, .command-run-results ul { list-style: none; margin: 8px 0 0; padding: 0; }
-.sftp-entry-list { overflow-x: auto; }
+.sftp-entry-list { overflow: visible; }
 .sftp-entry { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 7px; min-height: 34px; min-width: 240px; }
 .sftp-entry.is-selected { background: rgba(93, 168, 255, 0.06); }
 .sftp-entry-name { background: transparent; border: 0; color: var(--text); flex: 1; font-size: 11px; min-width: 0; overflow: hidden; padding: 7px 0; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
@@ -1431,7 +1435,7 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
   .terminal-main { min-height: 0; }
   .terminal-file-panel { flex: 0 1 min(42dvh, 360px); max-height: calc(100dvh - 44px); width: 100%; }
   .terminal-workspace-shell.is-sftp-fullscreen .sftp-workspace { gap: 12px; overflow-y: auto; padding: 14px; }
-  .terminal-workspace-shell.is-sftp-fullscreen .sftp-workspace-columns { flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); }
+  .terminal-workspace-shell.is-sftp-fullscreen .sftp-workspace-columns { flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); overflow: visible; }
   .terminal-workspace-shell.is-sftp-fullscreen .local-file-dropzone { min-height: 150px; }
   .terminal-workspace-shell.is-sftp-fullscreen .sftp-remote-pane { overflow: visible; padding: 12px; }
   .sftp-workspace { gap: 10px; padding: 10px; }
@@ -1443,6 +1447,7 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
   .sftp-panel-actions { flex-wrap: wrap; }
   .sftp-path-input { flex: 1 1 150px; max-width: none; }
   .sftp-path-input input { max-width: none; }
+  .sftp-filter-input { flex: 1 1 150px; max-width: none; }
   .transfer-center > ul { max-height: 180px; }
   .terminal-back-button { min-width: 55px; padding: 0 7px; }
   .terminal-topbar, .terminal-topbar .terminal-tabs { min-height: 36px; }

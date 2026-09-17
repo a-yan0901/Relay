@@ -57,6 +57,7 @@ export const SftpPanel = ({
   const initialPath = remotePath?.trim() || '/';
   const [path, setPath] = useState(initialPath);
   const [pathInput, setPathInput] = useState(initialPath);
+  const [filterQuery, setFilterQuery] = useState('');
   const [entries, setEntries] = useState<readonly SftpEntry[]>([]);
   const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string>>(new Set());
   const [dialog, setDialog] = useState<SftpDialog>(null);
@@ -94,6 +95,7 @@ export const SftpPanel = ({
     const nextPath = remotePath.trim() || '/';
     setPath(nextPath);
     setPathInput(nextPath);
+    setFilterQuery('');
     setSelectedPaths(new Set());
   }, [hostId, remotePath]);
 
@@ -107,12 +109,18 @@ export const SftpPanel = ({
     () => selectedEntries.filter((entry) => entry.type === 'file'),
     [selectedEntries]
   );
-  const allEntriesSelected = entries.length > 0 && entries.every((entry) => selectedPaths.has(entry.path));
+  const visibleEntries = useMemo(() => {
+    const query = filterQuery.trim().toLocaleLowerCase();
+    if (!query) return entries;
+    return entries.filter((entry) => entry.name.toLocaleLowerCase().includes(query));
+  }, [entries, filterQuery]);
+  const allEntriesSelected = visibleEntries.length > 0 && visibleEntries.every((entry) => selectedPaths.has(entry.path));
 
   const navigateTo = (nextPath: string): void => {
     const target = nextPath.trim() || '/';
     setPath(target);
     setPathInput(target);
+    setFilterQuery('');
     setSelectedPaths(new Set());
     onNavigate?.(target);
   };
@@ -134,7 +142,7 @@ export const SftpPanel = ({
   };
 
   const toggleAll = (checked: boolean): void => {
-    setSelectedPaths(checked ? new Set(entries.map((entry) => entry.path)) : new Set());
+    setSelectedPaths(checked ? new Set(visibleEntries.map((entry) => entry.path)) : new Set());
   };
 
   const confirmDelete = async (): Promise<void> => {
@@ -252,6 +260,7 @@ export const SftpPanel = ({
         <div><p className="eyebrow">REMOTE FILES</p><h2>SFTP</h2></div>
         <div className="sftp-panel-actions">
           <label className="sftp-path-input"><span className="visually-hidden">远程路径</span><input aria-label="远程路径" value={pathInput} onChange={(event) => setPathInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') navigateToPath(); }} /></label>
+          <label className="sftp-filter-input"><span className="visually-hidden">过滤当前目录</span><input type="search" aria-label="过滤当前目录" placeholder="按名称过滤当前目录" value={filterQuery} onChange={(event) => setFilterQuery(event.target.value)} /></label>
           <button className="button button-ghost button-small" type="button" onClick={navigateToPath}>跳转</button>
           <button className="button button-ghost button-small" type="button" onClick={() => void load()}>刷新</button>
           {onCreateDirectory && <button className="button button-ghost button-small" type="button" onClick={() => { setDirectoryName(''); setError(null); setDialog({ type: 'create-directory' }); }}>新建目录</button>}
@@ -263,9 +272,10 @@ export const SftpPanel = ({
       {loading && <p className="sftp-empty-state">正在读取目录…</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
       {!loading && !error && entries.length === 0 && <p className="sftp-empty-state">目录为空</p>}
-      {!loading && !error && entries.length > 0 && <>
-        <label className="sftp-select-all"><input type="checkbox" aria-label="选择当前目录全部项目" checked={allEntriesSelected} onChange={(event) => toggleAll(event.target.checked)} />选择当前目录</label>
-        <ul className="sftp-entry-list">{entries.map((entry) => <li key={entry.path} className={`sftp-entry ${selectedPaths.has(entry.path) ? 'is-selected' : ''}`}>
+      {!loading && !error && entries.length > 0 && visibleEntries.length === 0 && <p className="sftp-empty-state">没有匹配的文件</p>}
+      {!loading && !error && visibleEntries.length > 0 && <>
+        <label className="sftp-select-all"><input type="checkbox" aria-label={filterQuery.trim() ? '选择筛选结果' : '选择当前目录全部项目'} checked={allEntriesSelected} onChange={(event) => toggleAll(event.target.checked)} />{filterQuery.trim() ? '选择筛选结果' : '选择当前目录'}</label>
+        <ul className="sftp-entry-list">{visibleEntries.map((entry) => <li key={entry.path} className={`sftp-entry ${selectedPaths.has(entry.path) ? 'is-selected' : ''}`}>
           <input type="checkbox" aria-label={`选择 ${entry.name}`} checked={selectedPaths.has(entry.path)} onChange={(event) => toggleSelected(entry.path, event.target.checked)} />
           <button type="button" className="sftp-entry-name" aria-label={entry.type === 'directory' ? `打开目录 ${entry.name}` : entry.name} onClick={() => navigate(entry)} disabled={entry.type !== 'directory'}><span aria-hidden="true">{entry.type === 'directory' ? '▸' : '·'}</span>{entry.name}</button>
           <span className="sftp-entry-meta">{entry.type === 'directory' ? '目录' : `${entry.size} B`}</span>

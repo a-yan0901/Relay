@@ -87,4 +87,36 @@ describe('SftpWorkspace', () => {
     expect(screen.queryByLabelText('选择本地文件')).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: '.env' })).toBeInTheDocument();
   });
+
+  it('renders every returned entry and keeps the remote pane as the scroll owner', async () => {
+    const manyEntries: SftpEntry[] = Array.from({ length: 120 }, (_, index) => ({
+      name: `file-${String(index).padStart(3, '0')}.log`,
+      path: `/srv/file-${String(index).padStart(3, '0')}.log`,
+      type: 'file',
+      size: index,
+      mode: 0o644,
+      modifiedAt: null
+    }));
+    const fileTransport = {
+      list: vi.fn(async () => manyEntries),
+      createDirectory: vi.fn(async () => {}),
+      rename: vi.fn(async () => {}),
+      remove: vi.fn(async () => {})
+    };
+
+    render(
+      <SftpWorkspace
+        hostId="host-1"
+        workspaceId="workspace-1"
+        remotePath="/srv"
+        fileTransport={fileTransport}
+        transferJobs={[]}
+        localFilesEnabled={false}
+      />
+    );
+
+    expect(await screen.findByRole('button', { name: 'file-119.log' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^file-/u })).toHaveLength(120);
+    expect(screen.getByRole('region', { name: '远程文件' }).parentElement).toHaveClass('sftp-remote-scroll-region');
+  });
 });

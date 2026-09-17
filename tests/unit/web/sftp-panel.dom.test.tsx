@@ -25,6 +25,27 @@ describe('SftpPanel', () => {
     expect(onDelete).toHaveBeenCalledWith('/app.log');
   });
 
+  it('filters the current directory by name as the query changes', async () => {
+    const user = userEvent.setup();
+    const onList = vi.fn(async () => [
+      { name: 'apps', path: '/apps', type: 'directory' as const, size: 0, mode: 0o755, modifiedAt: null },
+      { name: 'app.log', path: '/app.log', type: 'file' as const, size: 12, mode: 0o644, modifiedAt: null },
+      { name: 'release.txt', path: '/release.txt', type: 'file' as const, size: 18, mode: 0o644, modifiedAt: null }
+    ]);
+    render(<SftpPanel hostId="host-1" onList={onList} />);
+
+    expect(await screen.findByText('app.log')).toBeInTheDocument();
+    const filter = screen.getByRole('searchbox', { name: '过滤当前目录' });
+    await user.type(filter, 'APP');
+
+    expect(screen.getByText('apps')).toBeInTheDocument();
+    expect(screen.getByText('app.log')).toBeInTheDocument();
+    expect(screen.queryByText('release.txt')).not.toBeInTheDocument();
+
+    await user.clear(filter);
+    expect(screen.getByText('release.txt')).toBeInTheDocument();
+  });
+
   it('wires upload and download actions to the active remote path', async () => {
     const user = userEvent.setup();
     const onList = vi.fn(async () => [{ name: 'app.log', path: '/app.log', type: 'file' as const, size: 12, mode: 0o644, modifiedAt: null }]);

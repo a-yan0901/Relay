@@ -90,7 +90,7 @@ export const SftpWorkspace = ({
             <p className="local-file-panel-path">当前客户端不支持本地文件选择。</p>
             <p className="local-file-panel-hint" role="status">当前客户端不支持本地文件选择，仍可浏览远端文件；请在支持文件权限的客户端中上传或下载。</p>
           </section>}
-        <div className="sftp-remote-pane">
+        <div className="sftp-remote-pane sftp-remote-scroll-region">
           <SftpPanel
             key={hostId}
             hostId={hostId}
