@@ -234,6 +234,14 @@ export const registerCloudAccountRoutes = async (
       });
       try {
         await keyManager.grantAccountDataKey(deviceId);
+        const workspaces = await dependencies.client.listWorkspaces(active.token);
+        // Only the owner device can unwrap and re-wrap a workspace key. Other
+        // device workspaces remain pending until their owner comes online.
+        for (const workspace of workspaces) {
+          if (workspace.ownerDeviceId === active.account.deviceId) {
+            await keyManager.grantWorkspaceKey(workspace.id, deviceId);
+          }
+        }
       } finally {
         keyManager.clear();
       }

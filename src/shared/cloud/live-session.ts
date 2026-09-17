@@ -182,6 +182,7 @@ export class LiveWorkspaceChannel {
     this.removeCloseListener();
     this.relay.close?.();
     this.viewers.clear();
+    this.baseKey.fill(0);
   }
 
   private assertUsable(): void {

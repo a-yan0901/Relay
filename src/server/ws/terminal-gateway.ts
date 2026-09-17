@@ -28,6 +28,7 @@ import type {
   SshSessionManagerPort
 } from '../ssh/types.js';
 import type { AppRuntimeConfig } from '../api/setup-routes.js';
+import type { CloudLiveOwnerAttachment } from '../cloud/cloud-live-owner.js';
 
 const MAX_FRAME_BYTES = 64 * 1024;
 
@@ -136,6 +137,9 @@ export interface TerminalGatewayDependencies {
   identityService?: IdentityService;
   sessionManager: SshSessionManagerPort;
   connectionPathResolver?: ConnectionPathResolver;
+  liveWorkspaceOwner?: {
+    attach(request: FastifyRequest, input: { sessionId: string; hostId: string; title: string; columns: number; rows: number; channel: SshChannel }): Promise<CloudLiveOwnerAttachment | null>;
+  };
 }
 
 const websocketHandshake = async (
@@ -226,6 +230,36 @@ export const registerTerminalGateway = async (
     let pendingCredentialHostId: string | undefined;
     let pendingCredentialAuthType: 'password' | 'private_key' | undefined;
     const sessionCredentials = new Map<string, HostCredentialInput>();
+    let liveOwnerAttachment: CloudLiveOwnerAttachment | null = null;
+
+    const detachLiveOwner = (): void => {
+      const attachment = liveOwnerAttachment;
+      liveOwnerAttachment = null;
+      if (attachment) void attachment.detach();
+    };
+
+    const attachLiveOwner = async (nextChannel: SshChannel, hostId: string, title: string, columns: number, rows: number): Promise<void> => {
+      if (!dependencies.liveWorkspaceOwner || !managerSessionId) return;
+      try {
+        const attachment = await dependencies.liveWorkspaceOwner.attach(request, {
+          sessionId: managerSessionId,
+          hostId,
+          title,
+          columns,
+          rows,
+          channel: nextChannel
+        });
+        if (!attachment) return;
+        if (!active || cleanupStarted || channel !== nextChannel) {
+          await attachment.detach();
+          return;
+        }
+        liveOwnerAttachment = attachment;
+      } catch {
+        // Cloud live sharing is best-effort; the local SSH session remains
+        // usable when the optional cloud endpoint is offline.
+      }
+    };
 
     const persistSessionCredentials = async (sessionKey: Buffer): Promise<void> => {
       for (const [hostId, credential] of sessionCredentials) {
@@ -284,6 +318,7 @@ export const registerTerminalGateway = async (
       pendingCredentialHostId = undefined;
       pendingCredentialAuthType = undefined;
       sessionCredentials.clear();
+      detachLiveOwner();
       if (managerSessionId) {
         if (reason === 'socket') {
           dependencies.sessionManager.detach(managerSessionId);
@@ -313,6 +348,7 @@ export const registerTerminalGateway = async (
       nextChannel.on('error', () => notifyUnexpectedChannelFailure());
       nextChannel.on('close', () => {
         if (active) {
+          detachLiveOwner();
           channel = undefined;
           if (!channelExited && !explicitCloseRequested && !channelFailureNotified) {
             notifyUnexpectedChannelFailure();
@@ -346,6 +382,7 @@ export const registerTerminalGateway = async (
         if (bufferedOutput && bufferedOutput.length > 0) {
           sendOutput(bufferedOutput);
         }
+        void attachLiveOwner(reattached, row.id, row.name, message.cols, message.rows);
         return;
       }
       if (message.reattachOnly) {
@@ -477,7 +514,9 @@ export const registerTerminalGateway = async (
 
       sendStatus('connecting');
       try {
-        attachChannel(await dependencies.sessionManager.open(managerSessionId, config, callbacks));
+        const openedChannel = await dependencies.sessionManager.open(managerSessionId, config, callbacks);
+        attachChannel(openedChannel);
+        void attachLiveOwner(openedChannel, row.id, row.name, message.cols, message.rows);
         await persistSessionCredentials(session.vaultKey);
         sessionCredentials.clear();
         sendStatus('connected');
@@ -499,6 +538,7 @@ export const registerTerminalGateway = async (
         case 'resize':
           if (channel) {
             channel.resize(message.cols, message.rows);
+            liveOwnerAttachment?.resize(message.cols, message.rows);
           } else {
             pendingResize = { cols: message.cols, rows: message.rows };
           }

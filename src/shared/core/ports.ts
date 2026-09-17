@@ -53,6 +53,7 @@ import type { AccountDeletionState, SyncDeletionState } from './models.js';
 import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from './account-sync.js';
 import type { CloudWorkspaceDirectorySnapshot } from '../cloud/directory.js';
 import type { CloudSnapshotHead } from '../cloud/client.js';
+import type { RemoteWorkspaceSession } from '../cloud/remote-workspace.js';
 
 export type SecretRef =
   | { kind: 'host'; id: string }
@@ -241,6 +242,11 @@ export interface WorkspaceStore {
 /** Optional account-scoped directory of independent device workspaces. */
 export interface WorkspaceDirectoryPort {
   refresh(): Promise<CloudWorkspaceDirectorySnapshot>;
+}
+
+/** Opens an independent device workspace through the authenticated client. */
+export interface RemoteWorkspacePort {
+  open(workspaceId: string, ownerDeviceId: string): Promise<RemoteWorkspaceSession>;
 }
 
 export interface CloudSyncResult {

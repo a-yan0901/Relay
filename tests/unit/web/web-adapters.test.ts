@@ -237,6 +237,29 @@ describe('web adapters', () => {
     expect(client).not.toHaveProperty('token');
   });
 
+  it('opens a cloud workspace through the same-origin remote bridge', async () => {
+    const account = { accountId: 'account-1', deviceId: 'device-current', state: 'signed-in' as const, expiresAt: '2026-09-17T00:00:00.000Z', trusted: true };
+    const socket = createIdleSocket();
+    const runtime = createWebAdapters({
+      api: {
+        getCapabilities: async () => ({ client: 'web' as const, version: 1 as const, accountMode: 'cloud' as const, capabilities: ['workspace.persistence', 'account.auth'] as const }),
+        getCloudAccountSession: async () => ({ account }),
+        listCloudDevices: async () => [],
+        listCloudWorkspaces: async () => []
+      },
+      remoteWorkspaceSocketFactory: () => socket
+    });
+    await runtime.negotiateCapabilities();
+    const remote = await runtime.remoteWorkspace?.open('workspace-1', 'owner-1');
+    expect(remote).toBeDefined();
+    const connecting = remote?.connect();
+    socket.readyState = 1;
+    socket.onopen?.();
+    await connecting;
+    expect(socket).toBeDefined();
+    await remote?.close();
+  });
+
   it('keeps WebSocket lifecycle behind the SessionTransport port', async () => {
     const makeSocket = (): TerminalSocketLike => ({
       readyState: 0,

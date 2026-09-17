@@ -77,6 +77,8 @@ import { createBrowserSystemServices } from './browser-system-services';
 import * as api from '../api';
 import type { CapabilityResponse } from '../api';
 import { Sha256 } from '../../shared/crypto/sha256';
+import { WebRemoteWorkspace } from './web-remote-workspace';
+import type { RemoteWorkspaceSocketFactory } from '../../shared/cloud/remote-socket';
 
 /** Browser UI upper bound; server capabilities are intersected with this value below. */
 export const WEB_PLATFORM_MAX_PANES = 4;
@@ -1027,6 +1029,7 @@ export interface WebAdapters extends CoreRuntime {
 export const createWebAdapters = (options: {
   api?: WebApiClient;
   webSocketFactory?: (url: string) => TerminalSocketLike;
+  remoteWorkspaceSocketFactory?: RemoteWorkspaceSocketFactory;
   platformServices?: PlatformServices;
   } = {}): WebAdapters => {
   const client = options.api ?? api;
@@ -1036,6 +1039,9 @@ export const createWebAdapters = (options: {
   const cloudAccountAdapter = hasCloudAccountApi(client) ? new WebCloudAccountSession(client) : undefined;
   const cloudDeviceAdapter = hasCloudDeviceApi(client) ? new WebCloudDeviceTrust(client) : undefined;
   const cloudWorkspaceDirectoryAdapter = hasCloudWorkspaceDirectoryApi(client) ? new WebCloudWorkspaceDirectory(client) : undefined;
+  const cloudRemoteWorkspaceAdapter = hasCloudWorkspaceDirectoryApi(client)
+    ? new WebRemoteWorkspace({ getCloudAccountSession: requireApi(client.getCloudAccountSession) }, options.remoteWorkspaceSocketFactory)
+    : undefined;
   const cloudSyncAdapter = hasCloudSyncApi(client) ? new WebCloudSync(client) : undefined;
   const syncAdapter = hasSyncApi(client) ? new WebSync(client) : undefined;
   const vaultRecoveryAdapter = hasVaultRecoveryApi(client) ? new WebVaultRecovery(client) : undefined;
@@ -1070,6 +1076,7 @@ export const createWebAdapters = (options: {
     devices: undefined,
     sync: undefined,
     workspaceDirectory: undefined,
+    remoteWorkspace: undefined,
     cloudSync: undefined,
     capabilityAdapter,
     accountMode: 'none' as const,
@@ -1083,6 +1090,7 @@ export const createWebAdapters = (options: {
         ? runtime.accountMode === 'cloud' ? cloudDeviceAdapter : deviceAdapter
         : undefined;
       runtime.workspaceDirectory = runtime.accountMode === 'cloud' ? cloudWorkspaceDirectoryAdapter : undefined;
+      runtime.remoteWorkspace = runtime.accountMode === 'cloud' ? cloudRemoteWorkspaceAdapter : undefined;
       runtime.cloudSync = runtime.accountMode === 'cloud' ? cloudSyncAdapter : undefined;
       runtime.sync = runtime.capabilities.supports('sync.encrypted') ? syncAdapter : undefined;
       runtime.vaultRecovery = runtime.capabilities.supports('sync.encrypted') ? vaultRecoveryAdapter : undefined;

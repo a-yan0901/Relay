@@ -800,6 +800,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .terminal-canvas .xterm-viewport { background: transparent !important; overflow-y: scroll; overscroll-behavior-y: contain; touch-action: pan-y; }
 
+.remote-workspace-panel { background: var(--bg); display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; width: 100%; }
+.remote-workspace-toolbar { align-items: center; background: var(--bg-raised); border-bottom: 1px solid var(--border); display: flex; gap: 12px; min-height: 48px; padding: 7px 12px; }
+.remote-workspace-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.remote-workspace-title strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-workspace-title span { color: var(--muted); font-size: 10px; }
+.remote-workspace-actions { align-items: center; display: flex; gap: 6px; margin-left: auto; }
+.remote-workspace-terminal-select select { background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text); font: inherit; font-size: 11px; min-height: 30px; padding: 0 7px; }
+.remote-workspace-canvas { flex: 1; min-height: 0; padding: 10px 12px; }
+.remote-workspace-canvas .xterm { height: 100%; }
+.remote-workspace-canvas .xterm-viewport { background: transparent !important; overflow-y: scroll; overscroll-behavior-y: contain; }
+.remote-workspace-overlay { align-items: center; background: color-mix(in srgb, var(--bg) 88%, transparent); display: flex; flex-direction: column; gap: 5px; inset: 49px 0 0; justify-content: center; position: absolute; z-index: 2; }
+.remote-workspace-overlay strong { font-size: 13px; }
+.remote-workspace-overlay span { color: var(--muted); font-size: 11px; max-width: 420px; text-align: center; }
+.remote-workspace-feedback { background: var(--bg-raised); border: 1px solid var(--border-strong); border-radius: 7px; bottom: 16px; color: var(--text); cursor: pointer; font: inherit; font-size: 11px; left: 50%; padding: 7px 10px; position: absolute; transform: translateX(-50%); z-index: 3; }
+
 .terminal-search { align-items: center; background: var(--panel-soft); border-bottom: 1px solid var(--border); display: flex; gap: 10px; padding: 7px 12px; }
 
 .terminal-search label { color: var(--faint); font-size: 10px; }

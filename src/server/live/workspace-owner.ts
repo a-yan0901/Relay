@@ -68,6 +68,24 @@ export class LiveWorkspaceOwner {
   detachTerminal(sessionId: string): void {
     this.terminals.delete(sessionId);
     this.state.removeTerminal(sessionId);
+    this.publishSnapshot();
+  }
+
+  updateTerminal(sessionId: string, columns: number, rows: number): void {
+    const terminal = this.terminals.get(sessionId);
+    if (!terminal || this.closed) return;
+    const next: LiveOwnerTerminal = { ...terminal, columns, rows };
+    this.terminals.set(sessionId, next);
+    this.state.setTerminal({
+      sessionId: next.sessionId,
+      hostId: next.hostId,
+      title: next.title,
+      status: next.status,
+      columns: next.columns,
+      rows: next.rows,
+      ...(next.screen === undefined ? {} : { screen: next.screen })
+    });
+    this.publishSnapshot();
   }
 
   handleFrame(value: unknown): void {

@@ -69,6 +69,9 @@ import { SyncSnapshotService } from './sync/sync-snapshot.js';
 import { CloudApiClient } from '../shared/cloud/client.js';
 import { CloudBrowserSessionStore } from './cloud/cloud-session-store.js';
 import { CLOUD_ACCOUNT_SESSION_COOKIE_NAME, registerCloudAccountRoutes, type CloudAccountRouteClient, type CloudSyncRouteClient } from './cloud/cloud-account-routes.js';
+import { registerCloudLiveRoutes, type CloudLiveRouteClient } from './cloud/cloud-live-routes.js';
+import { CloudLiveOwnerRegistry } from './cloud/cloud-live-owner.js';
+import type { CloudLiveSocketFactory } from '../shared/cloud/live-client.js';
 
 export interface AppDependencies {
   database: SqliteDatabase;
@@ -103,6 +106,8 @@ export interface AppDependencies {
   /** Optional server-side BFF client for the standalone cloud service. */
   cloudApiClient?: CloudAccountRouteClient;
   cloudSessionStore?: CloudBrowserSessionStore;
+  /** Injectable only for tests; production uses the bounded ws adapter. */
+  cloudLiveSocketFactory?: CloudLiveSocketFactory;
 }
 
 export interface BuiltAppDependencies {
@@ -250,6 +255,14 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   const cloudSessionStore = cloudApiClient
     ? dependencies.cloudSessionStore ?? new CloudBrowserSessionStore()
     : undefined;
+  const cloudLiveOwner = cloudApiClient && cloudSessionStore && dependencies.config.cloudApiUrl
+    ? new CloudLiveOwnerRegistry({
+      baseUrl: dependencies.config.cloudApiUrl,
+      sessions: cloudSessionStore,
+      client: cloudApiClient as ConstructorParameters<typeof CloudLiveOwnerRegistry>[0]['client'],
+      socketFactory: dependencies.cloudLiveSocketFactory
+    })
+    : undefined;
   const cloudAccountEnabled = cloudApiClient !== undefined;
   const localAccountEnabled = !cloudAccountEnabled && dependencies.config.accountSyncEnabled === true;
 
@@ -271,6 +284,7 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
 
   app.addHook('onClose', async () => {
     syncCoordinator.close();
+    await cloudLiveOwner?.close();
   });
 
   await app.register(cookie);
@@ -397,6 +411,14 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
         snapshots: syncSnapshotService
       }
     });
+    await registerCloudLiveRoutes(app, {
+      enabled: true,
+      baseUrl: dependencies.config.cloudApiUrl!,
+      trustedOrigins: dependencies.config.trustedOrigins,
+      client: cloudApiClient as CloudLiveRouteClient,
+      sessions: cloudSessionStore!,
+      socketFactory: dependencies.cloudLiveSocketFactory
+    });
   }
   await registerSyncRoutes(app, withOwnerId({
     enabled: localAccountEnabled,
@@ -452,7 +474,8 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     vaultService,
     identityService,
     sessionManager: sshSessionManager,
-    connectionPathResolver
+    connectionPathResolver,
+    liveWorkspaceOwner: cloudLiveOwner
   }));
 
   return app;

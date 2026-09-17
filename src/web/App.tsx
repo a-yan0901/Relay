@@ -23,6 +23,7 @@ import { BroadcastPreview } from './components/BroadcastPreview';
 import { AccountMenu } from './components/AccountMenu';
 import { SyncCenter } from './components/SyncCenter';
 import { WorkspaceDirectory } from './components/WorkspaceDirectory';
+import { RemoteWorkspacePanel } from './components/RemoteWorkspacePanel';
 import type { SftpOpenRequest } from './components/ServerContextMenu';
 import type { AccountSession, ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, SyncState, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
@@ -46,6 +47,8 @@ import { createFreshTerminalIds, restoreWorkspace, workspaceStateFromAppState } 
 import { createQuickSwitcherItems, type PrimaryDestination, type QuickSwitcherItem } from './state/navigation-state';
 import type { WorkspaceState } from '../shared/core/models';
 import type { CloudWorkspaceDirectorySnapshot } from '../shared/cloud/directory';
+import type { CloudWorkspaceCard } from '../shared/cloud/directory';
+import type { RemoteWorkspaceSession } from '../shared/cloud/remote-workspace.js';
 import {
   applyPreferences,
   fontSizeOptions,
@@ -220,6 +223,8 @@ export const App = ({ runtime }: AppProps) => {
   const [terminalProfiles, setTerminalProfiles] = useState<readonly TerminalProfile[]>([]);
   const [defaultTerminalProfile, setDefaultTerminalProfile] = useState<TerminalProfile | undefined>();
   const [terminalView, setTerminalView] = useState(false);
+  const [remoteWorkspaceSession, setRemoteWorkspaceSession] = useState<RemoteWorkspaceSession | null>(null);
+  const [remoteWorkspaceCard, setRemoteWorkspaceCard] = useState<CloudWorkspaceCard | null>(null);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
@@ -656,11 +661,50 @@ export const App = ({ runtime }: AppProps) => {
   };
 
   const handleOpenTerminal = (host: HostMetadataState): void => {
+    if (remoteWorkspaceSession) {
+      void remoteWorkspaceSession.close();
+      setRemoteWorkspaceSession(null);
+      setRemoteWorkspaceCard(null);
+    }
     const action = { type: 'terminalOpened' as const, terminalId: createTerminalId(), workspaceTabId: createWorkspaceTabId(), hostId: host.id };
     const projectedState = appReducer(latestStateRef.current, action);
     dispatch(action);
     enqueueWorkspaceSave(workspaceStateFromAppState(projectedState));
     setTerminalView(true);
+  };
+
+  const handleOpenWorkspaceCard = async (card: CloudWorkspaceCard): Promise<void> => {
+    if (card.isCurrent) {
+      if (remoteWorkspaceSession) {
+        await remoteWorkspaceSession.close();
+        setRemoteWorkspaceSession(null);
+        setRemoteWorkspaceCard(null);
+      }
+      setTerminalView(true);
+      return;
+    }
+    if (!runtime.remoteWorkspace) {
+      setWorkspaceDirectoryError('当前客户端不支持打开远程工作区');
+      return;
+    }
+    if (remoteWorkspaceSession) await remoteWorkspaceSession.close();
+    setWorkspaceDirectoryError(null);
+    try {
+      const session = await runtime.remoteWorkspace.open(card.workspaceId, card.ownerDeviceId);
+      setRemoteWorkspaceSession(session);
+      setRemoteWorkspaceCard(card);
+      setTerminalView(true);
+    } catch (error: unknown) {
+      setWorkspaceDirectoryError(messageFromError(error));
+    }
+  };
+
+  const handleCloseRemoteWorkspace = (): void => {
+    const session = remoteWorkspaceSession;
+    setRemoteWorkspaceSession(null);
+    setRemoteWorkspaceCard(null);
+    if (session) void session.close();
+    setTerminalView(false);
   };
 
   const handleOpenSftp = (host: HostMetadataState): void => {
@@ -712,6 +756,11 @@ export const App = ({ runtime }: AppProps) => {
   };
 
   const handleOpenServers = (): void => {
+    if (remoteWorkspaceSession) {
+      void remoteWorkspaceSession.close();
+      setRemoteWorkspaceSession(null);
+      setRemoteWorkspaceCard(null);
+    }
     setTerminalView(false);
     setActivityOpen(false);
     setWorkspaceSwitcherOpen(false);
@@ -1251,6 +1300,11 @@ export const App = ({ runtime }: AppProps) => {
   const handleLock = async (): Promise<void> => {
     try {
       await runtime.vault.lock();
+      if (remoteWorkspaceSession) {
+        await remoteWorkspaceSession.close();
+        setRemoteWorkspaceSession(null);
+        setRemoteWorkspaceCard(null);
+      }
       workspaceLoadRequestRef.current += 1;
       lockedFromCurrentAppRef.current = true;
       dispatch({ type: 'lock' });
@@ -1377,6 +1431,7 @@ export const App = ({ runtime }: AppProps) => {
             loading={workspaceDirectoryLoading}
             error={workspaceDirectoryError}
             onRefresh={() => void refreshWorkspaceDirectory()}
+            onOpen={(card) => void handleOpenWorkspaceCard(card)}
           />}
           <HostWorkspace
             hosts={state.hosts}
@@ -1408,7 +1463,13 @@ export const App = ({ runtime }: AppProps) => {
           />
         </div>
         <div className="app-view app-view-terminal" hidden={!terminalView} aria-hidden={!terminalView}>
-          <TerminalWorkspace
+          {remoteWorkspaceSession && remoteWorkspaceCard ? <RemoteWorkspacePanel
+            session={remoteWorkspaceSession}
+            label={remoteWorkspaceCard.ownerLabel}
+            preferences={preferences}
+            clipboard={runtime.platformServices?.clipboard}
+            onBack={handleCloseRemoteWorkspace}
+          /> : <TerminalWorkspace
             hosts={state.hosts}
             terminals={state.terminals}
             activeTerminalId={state.activeTerminalId}
@@ -1459,7 +1520,7 @@ export const App = ({ runtime }: AppProps) => {
               onWorkspaces={capabilities.supports('workspace.templates') ? handleOpenWorkspaceSwitcher : undefined}
               accountMenu={accountMenu}
             />}
-          />
+          />}
         </div>
       </div>
       {quickSwitcherOpen && <QuickSwitcher items={quickSwitcherItems} onSelect={handleQuickSwitcherSelect} onClose={() => setQuickSwitcherOpen(false)} />}
