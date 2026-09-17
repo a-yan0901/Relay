@@ -119,6 +119,8 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     },
     onSnapshot: onStatusChange
   });
+  const canReadClipboard = clipboard !== undefined && clipboard.canRead !== false;
+  const canWriteClipboard = clipboard !== undefined && clipboard.canWrite !== false;
 
   useEffect(() => {
     if (session.state.state !== 'connecting' && session.state.state !== 'reconnecting' && session.state.state !== 'interrupted' && session.state.state !== 'closed' && session.state.state !== 'failed') return;
@@ -174,11 +176,11 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     const selectionDisposable = terminal.onSelectionChange(() => setTerminalHasSelection(terminal.hasSelection()));
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown' || !(event.ctrlKey || event.metaKey)) return true;
-      if (event.key.toLowerCase() === 'c' && terminal.hasSelection()) {
+      if (event.key.toLowerCase() === 'c' && canWriteClipboard && terminal.hasSelection()) {
         void copySelectionRef.current();
         return false;
       }
-      if (event.key.toLowerCase() === 'v' && clipboard) {
+      if (event.key.toLowerCase() === 'v' && canReadClipboard) {
         void pasteClipboardRef.current();
         return false;
       }
@@ -203,7 +205,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       fitAddonRef.current = null;
       searchAddonRef.current = null;
     };
-  }, [session.resize, session.sendInput]);
+  }, [canReadClipboard, canWriteClipboard, session.resize, session.sendInput]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -276,14 +278,14 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       id: 'copy',
       label: '复制',
       shortcut: 'Ctrl/Cmd+C',
-      disabled: !clipboard || !terminalHasSelection,
+      disabled: !canWriteClipboard || !terminalHasSelection,
       onSelect: copySelection
     },
     {
       id: 'paste',
       label: '粘贴',
       shortcut: 'Ctrl/Cmd+V',
-      disabled: !clipboard,
+      disabled: !canReadClipboard,
       onSelect: pasteClipboard
     },
     { id: 'select-all', label: '全选', onSelect: () => terminalRef.current?.selectAll() },
@@ -292,7 +294,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     { id: 'clear', label: '清屏', onSelect: clear },
     ...(onOpenSftp ? [{ id: 'open-sftp', label: '打开远程文件', separatorBefore: true, onSelect: onOpenSftp }] : []),
     ...(onNewTerminal ? [{ id: 'new-terminal', label: '新建 Console', onSelect: onNewTerminal }] : [])
-  ], [clear, clipboard, copySelection, onNewTerminal, onOpenSftp, pasteClipboard, terminalHasSelection, toggleSearch]);
+  ], [canReadClipboard, canWriteClipboard, clear, copySelection, onNewTerminal, onOpenSftp, pasteClipboard, terminalHasSelection, toggleSearch]);
 
   const openTerminalContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>): void => {
     setTerminalHasSelection(terminalRef.current?.hasSelection() ?? false);
@@ -327,14 +329,14 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       diagnostic,
       onReconnect: session.reconnect,
       onClear: clear,
-      onCopy: clipboard ? copySelection : undefined,
-      onPaste: clipboard ? pasteClipboard : undefined,
+      onCopy: canWriteClipboard ? copySelection : undefined,
+      onPaste: canReadClipboard ? pasteClipboard : undefined,
       onSearch: toggleSearch,
       onFullscreen: fullscreen,
       searchActive: searchOpen
     });
     return () => onToolbarChange?.(terminalId, null);
-  }, [active, clear, clipboard, copySelection, diagnostic, displayState, fullscreen, onToolbarChange, pasteClipboard, recoveryStatus, searchOpen, session.reconnect, session.state.networkOffline, session.state.reconnectDelayMs, session.state.state, terminalId, toggleSearch]);
+  }, [active, canReadClipboard, canWriteClipboard, clear, copySelection, diagnostic, displayState, fullscreen, onToolbarChange, pasteClipboard, recoveryStatus, searchOpen, session.reconnect, session.state.networkOffline, session.state.reconnectDelayMs, session.state.state, terminalId, toggleSearch]);
 
   const errorActionButton = errorAction === 'edit-credentials'
     ? onEditHost ? <button className="button button-ghost button-small" type="button" onClick={() => onEditHost(host)}>编辑 Server 凭据</button> : null

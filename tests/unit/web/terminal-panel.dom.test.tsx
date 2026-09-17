@@ -255,6 +255,25 @@ describe('TerminalPanel mobile selection', () => {
     expect(clipboard.writeText).toHaveBeenCalledWith('selected terminal output');
   });
 
+  it('keeps copy enabled while paste is unavailable on a write-only clipboard', () => {
+    testState.selectionActive = true;
+    const clipboard: ClipboardPort = {
+      canRead: false,
+      canWrite: true,
+      readText: vi.fn(async () => 'unavailable'),
+      writeText: vi.fn(async () => undefined)
+    };
+    const onToolbarChange = vi.fn();
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} onToolbarChange={onToolbarChange} />);
+
+    const toolbar = onToolbarChange.mock.calls[0]?.[1] as { onCopy?: () => Promise<void>; onPaste?: () => Promise<void> };
+    expect(toolbar.onCopy).toEqual(expect.any(Function));
+    expect(toolbar.onPaste).toBeUndefined();
+    fireEvent.contextMenu(document.querySelector('.terminal-canvas')!, { clientX: 100, clientY: 80 });
+    expect(screen.getByRole('menuitem', { name: /^复制/ })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitem', { name: /^粘贴/ })).toHaveAttribute('aria-disabled', 'true');
+  });
+
   it('requires confirmation before sending clipboard text to the terminal', async () => {
     const clipboard: ClipboardPort = {
       readText: vi.fn(async () => 'echo from clipboard'),
