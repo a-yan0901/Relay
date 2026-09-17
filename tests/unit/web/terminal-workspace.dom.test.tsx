@@ -71,8 +71,8 @@ describe('TerminalWorkspace', () => {
   it('lets the global theme drive the baseline terminal profile', () => {
     const midnight = BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === 'builtin:midnight');
     const nord = BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === 'builtin:nord');
-    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, midnight, 'light')?.id).toBe('builtin:light');
-    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, nord, 'midnight')?.id).toBe('builtin:midnight');
+    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, midnight)?.id).toBe('builtin:midnight');
+    expect(resolveTerminalProfileForHost(host('host-1', 'Production'), BUILTIN_TERMINAL_PROFILES, nord)?.id).toBe('builtin:nord');
     expect(resolveTerminalProfileForHost({ ...host('host-1', 'Production'), terminalProfileId: 'builtin:midnight' }, BUILTIN_TERMINAL_PROFILES, nord, 'light')?.id).toBe('builtin:midnight');
   });
   afterEach(() => cleanup());

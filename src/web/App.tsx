@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 
 import { AppError } from '@shared/errors';
-import type { TerminalProfile } from '@shared/terminal-appearance';
+import { BUILTIN_TERMINAL_PROFILES, type TerminalProfile } from '@shared/terminal-appearance';
 import type { HostCreateInput, HostPatchInput, IdentityCreateInput, IdentityUpdateInput, SnippetInput } from '@shared/validation';
 
 import { HostForm } from './components/HostForm';
@@ -1195,6 +1195,14 @@ export const App = ({ runtime }: AppProps) => {
   const handleDefaultTerminalProfileChange = useCallback((id: string): void => {
     void runtime.terminalProfiles.setDefault(id).then((profile) => setDefaultTerminalProfile(profile)).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
   }, [runtime]);
+  const handlePreferencesChange = useCallback((next: UiPreferences): void => {
+    setPreferences(next);
+    if (next.theme === preferences.theme || !defaultTerminalProfile?.id.startsWith('builtin:')) return;
+    const profile = BUILTIN_TERMINAL_PROFILES.find((candidate) => candidate.id === `builtin:${next.theme}`);
+    if (!profile) return;
+    setDefaultTerminalProfile(profile);
+    void runtime.terminalProfiles.setDefault(profile.id).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
+  }, [defaultTerminalProfile, preferences.theme, runtime]);
   const handleDeleteTerminalProfile = useCallback((id: string): void => {
     void runtime.terminalProfiles.delete(id).then(() => runtime.terminalProfiles.list()).then((profiles) => setTerminalProfiles([...profiles])).catch((error: unknown) => dispatch({ type: 'error', message: messageFromError(error) }));
   }, [runtime]);
@@ -1403,7 +1411,7 @@ export const App = ({ runtime }: AppProps) => {
           </aside>
         </div>
       )}
-      {preferencesOpen && <PreferencesPanel terminalProfiles={terminalProfiles} defaultTerminalProfile={defaultTerminalProfile} onDefaultTerminalProfileChange={handleDefaultTerminalProfileChange} onDeleteTerminalProfile={handleDeleteTerminalProfile} onCreateTerminalProfile={handleCreateTerminalProfile} preferences={preferences} onChange={setPreferences} onClose={() => setPreferencesOpen(false)} notifications={notifications} notificationPermission={notificationPermission} onRequestNotifications={requestNotificationPermission}
+      {preferencesOpen && <PreferencesPanel terminalProfiles={terminalProfiles} defaultTerminalProfile={defaultTerminalProfile} onDefaultTerminalProfileChange={handleDefaultTerminalProfileChange} onDeleteTerminalProfile={handleDeleteTerminalProfile} onCreateTerminalProfile={handleCreateTerminalProfile} preferences={preferences} onChange={handlePreferencesChange} onClose={() => setPreferencesOpen(false)} notifications={notifications} notificationPermission={notificationPermission} onRequestNotifications={requestNotificationPermission}
         onOpenActivity={capabilities.supports('audit.activity') ? () => { setPreferencesOpen(false); handleOpenActivity(); } : undefined}
         onOpenIdentities={capabilities.supports('vault.identities') ? () => { setPreferencesOpen(false); setIdentityOpen(true); } : undefined}
         onOpenSnippets={capabilities.supports('automation.snippet-manager') ? () => { setPreferencesOpen(false); handleOpenSnippetManager(); } : undefined}
