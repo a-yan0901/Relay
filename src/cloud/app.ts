@@ -139,6 +139,19 @@ const requireRelaySession = async (request: FastifyRequest, auth: CloudAuthApi):
   return { token, session };
 };
 
+const requireWorkspaceAccess = async (
+  session: AccountSession,
+  workspaceId: string,
+  dependencies: CloudAppDependencies,
+  role: 'owner' | 'viewer'
+): Promise<void> => {
+  const workspaces = dependencies.workspaces;
+  const allowed = role === 'owner'
+    ? await workspaces?.canOwn(session.accountId, session.deviceId, workspaceId)
+    : await workspaces?.canView(session.accountId, session.deviceId, workspaceId);
+  if (!allowed) throw new AppError('ACCOUNT_DEVICE_REVOKED');
+};
+
 const parseSnapshot = (body: unknown): CloudDataEnvelope => {
   try {
     return parseCloudDataEnvelope(body);
@@ -246,11 +259,12 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   });
 
   app.get('/v2/workspaces/:workspaceId/head', async (request, reply) => {
-    await requireSession(request, dependencies.auth);
+    const { session } = await requireSession(request, dependencies.auth);
     const workspaceId = typeof (request.params as { workspaceId?: unknown }).workspaceId === 'string'
       ? (request.params as { workspaceId: string }).workspaceId
       : '';
     if (!workspaceId) throw new AppError('SYNC_PAYLOAD_INVALID');
+    await requireWorkspaceAccess(session, workspaceId, dependencies, 'viewer');
     reply.send(await dependencies.snapshots.getHead('workspace', workspaceId));
   });
 
@@ -261,6 +275,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
       : '';
     const parsed = revisionQuerySchema.safeParse(request.query);
     if (!workspaceId || !parsed.success) throw new AppError('SYNC_PAYLOAD_INVALID');
+    await requireWorkspaceAccess(session, workspaceId, dependencies, 'viewer');
     const snapshot = await dependencies.snapshots.getRevision(session.accountId, 'workspace', workspaceId, parsed.data.revision);
     if (!snapshot) throw new AppError('SYNC_NOT_FOUND');
     reply.header('cache-control', 'no-store').send(snapshot);
@@ -275,6 +290,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
     if (!workspaceId || snapshot.domain !== 'workspace' || snapshot.accountId !== session.accountId || snapshot.workspaceId !== workspaceId) {
       throw new AppError('SYNC_PAYLOAD_INVALID');
     }
+    await requireWorkspaceAccess(session, workspaceId, dependencies, 'owner');
     if (snapshot.writerDeviceId !== session.deviceId) throw new AppError('ACCOUNT_DEVICE_REVOKED');
     const result = await dependencies.snapshots.put({
       accountId: session.accountId,

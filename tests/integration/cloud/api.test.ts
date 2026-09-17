@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { buildCloudApp, type CloudAuthApi, type CloudSnapshotApi } from '../../../src/cloud/app.js';
+import { buildCloudApp, type CloudAuthApi, type CloudSnapshotApi, type CloudWorkspaceApi } from '../../../src/cloud/app.js';
 import { loadCloudConfig } from '../../../src/cloud/config.js';
 import type { AccountSession, DeviceDescriptor } from '../../../src/shared/core/models.js';
 import type { CloudDataEnvelope } from '../../../src/shared/cloud/protocol.js';
@@ -61,6 +61,12 @@ const createSnapshots = (): CloudSnapshotApi => ({
   async put() { return head; }
 });
 
+const denyWorkspaces: CloudWorkspaceApi = {
+  async list() { return []; },
+  async canOwn() { return false; },
+  async canView() { return false; }
+};
+
 describe('cloud API', () => {
   const apps: Array<Awaited<ReturnType<typeof buildCloudApp>>> = [];
 
@@ -98,5 +104,19 @@ describe('cloud API', () => {
     });
     expect(invalidWriter.statusCode).toBe(403);
     expect(invalidWriter.json().error.code).toBe('ACCOUNT_DEVICE_REVOKED');
+  });
+
+  it('rejects workspace snapshot access when the authenticated device is not a member', async () => {
+    const app = await buildCloudApp({ config, auth: createAuth(), snapshots: createSnapshots(), workspaces: denyWorkspaces });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v2/workspaces/workspace-1/head',
+      headers: { authorization: `Bearer ${validToken}` }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe('ACCOUNT_DEVICE_REVOKED');
   });
 });
