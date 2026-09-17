@@ -232,9 +232,27 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   const relay = dependencies.relay ?? new BoundedRelayHub(dependencies.config.relay);
   await app.register(websocket, { options: { maxPayload: dependencies.config.relay.maxFrameBytes } });
 
-  app.addHook('onRequest', async (request) => {
-    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) || !request.headers.origin || dependencies.config.trustedOrigins.length === 0) return;
-    if (!dependencies.config.trustedOrigins.includes(request.headers.origin)) {
+  app.addHook('onRequest', async (request, reply) => {
+    const origin = request.headers.origin;
+    const isTrustedOrigin = typeof origin === 'string' && dependencies.config.trustedOrigins.includes(origin);
+    if (isTrustedOrigin) {
+      reply
+        .header('access-control-allow-origin', origin)
+        .header('access-control-allow-credentials', 'true')
+        .header('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
+        .header('access-control-allow-headers', 'authorization,content-type,idempotency-key')
+        .header('access-control-max-age', '600')
+        .header('vary', 'Origin');
+      if (request.method === 'OPTIONS') {
+        reply.code(204).send();
+        return;
+      }
+    }
+    if (request.method === 'OPTIONS' && origin) {
+      throw new AppError('PROTOCOL_INVALID_MESSAGE', '来源不受信任', 403);
+    }
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) || !origin || dependencies.config.trustedOrigins.length === 0) return;
+    if (!isTrustedOrigin) {
       throw new AppError('PROTOCOL_INVALID_MESSAGE', '来源不受信任', 403);
     }
   });

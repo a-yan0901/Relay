@@ -184,4 +184,33 @@ describe('cloud API', () => {
       wrappedKey: { ciphertext: 'wrapped-2' }
     });
   });
+
+  it('serves browser CORS only for configured trusted origins', async () => {
+    const app = await buildCloudApp({
+      config: { ...config, trustedOrigins: ['https://app.example.test'] },
+      auth: createAuth(),
+      snapshots: createSnapshots()
+    });
+    apps.push(app);
+
+    const allowed = await app.inject({
+      method: 'OPTIONS',
+      url: '/v2/auth/session',
+      headers: {
+        origin: 'https://app.example.test',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'authorization'
+      }
+    });
+    expect(allowed.statusCode).toBe(204);
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://app.example.test');
+    expect(allowed.headers.vary).toContain('Origin');
+
+    const denied = await app.inject({
+      method: 'OPTIONS',
+      url: '/v2/auth/session',
+      headers: { origin: 'https://evil.example.test', 'access-control-request-method': 'GET' }
+    });
+    expect(denied.statusCode).toBe(403);
+  });
 });
