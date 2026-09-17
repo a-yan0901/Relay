@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -13,7 +13,10 @@ import type { HostCredentialInput } from '@shared/validation';
 import type { HostMetadataState, WorkspaceRestoreStatus } from '../state/app-state';
 import { TERMINAL_SCROLLBACK_LINES, TerminalOutputSanitizer } from '../terminal-output';
 import { useTerminalSession, type TerminalSessionSnapshot } from '../hooks/use-terminal-session';
+import { useContextMenu } from '../hooks/use-context-menu';
+import type { ContextMenuItem } from '../context-menu';
 import { getTerminalTheme, DEFAULT_PREFERENCES, type UiPreferences } from '../theme';
+import { ContextMenu } from './ContextMenu';
 import { HostKeyDialog } from './HostKeyDialog';
 
 const isTouchDevice = (): boolean => {
@@ -73,21 +76,27 @@ export interface TerminalPanelProps {
   onEditHost?: (host: HostMetadataState) => void;
   onStatusChange?: (snapshot: TerminalSessionSnapshot) => void;
   onToolbarChange?: (terminalId: string, toolbar: TerminalPanelToolbarState | null) => void;
+  onOpenSftp?: () => void;
+  onNewTerminal?: () => void;
   clipboard?: ClipboardPort;
   preferences?: UiPreferences;
   recoveryStatus?: WorkspaceRestoreStatus;
 }
 
-export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, clipboard, preferences = DEFAULT_PREFERENCES, recoveryStatus }: TerminalPanelProps) => {
+export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, onStatusChange, onToolbarChange, onOpenSftp, onNewTerminal, clipboard, preferences = DEFAULT_PREFERENCES, recoveryStatus }: TerminalPanelProps) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
+  const pasteClipboardRef = useRef<() => Promise<void>>(async () => undefined);
   const outputSanitizerRef = useRef(new TerminalOutputSanitizer());
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
+  const [terminalHasSelection, setTerminalHasSelection] = useState(false);
   const [clipboardFeedback, setClipboardFeedback] = useState<string | null>(null);
+  const terminalContextMenu = useContextMenu<'terminal'>();
   const session = useTerminalSession({
     hostId: host.id,
     terminalId,
@@ -162,6 +171,19 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     const dataDisposable = terminal.onData((data) => session.sendInput(data));
     const binaryDisposable = terminal.onBinary((data) => session.sendInput(data));
     const resizeDisposable = terminal.onResize(({ cols, rows }) => sendResizeIfChanged(cols, rows));
+    const selectionDisposable = terminal.onSelectionChange(() => setTerminalHasSelection(terminal.hasSelection()));
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown' || !(event.ctrlKey || event.metaKey)) return true;
+      if (event.key.toLowerCase() === 'c' && terminal.hasSelection()) {
+        void copySelectionRef.current();
+        return false;
+      }
+      if (event.key.toLowerCase() === 'v' && clipboard) {
+        void pasteClipboardRef.current();
+        return false;
+      }
+      return true;
+    });
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
     observer?.observe(mountRef.current);
     fitRef.current = fit;
@@ -174,6 +196,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       dataDisposable.dispose();
       binaryDisposable.dispose();
       resizeDisposable.dispose();
+      selectionDisposable.dispose();
       terminal.dispose();
       terminalRef.current = null;
       outputSanitizerRef.current.reset();
@@ -243,6 +266,39 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     }
   }, [clipboard, session.sendInput]);
 
+  useEffect(() => {
+    copySelectionRef.current = copySelection;
+    pasteClipboardRef.current = pasteClipboard;
+  }, [copySelection, pasteClipboard]);
+
+  const terminalContextItems = useMemo<readonly ContextMenuItem[]>(() => [
+    {
+      id: 'copy',
+      label: '复制',
+      shortcut: 'Ctrl/Cmd+C',
+      disabled: !clipboard || !terminalHasSelection,
+      onSelect: copySelection
+    },
+    {
+      id: 'paste',
+      label: '粘贴',
+      shortcut: 'Ctrl/Cmd+V',
+      disabled: !clipboard,
+      onSelect: pasteClipboard
+    },
+    { id: 'select-all', label: '全选', onSelect: () => terminalRef.current?.selectAll() },
+    { id: 'clear-selection', label: '清除选区', disabled: !terminalHasSelection, onSelect: () => terminalRef.current?.clearSelection() },
+    { id: 'search', label: '搜索终端', onSelect: toggleSearch },
+    { id: 'clear', label: '清屏', onSelect: clear },
+    ...(onOpenSftp ? [{ id: 'open-sftp', label: '打开远程文件', separatorBefore: true, onSelect: onOpenSftp }] : []),
+    ...(onNewTerminal ? [{ id: 'new-terminal', label: '新建 Console', onSelect: onNewTerminal }] : [])
+  ], [clear, clipboard, copySelection, onNewTerminal, onOpenSftp, pasteClipboard, terminalHasSelection, toggleSearch]);
+
+  const openTerminalContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>): void => {
+    setTerminalHasSelection(terminalRef.current?.hasSelection() ?? false);
+    terminalContextMenu.open(event, 'terminal');
+  }, [terminalContextMenu]);
+
   const fullscreen = useCallback((): void => {
     const element = mountRef.current?.closest('.terminal-panel');
     if (!element) return;
@@ -289,7 +345,8 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
   return (
     <section className={`terminal-panel ${active ? 'is-active' : ''}`} aria-hidden={!active}>
       {searchOpen && <div className="terminal-search"><label htmlFor={`terminal-search-${terminalId}`}>终端搜索</label><input id={`terminal-search-${terminalId}`} autoFocus value={searchValue} onChange={(event) => updateSearch(event.target.value)} placeholder="搜索终端输出" /></div>}
-      <div className="terminal-canvas" ref={mountRef} />
+      <div className="terminal-canvas" ref={mountRef} onContextMenu={openTerminalContextMenu} />
+      {terminalContextMenu.state && <ContextMenu state={terminalContextMenu.state} items={terminalContextItems} onClose={terminalContextMenu.close} />}
       {clipboardFeedback && <div className="terminal-clipboard-feedback" role="status" aria-live="polite">{clipboardFeedback}</div>}
       {recoveryStatus === 'needs-reopen' && session.state.state === 'closed' && <div className="terminal-recovery" role="status"><strong>此 Console 需要重新连接</strong><span>原来的远程 Shell 不再可用，重新打开会创建新的 Shell。</span><button className="button button-ghost button-small" type="button" onClick={session.reconnect}>重新打开</button></div>}
       {session.state.error && <div className="terminal-error" role="alert"><strong>{session.state.error.message}</strong>{errorAction !== 'none' && errorActionButton}</div>}

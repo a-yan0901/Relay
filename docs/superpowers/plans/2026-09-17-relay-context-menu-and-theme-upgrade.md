@@ -160,6 +160,9 @@ git commit -m "feat: add accessible relay context menu"
 
 ## Task 2: 接入终端右键菜单和复制粘贴快捷键
 
+**Status:** Done（2026-09-17）
+**Evidence:** `npm test -- --run tests/unit/web/terminal-panel.dom.test.tsx tests/unit/web/terminal-workspace.dom.test.tsx`、`npm run typecheck`、`npm run lint` 均通过。
+
 **Files:**
 
 - Modify: `src/web/components/TerminalPanel.tsx`
@@ -172,7 +175,7 @@ git commit -m "feat: add accessible relay context menu"
 - Consumes: Task 1 的 `ContextMenu`/`useContextMenu`、现有 `ClipboardPort`、`SearchAddon`、`TerminalPanel` 的 `copySelection`/`pasteClipboard`/`clear`。
 - Produces: `TerminalPanelProps.onOpenSftp?: () => void`、`TerminalPanelProps.onNewTerminal?: () => void`；终端选区右键和键盘行为。
 
-- [ ] **Step 1: 扩展 FakeTerminal 和写失败测试**
+- [x] **Step 1: 扩展 FakeTerminal 和写失败测试**
 
 在测试 fake 中增加 `hasSelection()`、`selectAll()`、`onSelectionChange()` 和 `attachCustomKeyEventHandler()`，然后覆盖：右键展示菜单；无选区时复制 disabled；全选调用 xterm；选区存在时 Ctrl+C 不调用 `sendInput` 而调用 clipboard；无选区 Ctrl+C 返回给 xterm；Ctrl/Cmd+V 走现有确认流程；菜单中的“打开远程文件”和“新建 Console”调用对应 props。
 
@@ -183,7 +186,7 @@ await user.click(screen.getByRole('menuitem', { name: '全选' }));
 expect(fakeTerminal.selectAll).toHaveBeenCalledOnce();
 ```
 
-- [ ] **Step 2: 运行终端聚焦测试确认缺口**
+- [x] **Step 2: 运行终端聚焦测试确认缺口**
 
 Run:
 
@@ -193,11 +196,11 @@ npm test -- --run tests/unit/web/terminal-panel.dom.test.tsx tests/unit/web/term
 
 Expected: 新增右键菜单和按键断言在实现前失败，现有终端复制/粘贴测试仍可定位。
 
-- [ ] **Step 3: 连接终端选区和菜单状态**
+- [x] **Step 3: 连接终端选区和菜单状态**
 
 在 TerminalPanel 中监听 `terminal.onSelectionChange`，用 state 维护 `hasSelection`；右键 `.terminal-canvas` 时通过 `useContextMenu` 打开终端目标。菜单项固定为：复制、粘贴、全选、清除选区、搜索、清屏，并按 `clipboard`、`hasSelection` 和可选回调设置 disabled。
 
-- [ ] **Step 4: 接入 xterm 自定义键盘处理**
+- [x] **Step 4: 接入 xterm 自定义键盘处理**
 
 使用 `terminal.attachCustomKeyEventHandler`：
 
@@ -217,11 +220,11 @@ return true;
 
 通过 ref 保存最新 callback，避免 xterm 初始化 effect 因 callback 变化反复销毁会话。无选区 Ctrl+C 必须返回 `true`，保持远端 SIGINT 行为。
 
-- [ ] **Step 5: 把 SFTP/新建 Console 请求接入 Workspace**
+- [x] **Step 5: 把 SFTP/新建 Console 请求接入 Workspace**
 
 TerminalWorkspace 传入：`onOpenSftp={() => setFilePanelOpen(true)}` 和 `onNewTerminal={() => setHostPickerOpen(true)}`；它们只改变当前 Web Workspace 视图，不新增 shared session 状态。
 
-- [ ] **Step 6: 运行终端验证**
+- [x] **Step 6: 运行终端验证**
 
 Run:
 
@@ -233,7 +236,7 @@ npm run lint
 
 Expected: 终端右键、选区快捷键、SFTP 请求和既有复制粘贴测试通过。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/web/components/TerminalPanel.tsx src/web/components/TerminalWorkspace.tsx tests/unit/web/terminal-panel.dom.test.tsx tests/unit/web/terminal-workspace.dom.test.tsx
@@ -629,7 +632,7 @@ git commit -m "docs: record relay interaction and theme verification"
 | Task | 状态 | 说明 |
 | --- | --- | --- |
 | Task 1 | Ready | 等待用户确认计划后实现 |
-| Task 2 | Ready | 依赖 Task 1 |
+| Task 2 | Done | 终端右键菜单、选区复制快捷键和 SFTP/新建 Console 入口已完成；验证通过 |
 | Task 3 | Ready | 依赖 Task 1；包含 Server 标签右键 |
 | Task 4 | Deferred | 第二阶段，复用 Task 1 |
 | Task 5 | Ready | 主题 Token 与预设 |

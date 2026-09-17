@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,6 +14,10 @@ const testState = vi.hoisted(() => ({
   terminalOutputs: [] as Array<string | Uint8Array>,
   onOutput: null as ((data: Uint8Array) => void) | null,
   selection: 'selected terminal output',
+  selectionActive: false,
+  onSelectionChange: null as (() => void) | null,
+  customKeyEventHandler: null as ((event: KeyboardEvent) => boolean) | null,
+  selectAll: vi.fn(),
   diagnostics: [] as OperationDiagnostic[],
   credential: null as { hostId: string; authType: 'password' | 'private_key'; name: string; address: string; port: number; username: string } | null,
   submitCredential: vi.fn(),
@@ -58,8 +62,25 @@ vi.mock('@xterm/xterm', () => ({
       return { dispose: () => {} };
     }
 
+    onSelectionChange(handler: () => void): { dispose: () => void } {
+      testState.onSelectionChange = handler;
+      return { dispose: () => { testState.onSelectionChange = null; } };
+    }
+
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
+      testState.customKeyEventHandler = handler;
+    }
+
     getSelection(): string {
       return testState.selection;
+    }
+
+    hasSelection(): boolean {
+      return testState.selectionActive;
+    }
+
+    selectAll(): void {
+      testState.selectAll();
     }
 
     clearSelection(): void {}
@@ -124,6 +145,10 @@ describe('TerminalPanel mobile selection', () => {
     testState.terminalOutputs.length = 0;
     testState.onOutput = null;
     testState.selection = 'selected terminal output';
+    testState.selectionActive = false;
+    testState.onSelectionChange = null;
+    testState.customKeyEventHandler = null;
+    testState.selectAll.mockReset();
     testState.diagnostics.length = 0;
     testState.credential = null;
     testState.submitCredential.mockReset();
@@ -246,5 +271,63 @@ describe('TerminalPanel mobile selection', () => {
     expect(confirm).toHaveBeenCalledWith('将粘贴 19 个字符到终端，是否继续？');
     expect(testState.sendInput).toHaveBeenCalledWith('echo from clipboard');
     confirm.mockRestore();
+  });
+
+  it('shows context actions for terminal selection and workspace shortcuts', async () => {
+    const user = userEvent.setup();
+    testState.selectionActive = true;
+    const clipboard: ClipboardPort = {
+      readText: vi.fn(async () => 'echo from context menu'),
+      writeText: vi.fn(async () => undefined)
+    };
+    const onOpenSftp = vi.fn();
+    const onNewTerminal = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} onOpenSftp={onOpenSftp} onNewTerminal={onNewTerminal} />);
+
+    fireEvent.contextMenu(document.querySelector('.terminal-canvas')!, { clientX: 160, clientY: 120 });
+    expect(screen.getByRole('menuitem', { name: /^复制/ })).not.toHaveAttribute('aria-disabled', 'true');
+    await user.click(screen.getByRole('menuitem', { name: '全选' }));
+    expect(testState.selectAll).toHaveBeenCalledOnce();
+
+    fireEvent.contextMenu(document.querySelector('.terminal-canvas')!, { clientX: 160, clientY: 120 });
+    await user.click(screen.getByRole('menuitem', { name: /^复制/ }));
+    expect(clipboard.writeText).toHaveBeenCalledWith('selected terminal output');
+
+    fireEvent.contextMenu(document.querySelector('.terminal-canvas')!, { clientX: 160, clientY: 120 });
+    await user.click(screen.getByRole('menuitem', { name: /^粘贴/ }));
+    expect(confirm).toHaveBeenCalledWith('将粘贴 22 个字符到终端，是否继续？');
+    expect(testState.sendInput).toHaveBeenCalledWith('echo from context menu');
+
+    fireEvent.contextMenu(document.querySelector('.terminal-canvas')!, { clientX: 160, clientY: 120 });
+    await user.click(screen.getByRole('menuitem', { name: '打开远程文件' }));
+    fireEvent.contextMenu(document.querySelector('.terminal-canvas')!, { clientX: 160, clientY: 120 });
+    await user.click(screen.getByRole('menuitem', { name: '新建 Console' }));
+    expect(onOpenSftp).toHaveBeenCalledOnce();
+    expect(onNewTerminal).toHaveBeenCalledOnce();
+    confirm.mockRestore();
+  });
+
+  it('copies selected text with Ctrl+C but preserves remote interrupt without a selection', async () => {
+    const clipboard: ClipboardPort = {
+      readText: vi.fn(async () => ''),
+      writeText: vi.fn(async () => undefined)
+    };
+    testState.selectionActive = true;
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} />);
+
+    let result = true;
+    await act(async () => {
+      result = testState.customKeyEventHandler?.(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true })) ?? true;
+    });
+    expect(result).toBe(false);
+    expect(clipboard.writeText).toHaveBeenCalledWith('selected terminal output');
+
+    cleanup();
+    testState.selectionActive = false;
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} />);
+    result = testState.customKeyEventHandler?.(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true })) ?? false;
+    expect(result).toBe(true);
+    expect(testState.sendInput).not.toHaveBeenCalledWith(expect.anything());
   });
 });
