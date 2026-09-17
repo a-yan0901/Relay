@@ -57,7 +57,7 @@ export interface OperationErrorContext {
   hostId: string;
   errorCode: string;
   at: string;
-  state?: Extract<OperationDiagnosticState, 'failed' | 'needs-reopen'>;
+  state?: Extract<OperationDiagnosticState, 'failed' | 'interrupted' | 'needs-reopen'>;
   requestId?: string;
 }
 

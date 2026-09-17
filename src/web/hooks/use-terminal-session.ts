@@ -427,7 +427,7 @@ export class TerminalSessionController {
           operationId: this.options.terminalId,
           hostId: this.options.hostId,
           errorCode: event.code,
-          state,
+          state: needsReopen ? 'needs-reopen' : retryable ? 'interrupted' : 'failed',
           requestId: this.options.terminalId,
           at: new Date().toISOString()
         });
