@@ -400,6 +400,7 @@ describe('TerminalSessionController', () => {
       socket.message(JSON.stringify({ type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务会话已失效，请重新连接终端' }));
 
       expect(controller.snapshot.state).toBe('reconnecting');
+      expect(controller.snapshot.error).toBeNull();
       vi.advanceTimersByTime(0);
       expect(FakeSocket.instances).toHaveLength(2);
     } finally {
@@ -430,6 +431,7 @@ describe('TerminalSessionController', () => {
       second.message(JSON.stringify({ type: 'status', state: 'connecting', serviceInstanceId: 'service-b' }));
 
       expect(controller.snapshot.state).toBe('reconnecting');
+      expect(controller.snapshot.error).toBeNull();
       vi.advanceTimersByTime(0);
       expect(FakeSocket.instances).toHaveLength(3);
       const third = lastSocket();

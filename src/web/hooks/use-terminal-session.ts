@@ -379,7 +379,7 @@ export class TerminalSessionController {
               state: 'reconnecting',
               reconnectDelayMs: 0,
               networkOffline: false,
-              error: { type: 'error', code: 'SERVICE_RESTARTED', message: '服务已重启，正在自动重新连接终端' },
+              error: null,
               credential: null,
               hostKey: null,
               diagnostics: [...this.snapshotValue.diagnostics, operationErrorToDiagnostic({
@@ -427,12 +427,12 @@ export class TerminalSessionController {
         const retryable = event.code === 'SSH_CONNECTION_FAILED';
         if (!retryable) this.retryBlocked = true;
         const needsReopen = ['SESSION_NEEDS_REOPEN', 'SERVICE_RESTARTED', 'OPERATION_NOT_FOUND'].includes(event.code);
-        const state = needsReopen ? 'needs-reopen' : retryable ? 'interrupted' : 'failed';
+        const state = needsReopen ? 'reconnecting' : retryable ? 'interrupted' : 'failed';
         const diagnostic = operationErrorToDiagnostic({
           operationId: this.options.terminalId,
           hostId: this.options.hostId,
           errorCode: event.code,
-          state: needsReopen ? 'needs-reopen' : retryable ? 'interrupted' : 'failed',
+          state: needsReopen ? 'interrupted' : retryable ? 'interrupted' : 'failed',
           requestId: this.options.terminalId,
           at: new Date().toISOString()
         });
@@ -442,7 +442,7 @@ export class TerminalSessionController {
         this.updateSnapshot({
           state,
           networkOffline: false,
-          error: event,
+          error: needsReopen ? null : event,
           credential: null,
           ...(needsReopen ? { reconnectDelayMs: 0 } : {}),
           ...(hasMatchingDiagnostic ? {} : { diagnostics: [...this.snapshotValue.diagnostics, diagnostic].slice(-100) })
