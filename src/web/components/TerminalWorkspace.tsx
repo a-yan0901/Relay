@@ -11,6 +11,7 @@ import { TerminalPanel } from './TerminalPanel';
 import { SftpPanel } from './SftpPanel';
 import { TransferQueue } from './TransferQueue';
 import { SftpWorkspace } from './SftpWorkspace';
+import type { SftpOpenRequest } from './ServerContextMenu';
 import { shortcutCommandForEvent } from '../state/shortcut-map';
 import { createHostSearchIndex, filterHostsByQuery } from '../state/navigation-state';
 
@@ -37,6 +38,8 @@ export interface TerminalWorkspaceProps {
   onOpenBatchCommand?: () => void;
   onOpenBroadcast?: () => void;
   onOpenSnippetPalette?: () => void;
+  openSftpRequest?: SftpOpenRequest | null;
+  onSftpRequestConsumed?: (requestId: string) => void;
   onListSftp?: (hostId: string, path: string) => Promise<readonly SftpEntry[]>;
   onCreateDirectorySftp?: (hostId: string, path: string) => Promise<void>;
   onRenameSftp?: (hostId: string, from: string, to: string) => Promise<void>;
@@ -110,6 +113,8 @@ export const TerminalWorkspace = ({
   onOpenBatchCommand,
   onOpenBroadcast,
   onOpenSnippetPalette,
+  openSftpRequest = null,
+  onSftpRequestConsumed,
   onListSftp,
   onCreateDirectorySftp,
   onRenameSftp,
@@ -207,6 +212,15 @@ export const TerminalWorkspace = ({
   useEffect(() => {
     if (activeTerminalId) clearTerminalAttention(activeTerminalId);
   }, [activeTerminalId, clearTerminalAttention]);
+
+  useEffect(() => {
+    if (!openSftpRequest) return;
+    const targetTerminal = terminals.find((terminal) => terminal.hostId === openSftpRequest.hostId);
+    if (!targetTerminal) return;
+    if (targetTerminal.terminalId !== activeTerminalId) onActivate(targetTerminal.terminalId);
+    setFilePanelOpen(true);
+    onSftpRequestConsumed?.(openSftpRequest.requestId);
+  }, [activeTerminalId, onActivate, onSftpRequestConsumed, openSftpRequest, terminals]);
 
   const visibleHosts = useMemo(() => {
     return filterHostsByQuery(hosts, hostQuery, hostSearchIndex);

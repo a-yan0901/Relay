@@ -1,3 +1,5 @@
+import type { MouseEvent as ReactMouseEvent } from 'react';
+
 import type { GroupSummary } from '../state/app-state';
 import { flattenGroupTree } from '../../shared/core/group-tree';
 
@@ -12,6 +14,7 @@ export interface GroupSidebarProps {
   onFavoriteFilter: (favoriteOnly: boolean) => void;
   onRecentFilter?: (recentOnly: boolean) => void;
   onTagSelected?: (tag: string | null) => void;
+  onTagContextMenu?: (event: ReactMouseEvent<HTMLButtonElement>, tag: string) => void;
 }
 
 export const GroupSidebar = ({
@@ -24,7 +27,8 @@ export const GroupSidebar = ({
   onGroupSelected,
   onFavoriteFilter,
   onRecentFilter = () => undefined,
-  onTagSelected = () => undefined
+  onTagSelected = () => undefined,
+  onTagContextMenu
 }: GroupSidebarProps) => {
   const rows = flattenGroupTree(groups);
   return <aside className="sidebar" aria-label="Server 导航">
@@ -43,7 +47,7 @@ export const GroupSidebar = ({
     {tags.length > 0 && <div className="sidebar-section">
       <div className="sidebar-heading"><p className="sidebar-label">标签</p><span className="sidebar-count">{tags.length}</span></div>
       <div className="tag-filter-list">
-        {tags.map((tag) => <button className={`nav-item tag-filter-item ${selectedTag === tag ? 'is-active' : ''}`} type="button" key={tag} aria-label={`标签 ${tag}`} onClick={() => { onGroupSelected(null); onFavoriteFilter(false); onRecentFilter(false); onTagSelected(tag); }}>
+        {tags.map((tag) => <button className={`nav-item tag-filter-item ${selectedTag === tag ? 'is-active' : ''}`} type="button" key={tag} aria-label={`标签 ${tag}`} onClick={() => { onGroupSelected(null); onFavoriteFilter(false); onRecentFilter(false); onTagSelected(tag); }} onContextMenu={(event) => { event.stopPropagation(); onTagContextMenu?.(event, tag); }}>
           <span className="tag-filter-mark" aria-hidden="true">#</span>{tag}
         </button>)}
       </div>

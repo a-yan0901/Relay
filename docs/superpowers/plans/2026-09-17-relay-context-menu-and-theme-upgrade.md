@@ -245,6 +245,9 @@ git commit -m "feat: add terminal context actions"
 
 ## Task 3: 接入 Server 卡片、卡片标签和左侧标签的右键功能
 
+**Status:** Done（2026-09-17）
+**Evidence:** `npm test -- --run tests/unit/web/server-context-menu.dom.test.tsx tests/unit/web/host-card.dom.test.tsx tests/unit/web/host-workspace.dom.test.tsx tests/unit/web/terminal-workspace.dom.test.tsx`、`npm run typecheck`、`npm run lint` 均通过。
+
 **Files:**
 
 - Create: `src/web/components/ServerContextMenu.tsx`
@@ -273,7 +276,7 @@ export interface ServerContextActions {
   onOpenSftp?: (host: HostMetadataState) => void;
   onCopyText: (value: string) => Promise<void> | void;
   onFavoriteToggle: (host: HostMetadataState) => void;
-  onTagSelected: (tag: string) => void;
+  onTagSelected: (tag: string | null) => void;
   onTestConnection?: (host: HostMetadataState) => void;
   onEdit?: (host: HostMetadataState) => void;
   onClearHostKey?: (host: HostMetadataState) => void;
@@ -286,11 +289,11 @@ export interface SftpOpenRequest {
 }
 ```
 
-- [ ] **Step 1: 写 Server/标签菜单失败测试**
+- [x] **Step 1: 写 Server/标签菜单失败测试**
 
 测试 Host 卡片右键显示“进入 Console、复制地址、复制 SSH 命令、收藏、编辑、删除”；有 Host Key 时显示“清除 Host Key 信任”；删除和清除信任动作调用父级 callback，但菜单本身不绕过父级确认。
 
-测试卡片标签和左侧标签均显示“按此标签筛选、复制标签”；标签右键不触发 Host 卡片菜单；当前标签已选中时显示“清除当前筛选”。
+测试卡片标签和左侧标签均显示“按此标签筛选、复制标签”；标签右键不触发 Host 卡片菜单；当前标签已选中时显示“清除当前标签筛选”。
 
 ```tsx
 fireEvent.contextMenu(screen.getByRole('button', { name: '筛选标签 prod' }), { clientX: 120, clientY: 80 });
@@ -299,7 +302,7 @@ await user.click(screen.getByRole('menuitem', { name: '按此标签筛选' }));
 expect(onTagSelected).toHaveBeenCalledWith('prod');
 ```
 
-- [ ] **Step 2: 运行 Host 聚焦测试确认缺口**
+- [x] **Step 2: 运行 Host 聚焦测试确认缺口**
 
 Run:
 
@@ -309,31 +312,31 @@ npm test -- --run tests/unit/web/server-context-menu.dom.test.tsx tests/unit/web
 
 Expected: 新增菜单断言失败，既有卡片按钮和标签左键筛选测试保持可执行。
 
-- [ ] **Step 3: 增加 Host 和标签目标传递**
+- [x] **Step 3: 增加 Host 和标签目标传递**
 
 给 HostCard 增加 `onContextMenu` 和 `onTagContextMenu`；在标签 button 上调用 `stopPropagation()` 后交给标签目标；HostList/HostWorkspace 原样传递；GroupSidebar 的标签 button 也增加标签目标回调。
 
-- [ ] **Step 4: 实现连接信息格式化和动作列表**
+- [x] **Step 4: 实现连接信息格式化和动作列表**
 
 在 `ServerContextMenu.tsx` 内使用纯函数生成不含 secret 的文本；复制地址保持可读格式，复制 SSH 命令对用户输入做 shell quoting：
 
 ```ts
-export const hostAddressText = (host: HostMetadataState): string => `${host.username}@${host.address}:${host.port}`;
-const shellQuote = (value: string): string => "'" + value.replaceAll("'", "'\\\"'\\\"'") + "'";
-export const sshCommandText = (host: HostMetadataState): string => `ssh -p ${host.port} ${shellQuote(`${host.username}@${host.address}`)}`;
+export const hostAddressText = (host: HostMetadataState): string => host.username + '@' + host.address + ':' + host.port;
+const shellQuote = (value: string): string => "'" + value.split("'").join("'\\\"'\\\"'") + "'";
+export const sshCommandText = (host: HostMetadataState): string => 'ssh -p ' + host.port + ' ' + shellQuote(host.username + '@' + host.address);
 ```
 
 Host 菜单按普通动作、连接管理、危险动作顺序生成；标签菜单只生成标签筛选、复制和清除筛选动作。复制动作统一调用 `onCopyText`，由 App 使用现有 ClipboardPort 处理权限和反馈。
 
-- [ ] **Step 5: 支持从 Server 菜单直接打开 SFTP**
+- [x] **Step 5: 支持从 Server 菜单直接打开 SFTP**
 
 App 增加 `sftpOpenRequest: SftpOpenRequest | null` 状态和 `handleOpenSftp(host)`：先复用 `handleOpenTerminal(host)`，再把 `{ requestId, hostId }` 传给 TerminalWorkspace。TerminalWorkspaceProps 使用 `openSftpRequest?: SftpOpenRequest` 和 `onSftpRequestConsumed?: (requestId: string) => void`；目标 terminal 出现后激活它、打开全屏 SFTP，并回调清理请求，避免刷新或重复 render 再次打开。
 
-- [ ] **Step 6: 保留现有安全确认**
+- [x] **Step 6: 保留现有安全确认**
 
 ServerContextMenu 不直接调用 runtime delete 或 Host Key API，只调用现有 `onDelete` 和 `onClearHostKey`；App 中的 `handleDeleteHost`、`handleClearHostKey` 继续负责 `window.confirm` 和错误反馈。
 
-- [ ] **Step 7: 运行 Server 验证**
+- [x] **Step 7: 运行 Server 验证**
 
 Run:
 
@@ -345,7 +348,7 @@ npm run lint
 
 Expected: Server 卡片、卡片标签、左侧标签和直接打开 SFTP 的行为通过；现有 Host CRUD 测试无回归。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/web/components/ServerContextMenu.tsx src/web/components/HostCard.tsx src/web/components/HostList.tsx src/web/components/HostWorkspace.tsx src/web/components/GroupSidebar.tsx src/web/App.tsx src/web/styles.css tests/unit/web/server-context-menu.dom.test.tsx tests/unit/web/host-card.dom.test.tsx tests/unit/web/host-workspace.dom.test.tsx
@@ -631,9 +634,9 @@ git commit -m "docs: record relay interaction and theme verification"
 
 | Task | 状态 | 说明 |
 | --- | --- | --- |
-| Task 1 | Ready | 等待用户确认计划后实现 |
+| Task 1 | Done | Context Menu 基础设施、App 右键边界和菜单样式已完成；验证通过 |
 | Task 2 | Done | 终端右键菜单、选区复制快捷键和 SFTP/新建 Console 入口已完成；验证通过 |
-| Task 3 | Ready | 依赖 Task 1；包含 Server 标签右键 |
+| Task 3 | Done | Server 卡片、卡片/侧栏标签菜单、复制动作和直接打开 SFTP 已完成；验证通过 |
 | Task 4 | Deferred | 第二阶段，复用 Task 1 |
 | Task 5 | Ready | 主题 Token 与预设 |
 | Task 6 | Ready | 主题预览与刷新持久化 |

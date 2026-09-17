@@ -131,6 +131,30 @@ describe('TerminalWorkspace', () => {
     expect(onClose).toHaveBeenCalledWith('tab-2');
   });
 
+  it('activates the requested Server and consumes a direct SFTP open request', () => {
+    const hosts = [host('host-1', 'Production'), host('host-2', 'Staging')];
+    const terminals: TerminalTabState[] = [
+      { terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null },
+      { terminalId: 'tab-2', hostId: 'host-2', state: 'connected', reconnectDelayMs: 0, errorMessage: null }
+    ];
+    const onActivate = vi.fn();
+    const onSftpRequestConsumed = vi.fn();
+    render(
+      <TerminalWorkspace
+        hosts={hosts}
+        terminals={terminals}
+        activeTerminalId="tab-1"
+        onActivate={onActivate}
+        onClose={vi.fn()}
+        openSftpRequest={{ requestId: 'request-1', hostId: 'host-2' }}
+        onSftpRequestConsumed={onSftpRequestConsumed}
+      />
+    );
+
+    expect(onActivate).toHaveBeenCalledWith('tab-2');
+    expect(onSftpRequestConsumed).toHaveBeenCalledWith('request-1');
+  });
+
   it('offers Broadcast only when at least two sessions are writable', async () => {
     const user = userEvent.setup();
     const onOpenBroadcast = vi.fn();

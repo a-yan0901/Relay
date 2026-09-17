@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -273,5 +273,34 @@ describe('HostWorkspace', () => {
     expect(onFavoriteFilter).toHaveBeenCalledWith(false);
     expect(onRecentFilter).toHaveBeenCalledWith(false);
     expect(onTagSelected).toHaveBeenCalledWith(null);
+  });
+
+  it('opens tag actions from both a card tag and the sidebar tag filter', async () => {
+    const user = userEvent.setup();
+    const onCopyText = vi.fn();
+    render(
+      <HostWorkspace
+        hosts={hosts}
+        groups={groups}
+        query=""
+        selectedGroupId={null}
+        favoriteOnly={false}
+        selectedTag={null}
+        onQueryChange={vi.fn()}
+        onGroupSelected={vi.fn()}
+        onFavoriteFilter={vi.fn()}
+        onFavoriteToggle={vi.fn()}
+        onConnect={vi.fn()}
+        onAddHost={vi.fn()}
+        onCopyText={onCopyText}
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: '筛选标签 prod' }), { clientX: 100, clientY: 100 });
+    await user.click(screen.getByRole('menuitem', { name: '复制标签' }));
+    expect(onCopyText).toHaveBeenCalledWith('prod');
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: '标签 api' }), { clientX: 100, clientY: 100 });
+    await user.click(screen.getByRole('menuitem', { name: '按此标签筛选' }));
   });
 });

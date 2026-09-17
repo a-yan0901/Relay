@@ -21,6 +21,7 @@ import { ShortcutMap } from './components/ShortcutMap';
 import { BroadcastPreview } from './components/BroadcastPreview';
 import { AccountMenu } from './components/AccountMenu';
 import { SyncCenter } from './components/SyncCenter';
+import type { SftpOpenRequest } from './components/ServerContextMenu';
 import type { AccountSession, ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, SyncState, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
 import type { BinarySource, NotificationPermission, NotificationPort } from '../shared/core/ports';
@@ -200,6 +201,7 @@ export const App = ({ runtime }: AppProps) => {
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
   const [recentOnly, setRecentOnly] = useState(false);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [sftpOpenRequest, setSftpOpenRequest] = useState<SftpOpenRequest | null>(null);
   const [networkOnline, setNetworkOnline] = useState(() => globalThis.navigator?.onLine !== false);
   const [networkRecoveryVisible, setNetworkRecoveryVisible] = useState(false);
   const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
@@ -568,6 +570,25 @@ export const App = ({ runtime }: AppProps) => {
     dispatch(action);
     enqueueWorkspaceSave(workspaceStateFromAppState(projectedState));
     setTerminalView(true);
+  };
+
+  const handleOpenSftp = (host: HostMetadataState): void => {
+    handleOpenTerminal(host);
+    setSftpOpenRequest({ requestId: createTerminalId(), hostId: host.id });
+  };
+
+  const handleCopyText = async (value: string): Promise<void> => {
+    const clipboard = runtime.platformServices?.clipboard;
+    if (!clipboard) {
+      setConnectionFeedback({ tone: 'info', message: '当前浏览器不支持剪贴板操作' });
+      return;
+    }
+    try {
+      await clipboard.writeText(value);
+      setConnectionFeedback({ tone: 'info', message: '已复制到剪贴板' });
+    } catch {
+      setConnectionFeedback({ tone: 'info', message: '复制失败，请检查浏览器剪贴板权限' });
+    }
   };
 
   const loadSnippets = async (): Promise<readonly SnippetMetadata[]> => {
@@ -1262,6 +1283,8 @@ export const App = ({ runtime }: AppProps) => {
             onDelete={(host) => void handleDeleteHost(host)}
             onClearHostKey={(host) => void handleClearHostKey(host)}
             onTestConnection={(host) => void handleTestConnection(host)}
+            onOpenSftp={capabilities.supports('sftp.browse') ? handleOpenSftp : undefined}
+            onCopyText={handleCopyText}
           />
         </div>
         <div className="app-view app-view-terminal" hidden={!terminalView} aria-hidden={!terminalView}>
@@ -1276,6 +1299,8 @@ export const App = ({ runtime }: AppProps) => {
             onStatusChange={handleTerminalStatus}
             onOpenBatchCommand={capabilities.supports('automation.batch-exec') ? () => handleOpenBatchCommand(state.terminals.map((terminal) => terminal.hostId), 'workspace') : undefined}
             onOpenBroadcast={capabilities.supports('automation.batch-exec') && capabilities.supports('terminal.broadcast') && maxWorkspacePanes > 1 ? handleOpenBroadcast : undefined}
+            openSftpRequest={sftpOpenRequest}
+            onSftpRequestConsumed={(requestId) => setSftpOpenRequest((current) => current?.requestId === requestId ? null : current)}
             clipboard={runtime.platformServices?.clipboard}
             onOpenSnippetPalette={capabilities.supports('automation.snippets') ? handleOpenSnippetPalette : undefined}
             onListSftp={capabilities.supports('sftp.browse') ? (hostId, path) => runtime.files.list(hostId, path) : undefined}

@@ -1,3 +1,5 @@
+import type { MouseEvent as ReactMouseEvent } from 'react';
+
 import type { GroupSummary, HostMetadataState } from '../state/app-state';
 import { HostCard } from './HostCard';
 
@@ -12,9 +14,11 @@ export interface HostListProps {
   onClearHostKey?: (host: HostMetadataState) => void;
   groups?: readonly GroupSummary[];
   onTagSelected?: (tag: string) => void;
+  onContextMenu?: (event: ReactMouseEvent<HTMLElement>, host: HostMetadataState) => void;
+  onTagContextMenu?: (event: ReactMouseEvent<HTMLButtonElement>, tag: string, host: HostMetadataState) => void;
 }
 
-export const HostList = ({ hosts, onConnect, onFavoriteToggle, onAddHost, onEdit, onDelete, onTestConnection, onClearHostKey, groups = [], onTagSelected }: HostListProps) => {
+export const HostList = ({ hosts, onConnect, onFavoriteToggle, onAddHost, onEdit, onDelete, onTestConnection, onClearHostKey, groups = [], onTagSelected, onContextMenu, onTagContextMenu }: HostListProps) => {
   if (hosts.length === 0) {
     return (
       <div className="empty-state">
@@ -28,7 +32,7 @@ export const HostList = ({ hosts, onConnect, onFavoriteToggle, onAddHost, onEdit
 
   return (
     <div className="host-list" aria-label="Server 列表">
-      {hosts.map((host) => <HostCard key={host.id} host={host} groupName={groups.find((group) => group.id === host.groupId)?.name} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onClearHostKey={onClearHostKey} onTagSelected={onTagSelected} />)}
+      {hosts.map((host) => <HostCard key={host.id} host={host} groupName={groups.find((group) => group.id === host.groupId)?.name} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onClearHostKey={onClearHostKey} onTagSelected={onTagSelected} onContextMenu={onContextMenu} onTagContextMenu={onTagContextMenu} />)}
     </div>
   );
 };

@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, type MouseEvent as ReactMouseEvent } from 'react';
 
 import type { HostMetadataState, GroupSummary } from '../state/app-state';
 import { GroupSidebar } from './GroupSidebar';
 import { HostList } from './HostList';
+import { ServerContextMenu, type ServerContextActions, type ServerContextTarget } from './ServerContextMenu';
+import { useContextMenu } from '../hooks/use-context-menu';
 import { descendantGroupIds } from '../../shared/core/group-tree';
 import { createHostSearchIndex, matchesHostNavigationFilter } from '../state/navigation-state';
 
@@ -29,6 +31,8 @@ export interface HostWorkspaceProps {
   onDelete?: (host: HostMetadataState) => void;
   onTestConnection?: (host: HostMetadataState) => void;
   onClearHostKey?: (host: HostMetadataState) => void;
+  onOpenSftp?: (host: HostMetadataState) => void;
+  onCopyText?: (value: string) => Promise<void> | void;
 }
 
 export const HostWorkspace = ({
@@ -53,8 +57,11 @@ export const HostWorkspace = ({
   onEdit,
   onDelete,
   onTestConnection,
-  onClearHostKey
+  onClearHostKey,
+  onOpenSftp,
+  onCopyText = () => undefined
 }: HostWorkspaceProps) => {
+  const serverContextMenu = useContextMenu<ServerContextTarget>();
   const hostSearchIndex = useMemo(() => createHostSearchIndex(hosts), [hosts]);
   const visibleHosts = useMemo(() => {
     const groupScope = selectedGroupId === null ? null : new Set(descendantGroupIds(selectedGroupId, groups));
@@ -89,6 +96,26 @@ export const HostWorkspace = ({
     onTagSelected(null);
   };
 
+  const openHostContextMenu = (event: ReactMouseEvent<HTMLElement>, host: HostMetadataState): void => {
+    serverContextMenu.open(event, { kind: 'host', host });
+  };
+
+  const openTagContextMenu = (event: ReactMouseEvent<HTMLButtonElement>, tag: string, hostId?: string): void => {
+    serverContextMenu.open(event, { kind: 'tag', tag, ...(hostId ? { hostId } : {}) });
+  };
+
+  const serverContextActions: ServerContextActions = {
+    onConnect,
+    onOpenSftp,
+    onCopyText,
+    onFavoriteToggle,
+    onTagSelected,
+    onTestConnection,
+    onEdit,
+    onClearHostKey,
+    onDelete
+  };
+
   return (
     <div className="workspace-shell">
       <GroupSidebar
@@ -102,6 +129,7 @@ export const HostWorkspace = ({
         onFavoriteFilter={onFavoriteFilter}
         onRecentFilter={onRecentFilter}
         onTagSelected={onTagSelected}
+        onTagContextMenu={(event, tag) => openTagContextMenu(event, tag)}
       />
       <section className="host-pane" aria-labelledby="workspace-title">
         <header className="host-pane-header">
@@ -125,8 +153,9 @@ export const HostWorkspace = ({
         </div>
         {isFilteredEmpty ? (
           <div className="empty-state empty-state-compact"><h2>没有匹配的 Server</h2><p>试试名称、IP、用户名或标签。</p></div>
-        ) : <HostList hosts={visibleHosts} groups={groups} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onAddHost={onAddHost} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onClearHostKey={onClearHostKey} onTagSelected={onTagSelected} />}
+        ) : <HostList hosts={visibleHosts} groups={groups} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onAddHost={onAddHost} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onClearHostKey={onClearHostKey} onTagSelected={onTagSelected} onContextMenu={openHostContextMenu} onTagContextMenu={(event, tag, host) => openTagContextMenu(event, tag, host.id)} />}
       </section>
+      <ServerContextMenu state={serverContextMenu.state} selectedTag={selectedTag} actions={serverContextActions} onClose={serverContextMenu.close} />
     </div>
   );
 };

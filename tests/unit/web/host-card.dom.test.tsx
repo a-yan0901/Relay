@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -78,5 +78,17 @@ describe('HostCard', () => {
     expect(screen.getByText('环境：Production')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '清除 Host Key 信任 Production API' }));
     expect(onClearHostKey).toHaveBeenCalledWith(trustedHost);
+  });
+
+  it('passes right-click targets for the card and its tags', () => {
+    const onContextMenu = vi.fn();
+    const onTagContextMenu = vi.fn();
+    render(<HostCard host={host} onConnect={vi.fn()} onFavoriteToggle={vi.fn()} onContextMenu={onContextMenu} onTagContextMenu={onTagContextMenu} onTagSelected={vi.fn()} />);
+
+    fireEvent.contextMenu(screen.getByRole('article'), { clientX: 80, clientY: 80 });
+    fireEvent.contextMenu(screen.getByRole('button', { name: '筛选标签 prod' }), { clientX: 100, clientY: 100 });
+
+    expect(onContextMenu).toHaveBeenCalledWith(expect.anything(), host);
+    expect(onTagContextMenu).toHaveBeenCalledWith(expect.anything(), 'prod', host);
   });
 });

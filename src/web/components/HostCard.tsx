@@ -1,3 +1,5 @@
+import type { MouseEvent as ReactMouseEvent } from 'react';
+
 import type { HostMetadataState } from '../state/app-state';
 
 export interface HostCardProps {
@@ -10,6 +12,8 @@ export interface HostCardProps {
   onClearHostKey?: (host: HostMetadataState) => void;
   groupName?: string;
   onTagSelected?: (tag: string) => void;
+  onContextMenu?: (event: ReactMouseEvent<HTMLElement>, host: HostMetadataState) => void;
+  onTagContextMenu?: (event: ReactMouseEvent<HTMLButtonElement>, tag: string, host: HostMetadataState) => void;
 }
 
 const formatLastConnected = (value: string | null): string => {
@@ -19,8 +23,8 @@ const formatLastConnected = (value: string | null): string => {
   return `最近连接：${timestamp.toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })}`;
 };
 
-export const HostCard = ({ host, onConnect, onFavoriteToggle, onEdit, onDelete, onTestConnection, onClearHostKey, groupName, onTagSelected }: HostCardProps) => (
-  <article className="host-card">
+export const HostCard = ({ host, onConnect, onFavoriteToggle, onEdit, onDelete, onTestConnection, onClearHostKey, groupName, onTagSelected, onContextMenu, onTagContextMenu }: HostCardProps) => (
+  <article className="host-card" onContextMenu={(event) => onContextMenu?.(event, host)}>
     <div className="host-card-main">
       <div className="card-title-line">
         <h2>{host.name}</h2>
@@ -36,7 +40,7 @@ export const HostCard = ({ host, onConnect, onFavoriteToggle, onEdit, onDelete, 
       </div>
       <p className="host-last-connected">{formatLastConnected(host.lastConnectedAt)}</p>
       {host.tags.length > 0 && <div className="tag-list">{host.tags.map((tag) => onTagSelected
-        ? <button className="tag tag-button" type="button" key={tag} aria-label={`筛选标签 ${tag}`} onClick={() => onTagSelected(tag)}>{tag}</button>
+        ? <button className="tag tag-button" type="button" key={tag} aria-label={`筛选标签 ${tag}`} onClick={() => onTagSelected(tag)} onContextMenu={(event) => { event.stopPropagation(); onTagContextMenu?.(event, tag, host); }}>{tag}</button>
         : <span className="tag" key={tag}>{tag}</span>)}</div>}
     </div>
     <div className="host-card-actions">
