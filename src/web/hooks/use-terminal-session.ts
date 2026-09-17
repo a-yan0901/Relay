@@ -365,29 +365,34 @@ export class TerminalSessionController {
         this.networkOffline = false;
         if (event.serviceInstanceId !== undefined) {
           if (this.serviceInstanceId !== null && this.serviceInstanceId !== event.serviceInstanceId) {
-            this.retryBlocked = true;
             this.clearReconnectTimer();
+            this.serviceInstanceId = null;
+            this.reattachOnly = false;
+            this.retryBlocked = false;
+            this.reconnectExhausted = false;
+            this.reconnectAttempt = 0;
             const currentSocket = this.socket;
             this.detachSocket(currentSocket);
             this.socket = null;
             const at = new Date().toISOString();
             this.updateSnapshot({
-              state: 'needs-reopen',
+              state: 'reconnecting',
               reconnectDelayMs: 0,
               networkOffline: false,
-              error: { type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务已重启，请重新打开终端' },
+              error: { type: 'error', code: 'SERVICE_RESTARTED', message: '服务已重启，正在自动重新连接终端' },
               credential: null,
               hostKey: null,
               diagnostics: [...this.snapshotValue.diagnostics, operationErrorToDiagnostic({
                 operationId: this.options.terminalId,
                 hostId: this.options.hostId,
                 errorCode: 'SERVICE_RESTARTED',
-                state: 'needs-reopen',
+                state: 'interrupted',
                 requestId: this.options.terminalId,
                 at
               })].slice(-100)
             });
             currentSocket?.close(1008, 'service restarted');
+            this.scheduleReconnect(0);
             return;
           }
           this.serviceInstanceId = event.serviceInstanceId;
@@ -442,7 +447,18 @@ export class TerminalSessionController {
           ...(needsReopen ? { reconnectDelayMs: 0 } : {}),
           ...(hasMatchingDiagnostic ? {} : { diagnostics: [...this.snapshotValue.diagnostics, diagnostic].slice(-100) })
         });
-        if (retryable) {
+        if (needsReopen) {
+          this.serviceInstanceId = null;
+          this.reattachOnly = false;
+          this.retryBlocked = false;
+          this.reconnectExhausted = false;
+          this.reconnectAttempt = 0;
+          const currentSocket = this.socket;
+          this.detachSocket(currentSocket);
+          this.socket = null;
+          currentSocket?.close(1008, 'session expired; creating a new shell');
+          this.scheduleReconnect(0);
+        } else if (retryable) {
           const currentSocket = this.socket;
           this.detachSocket(currentSocket);
           this.socket = null;

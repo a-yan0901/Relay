@@ -385,23 +385,29 @@ describe('TerminalSessionController', () => {
     ]);
   });
 
-  it('shows an explicit reopen state when the server says the session is gone', () => {
-    FakeSocket.instances = [];
-    const controller = new TerminalSessionController({
-      hostId: 'host-1',
-      terminalId: 'terminal-1',
-      webSocketFactory: (url) => new FakeSocket(url)
-    });
-    controller.connect();
-    const socket = lastSocket();
-    socket.open();
-    socket.message(JSON.stringify({ type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务会话已失效，请重新连接终端' }));
+  it('automatically reconnects when the server says the session is gone', () => {
+    vi.useFakeTimers();
+    try {
+      FakeSocket.instances = [];
+      const controller = new TerminalSessionController({
+        hostId: 'host-1',
+        terminalId: 'terminal-1',
+        webSocketFactory: (url) => new FakeSocket(url)
+      });
+      controller.connect();
+      const socket = lastSocket();
+      socket.open();
+      socket.message(JSON.stringify({ type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务会话已失效，请重新连接终端' }));
 
-    expect(controller.snapshot.state).toBe('needs-reopen');
-    expect(controller.snapshot.error?.code).toBe('SESSION_NEEDS_REOPEN');
+      expect(controller.snapshot.state).toBe('reconnecting');
+      vi.advanceTimersByTime(0);
+      expect(FakeSocket.instances).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it('carries the service instance across transient reconnects and blocks a changed instance', () => {
+  it('replaces the service instance after a restart and creates a new shell', () => {
     vi.useFakeTimers();
     try {
       FakeSocket.instances = [];
@@ -423,9 +429,12 @@ describe('TerminalSessionController', () => {
       expect(JSON.parse(second.sent[0] as string)).toEqual(expect.objectContaining({ knownServiceInstanceId: 'service-a' }));
       second.message(JSON.stringify({ type: 'status', state: 'connecting', serviceInstanceId: 'service-b' }));
 
-      expect(controller.snapshot.state).toBe('needs-reopen');
-      expect(controller.snapshot.error?.code).toBe('SESSION_NEEDS_REOPEN');
-      expect(FakeSocket.instances).toHaveLength(2);
+      expect(controller.snapshot.state).toBe('reconnecting');
+      vi.advanceTimersByTime(0);
+      expect(FakeSocket.instances).toHaveLength(3);
+      const third = lastSocket();
+      third.open();
+      expect(JSON.parse(third.sent[0] as string)).not.toHaveProperty('knownServiceInstanceId');
     } finally {
       vi.useRealTimers();
     }
