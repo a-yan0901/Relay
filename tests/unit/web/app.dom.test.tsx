@@ -12,6 +12,7 @@ import type {
 
 const apiMocks = vi.hoisted(() => ({
   getSetupStatus: vi.fn(),
+  getWorkspace: vi.fn(),
   listGroups: vi.fn(),
   listHosts: vi.fn(),
   listIdentities: vi.fn(),
@@ -134,6 +135,25 @@ describe('App boot recovery', () => {
     expect(screen.getByText('最近活动')).toBeInTheDocument();
     expect(screen.getByText('身份')).toBeInTheDocument();
     expect(screen.getByText('片段')).toBeInTheDocument();
+  });
+
+  it('keeps recovery details in the workspace without rendering a global summary banner', async () => {
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.getCapabilities.mockResolvedValue({ client: 'web', version: 1, capabilities: [] });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    apiMocks.listIdentities.mockResolvedValue([]);
+    apiMocks.getWorkspace.mockResolvedValue({
+      version: 1,
+      tabs: [{ id: 'tab-missing', hostId: 'host-deleted', title: 'Deleted Server' }],
+      activeTabId: 'tab-missing',
+      layout: { mode: 'single', ratio: 0.5 },
+      filters: { query: '', groupId: null, favoriteOnly: false }
+    });
+    renderApp();
+
+    expect(await screen.findByText('这个工作区标签关联的 Server 已不存在。')).toBeInTheDocument();
+    expect(screen.queryByText(/工作区已加载：/u)).not.toBeInTheDocument();
   });
 
   it('requests notification permission only after an explicit user action', async () => {

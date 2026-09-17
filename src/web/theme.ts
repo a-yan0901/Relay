@@ -98,11 +98,24 @@ export const savePreferences = (preferences: UiPreferences): void => {
   }
 };
 
+const themeColors: Record<ThemeName, string> = {
+  midnight: '#07111f',
+  light: '#eef3f9',
+  contrast: '#000000'
+};
+
 export const applyPreferences = (preferences: UiPreferences): void => {
   if (typeof document === 'undefined') return;
   document.documentElement.dataset.theme = preferences.theme;
   document.documentElement.style.setProperty('color-scheme', preferences.theme === 'light' ? 'light' : 'dark');
   document.documentElement.style.setProperty('--terminal-font-size', `${preferences.fontSize}px`);
+  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', themeColors[preferences.theme]);
+};
+
+export const bootstrapPreferences = (): UiPreferences => {
+  const preferences = loadPreferences();
+  applyPreferences(preferences);
+  return preferences;
 };
 
 export const getTerminalTheme = (theme: ThemeName): TerminalTheme => terminalThemes[theme];

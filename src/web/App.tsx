@@ -1226,15 +1226,6 @@ export const App = ({ runtime }: AppProps) => {
           <span>网络已恢复，正在检查会话状态。</span>
         </div>
       )}
-      {state.workspaceRecovery.some((result) => result.status !== 'restored') && (
-        <div className="global-feedback global-feedback-info" role="status" aria-live="polite">
-          <span>
-            工作区已加载：{state.workspaceRecovery.filter((result) => result.status === 'restored').length} 个 Console 已恢复，
-            {state.workspaceRecovery.filter((result) => result.status === 'needs-reopen').length} 个需要重新连接，
-            {state.workspaceRecovery.filter((result) => result.status === 'missing-host').length} 个 Server 已不存在。
-          </span>
-        </div>
-      )}
       {connectionFeedback && (
         <div className={`global-feedback global-feedback-${connectionFeedback.tone}`} role="status" aria-live="polite">
           <span>{connectionFeedback.message}</span>

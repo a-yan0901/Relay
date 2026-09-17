@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   applyPreferences,
+  bootstrapPreferences,
   loadPreferences,
   savePreferences,
   type UiPreferences
@@ -17,6 +18,7 @@ describe('UI preferences', () => {
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.style.removeProperty('--terminal-font-size');
     document.documentElement.style.removeProperty('color-scheme');
+    document.head.querySelector('meta[name="theme-color"]')?.remove();
   });
 
   it('loads valid preferences and falls back from malformed values', () => {
@@ -36,5 +38,18 @@ describe('UI preferences', () => {
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
     expect(JSON.parse(window.localStorage.getItem('relay.ui.preferences.v1') ?? '{}')).toEqual(preferences);
     expect(window.localStorage.getItem('relay.ui.preferences.v1')).not.toContain('password');
+  });
+
+  it('bootstraps the saved theme before the app renders', () => {
+    window.localStorage.setItem('relay.ui.preferences.v1', JSON.stringify(preferences));
+    const meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    document.head.append(meta);
+
+    expect(bootstrapPreferences()).toEqual(preferences);
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('light');
+    expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
+    expect(meta.content).toBe('#eef3f9');
   });
 });
