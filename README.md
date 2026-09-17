@@ -26,7 +26,7 @@ docker compose up -d --build
 - 同一台 Server 可以打开多个独立 Console；顶部 tab 会显示 `Server · 1`、`Server · 2`，每个窗口拥有自己的输入、尺寸、Host Key 确认和重连状态。
 - 终端工作区优先占用屏幕空间，左侧 rail 可搜索 Server 并使用 `＋` 快速新建 Console；`Ctrl/Cmd+K` 聚焦当前 Server 搜索，`Ctrl/Cmd+W` 关闭当前 Console。
 - 工作区会在服务端持久化打开哪些主机、活动 tab、分屏比例和筛选状态；浏览器刷新会在约 30 秒的会话保留窗口内尝试恢复 live Console。恢复描述只在当前标签页的 `sessionStorage` 保存 `terminalId`、`hostId` 和非敏感的工作区 tab 绑定，不进入持久化工作区；锁定 Vault 或显式关闭 Console 后会清除描述。应用进程重启后只恢复 tab 意图并创建新 shell，不宣称远端 shell 仍然存在。
-- “偏好”中可切换深夜蓝、浅色、高对比主题和终端字号。偏好只保存在当前浏览器，不包含任何密码、私钥或会话 token。
+- “偏好”中可切换深夜蓝、浅色、高对比主题和终端字号；Console 外观支持七套内置主题，也可从默认外观创建自定义 Profile，并按 Server 单独覆盖。自定义终端 Profile 属于加密 Vault 数据，会随 Vault bundle 和同步快照传输；浏览器只有在本机安装对应字体时才能显示指定字体，未安装时由浏览器回退。未单独指定的 Server 继承工作区默认外观，仍被默认设置或 Server 使用的 Profile 不能删除。偏好只保存在当前浏览器，不包含任何密码、私钥或会话 token。
 - “工作区与加密数据”支持加密 Vault bundle 的导出、导入预览和冲突确认；导出密码不会写入 bundle、数据库或日志。
 - “身份”支持创建可复用的密码/私钥身份；多个 Server 可以共享同一身份。Group 支持嵌套、默认身份和连接参数继承，Server 可选择跟随分组身份；导入/导出会保留这些关系。
 - 账号菜单和同步中心在服务端开启账号同步且三项能力协商通过时显示；登录后可同步加密快照、查看设备和处理 revision 冲突。登出或撤销设备只停止同步，不删除当前实例的本地 Vault 数据。

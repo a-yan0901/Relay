@@ -1,6 +1,6 @@
 # Terminal Appearance Profiles Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [x]) syntax for tracking.
 
 **Goal:** Deliver Vault-synced terminal appearance profiles, one Vault default, and optional Server overrides without coupling terminal appearance to browser-local UI themes.
 
@@ -43,7 +43,7 @@
 
 **Produces:** TerminalAppearance, TerminalProfile, BUILTIN_TERMINAL_PROFILES, terminalAppearanceSchema, resolveTerminalProfile.
 
-- [ ] **Step 1: Write the failing test.**
+- [x] **Step 1: Write the failing test.**
 
 ~~~ts
 it('resolves a custom profile and rejects unsafe appearance input', () => {
@@ -53,12 +53,12 @@ it('resolves a custom profile and rejects unsafe appearance input', () => {
 });
 ~~~
 
-- [ ] **Step 2: Verify RED.**
+- [x] **Step 2: Verify RED.**
 
 Run: npm test -- --run tests/unit/shared/terminal-appearance.test.ts
 Expected: module/export not found.
 
-- [ ] **Step 3: Implement the minimal shared model.**
+- [x] **Step 3: Implement the minimal shared model.**
 
 ~~~ts
 export const terminalAppearanceSchema = z.object({
@@ -74,12 +74,12 @@ export const terminalAppearanceSchema = z.object({
 }).strict();
 ~~~
 
-- [ ] **Step 4: Verify GREEN.**
+- [x] **Step 4: Verify GREEN.**
 
 Run: npm test -- --run tests/unit/shared/terminal-appearance.test.ts
 Expected: PASS.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ~~~bash
 git add src/shared/terminal-appearance.ts src/shared/validation.ts tests/unit/shared/terminal-appearance.test.ts
@@ -95,7 +95,7 @@ git commit -m "feat: add terminal appearance profile model"
 
 **Produces:** terminal_profiles, terminal_preferences, nullable hosts.terminal_profile_id, TerminalProfileService.
 
-- [ ] **Step 1: Write the failing migration/service tests.**
+- [x] **Step 1: Write the failing migration/service tests.**
 
 ~~~ts
 expect(service.getDefault('default').id).toBe('builtin:midnight');
@@ -104,21 +104,21 @@ await service.setDefault('default', 'profile-ops');
 await expect(service.delete('default', 'profile-ops')).rejects.toMatchObject({ code: 'TERMINAL_PROFILE_IN_USE' });
 ~~~
 
-- [ ] **Step 2: Verify RED.**
+- [x] **Step 2: Verify RED.**
 
 Run: npm test -- --run tests/unit/server/migrations.test.ts tests/unit/server/terminal-profile-service.test.ts
 Expected: table/service absent.
 
-- [ ] **Step 3: Implement migration and repository/service methods.**
+- [x] **Step 3: Implement migration and repository/service methods.**
 
 Create terminal_profiles(id, owner_id, name, appearance_json, created_at, updated_at) and terminal_preferences(owner_id, default_profile_id, created_at, updated_at); add nullable hosts.terminal_profile_id. Ensure getDefault creates builtin:midnight preference idempotently. Service permits built-ins, verifies custom ownership, and blocks deletion when default or assigned by a Host.
 
-- [ ] **Step 4: Verify GREEN.**
+- [x] **Step 4: Verify GREEN.**
 
 Run: npm test -- --run tests/unit/server/migrations.test.ts tests/unit/server/terminal-profile-service.test.ts
 Expected: PASS.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ~~~bash
 git add src/server/db/migrations.ts src/server/db/types.ts src/server/db/repositories.ts src/server/terminal/terminal-profile-service.ts src/shared/validation.ts tests/unit/server/migrations.test.ts tests/unit/server/terminal-profile-service.test.ts
@@ -132,9 +132,9 @@ git commit -m "feat: persist terminal appearance profiles"
 - Modify: src/server/app.ts, src/server/api/host-routes.ts, src/server/api/route-helpers.ts
 - Test: tests/integration/server/terminal-profile-routes.test.ts, tests/integration/server/host-routes.test.ts
 
-**Produces:** GET/POST/PATCH/DELETE /api/terminal-profiles and GET/PATCH /api/terminal-preferences; Host terminalProfileId DTO and validation.
+**Produces:** GET/POST/PATCH/DELETE /api/terminal-profiles and PUT /api/terminal-profiles/default; Host terminalProfileId DTO and validation.
 
-- [ ] **Step 1: Write the failing route test.**
+- [x] **Step 1: Write the failing route test.**
 
 ~~~ts
 const created = await app.inject({ method: 'POST', url: '/api/terminal-profiles', headers: { cookie }, payload: { name: 'Ops', appearance: appearance() } });
@@ -143,21 +143,21 @@ const host = await app.inject({ method: 'PATCH', url: '/api/hosts/' + hostId, he
 expect(host.json().terminalProfileId).toBe(created.json().id);
 ~~~
 
-- [ ] **Step 2: Verify RED.**
+- [x] **Step 2: Verify RED.**
 
 Run: npm test -- --run tests/integration/server/terminal-profile-routes.test.ts tests/integration/server/host-routes.test.ts
 Expected: 404 and missing Host property.
 
-- [ ] **Step 3: Implement unlocked-session routes and assignment checks.**
+- [x] **Step 3: Implement unlocked-session routes and assignment checks.**
 
 All routes call requireUnlockedSession. Host create/patch calls validateAssignment before writing. Only a null ID, built-in ID, or same-owner custom ID is valid. Profile and Host mutations schedule sync through the existing coordinator.
 
-- [ ] **Step 4: Verify GREEN.**
+- [x] **Step 4: Verify GREEN.**
 
 Run: npm test -- --run tests/integration/server/terminal-profile-routes.test.ts tests/integration/server/host-routes.test.ts
 Expected: PASS.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ~~~bash
 git add src/server/api/terminal-profile-routes.ts src/server/app.ts src/server/api/host-routes.ts src/server/api/route-helpers.ts tests/integration/server/terminal-profile-routes.test.ts tests/integration/server/host-routes.test.ts
@@ -172,7 +172,7 @@ git commit -m "feat: expose terminal profile assignments"
 
 **Produces:** terminalProfiles and terminalPreferences in exported payloads and snapshots.
 
-- [ ] **Step 1: Write compatibility tests.**
+- [x] **Step 1: Write compatibility tests.**
 
 ~~~ts
 expect(parsePayload(legacyPayload)).toMatchObject({ terminalProfiles: [], terminalPreferences: { defaultProfileId: 'builtin:midnight' } });
@@ -180,21 +180,21 @@ expect(await bundleService.createPayload(key)).toMatchObject({ terminalProfiles:
 expect(restoredHost.terminalProfileId).toBe('profile-ops');
 ~~~
 
-- [ ] **Step 2: Verify RED.**
+- [x] **Step 2: Verify RED.**
 
 Run: npm test -- --run tests/unit/server/vault-bundle.test.ts tests/integration/server/sync-routes.test.ts
 Expected: profile payload fields absent.
 
-- [ ] **Step 3: Implement versioned payload and transactional import.**
+- [x] **Step 3: Implement versioned payload and transactional import.**
 
 Keep old envelope parsing. Legacy plaintext creates empty profiles/default Midnight. New payload validation accepts profile/default fields, remaps custom profile name conflicts to "<name> (imported N)", rewrites incoming Host IDs to the remapped ID, and writes profiles/default/Hosts in the existing transaction. Sync snapshot creates, validates, previews and applies the same fields.
 
-- [ ] **Step 4: Verify GREEN.**
+- [x] **Step 4: Verify GREEN.**
 
 Run: npm test -- --run tests/unit/server/vault-bundle.test.ts tests/integration/server/sync-routes.test.ts
 Expected: PASS with legacy and sync round-trip coverage.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ~~~bash
 git add src/server/workspace/vault-bundle-service.ts src/server/sync/sync-snapshot.ts src/shared/import/types.ts tests/unit/server/vault-bundle.test.ts tests/integration/server/sync-routes.test.ts
@@ -210,7 +210,7 @@ git commit -m "feat: sync terminal appearance profiles"
 
 **Produces:** settings profile manager, inheritance/override selector, and hot-applied TerminalAppearance.
 
-- [ ] **Step 1: Write failing DOM tests.**
+- [x] **Step 1: Write failing DOM tests.**
 
 ~~~tsx
 await user.click(screen.getByRole('button', { name: '新建终端外观' }));
@@ -222,21 +222,21 @@ expect(testState.terminalInstances).toHaveLength(1);
 expect(testState.terminalInstances[0].options.cursorStyle).toBe('bar');
 ~~~
 
-- [ ] **Step 2: Verify RED.**
+- [x] **Step 2: Verify RED.**
 
 Run: npm test -- --run tests/unit/web/terminal-profile-manager.dom.test.tsx tests/unit/web/host-form.dom.test.tsx tests/unit/web/terminal-panel.dom.test.tsx tests/unit/web/api.test.ts
 Expected: controls, port parsing and appearance prop absent.
 
-- [ ] **Step 3: Implement UI and xterm option updates.**
+- [x] **Step 3: Implement UI and xterm option updates.**
 
 Load profiles/default after unlock and after bundle/sync apply. Settings separates Application appearance from Terminal appearance and opens manager. Editor uses input type=color for colors and controlled typography/cursor fields. Host form sends null for inheritance. Resolve Host profile in App/Workspace. TerminalPanel constructs and updates xterm.options with a fresh converted theme object, font family/size, line height, cursor style/blink and scrollback; refit without disposing the terminal.
 
-- [ ] **Step 4: Verify GREEN.**
+- [x] **Step 4: Verify GREEN.**
 
 Run: npm test -- --run tests/unit/web/terminal-profile-manager.dom.test.tsx tests/unit/web/host-form.dom.test.tsx tests/unit/web/terminal-panel.dom.test.tsx tests/unit/web/api.test.ts
 Expected: PASS and exactly one terminal instance after a profile update.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ~~~bash
 git add src/web/api.ts src/web/platform/web-adapters.ts src/web/App.tsx src/web/components/HostForm.tsx src/web/components/TerminalWorkspace.tsx src/web/components/TerminalPanel.tsx src/web/components/TerminalProfileManager.tsx src/web/components/TerminalProfileEditor.tsx src/web/theme.ts src/web/styles.css tests/unit/web/terminal-profile-manager.dom.test.tsx tests/unit/web/host-form.dom.test.tsx tests/unit/web/terminal-panel.dom.test.tsx tests/unit/web/api.test.ts
@@ -248,11 +248,11 @@ git commit -m "feat: manage terminal appearance profiles"
 **Files:**
 - Modify: README.md
 
-- [ ] **Step 1: Document inheritance and browser font limitations.**
+- [x] **Step 1: Document inheritance and browser font limitations.**
 
 State that custom terminal profiles are encrypted Vault data, browser-installed fonts are required, inheritance is the default, and in-use profiles cannot be deleted.
 
-- [ ] **Step 2: Run full verification.**
+- [x] **Step 2: Run full verification.**
 
 ~~~bash
 npm test
@@ -265,7 +265,7 @@ git status --short
 
 Expected: zero test failures/type/lint errors, successful web/server build, no unrelated files staged.
 
-- [ ] **Step 3: Commit the final documentation.**
+- [x] **Step 3: Commit the final documentation.**
 
 ~~~bash
 git add README.md

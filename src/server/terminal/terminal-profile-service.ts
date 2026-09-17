@@ -19,6 +19,12 @@ export class TerminalProfileService {
     const timestamp=new Date().toISOString(); const profile={id: randomUUID(), ...parsed.data, createdAt: timestamp, updatedAt: timestamp};
     return this.profiles(ownerId).create(profile);
   }
+  update(ownerId: string, id: string, input: unknown): TerminalProfile {
+    if (isBuiltinTerminalProfileId(id)) throw new AppError('HOST_VALIDATION_FAILED');
+    const current = this.profiles(ownerId).get(id); if (!current) throw new AppError('NOT_FOUND');
+    const parsed = terminalProfileInputSchema.safeParse(input); if (!parsed.success) throw new AppError('HOST_VALIDATION_FAILED');
+    return this.profiles(ownerId).update(id, parsed.data);
+  }
   setDefault(ownerId: string, id: string): TerminalProfile { const profile=this.find(ownerId,id); if(!profile) throw new AppError('NOT_FOUND'); this.preferences(ownerId).setDefaultProfileId(id); return profile; }
   delete(ownerId: string, id: string): void {
     if(isBuiltinTerminalProfileId(id) || !this.profiles(ownerId).get(id)) throw new AppError('NOT_FOUND');

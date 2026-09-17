@@ -1970,6 +1970,12 @@ export class TerminalProfileRepository {
     this.database.prepare('INSERT INTO terminal_profiles (id, owner_id, name, appearance_json, created_at, updated_at) VALUES (@id, @ownerId, @name, @appearance, @createdAt, @updatedAt)').run({ id: input.id, ownerId: this.ownerId, name: input.name, appearance: JSON.stringify(input.appearance), createdAt: input.createdAt, updatedAt: input.updatedAt });
     return input;
   }
+  update(id: string, input: Pick<TerminalProfile, 'name' | 'appearance'>): TerminalProfile {
+    const current = this.get(id); if (!current) throw new AppError('NOT_FOUND');
+    const updatedAt = now();
+    this.database.prepare('UPDATE terminal_profiles SET name=@name, appearance_json=@appearance, updated_at=@updatedAt WHERE id=@id AND owner_id=@ownerId').run({ id, ownerId: this.ownerId, name: input.name, appearance: JSON.stringify(input.appearance), updatedAt });
+    return this.get(id) ?? { ...current, ...input, updatedAt };
+  }
   delete(id: string): void { const result=this.database.prepare('DELETE FROM terminal_profiles WHERE id=@id AND owner_id=@ownerId').run({id,ownerId:this.ownerId}); if (!result.changes) throw new AppError('NOT_FOUND'); }
 }
 
