@@ -144,11 +144,19 @@ export const WEB_CAPABILITIES: readonly Capability[] = WEB_BASE_CAPABILITIES;
 
 export interface WebCapabilityOptions extends Partial<CapabilityLimits> {
   accountSyncEnabled?: boolean;
+  /** Enables account/device ports without implying encrypted sync. */
+  accountEnabled?: boolean;
+  /** Enables the legacy encrypted sync port independently of account auth. */
+  syncEnabled?: boolean;
 }
 
 export const createWebCapabilitySet = (options: WebCapabilityOptions = {}): CapabilitySet => {
-  const capabilities = options.accountSyncEnabled
-    ? WEB_CLIENT_CAPABILITIES
-    : WEB_BASE_CAPABILITIES;
+  const accountEnabled = options.accountEnabled ?? options.accountSyncEnabled ?? false;
+  const syncEnabled = options.syncEnabled ?? options.accountSyncEnabled ?? false;
+  const capabilities: readonly Capability[] = [
+    ...WEB_BASE_CAPABILITIES,
+    ...(accountEnabled ? ['account.auth', 'device.trust'] as const : []),
+    ...(syncEnabled ? ['sync.encrypted'] as const : [])
+  ];
   return createCapabilitySet('web', capabilities, options);
 };

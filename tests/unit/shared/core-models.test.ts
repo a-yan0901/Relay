@@ -7,7 +7,7 @@ import {
   type WorkspaceState
 } from '../../../src/shared/core/models.js';
 import { connectionProfileSchema, workspaceStateSchema } from '../../../src/shared/validation.js';
-import { createCapabilitySet, effectiveMaxPanes, negotiateCapabilitySet } from '../../../src/shared/core/capabilities.js';
+import { createCapabilitySet, createWebCapabilitySet, effectiveMaxPanes, negotiateCapabilitySet } from '../../../src/shared/core/capabilities.js';
 
 const profile = (hostId: string, jumpHostIds: string[] = []): ConnectionProfile => ({
   hostId,
@@ -83,5 +83,17 @@ describe('shared core models', () => {
     expect(negotiated.capabilities).toBe(negotiated.intersection);
     expect(negotiated.supports('account.auth')).toBe(false);
     expect(negotiated.supports('sync.encrypted')).toBe(false);
+  });
+
+  it('separates cloud account capability from the legacy local sync capability', () => {
+    const cloudAccount = createWebCapabilitySet({ accountEnabled: true, syncEnabled: false });
+    expect(cloudAccount.supports('account.auth')).toBe(true);
+    expect(cloudAccount.supports('device.trust')).toBe(true);
+    expect(cloudAccount.supports('sync.encrypted')).toBe(false);
+
+    const localSync = createWebCapabilitySet({ accountSyncEnabled: true });
+    expect(localSync.supports('account.auth')).toBe(true);
+    expect(localSync.supports('device.trust')).toBe(true);
+    expect(localSync.supports('sync.encrypted')).toBe(true);
   });
 });

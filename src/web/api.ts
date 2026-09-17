@@ -6,6 +6,8 @@ import type { TerminalProfile } from '@shared/terminal-appearance';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
 import type { VaultRecoveryInput } from '@shared/core/ports';
+import type { CloudWorkspaceDescriptor } from '@shared/cloud/client';
+import type { CloudDeviceDescriptor } from '@shared/cloud/protocol';
 
 export interface SetupStatus {
   initialized: boolean;
@@ -16,6 +18,7 @@ export interface CapabilityResponse {
   client: ClientPlatform;
   version: 1;
   capabilities: Capability[];
+  accountMode?: 'none' | 'local' | 'cloud';
   limits?: {
     maxWorkspacePanes?: number;
     /** @deprecated Older servers called this limit maxPanes. */
@@ -28,6 +31,14 @@ export interface AccountSessionResponse {
 }
 
 export interface AccountAuthResponse {
+  account: AccountSession;
+}
+
+export interface CloudAccountSessionResponse {
+  account: AccountSession | null;
+}
+
+export interface CloudAuthResponse {
   account: AccountSession;
 }
 
@@ -46,6 +57,19 @@ export interface WebAccountApi {
   restoreDeletion(): Promise<void>;
   listDevices(): Promise<DeviceDescriptor[]>;
   revokeDevice(deviceId: string): Promise<void>;
+}
+
+export interface WebCloudAccountApi {
+  getCloudAccountSession(): Promise<CloudAccountSessionResponse>;
+  registerCloud(email: string, password: string, deviceLabel?: string): Promise<CloudAuthResponse>;
+  signInCloud(email: string, password: string, deviceLabel?: string): Promise<CloudAuthResponse>;
+  refreshCloud(): Promise<CloudAuthResponse>;
+  signOutCloud(): Promise<void>;
+  listCloudDevices(): Promise<readonly CloudDeviceDescriptor[]>;
+  revokeCloudDevice(deviceId: string): Promise<void>;
+  trustCloudDevice(deviceId: string): Promise<void>;
+  listCloudWorkspaces(): Promise<readonly CloudWorkspaceDescriptor[]>;
+  getCloudWorkspace(workspaceId: string): Promise<CloudWorkspaceDescriptor>;
 }
 
 export interface WebSyncStateResponse {
@@ -229,16 +253,18 @@ const hasExactKeys = (value: Record<string, unknown>, keys: readonly string[]): 
 
 const parseAccountSession = (value: unknown): AccountSession => {
   if (!isRecord(value)
-    || !hasExactKeys(value, ['accountId', 'deviceId', 'state', 'expiresAt'])
+    || !hasExactKeys(value, ['accountId', 'deviceId', 'state', 'expiresAt', ...(value.trusted === undefined ? [] : ['trusted'])])
     || !isNonEmptyString(value.accountId)
     || !isNonEmptyString(value.deviceId)
     || (value.state !== 'signed-in' && value.state !== 'revoked')
-    || !isIsoDate(value.expiresAt)) return invalidResponse();
+    || !isIsoDate(value.expiresAt)
+    || (value.trusted !== undefined && typeof value.trusted !== 'boolean')) return invalidResponse();
   return {
     accountId: value.accountId,
     deviceId: value.deviceId,
     state: value.state,
-    expiresAt: value.expiresAt
+    expiresAt: value.expiresAt,
+    ...(value.trusted === undefined ? {} : { trusted: value.trusted })
   };
 };
 
@@ -307,6 +333,52 @@ const parseDevice = (value: unknown): DeviceDescriptor => {
     lastSeenAt: value.lastSeenAt,
     current: value.current,
     revokedAt: value.revokedAt
+  };
+};
+
+const parseCloudDevice = (value: unknown): CloudDeviceDescriptor => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['id', 'label', 'platform', 'lastSeenAt', 'current', 'revokedAt', ...(value.trustedAt === undefined ? [] : ['trustedAt'])])
+    || !isNonEmptyString(value.id)
+    || !isNonEmptyString(value.label)
+    || (value.platform !== 'web' && value.platform !== 'desktop' && value.platform !== 'android')
+    || (value.lastSeenAt !== null && !isIsoDate(value.lastSeenAt))
+    || typeof value.current !== 'boolean'
+    || (value.revokedAt !== null && !isIsoDate(value.revokedAt))
+    || (value.trustedAt !== undefined && value.trustedAt !== null && !isIsoDate(value.trustedAt))) return invalidResponse();
+  return {
+    id: value.id,
+    label: value.label,
+    platform: value.platform,
+    lastSeenAt: value.lastSeenAt,
+    current: value.current,
+    revokedAt: value.revokedAt,
+    ...(value.trustedAt === undefined ? {} : { trustedAt: value.trustedAt, trusted: value.trustedAt !== null })
+  };
+};
+
+const parseCloudWorkspace = (value: unknown): CloudWorkspaceDescriptor => {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ['id', 'accountId', 'ownerDeviceId', 'encryptedTitle', 'createdAt', 'updatedAt', 'deletedAt', ...(value.online === undefined ? [] : ['online']), ...(value.activeViewerCount === undefined ? [] : ['activeViewerCount'])])
+    || !isNonEmptyString(value.id)
+    || !isNonEmptyString(value.accountId)
+    || !isNonEmptyString(value.ownerDeviceId)
+    || typeof value.encryptedTitle !== 'string'
+    || !isIsoDate(value.createdAt)
+    || !isIsoDate(value.updatedAt)
+    || (value.deletedAt !== null && !isIsoDate(value.deletedAt))
+    || (value.online !== undefined && typeof value.online !== 'boolean')
+    || (value.activeViewerCount !== undefined && (!isInteger(value.activeViewerCount) || value.activeViewerCount < 0 || value.activeViewerCount > 16))) return invalidResponse();
+  return {
+    id: value.id,
+    accountId: value.accountId,
+    ownerDeviceId: value.ownerDeviceId,
+    encryptedTitle: value.encryptedTitle,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    deletedAt: value.deletedAt,
+    ...(value.online === undefined ? {} : { online: value.online }),
+    ...(value.activeViewerCount === undefined ? {} : { activeViewerCount: value.activeViewerCount })
   };
 };
 
@@ -589,6 +661,38 @@ export const listDevices: WebAccountApi['listDevices'] = () => request<unknown>(
 });
 
 export const revokeDevice: WebAccountApi['revokeDevice'] = (deviceId) => request<void>(`/api/account/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
+
+export const getCloudAccountSession: WebCloudAccountApi['getCloudAccountSession'] = () => request<unknown>('/api/cloud/account/session').then(parseAccountSessionResponse);
+
+export const registerCloud: WebCloudAccountApi['registerCloud'] = (email, password, deviceLabel) => request<unknown>('/api/cloud/account/register', {
+  method: 'POST',
+  ...json({ email, password, ...(deviceLabel === undefined ? {} : { deviceLabel }) })
+}).then(parseAccountAuthResponse);
+
+export const signInCloud: WebCloudAccountApi['signInCloud'] = (email, password, deviceLabel) => request<unknown>('/api/cloud/account/session', {
+  method: 'POST',
+  ...json({ email, password, ...(deviceLabel === undefined ? {} : { deviceLabel }) })
+}).then(parseAccountAuthResponse);
+
+export const refreshCloud: WebCloudAccountApi['refreshCloud'] = () => request<unknown>('/api/cloud/account/refresh', { method: 'POST', ...json({}) }).then(parseAccountAuthResponse);
+
+export const signOutCloud: WebCloudAccountApi['signOutCloud'] = () => request<void>('/api/cloud/account/session', { method: 'DELETE' });
+
+export const listCloudDevices: WebCloudAccountApi['listCloudDevices'] = () => request<unknown>('/api/cloud/devices').then((value) => {
+  if (!Array.isArray(value)) return invalidResponse();
+  return value.map(parseCloudDevice);
+});
+
+export const revokeCloudDevice: WebCloudAccountApi['revokeCloudDevice'] = (deviceId) => request<void>(`/api/cloud/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
+
+export const trustCloudDevice: WebCloudAccountApi['trustCloudDevice'] = (deviceId) => request<void>(`/api/cloud/devices/${encodeURIComponent(deviceId)}/trust`, { method: 'POST', ...json({}) });
+
+export const listCloudWorkspaces: WebCloudAccountApi['listCloudWorkspaces'] = () => request<unknown>('/api/cloud/workspaces').then((value) => {
+  if (!Array.isArray(value)) return invalidResponse();
+  return value.map(parseCloudWorkspace);
+});
+
+export const getCloudWorkspace: WebCloudAccountApi['getCloudWorkspace'] = (workspaceId) => request<unknown>(`/api/cloud/workspaces/${encodeURIComponent(workspaceId)}/descriptor`).then(parseCloudWorkspace);
 
 export const getSyncState: WebSyncApi['getSyncState'] = () => request<unknown>('/api/sync/v1/state').then(parseSyncStateResponse);
 

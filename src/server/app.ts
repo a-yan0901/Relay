@@ -68,7 +68,7 @@ import type { SyncCoordinatorPort, SyncServiceContract, SyncTransport } from './
 import { SyncSnapshotService } from './sync/sync-snapshot.js';
 import { CloudApiClient } from '../shared/cloud/client.js';
 import { CloudBrowserSessionStore } from './cloud/cloud-session-store.js';
-import { registerCloudAccountRoutes, type CloudAccountRouteClient } from './cloud/cloud-account-routes.js';
+import { CLOUD_ACCOUNT_SESSION_COOKIE_NAME, registerCloudAccountRoutes, type CloudAccountRouteClient } from './cloud/cloud-account-routes.js';
 
 export interface AppDependencies {
   database: SqliteDatabase;
@@ -246,6 +246,13 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     syncCoordinator
   };
 
+  const cloudApiClient = dependencies.cloudApiClient ?? (dependencies.config.cloudApiUrl ? new CloudApiClient(dependencies.config.cloudApiUrl) : undefined);
+  const cloudSessionStore = cloudApiClient
+    ? dependencies.cloudSessionStore ?? new CloudBrowserSessionStore()
+    : undefined;
+  const cloudAccountEnabled = cloudApiClient !== undefined;
+  const localAccountEnabled = !cloudAccountEnabled && dependencies.config.accountSyncEnabled === true;
+
   const app = Fastify({
     genReqId: () => `req_${randomUUID()}`,
     logger: {
@@ -283,12 +290,22 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
   app.addHook('onRequest', async (request) => {
     const accountSessionId = getAccountSessionId(request);
     const account = accountSessionId ? accountService.status(accountSessionId) : null;
+    const cloudSessionId = request.cookies[CLOUD_ACCOUNT_SESSION_COOKIE_NAME];
+    let cloudAccount = null;
+    if (cloudSessionStore && typeof cloudSessionId === 'string') {
+      try {
+        cloudAccount = cloudSessionStore.get(cloudSessionId)?.account ?? null;
+      } catch {
+        cloudAccount = null;
+      }
+    }
     const vaultSessionId = getSessionId(request);
     const vaultSession = vaultSessionId ? sessionStore.get(vaultSessionId) : null;
-    if (account && vaultSession && vaultSession.ownerId === DEFAULT_OWNER_ID) {
-      sessionStore.bindOwner(vaultSession.id, account.accountId);
+    const effectiveAccount = account ?? cloudAccount;
+    if (effectiveAccount && vaultSession && vaultSession.ownerId === DEFAULT_OWNER_ID) {
+      sessionStore.bindOwner(vaultSession.id, effectiveAccount.accountId);
     }
-    enterOwnerContext(account?.accountId ?? vaultSession?.ownerId ?? DEFAULT_OWNER_ID);
+    enterOwnerContext(effectiveAccount?.accountId ?? vaultSession?.ownerId ?? DEFAULT_OWNER_ID);
 
     if (!isMutatingMethod(request.method) || !request.headers.origin) {
       return;
@@ -342,9 +359,16 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     // intersects it with its own local rendering limit.
     const capabilitySet = createWebCapabilitySet({
       maxWorkspacePanes: dependencies.config.maxSessions,
-      accountSyncEnabled: dependencies.config.accountSyncEnabled === true
+      accountEnabled: cloudAccountEnabled || localAccountEnabled,
+      syncEnabled: localAccountEnabled
     });
-    reply.send({ client: capabilitySet.client, version: capabilitySet.version, capabilities: capabilitySet.capabilities, limits: capabilitySet.limits });
+    reply.send({
+      client: capabilitySet.client,
+      version: capabilitySet.version,
+      capabilities: capabilitySet.capabilities,
+      limits: capabilitySet.limits,
+      accountMode: cloudAccountEnabled ? 'cloud' : localAccountEnabled ? 'local' : 'none'
+    });
   });
 
   await registerSetupRoutes(app, {
@@ -356,21 +380,20 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     accountService,
     accountSessionStore,
     auditRepository,
-    enabled: dependencies.config.accountSyncEnabled === true,
+    enabled: localAccountEnabled,
     secureCookie: dependencies.config.nodeEnv === 'production',
     syncCoordinator
   });
-  const cloudApiClient = dependencies.cloudApiClient ?? (dependencies.config.cloudApiUrl ? new CloudApiClient(dependencies.config.cloudApiUrl) : undefined);
   if (cloudApiClient) {
     await registerCloudAccountRoutes(app, {
       enabled: true,
       client: cloudApiClient,
-      sessions: dependencies.cloudSessionStore ?? new CloudBrowserSessionStore(),
+      sessions: cloudSessionStore!,
       secureCookie: dependencies.config.nodeEnv === 'production'
     });
   }
   await registerSyncRoutes(app, withOwnerId({
-    enabled: dependencies.config.accountSyncEnabled === true,
+    enabled: localAccountEnabled,
     accountService,
     appConfigRepository,
     sessionStore,

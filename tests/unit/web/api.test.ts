@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { applySyncRecovery, confirmRecoveryKey, exportConflict, getAccountDeletion, getAccountSession, getSetupStatus, getSyncState, issueRecoveryKey, previewSyncRecovery, reauthenticate, requestAccountDeletion, requestCloudDeletion, restoreAccountDeletion, restoreCloudDeletion, signIn } from '../../../src/web/api';
+import { applySyncRecovery, confirmRecoveryKey, exportConflict, getAccountDeletion, getAccountSession, getCloudAccountSession, getSetupStatus, getSyncState, issueRecoveryKey, listCloudDevices, listCloudWorkspaces, previewSyncRecovery, reauthenticate, requestAccountDeletion, requestCloudDeletion, restoreAccountDeletion, restoreCloudDeletion, signIn, signInCloud } from '../../../src/web/api';
 
 type FetchInit = { method?: string; body?: string };
 
@@ -64,6 +64,41 @@ describe('web API request lifecycle', () => {
     expect(JSON.parse((init as { body?: string }).body as string)).toEqual({ email: 'user@example.com', password: 'one-time-password', deviceLabel: '办公室浏览器' });
     expect(JSON.stringify(response)).not.toContain('one-time-password');
     expect(JSON.stringify(response)).not.toMatch(/token|privateKey|passphrase/iu);
+  });
+
+  it('parses cloud account metadata and workspace presence without accepting bearer tokens', async () => {
+    const fetchMock = vi.fn(async (input: string) => {
+      if (input === '/api/cloud/account/session') {
+        return new Response(JSON.stringify({ account: {
+          accountId: 'account-1',
+          deviceId: 'device-1',
+          state: 'signed-in',
+          expiresAt: '2026-09-17T00:00:00.000Z',
+          trusted: true,
+          token: 'must-not-cross-boundary'
+        } }), { status: 200 });
+      }
+      if (input === '/api/cloud/devices') {
+        return new Response(JSON.stringify([{ id: 'device-1', label: 'Browser', platform: 'web', lastSeenAt: null, current: true, revokedAt: null, trustedAt: '2026-09-17T00:00:00.000Z' }]), { status: 200 });
+      }
+      if (input === '/api/cloud/workspaces') {
+        return new Response(JSON.stringify([{ id: 'workspace-1', accountId: 'account-1', ownerDeviceId: 'device-1', encryptedTitle: 'v1:', createdAt: '2026-09-17T00:00:00.000Z', updatedAt: '2026-09-17T00:00:00.000Z', deletedAt: null, online: true, activeViewerCount: 2 }]), { status: 200 });
+      }
+      return new Response(JSON.stringify({ account: { accountId: 'account-1', deviceId: 'device-1', state: 'signed-in', expiresAt: '2026-09-17T00:00:00.000Z', trusted: true } }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getCloudAccountSession()).rejects.toMatchObject({ code: 'PROTOCOL_INVALID_MESSAGE' });
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ account: { accountId: 'account-1', deviceId: 'device-1', state: 'signed-in', expiresAt: '2026-09-17T00:00:00.000Z', trusted: true } }), { status: 200 }));
+    await expect(getCloudAccountSession()).resolves.toEqual({ account: expect.objectContaining({ trusted: true }) });
+    await expect(listCloudDevices()).resolves.toEqual([expect.objectContaining({ id: 'device-1', trusted: true })]);
+    await expect(listCloudWorkspaces()).resolves.toEqual([expect.objectContaining({ id: 'workspace-1', online: true, activeViewerCount: 2 })]);
+
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ account: { accountId: 'account-1', deviceId: 'device-1', state: 'signed-in', expiresAt: '2026-09-17T00:00:00.000Z', trusted: true } }), { status: 200 }));
+    await signInCloud('user@example.com', 'one-time-password', '办公室浏览器');
+    const signInCall = fetchMock.mock.calls.at(-1);
+    expect(signInCall?.[0]).toBe('/api/cloud/account/session');
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('must-not-cross-boundary');
   });
 
   it('sends only explicit re-auth and deletion confirmations and parses redacted lifecycle state', async () => {

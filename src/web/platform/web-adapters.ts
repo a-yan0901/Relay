@@ -165,6 +165,16 @@ export interface WebApiClient {
   restoreAccountDeletion?: typeof api.restoreAccountDeletion;
   listDevices?: typeof api.listDevices;
   revokeDevice?: typeof api.revokeDevice;
+  getCloudAccountSession?: typeof api.getCloudAccountSession;
+  registerCloud?: typeof api.registerCloud;
+  signInCloud?: typeof api.signInCloud;
+  refreshCloud?: typeof api.refreshCloud;
+  signOutCloud?: typeof api.signOutCloud;
+  listCloudDevices?: typeof api.listCloudDevices;
+  revokeCloudDevice?: typeof api.revokeCloudDevice;
+  trustCloudDevice?: typeof api.trustCloudDevice;
+  listCloudWorkspaces?: typeof api.listCloudWorkspaces;
+  getCloudWorkspace?: typeof api.getCloudWorkspace;
   getSyncState?: typeof api.getSyncState;
   getSyncDescriptor?: typeof api.getSyncDescriptor;
   enableSync?: typeof api.enableSync;
@@ -203,7 +213,21 @@ const hasAccountApi = (client: WebApiClient): boolean => (
   && hasFunction(client, 'signOut')
 );
 
+const hasCloudAccountApi = (client: WebApiClient): boolean => (
+  hasFunction(client, 'getCloudAccountSession')
+  && hasFunction(client, 'registerCloud')
+  && hasFunction(client, 'signInCloud')
+  && hasFunction(client, 'refreshCloud')
+  && hasFunction(client, 'signOutCloud')
+);
+
 const hasDeviceApi = (client: WebApiClient): boolean => hasFunction(client, 'listDevices') && hasFunction(client, 'revokeDevice');
+
+const hasCloudDeviceApi = (client: WebApiClient): boolean => (
+  hasFunction(client, 'listCloudDevices')
+  && hasFunction(client, 'revokeCloudDevice')
+  && hasFunction(client, 'trustCloudDevice')
+);
 
 const hasSyncApi = (client: WebApiClient): boolean => (
   hasFunction(client, 'getSyncState')
@@ -534,6 +558,32 @@ export class WebAccountSession implements AccountSessionPort {
   }
 }
 
+type WebCloudAccountClient = Pick<WebApiClient, 'getCloudAccountSession' | 'registerCloud' | 'signInCloud' | 'refreshCloud' | 'signOutCloud'>;
+
+export class WebCloudAccountSession implements AccountSessionPort {
+  constructor(private readonly client: WebCloudAccountClient = api) {}
+
+  async status(): Promise<AccountSession | null> {
+    return (await requireApi(this.client.getCloudAccountSession)()).account;
+  }
+
+  async register(email: string, password: string, label?: string): Promise<AccountSession> {
+    return (await requireApi(this.client.registerCloud)(email, password, label)).account;
+  }
+
+  async signIn(email: string, password: string, label?: string): Promise<AccountSession> {
+    return (await requireApi(this.client.signInCloud)(email, password, label)).account;
+  }
+
+  signOut(): Promise<void> {
+    return requireApi(this.client.signOutCloud)();
+  }
+
+  async refresh(): Promise<AccountSession> {
+    return (await requireApi(this.client.refreshCloud)()).account;
+  }
+}
+
 type WebDeviceClient = Pick<WebApiClient, 'listDevices' | 'revokeDevice'>;
 
 export class WebDeviceTrust implements DeviceTrustPort {
@@ -545,6 +595,24 @@ export class WebDeviceTrust implements DeviceTrustPort {
 
   revokeDevice(deviceId: string): Promise<void> {
     return requireApi(this.client.revokeDevice)(deviceId);
+  }
+}
+
+type WebCloudDeviceClient = Pick<WebApiClient, 'listCloudDevices' | 'revokeCloudDevice' | 'trustCloudDevice'>;
+
+export class WebCloudDeviceTrust implements DeviceTrustPort {
+  constructor(private readonly client: WebCloudDeviceClient = api) {}
+
+  listDevices(): Promise<readonly DeviceDescriptor[]> {
+    return requireApi(this.client.listCloudDevices)();
+  }
+
+  revokeDevice(deviceId: string): Promise<void> {
+    return requireApi(this.client.revokeCloudDevice)(deviceId);
+  }
+
+  trustDevice(deviceId: string): Promise<void> {
+    return requireApi(this.client.trustCloudDevice)(deviceId);
   }
 }
 
@@ -835,6 +903,7 @@ export class WebCommandTransport implements CommandTransport {
 }
 
 export class WebCapabilityAdapter {
+  accountMode: 'none' | 'local' | 'cloud' = 'none';
   constructor(
     private readonly client: Pick<WebApiClient, 'getCapabilities'> = api,
     private readonly clientCapabilities: readonly Capability[] = WEB_CLIENT_CAPABILITIES
@@ -843,6 +912,9 @@ export class WebCapabilityAdapter {
   async load(): Promise<CapabilitySet> {
     const response = await this.client.getCapabilities?.() ?? { client: 'web', version: 1, capabilities: [...createWebCapabilitySet().capabilities] } satisfies CapabilityResponse;
     if (response.version !== 1 || response.client !== 'web' || !Array.isArray(response.capabilities)) throw new AppError('CAPABILITY_UNAVAILABLE');
+    this.accountMode = response.accountMode === 'cloud' || response.accountMode === 'local'
+      ? response.accountMode
+      : response.capabilities.includes('account.auth') ? 'local' : 'none';
     const serverLimit = response.limits?.maxWorkspacePanes ?? response.limits?.maxPanes;
     return createEffectiveWebCapabilitySet(this.clientCapabilities, response.capabilities, serverLimit);
   }
@@ -912,6 +984,7 @@ export interface WebAdapters extends CoreRuntime {
   workspace: WorkspaceWebAdapter;
   capabilityAdapter: WebCapabilityAdapter;
   refreshCapabilities: () => Promise<CapabilitySet>;
+  accountMode: 'none' | 'local' | 'cloud';
 }
 
 export const createWebAdapters = (options: {
@@ -923,6 +996,8 @@ export const createWebAdapters = (options: {
   const capabilityAdapter = new WebCapabilityAdapter(client as Pick<WebApiClient, 'getCapabilities'>);
   const accountAdapter = hasAccountApi(client) ? new WebAccountSession(client) : undefined;
   const deviceAdapter = hasDeviceApi(client) ? new WebDeviceTrust(client) : undefined;
+  const cloudAccountAdapter = hasCloudAccountApi(client) ? new WebCloudAccountSession(client) : undefined;
+  const cloudDeviceAdapter = hasCloudDeviceApi(client) ? new WebCloudDeviceTrust(client) : undefined;
   const syncAdapter = hasSyncApi(client) ? new WebSync(client) : undefined;
   const vaultRecoveryAdapter = hasVaultRecoveryApi(client) ? new WebVaultRecovery(client) : undefined;
   const browserSystemServices = createBrowserSystemServices();
@@ -956,10 +1031,16 @@ export const createWebAdapters = (options: {
     devices: undefined,
     sync: undefined,
     capabilityAdapter,
+    accountMode: 'none' as const,
     negotiateCapabilities: async (): Promise<CapabilitySet> => {
       runtime.capabilities = await capabilityAdapter.load();
-      runtime.account = runtime.capabilities.supports('account.auth') ? accountAdapter : undefined;
-      runtime.devices = runtime.capabilities.supports('device.trust') ? deviceAdapter : undefined;
+      runtime.accountMode = capabilityAdapter.accountMode;
+      runtime.account = runtime.capabilities.supports('account.auth')
+        ? runtime.accountMode === 'cloud' ? cloudAccountAdapter : accountAdapter
+        : undefined;
+      runtime.devices = runtime.capabilities.supports('device.trust')
+        ? runtime.accountMode === 'cloud' ? cloudDeviceAdapter : deviceAdapter
+        : undefined;
       runtime.sync = runtime.capabilities.supports('sync.encrypted') ? syncAdapter : undefined;
       runtime.vaultRecovery = runtime.capabilities.supports('sync.encrypted') ? vaultRecoveryAdapter : undefined;
       return runtime.capabilities;

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { assertAccountSyncContract, assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
 import type { AccountSession, AccountDeletionState, DeviceDescriptor, SyncConflictExport, SyncDeletionState, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest, VaultRecoveryPreview } from '../../../src/shared/core/models.js';
 import type { HostMetadata } from '../../../src/shared/validation.js';
-import { createWebAdapters, WebAccountSession, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync, WebVaultRecovery } from '../../../src/web/platform/web-adapters.js';
+import { createWebAdapters, WebAccountSession, WebCloudAccountSession, WebCloudDeviceTrust, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync, WebVaultRecovery } from '../../../src/web/platform/web-adapters.js';
 import type { TerminalSocketLike } from '../../../src/web/hooks/use-terminal-session.js';
 
 const host: HostMetadata = {
@@ -194,6 +194,29 @@ const createWebContractApi = () => {
 };
 
 describe('web adapters', () => {
+  it('selects the cloud account adapter without enabling legacy local sync', async () => {
+    const account = { accountId: 'account-1', deviceId: 'device-1', state: 'signed-in' as const, expiresAt: '2026-09-17T00:00:00.000Z', trusted: true };
+    const client = {
+      getCapabilities: async () => ({ client: 'web' as const, version: 1 as const, accountMode: 'cloud' as const, capabilities: ['workspace.persistence', 'account.auth', 'device.trust'] as const }),
+      getSetupStatus: async () => ({ initialized: true, locked: false }),
+      getCloudAccountSession: async () => ({ account }),
+      registerCloud: async () => ({ account }),
+      signInCloud: async () => ({ account }),
+      refreshCloud: async () => ({ account }),
+      signOutCloud: async () => {},
+      listCloudDevices: async () => [],
+      revokeCloudDevice: async () => {},
+      trustCloudDevice: async () => {},
+      listCloudWorkspaces: async () => []
+    };
+    const runtime = createWebAdapters({ api: client });
+    await runtime.negotiateCapabilities();
+    expect(runtime.account).toBeInstanceOf(WebCloudAccountSession);
+    expect(runtime.devices).toBeInstanceOf(WebCloudDeviceTrust);
+    expect(runtime.sync).toBeUndefined();
+    await expect(runtime.account?.status()).resolves.toEqual(account);
+  });
+
   it('keeps WebSocket lifecycle behind the SessionTransport port', async () => {
     const makeSocket = (): TerminalSocketLike => ({
       readyState: 0,
