@@ -100,6 +100,32 @@ describe('cloud protocol contract', () => {
     expect(sequencer.accept(first)).toMatchObject({ status: 'duplicate', inputSequence: 1, request: first });
   });
 
+  it('keeps the input de-duplication window bounded for long-lived owners', () => {
+    const sequencer = createInputSequencer(64);
+    for (let index = 0; index < 64; index += 1) {
+      expect(sequencer.accept({
+        participantDeviceId: 'device-a',
+        inputId: `input-${index}`,
+        sessionId: 'session-1',
+        payload: `${index}`
+      }).status).toBe('accepted');
+    }
+    expect(sequencer.size()).toBe(64);
+    expect(sequencer.accept({
+      participantDeviceId: 'device-a',
+      inputId: 'input-64',
+      sessionId: 'session-1',
+      payload: '64'
+    }).status).toBe('accepted');
+    expect(sequencer.size()).toBe(64);
+    expect(sequencer.accept({
+      participantDeviceId: 'device-a',
+      inputId: 'input-0',
+      sessionId: 'session-1',
+      payload: '0'
+    }).status).toBe('accepted');
+  });
+
   it('requires a fresh snapshot when live output has a sequence gap or owner epoch changes', () => {
     const tracker = trackLiveSequence();
     expect(tracker.apply({ kind: 'snapshot', ownerEpoch: 7, sequence: 10 })).toEqual({ status: 'applied', nextSequence: 11 });

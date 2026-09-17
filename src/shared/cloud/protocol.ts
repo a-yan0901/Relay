@@ -152,7 +152,12 @@ export interface InputSequencer {
   size(): number;
 }
 
-export const createInputSequencer = (): InputSequencer => {
+const DEFAULT_INPUT_DEDUPE_WINDOW = 4_096;
+
+export const createInputSequencer = (maxEntries = DEFAULT_INPUT_DEDUPE_WINDOW): InputSequencer => {
+  if (!Number.isSafeInteger(maxEntries) || maxEntries < 64 || maxEntries > 65_536) {
+    throw new Error('invalid input dedupe window');
+  }
   let nextSequence = 1;
   const accepted = new Map<string, { sequence: number; request: LiveInputRequest }>();
 
@@ -166,6 +171,10 @@ export const createInputSequencer = (): InputSequencer => {
       }
 
       const sequence = nextSequence++;
+      if (accepted.size >= maxEntries) {
+        const oldest = accepted.keys().next().value;
+        if (typeof oldest === 'string') accepted.delete(oldest);
+      }
       accepted.set(request.inputId, { sequence, request });
       return { status: 'accepted', inputSequence: sequence, request };
     },
