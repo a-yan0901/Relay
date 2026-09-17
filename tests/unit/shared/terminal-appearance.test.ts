@@ -20,10 +20,10 @@ const appearance = (): TerminalAppearance => ({
 const profile = (id: string): TerminalProfile => ({ id, name: 'Ops', appearance: appearance(), createdAt: '2026-09-17T00:00:00.000Z', updatedAt: '2026-09-17T00:00:00.000Z' });
 
 describe('terminal appearance profiles', () => {
-  it('provides the existing seven color schemes as immutable built-ins', () => {
+  it('provides the built-in color schemes as immutable built-ins', () => {
     expect(BUILTIN_TERMINAL_PROFILE_ID).toBe('builtin:midnight');
     expect(BUILTIN_TERMINAL_PROFILES.map((candidate) => candidate.id)).toEqual([
-      'builtin:midnight', 'builtin:light', 'builtin:contrast', 'builtin:nord', 'builtin:dracula', 'builtin:solarized-dark', 'builtin:oled'
+      'builtin:midnight', 'builtin:termius', 'builtin:light', 'builtin:contrast', 'builtin:nord', 'builtin:dracula', 'builtin:solarized-dark', 'builtin:oled'
     ]);
   });
 

@@ -1,4 +1,4 @@
-export type ThemeName = 'midnight' | 'light' | 'contrast' | 'nord' | 'dracula' | 'solarized-dark' | 'oled';
+export type ThemeName = 'midnight' | 'light' | 'contrast' | 'nord' | 'dracula' | 'solarized-dark' | 'oled' | 'termius';
 export type TerminalFontSize = 12 | 13 | 14 | 16;
 export type ServerViewMode = 'list' | 'grid';
 
@@ -72,7 +72,7 @@ export const DEFAULT_PREFERENCES: UiPreferences = {
   serverViewMode: 'list'
 };
 
-const themeNames = ['midnight', 'light', 'contrast', 'nord', 'dracula', 'solarized-dark', 'oled'] as const satisfies readonly ThemeName[];
+const themeNames = ['midnight', 'light', 'contrast', 'nord', 'dracula', 'solarized-dark', 'oled', 'termius'] as const satisfies readonly ThemeName[];
 
 export const themeOptions: ReadonlyArray<{ value: ThemeName; label: string }> = [
   { value: 'midnight', label: '深夜蓝' },
@@ -81,7 +81,8 @@ export const themeOptions: ReadonlyArray<{ value: ThemeName; label: string }> = 
   { value: 'nord', label: 'Nord 极光' },
   { value: 'dracula', label: 'Dracula 紫夜' },
   { value: 'solarized-dark', label: 'Solarized 暗色' },
-  { value: 'oled', label: 'OLED 纯黑' }
+  { value: 'oled', label: 'OLED 纯黑' },
+  { value: 'termius', label: 'Termius 经典' }
 ];
 
 export const fontSizeOptions: ReadonlyArray<{ value: TerminalFontSize; label: string }> = [
@@ -97,6 +98,12 @@ const terminalThemes: Record<ThemeName, TerminalTheme> = {
     black: '#07111f', brightBlack: '#5e7490', blue: '#5da8ff', brightBlue: '#8bc7ff', green: '#52d39a', brightGreen: '#83e9ba',
     red: '#ff7d7d', brightRed: '#ffacac', yellow: '#f6c66a', brightYellow: '#ffe3a2', cyan: '#6ad9d1', brightCyan: '#9af3ec',
     magenta: '#c59bff', brightMagenta: '#ddc5ff', white: '#d9e7f7', brightWhite: '#ffffff'
+  },
+  termius: {
+    background: '#141729', foreground: '#21b568', cursor: '#21b568', selectionBackground: 'rgba(33, 181, 104, 0.28)',
+    black: '#141729', brightBlack: '#3a3f52', blue: '#2092f6', brightBlue: '#56a8ff', green: '#21b568', brightGreen: '#44d98b',
+    red: '#f24e50', brightRed: '#ff6b6d', yellow: '#d9b44a', brightYellow: '#f0d36b', cyan: '#28c7a0', brightCyan: '#5de6c5',
+    magenta: '#d24f9c', brightMagenta: '#f06bc0', white: '#d8dbea', brightWhite: '#ffffff'
   },
   light: {
     background: '#f5f8fc', foreground: '#1f2f46', cursor: '#1f6fc7', selectionBackground: 'rgba(49, 126, 219, 0.24)',
@@ -196,6 +203,16 @@ const themeDefinitions: Record<ThemeName, ThemeDefinition> = {
     },
     terminal: terminalThemes['solarized-dark'],
     swatches: ['#002b36', '#0b3b46', '#268bd2', '#b58900']
+  },
+  termius: {
+    id: 'termius', label: 'Termius 经典', colorScheme: 'dark', themeColor: '#141729',
+    tokens: {
+      bg: '#141729', bgRaised: '#202436', panel: '#202436', panelSoft: '#1a1d30', panelHover: '#292d43', panelActive: '#303650',
+      border: 'rgba(216, 219, 234, 0.16)', borderStrong: 'rgba(216, 219, 234, 0.3)', text: '#d8dbea', muted: '#a6abc0', faint: '#71778f',
+      blue: '#2092f6', blueStrong: '#1676ce', primaryText: '#ffffff', focusRing: '#56a8ff', green: '#21b568', yellow: '#d9b44a', red: '#f24e50', terminalBg: '#141729', shadow: '0 24px 80px rgba(0, 0, 0, 0.38)'
+    },
+    terminal: terminalThemes.termius,
+    swatches: ['#141729', '#202436', '#21b568', '#2092f6']
   },
   oled: {
     id: 'oled', label: 'OLED 纯黑', colorScheme: 'dark', themeColor: '#000000',
