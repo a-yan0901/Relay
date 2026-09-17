@@ -51,4 +51,22 @@ describe('generic and Termius CSV parser', () => {
       jumpHostSourceIds: ['csv:bastion']
     });
   });
+
+  it('parses Netcatty exports with Hostname/IP and Groups columns', () => {
+    const document = parseSshCsv([
+      'Groups,Label,Tags,Notes,Hostname/IP,Protocol,Port,Username,Password,KeyPath,Passphrase',
+      'Production,app,critical,managed host,app.example.com,ssh,22,deploy,fake-password,,',
+    ].join('\r\n'), 'netcatty.csv');
+
+    expect(document.connections).toHaveLength(1);
+    expect(document.connections[0]).toMatchObject({
+      name: 'app',
+      address: 'app.example.com',
+      port: 22,
+      username: 'deploy',
+      groupPath: ['Production'],
+      tags: ['critical'],
+      credentialState: 'ready'
+    });
+  });
 });

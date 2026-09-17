@@ -41,14 +41,14 @@ const parseCsvRows = (content: string): string[][] => {
 
 const aliases = {
   name: ['name', 'label', 'title', 'session', 'sessionname', 'connection'],
-  address: ['host', 'address', 'hostname', 'remotehost', 'ip', 'server'],
+  address: ['host', 'address', 'hostname', 'hostnameip', 'remotehost', 'ip', 'server'],
   port: ['port', 'sshport', 'portnumber'],
   username: ['user', 'username', 'login'],
   password: ['password', 'pass'],
   passphrase: ['passphrase', 'keypassphrase'],
   privateKey: ['privatekey', 'key', 'privatekeycontent', 'keycontent'],
   identityFile: ['identityfile', 'identity', 'keypath', 'privatekeypath', 'keyfile', 'keyfilepath'],
-  group: ['group', 'folder', 'folderpath', 'foldername', 'path'],
+  group: ['group', 'groups', 'folder', 'folderpath', 'foldername', 'path'],
   tags: ['tags', 'tag', 'labels'],
   jump: ['jumphost', 'jumphosts', 'jump', 'proxyjump', 'bastion', 'gatewayhost'],
   authType: ['authtype', 'authentication', 'authenticationtype', 'authmethod'],
