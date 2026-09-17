@@ -66,6 +66,9 @@ import {
 } from './sync/sync-service.js';
 import type { SyncCoordinatorPort, SyncServiceContract, SyncTransport } from './sync/sync-service.js';
 import { SyncSnapshotService } from './sync/sync-snapshot.js';
+import { CloudApiClient } from '../shared/cloud/client.js';
+import { CloudBrowserSessionStore } from './cloud/cloud-session-store.js';
+import { registerCloudAccountRoutes, type CloudAccountRouteClient } from './cloud/cloud-account-routes.js';
 
 export interface AppDependencies {
   database: SqliteDatabase;
@@ -97,6 +100,9 @@ export interface AppDependencies {
   syncTransport?: SyncTransport;
   /** Injectable clock for sync lifecycle tests and embedded hosts. */
   syncClock?: () => number;
+  /** Optional server-side BFF client for the standalone cloud service. */
+  cloudApiClient?: CloudAccountRouteClient;
+  cloudSessionStore?: CloudBrowserSessionStore;
 }
 
 export interface BuiltAppDependencies {
@@ -354,6 +360,15 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
     secureCookie: dependencies.config.nodeEnv === 'production',
     syncCoordinator
   });
+  const cloudApiClient = dependencies.cloudApiClient ?? (dependencies.config.cloudApiUrl ? new CloudApiClient(dependencies.config.cloudApiUrl) : undefined);
+  if (cloudApiClient) {
+    await registerCloudAccountRoutes(app, {
+      enabled: true,
+      client: cloudApiClient,
+      sessions: dependencies.cloudSessionStore ?? new CloudBrowserSessionStore(),
+      secureCookie: dependencies.config.nodeEnv === 'production'
+    });
+  }
   await registerSyncRoutes(app, withOwnerId({
     enabled: dependencies.config.accountSyncEnabled === true,
     accountService,
