@@ -12,6 +12,12 @@ Termius 官方资料显示，Vault 负责承载主机、分组、身份、端口
 
 这些页面用于确认产品能力和交互方向，不作为独立的可用性实验数据。
 
+## 1.1 终端主题实现复核
+
+Termius 风格主题的核心是完整调色板，而不是只替换背景：默认前景/背景、光标、选区，以及普通和亮色 ANSI 16 色。终端调色板通常可视为 22 个颜色槽位；远程程序发出的 ANSI 0–15 会映射到这些槽位，24-bit 真彩色转义则由远程程序直接指定，不应被客户端主题强制覆盖。参考：[Terminfo 终端调色板说明](https://terminfo.dev/fundamentals/color-schemes) 和 [Termius 风格主题文件实现](https://github.com/fat0troll/terminalus)。
+
+Relay 的方案：主题预设同时驱动 UI Token 与 xterm theme；设置面板展示默认前景色和 16 色 ANSI 预览；主题切换通过 xterm options setter + refresh 更新已存在的 Console；自定义 Profile/Server 显式 Profile 保留独立覆盖。验收必须同时检查背景、默认前景、ANSI 0–15、光标和选区，不只检查 CSS 背景。
+
 ## 2. 四维对比
 
 | 维度 | Termius 的体验标杆 | Relay 当前实现 | 主要差距 | 优先级 |
