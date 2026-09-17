@@ -1,4 +1,5 @@
-import type { ClientPlatform, DeviceDescriptor } from '../shared/core/models.js';
+import type { ClientPlatform } from '../shared/core/models.js';
+import type { CloudDeviceDescriptor } from '../shared/cloud/protocol.js';
 import type { CloudSqlExecutor, CloudSqlTransaction } from './database.js';
 
 export interface CloudAccountRecord {
@@ -14,6 +15,7 @@ export interface CloudDeviceRecord {
   accountId: string;
   label: string;
   platform: ClientPlatform;
+  publicKey?: string;
   createdAt: string;
   lastSeenAt: string | null;
   revokedAt: string | null;
@@ -42,6 +44,7 @@ interface DeviceSqlRow {
   account_id: string;
   platform: ClientPlatform;
   label: string;
+  public_key?: string | null;
   created_at: string;
   last_seen_at: string | null;
   revoked_at: string | null;
@@ -74,6 +77,7 @@ const deviceFromRow = (row: DeviceSqlRow): CloudDeviceRecord => ({
   accountId: row.account_id,
   label: row.label,
   platform: row.platform,
+  ...(typeof row.public_key === 'string' ? { publicKey: row.public_key } : {}),
   createdAt: row.created_at,
   lastSeenAt: row.last_seen_at,
   revokedAt: row.revoked_at
@@ -130,7 +134,7 @@ export class CloudAccountRepository {
 
   async getDevice(accountId: string, deviceId: string): Promise<CloudDeviceRecord | null> {
     const rows = await this.database.query<DeviceSqlRow[]>(
-      'SELECT device_id, account_id, platform, label, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND device_id = ? LIMIT 1',
+      'SELECT device_id, account_id, platform, label, public_key, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND device_id = ? LIMIT 1',
       [accountId, deviceId]
     );
     const row = first(rows);
@@ -171,7 +175,7 @@ export class CloudAccountRepository {
 
   async listDevices(accountId: string): Promise<readonly CloudDeviceRecord[]> {
     const rows = await this.database.query<DeviceSqlRow[]>(
-      'SELECT device_id, account_id, platform, label, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND revoked_at IS NULL ORDER BY created_at ASC',
+      'SELECT device_id, account_id, platform, label, public_key, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND revoked_at IS NULL ORDER BY created_at ASC',
       [accountId]
     );
     return rows.filter((row) => row.revoked_at === null).map(deviceFromRow);
@@ -222,7 +226,7 @@ export class CloudAccountRepository {
     );
   }
 
-  async listDeviceDescriptors(accountId: string, currentDeviceId: string): Promise<readonly DeviceDescriptor[]> {
+  async listDeviceDescriptors(accountId: string, currentDeviceId: string): Promise<readonly CloudDeviceDescriptor[]> {
     const devices = await this.listDevices(accountId);
     return devices.map((device) => ({
       id: device.id,

@@ -1,10 +1,14 @@
 import { z } from 'zod';
 
+import type { DeviceDescriptor } from '../core/models.js';
+
 export const CLOUD_PROTOCOL_VERSION = 1 as const;
 const MAX_CLOUD_PAYLOAD_BYTES = 32 * 1024 * 1024;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 export type CloudDataDomain = 'account-data' | 'workspace';
+
+export type CloudDeviceDescriptor = DeviceDescriptor & { publicKey?: string | null };
 
 export const CLOUD_KEY_PROTOCOL_VERSION = 1 as const;
 export const CLOUD_WRAPPED_KEY_MAX_BYTES = 16 * 1024;

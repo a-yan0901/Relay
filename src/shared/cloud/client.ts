@@ -1,6 +1,6 @@
-import type { AccountSession, DeviceDescriptor } from '../core/models.js';
+import type { AccountSession } from '../core/models.js';
 import { AppError, isAppErrorCode } from '../errors.js';
-import { parseCloudDataEnvelope, parseCloudKeyGrant, type CloudDataEnvelope, type CloudKeyGrant, type CloudKeyGrantInput } from './protocol.js';
+import { parseCloudDataEnvelope, parseCloudKeyGrant, type CloudDataEnvelope, type CloudDeviceDescriptor, type CloudKeyGrant, type CloudKeyGrantInput } from './protocol.js';
 
 export interface CloudAuthResponse {
   account: AccountSession;
@@ -16,8 +16,6 @@ export interface CloudWorkspaceDescriptor {
   updatedAt: string;
   deletedAt: string | null;
 }
-
-export type CloudClientDeviceDescriptor = DeviceDescriptor & { publicKey?: string | null };
 
 export interface CloudSnapshotHead {
   domain: 'account-data' | 'workspace';
@@ -111,11 +109,15 @@ export class CloudApiClient {
     return this.request('/v2/auth/login', { method: 'POST', body: { email, password, ...device } });
   }
 
+  getSession(token: string): Promise<{ account: AccountSession }> {
+    return this.request('/v2/auth/session', { token });
+  }
+
   signOut(token: string): Promise<void> {
     return this.request('/v2/auth/logout', { method: 'POST', token });
   }
 
-  listDevices(token: string): Promise<readonly CloudClientDeviceDescriptor[]> {
+  listDevices(token: string): Promise<readonly CloudDeviceDescriptor[]> {
     return this.request('/v2/devices', { token });
   }
 

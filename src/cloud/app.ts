@@ -6,8 +6,8 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { RawData, WebSocket } from 'ws';
 import { z } from 'zod';
 
-import type { AccountSession, DeviceDescriptor } from '../shared/core/models.js';
-import { parseCloudDataEnvelope, parseCloudKeyGrant, type CloudDataDomain, type CloudDataEnvelope, type CloudKeyGrant, type CloudKeyGrantInput } from '../shared/cloud/protocol.js';
+import type { AccountSession } from '../shared/core/models.js';
+import { parseCloudDataEnvelope, parseCloudKeyGrant, type CloudDataDomain, type CloudDataEnvelope, type CloudDeviceDescriptor, type CloudKeyGrant, type CloudKeyGrantInput } from '../shared/cloud/protocol.js';
 import { AppError } from '../shared/errors.js';
 import type { CloudAuthDeviceInput, CloudAuthResult } from './auth-service.js';
 import type { CloudRuntimeConfig } from './config.js';
@@ -20,7 +20,7 @@ export interface CloudAuthApi {
   signIn(email: string, password: string, device: CloudAuthDeviceInput): Promise<CloudAuthResult>;
   authenticate(token: string): Promise<AccountSession | null>;
   signOut(token: string): Promise<void>;
-  listDevices(token: string): Promise<readonly DeviceDescriptor[]>;
+  listDevices(token: string): Promise<readonly CloudDeviceDescriptor[]>;
   revokeDevice(token: string, deviceId: string): Promise<void>;
 }
 
@@ -251,6 +251,11 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
     const { token } = await requireSession(request, dependencies.auth);
     await dependencies.auth.signOut(token);
     reply.code(204).send();
+  });
+
+  app.get('/v2/auth/session', async (request, reply) => {
+    const { session } = await requireSession(request, dependencies.auth);
+    reply.header('cache-control', 'no-store').send({ account: session });
   });
 
   app.get('/v2/devices', async (request, reply) => {

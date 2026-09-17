@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import type { AccountSession, ClientPlatform, DeviceDescriptor } from '../shared/core/models.js';
+import type { AccountSession, ClientPlatform } from '../shared/core/models.js';
+import type { CloudDeviceDescriptor } from '../shared/cloud/protocol.js';
 import { AppError } from '../shared/errors.js';
 import {
   ACCOUNT_PASSWORD_MAX_LENGTH,
@@ -31,7 +32,7 @@ export interface CloudAuthRepositoryPort {
   revokeSession(tokenHash: string, at: string): Promise<void>;
   revokeDevice(accountId: string, deviceId: string, at: string): Promise<boolean>;
   revokeDeviceSessions(accountId: string, deviceId: string, at: string): Promise<void>;
-  listDeviceDescriptors(accountId: string, currentDeviceId: string): Promise<readonly DeviceDescriptor[]>;
+  listDeviceDescriptors(accountId: string, currentDeviceId: string): Promise<readonly CloudDeviceDescriptor[]>;
 }
 
 export interface CloudAuthDeviceInput {
@@ -167,7 +168,7 @@ export class CloudAuthService {
     await this.repository.revokeSession(hashToken(token), new Date(this.clock()).toISOString());
   }
 
-  async listDevices(token: string): Promise<readonly DeviceDescriptor[]> {
+  async listDevices(token: string): Promise<readonly CloudDeviceDescriptor[]> {
     const session = await this.authenticate(token);
     return this.repository.listDeviceDescriptors(session.accountId, session.deviceId);
   }

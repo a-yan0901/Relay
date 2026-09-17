@@ -103,6 +103,21 @@ describe('cloud API', () => {
     expect(response.json().error.code).toBe('ACCOUNT_SESSION_INVALID');
   });
 
+  it('returns the authenticated account session without exposing the bearer token', async () => {
+    const app = await buildCloudApp({ config, auth: createAuth(), snapshots: createSnapshots() });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v2/auth/session',
+      headers: { authorization: `Bearer ${validToken}` }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ account: session });
+    expect(response.body).not.toContain(validToken);
+  });
+
   it('returns the account head and accepts only the current device as writer', async () => {
     const app = await buildCloudApp({ config, auth: createAuth(), snapshots: createSnapshots() });
     apps.push(app);
