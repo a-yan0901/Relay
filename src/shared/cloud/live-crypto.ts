@@ -5,7 +5,7 @@ const AES_KEY_BYTES = 32;
 const AES_NONCE_BYTES = 12;
 const BASE64_PATTERN = /^[A-Za-z0-9_-]+$/u;
 
-interface LiveCipherEnvelope {
+export interface LiveCipherEnvelope {
   protocolVersion: typeof LIVE_CRYPTO_VERSION;
   aad: string;
   nonce: string;
@@ -77,14 +77,8 @@ export const deriveLiveSessionKey = async (baseKey: Uint8Array, context: LiveSes
 
 const associatedData = (frame: LiveFrame): string => `relay-live:v${LIVE_CRYPTO_VERSION}:${frame.workspaceId}`;
 
-const parseCipherEnvelope = (bytes: Uint8Array): LiveCipherEnvelope => {
-  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > LIVE_MAX_FRAME_BYTES) throw new Error('live frame too large');
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(new globalThis.TextDecoder().decode(bytes));
-  } catch {
-    throw new Error('invalid live cipher envelope');
-  }
+export const parseLiveCipherEnvelope = (value: unknown): LiveCipherEnvelope => {
+  const parsed = value;
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('invalid live cipher envelope');
   const candidate = parsed as Record<string, unknown>;
   const keys = Object.keys(candidate);
@@ -101,7 +95,24 @@ const parseCipherEnvelope = (bytes: Uint8Array): LiveCipherEnvelope => {
   };
 };
 
-export const encryptLiveFrame = async (key: Uint8Array, frame: LiveFrame): Promise<Uint8Array> => {
+const parseCipherEnvelope = (bytes: Uint8Array): LiveCipherEnvelope => {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > LIVE_MAX_FRAME_BYTES) throw new Error('live frame too large');
+  try {
+    return parseLiveCipherEnvelope(JSON.parse(new globalThis.TextDecoder().decode(bytes)));
+  } catch (error) {
+    if (error instanceof Error && error.message === 'live frame too large') throw error;
+    throw new Error('invalid live cipher envelope', { cause: error });
+  }
+};
+
+export const encodeLiveCipherEnvelope = (envelope: LiveCipherEnvelope): Uint8Array => {
+  const parsed = parseLiveCipherEnvelope(envelope);
+  const bytes = new globalThis.TextEncoder().encode(JSON.stringify(parsed));
+  if (bytes.byteLength > LIVE_MAX_FRAME_BYTES) throw new Error('live frame too large');
+  return bytes;
+};
+
+export const encryptLiveFrameEnvelope = async (key: Uint8Array, frame: LiveFrame): Promise<LiveCipherEnvelope> => {
   assertKey(key);
   const validated = parseLiveFrame(frame);
   const nonce = globalThis.crypto.getRandomValues(new Uint8Array(AES_NONCE_BYTES));
@@ -110,24 +121,29 @@ export const encryptLiveFrame = async (key: Uint8Array, frame: LiveFrame): Promi
     await cryptoKey(key),
     toArrayBuffer(encodeLiveFrame(validated))
   );
-  const envelope: LiveCipherEnvelope = {
+  return {
     protocolVersion: LIVE_CRYPTO_VERSION,
     aad: associatedData(validated),
     nonce: toBase64Url(nonce),
     ciphertext: toBase64Url(new Uint8Array(encrypted))
   };
-  const bytes = new globalThis.TextEncoder().encode(JSON.stringify(envelope));
-  if (bytes.byteLength > LIVE_MAX_FRAME_BYTES) throw new Error('live frame too large');
-  return bytes;
 };
 
-export const decryptLiveFrame = async (key: Uint8Array, bytes: Uint8Array): Promise<LiveFrame> => {
+export const decryptLiveCipherEnvelope = async (key: Uint8Array, envelope: LiveCipherEnvelope): Promise<LiveFrame> => {
   assertKey(key);
-  const envelope = parseCipherEnvelope(bytes);
+  const validated = parseLiveCipherEnvelope(envelope);
   const decrypted = await globalThis.crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: toArrayBuffer(fromBase64Url(envelope.nonce)), additionalData: toArrayBuffer(new globalThis.TextEncoder().encode(envelope.aad)) },
+    { name: 'AES-GCM', iv: toArrayBuffer(fromBase64Url(validated.nonce)), additionalData: toArrayBuffer(new globalThis.TextEncoder().encode(validated.aad)) },
     await cryptoKey(key),
-    toArrayBuffer(fromBase64Url(envelope.ciphertext))
+    toArrayBuffer(fromBase64Url(validated.ciphertext))
   );
   return decodeLiveFrame(new Uint8Array(decrypted));
 };
+
+export const encryptLiveFrame = async (key: Uint8Array, frame: LiveFrame): Promise<Uint8Array> => (
+  encodeLiveCipherEnvelope(await encryptLiveFrameEnvelope(key, frame))
+);
+
+export const decryptLiveFrame = async (key: Uint8Array, bytes: Uint8Array): Promise<LiveFrame> => (
+  decryptLiveCipherEnvelope(key, parseCipherEnvelope(bytes))
+);
