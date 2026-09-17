@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 
-import { type TerminalProfile } from '@shared/terminal-appearance';
+import { BUILTIN_TERMINAL_PROFILES, type TerminalProfile } from '@shared/terminal-appearance';
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
 import type { SftpEntry, TransferJob, WorkspaceLayout } from '../../shared/core/models';
 import type { ClipboardPort, FileTransport } from '../../shared/core/ports';
@@ -35,9 +35,12 @@ export const resolveTerminalProfileForHost = (
     : profiles.find((profile) => profile.id === host.terminalProfileId);
   if (assigned) return assigned;
   if (!defaultProfile) return undefined;
-  // Midnight is the baseline server default; allow the application theme to
-  // supply the corresponding palette when the user changes the global theme.
-  if (defaultProfile.id === 'builtin:midnight' && theme !== 'midnight') return undefined;
+  // Built-in profiles are the global theme presets. Resolve them from the
+  // current application theme so a persisted default (for example Nord)
+  // cannot mask a later global theme change. Custom defaults remain explicit.
+  if (defaultProfile.id.startsWith('builtin:')) {
+    return BUILTIN_TERMINAL_PROFILES.find((profile) => profile.id === `builtin:${theme}`) ?? defaultProfile;
+  }
   return defaultProfile;
 };
 const MIN_GRID_PANES = 3;
