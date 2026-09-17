@@ -219,6 +219,9 @@ export const registerTerminalGateway = async (
     let cleanupStarted = false;
     let lastStatus: Extract<TerminalServerEvent, { type: 'status' }>['state'] | undefined;
     let hostMarkedConnected = false;
+    let channelExited = false;
+    let explicitCloseRequested = false;
+    let channelFailureNotified = false;
     let pendingOpen: Extract<TerminalClientMessage, { type: 'open' }> | undefined;
     let pendingCredentialHostId: string | undefined;
     let pendingCredentialAuthType: 'password' | 'private_key' | undefined;
@@ -263,6 +266,14 @@ export const registerTerminalGateway = async (
       dependencies.hostRepository.markConnected(hostId);
     };
 
+    const notifyUnexpectedChannelFailure = (): void => {
+      if (!active || channelFailureNotified || channelExited || explicitCloseRequested) return;
+      channelFailureNotified = true;
+      channel = undefined;
+      send({ type: 'error', code: 'SSH_CONNECTION_FAILED', message: '远程连接异常' });
+      sendStatus('interrupted');
+    };
+
     const cleanup = (reason: TerminalGatewayCloseReason): void => {
       if (cleanupStarted) {
         return;
@@ -287,6 +298,8 @@ export const registerTerminalGateway = async (
 
     const attachChannel = (nextChannel: SshChannel): void => {
       channel = nextChannel;
+      channelExited = false;
+      channelFailureNotified = false;
       nextChannel.on('data', (data) => {
         sendOutput(data);
       });
@@ -294,15 +307,18 @@ export const registerTerminalGateway = async (
         sendOutput(data);
       });
       nextChannel.on('exit', (code, signal) => {
+        channelExited = true;
         send({ type: 'exit', code, ...(signal === undefined ? {} : { signal }) });
       });
-      nextChannel.on('error', () => {
-        send({ type: 'error', code: 'SSH_CONNECTION_FAILED', message: '远程连接异常' });
-      });
+      nextChannel.on('error', () => notifyUnexpectedChannelFailure());
       nextChannel.on('close', () => {
         if (active) {
           channel = undefined;
-          sendStatus('closed');
+          if (!channelExited && !explicitCloseRequested && !channelFailureNotified) {
+            notifyUnexpectedChannelFailure();
+          } else if (explicitCloseRequested || channelExited) {
+            sendStatus('closed');
+          }
         }
       });
       if (pendingResize) {
@@ -429,6 +445,10 @@ export const registerTerminalGateway = async (
         onStatus: (state) => {
           if (state === 'connected' && sessionCredentials.size > 0) return;
           if (state === 'connected') markHostConnected(row.id);
+          if (state === 'closed' && active && !channelExited && !explicitCloseRequested && !channelFailureNotified) {
+            notifyUnexpectedChannelFailure();
+            return;
+          }
           sendStatus(state);
         },
         onDiagnostic: (event) => send({
@@ -506,6 +526,7 @@ export const registerTerminalGateway = async (
           return;
         }
         case 'close':
+          explicitCloseRequested = true;
           sendStatus('closed');
           return;
         default:

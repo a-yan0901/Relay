@@ -244,6 +244,51 @@ describe('terminal WebSocket gateway', () => {
     socket.close();
   });
 
+  it('reports an unexpected channel reset as retryable and creates a new shell after reopen', async () => {
+    const { app, adapter } = await makeApp();
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
+    const cookie = cookieFrom(setup);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { cookie },
+      payload: {
+        name: 'Resettable SSH',
+        address: 'ssh-fixture',
+        username: 'fixture',
+        auth: { type: 'password', password: 'fixture-password' }
+      }
+    });
+    const hostId = json<{ id: string }>(created).id;
+    const url = await listen(app);
+    const socket = await connectSocket(url, { cookie, origin: ORIGIN });
+    const requestId = 'tab-reset';
+    socket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'connecting' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'awaiting-host-key' }));
+    expect(await nextJson<{ type: string; fingerprint: string }>(socket)).toEqual(expect.objectContaining({ type: 'host-key', fingerprint: 'SHA256:fixture-key' }));
+    socket.send(JSON.stringify({ type: 'host-key-decision', decision: 'trust', fingerprint: 'SHA256:fixture-key' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'connected' }));
+
+    const channel = adapter.channels[0];
+    channel.emit('error', new Error('remote reset'));
+    channel.emit('close');
+    const resetEvents = [await nextJson<{ type: string; state?: string; code?: string }>(socket), await nextJson<{ type: string; state?: string; code?: string }>(socket)];
+    expect(resetEvents.filter((event) => event.type === 'error' && event.code === 'SSH_CONNECTION_FAILED')).toHaveLength(1);
+    expect(resetEvents.some((event) => event.type === 'status' && event.state === 'interrupted')).toBe(true);
+
+    socket.close();
+    const reopened = await connectSocket(url, { cookie, origin: ORIGIN });
+    reopened.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId }));
+    expect(await nextJson<{ type: string; state?: string }>(reopened)).toEqual(expect.objectContaining({ type: 'status', state: 'connecting' }));
+    expect(await nextJson<{ type: string; state?: string }>(reopened)).toEqual(expect.objectContaining({ type: 'status', state: 'connected' }));
+    expect(adapter.channels).toHaveLength(2);
+
+    reopened.send(JSON.stringify({ type: 'close' }));
+    expect(await nextJson<{ type: string; state?: string }>(reopened)).toEqual(expect.objectContaining({ type: 'status', state: 'closed' }));
+    reopened.close();
+  });
+
   it('shows old and new Host Key fingerprints before allowing an explicit replacement', async () => {
     const { app, adapter } = await makeApp();
     const setup = await app.inject({ method: 'POST', url: '/api/setup', payload: { masterPassword: MASTER_PASSWORD } });
