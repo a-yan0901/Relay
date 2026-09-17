@@ -231,6 +231,107 @@ describe('TerminalSessionController', () => {
     }
   });
 
+  it('reconnects after a retryable SSH error and creates a new shell instead of reattaching', () => {
+    vi.useFakeTimers();
+    try {
+      FakeSocket.instances = [];
+      const controller = new TerminalSessionController({
+        hostId: 'host-1',
+        terminalId: 'terminal-reset',
+        reattachOnly: true,
+        webSocketFactory: (url) => new FakeSocket(url),
+        reconnectBaseMs: 250
+      });
+
+      controller.connect();
+      const first = lastSocket();
+      first.open();
+      first.message(JSON.stringify({ type: 'status', state: 'connected', serviceInstanceId: 'service-a' }));
+      first.message(JSON.stringify({ type: 'error', code: 'SSH_CONNECTION_FAILED', message: '远程连接异常' }));
+
+      expect(controller.snapshot.state).toBe('reconnecting');
+      expect(first.closeCalls).toBe(1);
+      vi.advanceTimersByTime(249);
+      expect(FakeSocket.instances).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(FakeSocket.instances).toHaveLength(2);
+
+      const second = lastSocket();
+      second.open();
+      expect(JSON.parse(second.sent[0] as string)).toEqual(expect.objectContaining({
+        type: 'open',
+        requestId: 'terminal-reset',
+        knownServiceInstanceId: 'service-a'
+      }));
+      expect(JSON.parse(second.sent[0] as string)).not.toHaveProperty('reattachOnly');
+      second.message(JSON.stringify({ type: 'status', state: 'connected', serviceInstanceId: 'service-a' }));
+      expect(controller.snapshot.state).toBe('connected');
+      controller.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resumes a retryable Console after the network returns even when attempts were exhausted', () => {
+    vi.useFakeTimers();
+    try {
+      FakeSocket.instances = [];
+      const controller = new TerminalSessionController({
+        hostId: 'host-1',
+        terminalId: 'terminal-network-retry',
+        networkAware: true,
+        webSocketFactory: (url) => new FakeSocket(url),
+        reconnectMaxAttempts: 1,
+        reconnectBaseMs: 100
+      });
+
+      controller.connect();
+      lastSocket().open();
+      lastSocket().close();
+      vi.advanceTimersByTime(100);
+      expect(FakeSocket.instances).toHaveLength(2);
+      lastSocket().open();
+      lastSocket().close();
+      expect(controller.snapshot.state).toBe('failed');
+
+      window.dispatchEvent(new Event('offline'));
+      expect(controller.snapshot.state).toBe('interrupted');
+      expect(controller.snapshot.networkOffline).toBe(true);
+      window.dispatchEvent(new Event('online'));
+      vi.advanceTimersByTime(0);
+      expect(FakeSocket.instances).toHaveLength(3);
+      controller.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not reconnect after a normal remote exit and close', () => {
+    vi.useFakeTimers();
+    try {
+      FakeSocket.instances = [];
+      const controller = new TerminalSessionController({
+        hostId: 'host-1',
+        terminalId: 'terminal-exit',
+        webSocketFactory: (url) => new FakeSocket(url),
+        reconnectBaseMs: 100
+      });
+
+      controller.connect();
+      const socket = lastSocket();
+      socket.open();
+      socket.message(JSON.stringify({ type: 'exit', code: 0 }));
+      socket.message(JSON.stringify({ type: 'status', state: 'closed', serviceInstanceId: 'service-a' }));
+      vi.advanceTimersByTime(5_000);
+
+      expect(FakeSocket.instances).toHaveLength(1);
+      expect(controller.snapshot.state).toBe('closed');
+      controller.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not retry automatically after a permanent SSH error', () => {
     vi.useFakeTimers();
     try {

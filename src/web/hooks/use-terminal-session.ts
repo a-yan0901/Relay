@@ -147,6 +147,7 @@ export class TerminalSessionController {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private retryBlocked = false;
+  private reconnectExhausted = false;
   private reconnectAttempt = 0;
   private serviceInstanceId: string | null = null;
   private reattachOnly: boolean;
@@ -203,7 +204,7 @@ export class TerminalSessionController {
   connect(): void {
     this.bindNetworkListeners();
     this.stopped = false;
-    if (this.retryBlocked) return;
+    if (this.retryBlocked || this.reconnectExhausted) return;
     if (this.networkOffline || globalThis.navigator?.onLine === false) {
       this.networkOffline = true;
       this.updateSnapshot({
@@ -238,6 +239,7 @@ export class TerminalSessionController {
     this.reattachOnly = false;
     this.stopped = false;
     this.retryBlocked = false;
+    this.reconnectExhausted = false;
     this.reconnectAttempt = 0;
     this.clearReconnectTimer();
     this.detachSocket(this.socket);
@@ -397,8 +399,17 @@ export class TerminalSessionController {
           ...(event.state === 'awaiting-credential' ? {} : { credential: null })
         });
         if (event.state === 'connected') {
+          this.reattachOnly = false;
           this.reconnectAttempt = 0;
+          this.reconnectExhausted = false;
           this.updateSnapshot({ reconnectDelayMs: 0, error: null, credential: null });
+        }
+        if (event.state === 'interrupted' && !this.retryBlocked && !this.reconnectExhausted) {
+          const currentSocket = this.socket;
+          this.detachSocket(currentSocket);
+          this.socket = null;
+          currentSocket?.close(1011, 'remote connection interrupted');
+          this.scheduleNextReconnect();
         }
         return;
       case 'host-key':
@@ -408,9 +419,10 @@ export class TerminalSessionController {
         this.updateSnapshot({ state: 'awaiting-credential', credential: event, error: null });
         return;
       case 'error': {
-        this.retryBlocked = true;
+        const retryable = event.code === 'SSH_CONNECTION_FAILED';
+        if (!retryable) this.retryBlocked = true;
         const needsReopen = ['SESSION_NEEDS_REOPEN', 'SERVICE_RESTARTED', 'OPERATION_NOT_FOUND'].includes(event.code);
-        const state = needsReopen ? 'needs-reopen' : 'failed';
+        const state = needsReopen ? 'needs-reopen' : retryable ? 'interrupted' : 'failed';
         const diagnostic = operationErrorToDiagnostic({
           operationId: this.options.terminalId,
           hostId: this.options.hostId,
@@ -430,6 +442,23 @@ export class TerminalSessionController {
           ...(needsReopen ? { reconnectDelayMs: 0 } : {}),
           ...(hasMatchingDiagnostic ? {} : { diagnostics: [...this.snapshotValue.diagnostics, diagnostic].slice(-100) })
         });
+        if (retryable) {
+          const currentSocket = this.socket;
+          this.detachSocket(currentSocket);
+          this.socket = null;
+          currentSocket?.close(1011, 'remote connection interrupted');
+          if (this.networkOffline || globalThis.navigator?.onLine === false) {
+            this.networkOffline = true;
+            this.updateSnapshot({
+              state: 'interrupted',
+              networkOffline: true,
+              reconnectDelayMs: 0,
+              error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '网络已断开，恢复后将自动重连' }
+            });
+          } else {
+            this.scheduleNextReconnect();
+          }
+        }
         return;
       }
       case 'diagnostic':
@@ -474,13 +503,27 @@ export class TerminalSessionController {
       return;
     }
     if (this.retryBlocked) return;
+    this.scheduleNextReconnect();
+  }
+
+  private scheduleNextReconnect(): void {
+    if (this.networkOffline || globalThis.navigator?.onLine === false) {
+      this.networkOffline = true;
+      this.updateSnapshot({
+        state: 'interrupted',
+        reconnectDelayMs: 0,
+        networkOffline: true,
+        error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '网络已断开，恢复后将自动重连' }
+      });
+      return;
+    }
     if (!this.reconnectEnabled || this.reconnectAttempt >= this.reconnectMaxAttempts) {
-      this.retryBlocked = true;
+      this.reconnectExhausted = true;
       this.updateSnapshot({
         state: 'failed',
         reconnectDelayMs: 0,
         networkOffline: false,
-        error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '自动重连次数已用尽，请手动重试' }
+        error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '此 Console 需要重新连接：原来的远程 Shell 不再可用，重新打开会创建新的 Shell。' }
       });
       return;
     }
@@ -490,7 +533,7 @@ export class TerminalSessionController {
   }
 
   private scheduleReconnect(delay: number): void {
-    if (this.stopped || this.retryBlocked || this.networkOffline || this.reconnectTimer !== null) return;
+    if (this.stopped || this.retryBlocked || this.reconnectExhausted || this.networkOffline || this.reconnectTimer !== null) return;
     this.updateSnapshot({ state: 'reconnecting', reconnectDelayMs: delay, networkOffline: false, error: null });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -506,7 +549,7 @@ export class TerminalSessionController {
     this.socket = null;
     this.detachSocket(socket);
     socket?.close(1001, 'network offline');
-    if (this.retryBlocked || ['closed', 'failed', 'needs-reopen'].includes(this.snapshotValue.state)) return;
+    if (this.retryBlocked || ['closed', 'needs-reopen'].includes(this.snapshotValue.state) || (this.snapshotValue.state === 'failed' && !this.reconnectExhausted)) return;
     this.updateSnapshot({
       state: 'interrupted',
       reconnectDelayMs: 0,
@@ -518,8 +561,12 @@ export class TerminalSessionController {
   private handleNetworkOnline = (): void => {
     if (this.stopped || this.retryBlocked) return;
     this.networkOffline = false;
+    if (this.reconnectExhausted) {
+      this.reconnectExhausted = false;
+      this.reconnectAttempt = 0;
+    }
     if (this.socket && (this.socket.readyState === 0 || this.socket.readyState === 1)) return;
-    if (!['interrupted', 'reconnecting', 'connecting', 'awaiting-host-key', 'awaiting-credential'].includes(this.snapshotValue.state)) return;
+    if (!['interrupted', 'reconnecting', 'connecting', 'awaiting-host-key', 'awaiting-credential', 'failed'].includes(this.snapshotValue.state)) return;
     this.scheduleReconnect(0);
   };
 
