@@ -523,6 +523,8 @@ git commit -m "feat: add semantic relay theme presets"
 
 ## Task 6: 升级偏好设置中的主题选择和预览
 
+**Status:** In progress（2026-09-17；浏览器关键路径留到 Task 7 统一验证）
+
 **Files:**
 
 - Modify: `src/web/App.tsx`
@@ -536,15 +538,15 @@ git commit -m "feat: add semantic relay theme presets"
 - Consumes: Task 5 的 `themeOptions`、`ThemeDefinition.swatches` 和现有 `PreferencesPanel`。
 - Produces: 带主题色板预览的偏好设置选择，仍使用 `UiPreferences` 和现有本地持久化。
 
-- [ ] **Step 1: 写主题设置失败测试**
+- [x] **Step 1: 写主题设置失败测试**
 
 打开偏好设置后断言七个主题选项存在、每个主题有可访问的色板/预览标识；切换到 Nord 后立即更新 `data-relay-theme` 和一个 Token；刷新/重新 bootstrap 后仍是 Nord；未写入设置时使用 Midnight。
 
-- [ ] **Step 2: 实现主题选择器预览**
+- [x] **Step 2: 实现主题选择器预览**
 
 在现有 `select` 旁增加 `theme-preview-list`，每个预设显示名称和 3–5 个 swatch；点击或选择只更新 `UiPreferences`，不创建新的设置存储 key。预览元素使用 `aria-label="预览主题：${label}"`，不把颜色作为唯一信息。
 
-- [ ] **Step 3: 增加设置面板窄屏样式**
+- [x] **Step 3: 增加设置面板窄屏样式**
 
 预览列表在 320px 宽度下改为两列或横向滚动；确保菜单、设置面板和 Server 标签菜单不造成水平滚动。
 
@@ -562,7 +564,7 @@ npm run test:e2e -- tests/e2e/host-to-terminal.spec.ts --grep "theme|context|cli
 
 Expected: 偏好设置、刷新持久化、右键边界、主题预览和窄屏关键路径通过。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/web/App.tsx src/web/theme.ts src/web/styles.css tests/unit/web/app.dom.test.tsx tests/e2e/host-to-terminal.spec.ts

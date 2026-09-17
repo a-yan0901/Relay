@@ -1263,6 +1263,24 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
 
 .preferences-fields select { background: var(--panel-soft); border: 1px solid var(--border); border-radius: 7px; color: var(--text); min-height: 38px; padding: 0 9px; width: 100%; }
 
+.theme-preview-grid { display: grid; gap: 7px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 2px 0 8px; }
+
+.theme-preview-card { align-items: stretch; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px; color: var(--muted); display: grid; gap: 7px; min-width: 0; padding: 8px; text-align: left; transition: background 150ms ease, border-color 150ms ease, color 150ms ease; }
+
+.theme-preview-card:hover, .theme-preview-card:focus-visible { background: var(--panel-hover); border-color: var(--border-strong); color: var(--text); outline: none; }
+
+.theme-preview-card.is-selected { background: var(--panel-active); border-color: var(--blue); color: var(--text); }
+
+.theme-preview-swatches { display: flex; gap: 3px; height: 24px; overflow: hidden; }
+
+.theme-preview-swatch { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 4px; flex: 1; min-width: 0; }
+
+.theme-preview-copy { display: flex; gap: 2px; min-width: 0; flex-direction: column; }
+
+.theme-preview-copy strong { font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.theme-preview-copy small { color: var(--faint); font-size: 8px; }
+
 .preferences-system-section { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 18px; }
 
 .preferences-system-section .eyebrow { margin-bottom: 9px; }

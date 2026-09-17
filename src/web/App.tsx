@@ -46,6 +46,7 @@ import type { WorkspaceState } from '../shared/core/models';
 import {
   applyPreferences,
   fontSizeOptions,
+  getThemeDefinition,
   loadPreferences,
   savePreferences,
   themeOptions,
@@ -155,6 +156,24 @@ const PreferencesPanel = ({ preferences, onChange, onClose, notifications, notif
         <select id="theme-select" aria-label="色彩主题" value={preferences.theme} onChange={(event) => onChange({ ...preferences, theme: event.target.value as ThemeName })}>
           {themeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
         </select>
+        <div className="theme-preview-grid" aria-label="主题预览">
+          {themeOptions.map((option) => {
+            const definition = getThemeDefinition(option.value);
+            return <button
+              className={`theme-preview-card ${preferences.theme === option.value ? 'is-selected' : ''}`}
+              type="button"
+              key={option.value}
+              aria-label={`预览主题：${option.label}`}
+              aria-pressed={preferences.theme === option.value}
+              onClick={() => onChange({ ...preferences, theme: option.value })}
+            >
+              <span className="theme-preview-swatches" aria-hidden="true">
+                {definition.swatches.map((swatch) => <span className="theme-preview-swatch" style={{ backgroundColor: swatch }} key={swatch} />)}
+              </span>
+              <span className="theme-preview-copy"><strong>{option.label}</strong><small>{definition.colorScheme === 'light' ? 'Light' : 'Dark'}</small></span>
+            </button>;
+          })}
+        </div>
         <label htmlFor="font-size-select">终端字号</label>
         <select id="font-size-select" aria-label="终端字号" value={preferences.fontSize} onChange={(event) => onChange({ ...preferences, fontSize: Number(event.target.value) as TerminalFontSize })}>
           {fontSizeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}

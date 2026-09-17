@@ -137,6 +137,25 @@ describe('App boot recovery', () => {
     expect(screen.getByText('片段')).toBeInTheDocument();
   });
 
+  it('shows clickable previews for every modern theme preset', async () => {
+    const user = userEvent.setup();
+    apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
+    apiMocks.listHosts.mockResolvedValue([]);
+    apiMocks.listGroups.mockResolvedValue([]);
+    renderApp();
+
+    await screen.findByRole('heading', { name: 'Server', exact: true });
+    await user.click(screen.getByRole('button', { name: '偏好设置' }));
+
+    expect(screen.getAllByRole('button', { name: /^预览主题：/u })).toHaveLength(7);
+    await user.click(screen.getByRole('button', { name: '预览主题：Dracula 紫夜' }));
+
+    expect(screen.getByRole('combobox', { name: '色彩主题' })).toHaveValue('dracula');
+    expect(screen.getByRole('button', { name: '预览主题：Dracula 紫夜' })).toHaveAttribute('aria-pressed', 'true');
+    expect(document.documentElement.dataset.relayTheme).toBe('dracula');
+    expect(document.documentElement.style.getPropertyValue('--panel')).not.toBe('');
+  });
+
   it('keeps recovery details in the workspace without rendering a global summary banner', async () => {
     apiMocks.getSetupStatus.mockResolvedValue({ initialized: true, locked: false });
     apiMocks.getCapabilities.mockResolvedValue({ client: 'web', version: 1, capabilities: [] });
