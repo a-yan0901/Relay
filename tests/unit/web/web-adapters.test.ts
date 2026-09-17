@@ -570,6 +570,21 @@ describe('web adapters', () => {
     expect(runtime.capabilities.intersection).toEqual(['workspace.max-panes']);
   });
 
+  it('keeps a write-only clipboard service available to the Web runtime', () => {
+    const clipboard = {
+      canRead: false,
+      canWrite: true,
+      readText: vi.fn(async () => ''),
+      writeText: vi.fn(async () => undefined)
+    };
+    const runtime = createWebAdapters({
+      api: { listHosts: async () => [], getHost: async () => null },
+      platformServices: { clipboard }
+    });
+
+    expect(runtime.platformServices?.clipboard).toBe(clipboard);
+  });
+
   it('keeps cross-product import/export behind the shared imports port', async () => {
     const externalPreview = {
       previewId: 'preview-1',

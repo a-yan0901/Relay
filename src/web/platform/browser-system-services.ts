@@ -27,6 +27,7 @@ export interface BrowserNotificationHost {
 export interface BrowserSystemHosts {
   secureContext: boolean;
   clipboard?: BrowserClipboardHost;
+  legacyCopy?: (text: string) => boolean | void;
   fileSave?: BrowserFileHost;
   notifications?: BrowserNotificationHost;
 }
@@ -54,12 +55,45 @@ const defaultBrowserSystemHosts = (): BrowserSystemHosts => {
   const browserDocument = typeof globalThis.document === 'undefined' ? undefined : globalThis.document;
   const browserUrl = typeof globalThis.URL === 'undefined' ? undefined : globalThis.URL;
   const browserBlob = typeof globalThis.Blob === 'function' ? globalThis.Blob : undefined;
+  const legacyCopy = browserDocument && typeof browserDocument.execCommand === 'function'
+    ? (text: string): boolean => {
+      const parent = browserDocument.body ?? browserDocument.documentElement;
+      if (!parent) return false;
+      const previousActiveElement = browserDocument.activeElement as HTMLElement | null;
+      const selection = browserDocument.getSelection?.();
+      const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange()) : [];
+      const textarea = browserDocument.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.position = 'fixed';
+      textarea.style.top = '0';
+      textarea.style.left = '-9999px';
+      textarea.style.opacity = '0';
+      parent.append(textarea);
+      textarea.focus();
+      textarea.select();
+      let copied = false;
+      try {
+        copied = browserDocument.execCommand('copy');
+      } catch {
+        copied = false;
+      }
+      textarea.remove();
+      if (selection) {
+        selection.removeAllRanges();
+        for (const range of ranges) selection.addRange(range);
+      }
+      try { previousActiveElement?.focus(); } catch { /* focus restoration is best effort */ }
+      return copied;
+    }
+    : undefined;
   return {
     secureContext: globalThis.isSecureContext !== false,
     clipboard: browserNavigator?.clipboard ? {
       readText: () => browserNavigator.clipboard.readText(),
       writeText: (text: string) => browserNavigator.clipboard.writeText(text)
     } : undefined,
+    legacyCopy,
     fileSave: browserDocument && browserUrl && browserBlob && typeof browserUrl.createObjectURL === 'function' ? {
       save: ({ name, content, mimeType }: FileSaveRequest) => {
         const blob = new browserBlob([content.slice().buffer as ArrayBuffer], { type: mimeType });
@@ -93,7 +127,7 @@ export const detectBrowserSystemCapabilities = (
   hosts: BrowserSystemHosts = defaultBrowserSystemHosts()
 ): BrowserSystemCapabilities => ({
   clipboardRead: hosts.secureContext && typeof hosts.clipboard?.readText === 'function',
-  clipboardWrite: hosts.secureContext && typeof hosts.clipboard?.writeText === 'function',
+  clipboardWrite: (hosts.secureContext && typeof hosts.clipboard?.writeText === 'function') || typeof hosts.legacyCopy === 'function',
   fileSave: typeof hosts.fileSave?.save === 'function',
   notifications: hosts.notifications !== undefined
 });
@@ -102,6 +136,8 @@ const createClipboardPort = (
   hosts: BrowserSystemHosts,
   capabilities: BrowserSystemCapabilities
 ): ClipboardPort => ({
+  canRead: capabilities.clipboardRead,
+  canWrite: capabilities.clipboardWrite,
   async readText(): Promise<string> {
     if (!capabilities.clipboardRead || !hosts.clipboard?.readText) throw unavailable();
     try {
@@ -111,12 +147,23 @@ const createClipboardPort = (
     }
   },
   async writeText(text: string): Promise<void> {
-    if (!capabilities.clipboardWrite || !hosts.clipboard?.writeText) throw unavailable();
-    try {
-      await hosts.clipboard.writeText(text);
-    } catch {
-      throw unavailable();
+    if (!capabilities.clipboardWrite) throw unavailable();
+    if (hosts.secureContext && hosts.clipboard?.writeText) {
+      try {
+        await hosts.clipboard.writeText(text);
+        return;
+      } catch {
+        // Fall through to the user-gesture-compatible legacy path.
+      }
     }
+    if (hosts.legacyCopy) {
+      try {
+        if (hosts.legacyCopy(text) !== false) return;
+      } catch {
+        // Normalize the browser failure below.
+      }
+    }
+    throw unavailable();
   }
 });
 

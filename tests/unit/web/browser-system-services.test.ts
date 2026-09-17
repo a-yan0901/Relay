@@ -44,6 +44,49 @@ describe('browser system services', () => {
     await expect(services.clipboard?.writeText('text')).rejects.toEqual(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
   });
 
+  it('keeps copy available on insecure origins when legacy copy exists', async () => {
+    const legacyCopy = vi.fn(() => true);
+    const services = createBrowserSystemServices({
+      secureContext: false,
+      clipboard: {
+        readText: vi.fn(async () => 'not readable'),
+        writeText: vi.fn(async () => undefined)
+      },
+      legacyCopy
+    });
+
+    expect(services.capabilities).toEqual(expect.objectContaining({ clipboardRead: false, clipboardWrite: true }));
+    expect(services.clipboard?.canRead).toBe(false);
+    expect(services.clipboard?.canWrite).toBe(true);
+    await services.clipboard?.writeText('selected output');
+    expect(legacyCopy).toHaveBeenCalledWith('selected output');
+    await expect(services.clipboard?.readText()).rejects.toMatchObject({ code: 'CAPABILITY_UNAVAILABLE' });
+  });
+
+  it('falls back to legacy copy when native clipboard write is rejected', async () => {
+    const legacyCopy = vi.fn(() => true);
+    const services = createBrowserSystemServices(createHosts({
+      clipboard: {
+        readText: vi.fn(async () => 'clipboard text'),
+        writeText: vi.fn(async () => { throw new Error('browser denied'); })
+      },
+      legacyCopy
+    }));
+
+    await services.clipboard?.writeText('fallback text');
+
+    expect(legacyCopy).toHaveBeenCalledWith('fallback text');
+  });
+
+  it('maps an unsuccessful legacy copy to a stable capability error', async () => {
+    const services = createBrowserSystemServices({
+      secureContext: false,
+      legacyCopy: vi.fn(() => false)
+    });
+
+    await expect(services.clipboard?.writeText('text')).rejects.toEqual(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
+  });
+
   it('does not create a notification before permission is granted', async () => {
     const hosts = createHosts();
     const services = createBrowserSystemServices(hosts);

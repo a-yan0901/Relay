@@ -912,7 +912,7 @@ export const createWebAdapters = (options: {
   const vaultRecoveryAdapter = hasVaultRecoveryApi(client) ? new WebVaultRecovery(client) : undefined;
   const browserSystemServices = createBrowserSystemServices();
   const platformServices = options.platformServices ?? {
-    clipboard: browserSystemServices.capabilities.clipboardRead && browserSystemServices.capabilities.clipboardWrite
+    clipboard: browserSystemServices.capabilities.clipboardRead || browserSystemServices.capabilities.clipboardWrite
       ? browserSystemServices.clipboard
       : undefined,
     fileSave: browserSystemServices.capabilities.fileSave ? browserSystemServices.fileSave : undefined,

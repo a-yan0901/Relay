@@ -80,6 +80,8 @@ export interface NotificationPort {
 export interface ClipboardPort {
   readText(): Promise<string>;
   writeText(text: string): Promise<void>;
+  canRead?: boolean;
+  canWrite?: boolean;
 }
 
 export interface FileSaveRequest {
