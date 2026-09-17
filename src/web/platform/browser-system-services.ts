@@ -72,12 +72,13 @@ const defaultBrowserSystemHosts = (): BrowserSystemHosts => {
       parent.append(textarea);
       textarea.focus();
       textarea.select();
-      let copied = false;
-      try {
-        copied = browserDocument.execCommand('copy');
-      } catch {
-        copied = false;
-      }
+      const copied = (() => {
+        try {
+          return browserDocument.execCommand('copy');
+        } catch {
+          return false;
+        }
+      })();
       textarea.remove();
       if (selection) {
         selection.removeAllRanges();

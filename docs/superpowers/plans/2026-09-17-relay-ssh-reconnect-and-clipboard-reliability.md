@@ -420,7 +420,7 @@ Commit: git add src/web/components/TerminalPanel.tsx tests/unit/web/terminal-pan
 - Consumes: Task 1–5 的已提交实现和测试。
 - Produces: 可复现的验证记录；只有所有必要命令通过后才能标记完成。
 
-- [ ] **Step 1: 运行所有受影响的聚焦测试**
+- [x] **Step 1: 运行所有受影响的聚焦测试**
 
 Run:
 
@@ -438,7 +438,9 @@ npm test -- \
 
 Expected: 所有受影响测试 PASS。
 
-- [ ] **Step 2: 运行静态检查和构建**
+实际结果（2026-09-17）：8 个文件、86 个测试通过。
+
+- [x] **Step 2: 运行静态检查和构建**
 
 Run:
 
@@ -451,7 +453,9 @@ npm run build:server
 
 Expected: TypeScript、ESLint、Web build 和 Server build 全部成功。
 
-- [ ] **Step 3: 运行受影响 E2E**
+实际结果（2026-09-17）：typecheck、lint、build:web、build:server 全部通过；Web 构建仅保留既有的大 chunk warning。
+
+- [x] **Step 3: 运行受影响 E2E**
 
 Run:
 
@@ -461,13 +465,17 @@ npm run test:e2e -- tests/e2e/host-to-terminal.spec.ts tests/e2e/ssh-productivit
 
 Expected: Console 建连、工作区恢复、网络重连 UI、右键/快捷键生产力路径没有回归；如果环境未启动服务，记录明确的环境原因，不把未执行误记为通过。
 
-- [ ] **Step 4: 运行全量测试**
+实际结果（2026-09-17）：host-to-terminal 与 ssh-productivity 共 4 个 E2E 全部通过。
+
+- [x] **Step 4: 运行全量测试**
 
 Run: npm test
 
 Expected: 全部 Vitest 文件通过。由于本次修改涉及 Node 进程崩溃防护、WebSocket 生命周期和共享平台 Port，这一步属于必要的全量门槛。
 
-- [ ] **Step 5: 做最终差异审计并更新计划**
+实际结果（2026-09-17）：113 个测试文件、556 个测试全部通过。
+
+- [x] **Step 5: 做最终差异审计并更新计划**
 
 Run:
 
@@ -478,6 +486,8 @@ git log -6 --oneline
 ~~~
 
 在本计划对应任务下记录实际完成日期、commit hash、聚焦测试、E2E、全量测试结果和任何环境限制。确认没有数据库、信任白名单、.env.local 或用户既有数据改动。
+
+实现提交：`b538999`、`8525aa4`、`284bce3`、`21368a1`、`b2c3624`、`1eedeb6`；本次验证未修改数据库、信任白名单或 `.env.local`。
 
 - [ ] **Step 6: 提交验证记录**
 
