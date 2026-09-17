@@ -1,9 +1,11 @@
 export type ThemeName = 'midnight' | 'light' | 'contrast' | 'nord' | 'dracula' | 'solarized-dark' | 'oled';
 export type TerminalFontSize = 12 | 13 | 14 | 16;
+export type ServerViewMode = 'list' | 'grid';
 
 export interface UiPreferences {
   theme: ThemeName;
   fontSize: TerminalFontSize;
+  serverViewMode?: ServerViewMode;
 }
 
 export interface TerminalTheme {
@@ -66,7 +68,8 @@ export const UI_PREFERENCES_STORAGE_KEY = 'relay.ui.preferences.v1';
 
 export const DEFAULT_PREFERENCES: UiPreferences = {
   theme: 'midnight',
-  fontSize: 13
+  fontSize: 13,
+  serverViewMode: 'list'
 };
 
 const themeNames = ['midnight', 'light', 'contrast', 'nord', 'dracula', 'solarized-dark', 'oled'] as const satisfies readonly ThemeName[];
@@ -212,6 +215,8 @@ const isThemeName = (value: unknown): value is ThemeName => typeof value === 'st
 
 const isFontSize = (value: unknown): value is TerminalFontSize => value === 12 || value === 13 || value === 14 || value === 16;
 
+const isServerViewMode = (value: unknown): value is ServerViewMode => value === 'list' || value === 'grid';
+
 export const loadPreferences = (): UiPreferences => {
   try {
     const raw = globalThis.localStorage?.getItem(UI_PREFERENCES_STORAGE_KEY);
@@ -220,7 +225,7 @@ export const loadPreferences = (): UiPreferences => {
     if (!isRecord(parsed) || !isThemeName(parsed.theme) || !isFontSize(parsed.fontSize)) {
       return { ...DEFAULT_PREFERENCES };
     }
-    return { theme: parsed.theme, fontSize: parsed.fontSize };
+    return { theme: parsed.theme, fontSize: parsed.fontSize, serverViewMode: isServerViewMode(parsed.serverViewMode) ? parsed.serverViewMode : 'list' };
   } catch {
     return { ...DEFAULT_PREFERENCES };
   }
@@ -228,7 +233,7 @@ export const loadPreferences = (): UiPreferences => {
 
 export const savePreferences = (preferences: UiPreferences): void => {
   try {
-    globalThis.localStorage?.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+    globalThis.localStorage?.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({ ...preferences, serverViewMode: preferences.serverViewMode ?? 'list' }));
   } catch {
     // Browser storage can be disabled; the current session still uses the in-memory value.
   }

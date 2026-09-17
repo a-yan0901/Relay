@@ -53,6 +53,7 @@ import {
   themeOptions,
   type TerminalFontSize,
   type ThemeName,
+  type ServerViewMode,
   type UiPreferences
 } from './theme';
 
@@ -1335,6 +1336,8 @@ export const App = ({ runtime }: AppProps) => {
             onTestConnection={(host) => void handleTestConnection(host)}
             onOpenSftp={capabilities.supports('sftp.browse') ? handleOpenSftp : undefined}
             onCopyText={handleCopyText}
+            viewMode={preferences.serverViewMode ?? 'list'}
+            onViewModeChange={(serverViewMode: ServerViewMode) => setPreferences((current) => ({ ...current, serverViewMode }))}
           />
         </div>
         <div className="app-view app-view-terminal" hidden={!terminalView} aria-hidden={!terminalView}>

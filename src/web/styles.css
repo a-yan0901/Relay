@@ -470,7 +470,23 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .host-count { color: var(--faint); font-size: 11px; }
 
+.view-mode-toggle { align-items: center; background: var(--panel-soft); border: 1px solid var(--border); border-radius: 7px; display: inline-flex; padding: 2px; }
+
+.view-mode-button { align-items: center; background: transparent; border: 0; border-radius: 5px; color: var(--faint); cursor: pointer; display: inline-flex; font-size: 15px; height: 27px; justify-content: center; line-height: 1; padding: 0; width: 29px; }
+
+.view-mode-button:hover { color: var(--text); }
+
+.view-mode-button[aria-pressed="true"] { background: var(--panel-active); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16); color: var(--text); }
+
 .host-list { display: grid; gap: 11px; min-width: 0; }
+
+.host-list.is-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr)); }
+
+.host-list.is-grid .host-card { align-items: stretch; flex-direction: column; min-height: 100%; }
+
+.host-list.is-grid .host-card-actions { margin-top: auto; width: 100%; }
+
+.host-list.is-grid .card-action { flex: 1 1 0; min-width: 0; }
 
 .host-card {
   align-items: center;

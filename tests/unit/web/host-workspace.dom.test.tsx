@@ -81,6 +81,33 @@ describe('HostWorkspace', () => {
     expect(onFavoriteToggle).toHaveBeenCalledWith(hosts[0]);
   });
 
+  it('switches between list and grid server views without changing host actions', async () => {
+    const user = userEvent.setup();
+    const onViewModeChange = vi.fn();
+    render(
+      <HostWorkspace
+        hosts={hosts}
+        groups={groups}
+        query=""
+        selectedGroupId={null}
+        favoriteOnly={false}
+        viewMode="list"
+        onViewModeChange={onViewModeChange}
+        onQueryChange={vi.fn()}
+        onGroupSelected={vi.fn()}
+        onFavoriteFilter={vi.fn()}
+        onFavoriteToggle={vi.fn()}
+        onConnect={vi.fn()}
+        onAddHost={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '列表视图' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Server 列表')).toHaveClass('is-list');
+    await user.click(screen.getByRole('button', { name: '网格视图' }));
+    expect(onViewModeChange).toHaveBeenCalledWith('grid');
+  });
+
   it('shows separate import and export entries on the Vault page', async () => {
     const user = userEvent.setup();
     const onImport = vi.fn();

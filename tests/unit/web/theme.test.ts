@@ -12,7 +12,7 @@ import {
   type UiPreferences
 } from '../../../src/web/theme';
 
-const preferences: UiPreferences = { theme: 'light', fontSize: 16 };
+const preferences: UiPreferences = { theme: 'light', fontSize: 16, serverViewMode: 'grid' };
 
 describe('UI preferences', () => {
   afterEach(() => {
@@ -27,15 +27,15 @@ describe('UI preferences', () => {
   });
 
   it('loads valid preferences and falls back from malformed values', () => {
-    expect(loadPreferences()).toEqual({ theme: 'midnight', fontSize: 13 });
+    expect(loadPreferences()).toEqual({ theme: 'midnight', fontSize: 13, serverViewMode: 'list' });
     window.localStorage.setItem('relay.ui.preferences.v1', JSON.stringify(preferences));
     expect(loadPreferences()).toEqual(preferences);
     window.localStorage.setItem('relay.ui.preferences.v1', JSON.stringify({ theme: 'nord', fontSize: 14 }));
-    expect(loadPreferences()).toEqual({ theme: 'nord', fontSize: 14 });
+    expect(loadPreferences()).toEqual({ theme: 'nord', fontSize: 14, serverViewMode: 'list' });
     window.localStorage.setItem('relay.ui.preferences.v1', JSON.stringify({ theme: 'unknown', fontSize: 14 }));
-    expect(loadPreferences()).toEqual({ theme: 'midnight', fontSize: 13 });
+    expect(loadPreferences()).toEqual({ theme: 'midnight', fontSize: 13, serverViewMode: 'list' });
     window.localStorage.setItem('relay.ui.preferences.v1', '{bad json');
-    expect(loadPreferences()).toEqual({ theme: 'midnight', fontSize: 13 });
+    expect(loadPreferences()).toEqual({ theme: 'midnight', fontSize: 13, serverViewMode: 'list' });
   });
 
   it('applies and persists only visual preferences', () => {
@@ -94,5 +94,11 @@ describe('UI preferences', () => {
     expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('light');
     expect(document.documentElement.style.getPropertyValue('--terminal-font-size')).toBe('16px');
     expect(meta.content).toBe('#eef3f9');
+  });
+
+  it('falls back to list view when a saved server view mode is invalid', () => {
+    window.localStorage.setItem('relay.ui.preferences.v1', JSON.stringify({ theme: 'nord', fontSize: 14, serverViewMode: 'invalid' }));
+
+    expect(loadPreferences()).toEqual({ theme: 'nord', fontSize: 14, serverViewMode: 'list' });
   });
 });

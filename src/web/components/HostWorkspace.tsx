@@ -7,6 +7,7 @@ import { ServerContextMenu, type ServerContextActions, type ServerContextTarget 
 import { useContextMenu } from '../hooks/use-context-menu';
 import { descendantGroupIds } from '../../shared/core/group-tree';
 import { createHostSearchIndex, matchesHostNavigationFilter } from '../state/navigation-state';
+import type { ServerViewMode } from '../theme';
 
 export interface HostWorkspaceProps {
   hosts: HostMetadataState[];
@@ -33,6 +34,8 @@ export interface HostWorkspaceProps {
   onClearHostKey?: (host: HostMetadataState) => void;
   onOpenSftp?: (host: HostMetadataState) => void;
   onCopyText?: (value: string) => Promise<void> | void;
+  viewMode?: ServerViewMode;
+  onViewModeChange?: (viewMode: ServerViewMode) => void;
 }
 
 export const HostWorkspace = ({
@@ -59,7 +62,9 @@ export const HostWorkspace = ({
   onTestConnection,
   onClearHostKey,
   onOpenSftp,
-  onCopyText = () => undefined
+  onCopyText = () => undefined,
+  viewMode = 'list',
+  onViewModeChange = () => undefined
 }: HostWorkspaceProps) => {
   const serverContextMenu = useContextMenu<ServerContextTarget>();
   const hostSearchIndex = useMemo(() => createHostSearchIndex(hosts), [hosts]);
@@ -149,11 +154,15 @@ export const HostWorkspace = ({
           <div className="host-filter-summary">
             {activeFilterLabel && <><span className="filter-chip">{activeFilterLabel}</span><button className="filter-clear" type="button" onClick={clearFilters}>清除筛选</button></>}
             <span className="host-count">{visibleHosts.length} 台 Server</span>
+            <div className="view-mode-toggle" role="group" aria-label="Server 视图切换">
+              <button className="view-mode-button" type="button" aria-label="列表视图" aria-pressed={viewMode === 'list'} title="列表视图" onClick={() => onViewModeChange('list')}><span aria-hidden="true">☷</span></button>
+              <button className="view-mode-button" type="button" aria-label="网格视图" aria-pressed={viewMode === 'grid'} title="网格视图" onClick={() => onViewModeChange('grid')}><span aria-hidden="true">▦</span></button>
+            </div>
           </div>
         </div>
         {isFilteredEmpty ? (
           <div className="empty-state empty-state-compact"><h2>没有匹配的 Server</h2><p>试试名称、IP、用户名或标签。</p></div>
-        ) : <HostList hosts={visibleHosts} groups={groups} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onAddHost={onAddHost} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onClearHostKey={onClearHostKey} onTagSelected={onTagSelected} onContextMenu={openHostContextMenu} onTagContextMenu={(event, tag, host) => openTagContextMenu(event, tag, host.id)} />}
+        ) : <HostList hosts={visibleHosts} groups={groups} viewMode={viewMode} onConnect={onConnect} onFavoriteToggle={onFavoriteToggle} onAddHost={onAddHost} onEdit={onEdit} onDelete={onDelete} onTestConnection={onTestConnection} onClearHostKey={onClearHostKey} onTagSelected={onTagSelected} onContextMenu={openHostContextMenu} onTagContextMenu={(event, tag, host) => openTagContextMenu(event, tag, host.id)} />}
       </section>
       <ServerContextMenu state={serverContextMenu.state} selectedTag={selectedTag} actions={serverContextActions} onClose={serverContextMenu.close} />
     </div>
