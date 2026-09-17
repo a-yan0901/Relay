@@ -16,6 +16,7 @@
 - 同一终端允许多个授权设备同时输入；只有拥有者能分配输入序号并写入 SSH 通道。
 - 同账号的 Host、Identity、Group、Snippet 和终端配置自动同步到所有受信端；设备级布局和真实 SSH session 保持独立。
 - 云服务只保存加密快照和必要元数据；不记录终端输出、输入、SFTP 文件或密钥明文。
+- 本机低内存部署默认 MySQL 连接池不超过 4、等待队列不超过 16；relay 单帧不超过 64 KiB、单连接缓冲不超过 256 KiB、单工作区观看端不超过 16；文件和密文大载荷必须流式/分块处理。
 - Web 多账号 Vault 与 SSH session 隔离完成前，不允许开放多账号远端执行。
 - Windows 不使用 Web cookie 或本地 HTTP 监听；Android 后台保活须显式前台服务。
 - 本计划是未来实施清单；任何未勾选任务均不得表述为已交付。
@@ -32,7 +33,7 @@
 
 ## M1：独立云服务与持久同步
 
-- [ ] **任务 4：MySQL schema 与事务。** 在 `src/cloud/` 增加 accounts/devices/sessions、账号配置 keys/heads/revisions、设备 workspaces/keys/heads/revisions/memberships/audit 迁移和独立最小权限配置。集成测试两账号隔离、两端并发写账号配置 CAS 仅一个成功、非拥有者写设备工作区拒绝、幂等重试和迁移回滚；测试使用隔离数据库，不触碰现有生产数据。交付可重复部署的 schema 和备份/恢复演练说明。
+- [ ] **任务 4：MySQL schema 与事务。** 在 `src/cloud/` 增加 accounts/devices/sessions、账号配置 keys/heads/revisions、设备 workspaces/keys/heads/revisions/memberships/audit 迁移和独立最小权限配置；连接池采用默认 4 连接/16 排队并设硬上限。集成测试两账号隔离、两端并发写账号配置 CAS 仅一个成功、非拥有者写设备工作区拒绝、幂等重试和迁移回滚；测试使用隔离数据库，不触碰现有生产数据。交付可重复部署的 schema 和备份/恢复演练说明。
 - [ ] **任务 5：认证、设备信任和密钥分发。** 实现 v2 登录/刷新/登出、设备列表/撤销、已信任设备批准或恢复密钥引入新设备；设备 session 只保存 token hash。以未认证、越权、撤销后即时拒绝、恢复密钥错误及账号密码重置无法解密为红灯用例。交付最小权限云 API；云端不持有 `K_account`/`K_workspace` 明文。
 - [ ] **任务 6：账号数据与工作区快照 API。** 分别实现账号配置和设备工作区的 head、revision、加密快照 PUT/GET 与 `parentRevision` CAS；前者允许同账号受信端写，后者只允许拥有者写。载荷上限、AAD 字段、幂等键与冲突错误由任务 1 契约约束。集成测试两个设备离线修改账号配置后客户端保留未被 CAS 接受的分支、不静默覆盖、跨账号读写拒绝、撤销后下载拒绝。交付可离线排队、重试和冲突导出的持久同步闭环。
 - [ ] **任务 7：WSS 路由与在线状态。** 实现 owner/viewer 出站连接、心跳 TTL、成员授权、限流、背压、订阅取消、撤销强制断开；relay 只转发加密帧且日志仅含脱敏元数据。集成测试拥有者断线、重连换 epoch、慢消费者、伪造 session/workspace ID、两观看端同时订阅及多实例部署时的一致路由。交付不执行 SSH 的云中继。

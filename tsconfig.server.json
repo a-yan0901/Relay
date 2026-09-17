@@ -16,6 +16,6 @@
       "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["src/server/**/*.ts", "src/shared/**/*.ts"],
+  "include": ["src/server/**/*.ts", "src/shared/**/*.ts", "src/cloud/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
