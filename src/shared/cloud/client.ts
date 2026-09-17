@@ -129,6 +129,10 @@ export class CloudApiClient {
     return this.request('/v2/workspaces', { token });
   }
 
+  getWorkspace(token: string, workspaceId: string): Promise<CloudWorkspaceDescriptor> {
+    return this.request(`/v2/workspaces/${encodeURIComponent(workspaceId)}/descriptor`, { token });
+  }
+
   getAccountDataHead(token: string): Promise<CloudSnapshotHead | null> {
     return this.request('/v2/account-data/head', { token });
   }

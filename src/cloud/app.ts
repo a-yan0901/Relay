@@ -44,6 +44,7 @@ export interface CloudRelayAuthorization {
 
 export interface CloudWorkspaceApi extends CloudRelayAuthorization {
   list(accountId: string): Promise<readonly CloudWorkspaceDescriptor[]>;
+  get?(accountId: string, workspaceId: string): Promise<CloudWorkspaceDescriptor | null>;
 }
 
 export interface CloudAppDependencies {
@@ -287,6 +288,16 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
   app.get('/v2/workspaces', async (request, reply) => {
     const { session } = await requireSession(request, dependencies.auth);
     reply.send(dependencies.workspaces ? await dependencies.workspaces.list(session.accountId) : []);
+  });
+
+  app.get('/v2/workspaces/:workspaceId/descriptor', async (request, reply) => {
+    const { session } = await requireSession(request, dependencies.auth);
+    const parsed = workspaceParamsSchema.safeParse(request.params);
+    if (!parsed.success || !dependencies.workspaces?.get) throw new AppError('SYNC_NOT_FOUND');
+    await requireWorkspaceAccess(session, parsed.data.workspaceId, dependencies, 'viewer');
+    const descriptor = await dependencies.workspaces.get(session.accountId, parsed.data.workspaceId);
+    if (!descriptor) throw new AppError('SYNC_NOT_FOUND');
+    reply.send(descriptor);
   });
 
   app.get('/v2/workspaces/:workspaceId/keys', async (request, reply) => {

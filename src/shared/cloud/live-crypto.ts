@@ -16,6 +16,12 @@ const assertKey = (key: Uint8Array): void => {
   if (!(key instanceof Uint8Array) || key.byteLength !== AES_KEY_BYTES) throw new Error('invalid live session key');
 };
 
+const toArrayBuffer = (value: Uint8Array): ArrayBuffer => {
+  const copy = new Uint8Array(value.byteLength);
+  copy.set(value);
+  return copy.buffer;
+};
+
 const toBase64Url = (value: Uint8Array): string => {
   let binary = '';
   for (const byte of value) binary += String.fromCodePoint(byte);
@@ -37,7 +43,7 @@ const fromBase64Url = (value: unknown): Uint8Array => {
 };
 
 const cryptoKey = (key: Uint8Array): Promise<globalThis.CryptoKey> => (
-  globalThis.crypto.subtle.importKey('raw', key, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+  globalThis.crypto.subtle.importKey('raw', toArrayBuffer(key), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
 );
 
 const associatedData = (frame: LiveFrame): string => `relay-live:v${LIVE_CRYPTO_VERSION}:${frame.workspaceId}`;
@@ -71,9 +77,9 @@ export const encryptLiveFrame = async (key: Uint8Array, frame: LiveFrame): Promi
   const validated = parseLiveFrame(frame);
   const nonce = globalThis.crypto.getRandomValues(new Uint8Array(AES_NONCE_BYTES));
   const encrypted = await globalThis.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: nonce, additionalData: new globalThis.TextEncoder().encode(associatedData(validated)) },
+    { name: 'AES-GCM', iv: toArrayBuffer(nonce), additionalData: toArrayBuffer(new globalThis.TextEncoder().encode(associatedData(validated))) },
     await cryptoKey(key),
-    encodeLiveFrame(validated)
+    toArrayBuffer(encodeLiveFrame(validated))
   );
   const envelope: LiveCipherEnvelope = {
     protocolVersion: LIVE_CRYPTO_VERSION,
@@ -90,9 +96,9 @@ export const decryptLiveFrame = async (key: Uint8Array, bytes: Uint8Array): Prom
   assertKey(key);
   const envelope = parseCipherEnvelope(bytes);
   const decrypted = await globalThis.crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: fromBase64Url(envelope.nonce), additionalData: new globalThis.TextEncoder().encode(envelope.aad) },
+    { name: 'AES-GCM', iv: toArrayBuffer(fromBase64Url(envelope.nonce)), additionalData: toArrayBuffer(new globalThis.TextEncoder().encode(envelope.aad)) },
     await cryptoKey(key),
-    fromBase64Url(envelope.ciphertext)
+    toArrayBuffer(fromBase64Url(envelope.ciphertext))
   );
   return decodeLiveFrame(new Uint8Array(decrypted));
 };
