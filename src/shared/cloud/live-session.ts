@@ -47,7 +47,7 @@ export class LiveWorkspaceChannel {
   private readonly baseKey: Uint8Array;
   private readonly maxParticipants: number;
   private readonly viewers = new Set<string>();
-  private readonly onFrame?: (frame: LiveFrame, senderDeviceId: string) => void;
+  private readonly frameListeners = new Set<(frame: LiveFrame, senderDeviceId: string) => void>();
   private readonly onViewerJoin?: (deviceId: string) => void;
   private readonly onViewerLeave?: (deviceId: string) => void;
   private readonly onError?: (error: Error) => void;
@@ -79,7 +79,7 @@ export class LiveWorkspaceChannel {
     this.role = options.role;
     this.baseKey = new Uint8Array(options.baseKey);
     this.maxParticipants = maxParticipants;
-    this.onFrame = options.onFrame;
+    if (options.onFrame) this.frameListeners.add(options.onFrame);
     this.onViewerJoin = options.onViewerJoin;
     this.onViewerLeave = options.onViewerLeave;
     this.onError = options.onError;
@@ -93,6 +93,12 @@ export class LiveWorkspaceChannel {
 
   get viewerCount(): number { return this.viewers.size; }
   get ownerEpoch(): number | null { return this.currentOwnerEpoch; }
+
+  subscribe(listener: (frame: LiveFrame, senderDeviceId: string) => void): () => void {
+    if (this.frameListeners.size >= LIVE_MAX_CHANNEL_PARTICIPANTS) throw new Error('live channel listener limit reached');
+    this.frameListeners.add(listener);
+    return () => this.frameListeners.delete(listener);
+  }
 
   async connect(): Promise<void> {
     if (this.closed) throw new Error('live channel is closed');
@@ -231,7 +237,7 @@ export class LiveWorkspaceChannel {
         this.report(new Error('live input participant mismatch'));
         return;
       }
-      this.onFrame?.(frame, envelope.senderDeviceId);
+      for (const listener of this.frameListeners) listener(frame, envelope.senderDeviceId);
     } catch (error) {
       this.report(error);
     }
