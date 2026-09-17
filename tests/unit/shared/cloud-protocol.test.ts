@@ -5,6 +5,7 @@ import {
   createCloudDataAad,
   createInputSequencer,
   parseCloudDataEnvelope,
+  parseCloudKeyGrant,
   trackLiveSequence,
   type LiveInputRequest
 } from '../../../src/shared/cloud/protocol.js';
@@ -54,6 +55,29 @@ describe('cloud protocol contract', () => {
       payloadHash: 'a'.repeat(64),
       byteLength: 12
     })).toThrow('invalid');
+  });
+
+  it('accepts a bounded opaque key grant and rejects oversized wrappers', () => {
+    const grant = parseCloudKeyGrant({
+      protocolVersion: 1,
+      domain: 'account-data',
+      accountId: 'account-1',
+      resourceId: 'account-1',
+      recipientDeviceId: 'device-1',
+      keyVersion: 1,
+      wrappedKey: { scheme: 'x25519-aes256gcm', ciphertext: 'wrapped' }
+    });
+
+    expect(grant.recipientDeviceId).toBe('device-1');
+    expect(() => parseCloudKeyGrant({
+      protocolVersion: 1,
+      domain: 'account-data',
+      accountId: 'account-1',
+      resourceId: 'account-1',
+      recipientDeviceId: 'device-1',
+      keyVersion: 1,
+      wrappedKey: { ciphertext: 'x'.repeat(17 * 1024) }
+    })).toThrow();
   });
 
   it('orders concurrent input by owner sequence and de-duplicates retries', () => {

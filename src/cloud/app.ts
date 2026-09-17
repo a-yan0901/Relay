@@ -7,7 +7,7 @@ import type { RawData, WebSocket } from 'ws';
 import { z } from 'zod';
 
 import type { AccountSession, DeviceDescriptor } from '../shared/core/models.js';
-import { parseCloudDataEnvelope, type CloudDataDomain, type CloudDataEnvelope } from '../shared/cloud/protocol.js';
+import { parseCloudDataEnvelope, parseCloudKeyGrant, type CloudDataDomain, type CloudDataEnvelope, type CloudKeyGrant, type CloudKeyGrantInput } from '../shared/cloud/protocol.js';
 import { AppError } from '../shared/errors.js';
 import type { CloudAuthDeviceInput, CloudAuthResult } from './auth-service.js';
 import type { CloudRuntimeConfig } from './config.js';
@@ -30,6 +30,13 @@ export interface CloudSnapshotApi {
   put(input: PutCloudSnapshotInput): Promise<CloudSnapshotHead>;
 }
 
+export interface CloudKeyApi {
+  listAccountDataKeys(accountId: string, recipientDeviceId: string): Promise<readonly CloudKeyGrant[]>;
+  putAccountDataKey(input: CloudKeyGrantInput, now: string): Promise<CloudKeyGrant>;
+  listWorkspaceKeys(accountId: string, workspaceId: string, recipientDeviceId: string): Promise<readonly CloudKeyGrant[]>;
+  putWorkspaceKey(input: CloudKeyGrantInput, now: string): Promise<CloudKeyGrant>;
+}
+
 export interface CloudRelayAuthorization {
   canOwn(accountId: string, deviceId: string, workspaceId: string): Promise<boolean>;
   canView(accountId: string, deviceId: string, workspaceId: string): Promise<boolean>;
@@ -43,6 +50,7 @@ export interface CloudAppDependencies {
   config: CloudRuntimeConfig;
   auth: CloudAuthApi;
   snapshots: CloudSnapshotApi;
+  keys?: CloudKeyApi;
   workspaces?: CloudWorkspaceApi;
   relay?: BoundedRelayHub;
   relayAuthorization?: CloudRelayAuthorization;
@@ -57,7 +65,12 @@ const authSchema = z.object({
 }).strict();
 
 const deviceParamsSchema = z.object({ deviceId: z.string().min(1).max(128) }).strict();
+const workspaceParamsSchema = z.object({ workspaceId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u) }).strict();
 const revisionQuerySchema = z.object({ revision: z.coerce.number().int().min(1).max(1_000_000_000).optional() }).strict();
+const keyBodySchema = z.object({
+  keyVersion: z.number().int().min(1).max(32),
+  wrappedKey: z.record(z.string(), z.unknown())
+}).strict();
 
 const bearerToken = (request: FastifyRequest): string | null => {
   const header = request.headers.authorization;
@@ -160,6 +173,35 @@ const parseSnapshot = (body: unknown): CloudDataEnvelope => {
   }
 };
 
+const parseKeyGrant = (
+  body: unknown,
+  session: AccountSession,
+  domain: CloudDataDomain,
+  resourceId: string,
+  recipientDeviceId: string
+): CloudKeyGrantInput => {
+  const parsed = keyBodySchema.safeParse(body);
+  if (!parsed.success) throw new AppError('SYNC_PAYLOAD_INVALID');
+  try {
+    return parseCloudKeyGrant({
+      protocolVersion: 1,
+      domain,
+      accountId: session.accountId,
+      resourceId,
+      recipientDeviceId,
+      keyVersion: parsed.data.keyVersion,
+      wrappedKey: parsed.data.wrappedKey
+    });
+  } catch {
+    throw new AppError('SYNC_PAYLOAD_INVALID');
+  }
+};
+
+const requireKeyApi = (dependencies: CloudAppDependencies): CloudKeyApi => {
+  if (!dependencies.keys) throw new AppError('CAPABILITY_UNAVAILABLE');
+  return dependencies.keys;
+};
+
 export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise<FastifyInstance> => {
   const app = Fastify({
     bodyLimit: dependencies.config.relay.maxPayloadBytes,
@@ -224,9 +266,42 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
     reply.code(204).send();
   });
 
+  app.get('/v2/account-data/keys', async (request, reply) => {
+    const { session } = await requireSession(request, dependencies.auth);
+    reply.header('cache-control', 'no-store').send(await requireKeyApi(dependencies).listAccountDataKeys(session.accountId, session.deviceId));
+  });
+
+  app.put('/v2/account-data/keys/:deviceId', async (request, reply) => {
+    const { session } = await requireSession(request, dependencies.auth);
+    const parsed = deviceParamsSchema.safeParse(request.params);
+    if (!parsed.success) throw new AppError('ACCOUNT_DEVICE_REVOKED');
+    const input = parseKeyGrant(request.body, session, 'account-data', session.accountId, parsed.data.deviceId);
+    reply.send(await requireKeyApi(dependencies).putAccountDataKey(input, new Date().toISOString()));
+  });
+
   app.get('/v2/workspaces', async (request, reply) => {
     const { session } = await requireSession(request, dependencies.auth);
     reply.send(dependencies.workspaces ? await dependencies.workspaces.list(session.accountId) : []);
+  });
+
+  app.get('/v2/workspaces/:workspaceId/keys', async (request, reply) => {
+    const { session } = await requireSession(request, dependencies.auth);
+    const parsed = workspaceParamsSchema.safeParse(request.params);
+    if (!parsed.success) throw new AppError('SYNC_PAYLOAD_INVALID');
+    await requireWorkspaceAccess(session, parsed.data.workspaceId, dependencies, 'viewer');
+    reply.header('cache-control', 'no-store').send(await requireKeyApi(dependencies).listWorkspaceKeys(session.accountId, parsed.data.workspaceId, session.deviceId));
+  });
+
+  app.put('/v2/workspaces/:workspaceId/keys/:deviceId', async (request, reply) => {
+    const { session } = await requireSession(request, dependencies.auth);
+    const params = z.object({
+      workspaceId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u),
+      deviceId: z.string().min(1).max(128)
+    }).strict().safeParse(request.params);
+    if (!params.success) throw new AppError('SYNC_PAYLOAD_INVALID');
+    await requireWorkspaceAccess(session, params.data.workspaceId, dependencies, 'owner');
+    const input = parseKeyGrant(request.body, session, 'workspace', params.data.workspaceId, params.data.deviceId);
+    reply.send(await requireKeyApi(dependencies).putWorkspaceKey(input, new Date().toISOString()));
   });
 
   app.get('/v2/account-data/head', async (request, reply) => {

@@ -6,6 +6,24 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 export type CloudDataDomain = 'account-data' | 'workspace';
 
+export const CLOUD_KEY_PROTOCOL_VERSION = 1 as const;
+export const CLOUD_WRAPPED_KEY_MAX_BYTES = 16 * 1024;
+
+export interface CloudKeyGrantInput {
+  protocolVersion: typeof CLOUD_KEY_PROTOCOL_VERSION;
+  domain: CloudDataDomain;
+  accountId: string;
+  resourceId: string;
+  recipientDeviceId: string;
+  keyVersion: number;
+  wrappedKey: Record<string, unknown>;
+}
+
+export interface CloudKeyGrant extends CloudKeyGrantInput {
+  createdAt: string;
+  revokedAt: string | null;
+}
+
 export interface CloudDataEnvelope {
   protocolVersion: typeof CLOUD_PROTOCOL_VERSION;
   domain: CloudDataDomain;
@@ -61,6 +79,22 @@ const workspaceEnvelopeSchema = z.object({
 
 const cloudDataEnvelopeSchema = z.union([accountDataEnvelopeSchema, workspaceEnvelopeSchema]);
 
+const cloudKeyGrantSchema = z.object({
+  protocolVersion: z.literal(CLOUD_KEY_PROTOCOL_VERSION),
+  domain: z.enum(['account-data', 'workspace']),
+  accountId: z.string().regex(SAFE_ID),
+  resourceId: z.string().regex(SAFE_ID),
+  recipientDeviceId: z.string().regex(SAFE_ID),
+  keyVersion: z.number().int().min(1).max(32),
+  wrappedKey: z.record(z.string(), z.unknown()).refine((value) => {
+    try {
+      return new globalThis.TextEncoder().encode(JSON.stringify(value)).byteLength <= CLOUD_WRAPPED_KEY_MAX_BYTES;
+    } catch {
+      return false;
+    }
+  }, 'wrapped key too large')
+}).strict();
+
 const invalidEnvelope = (): never => {
   throw new Error('invalid cloud data envelope');
 };
@@ -69,6 +103,12 @@ export const parseCloudDataEnvelope = (value: unknown): CloudDataEnvelope => {
   const parsed = cloudDataEnvelopeSchema.safeParse(value);
   if (!parsed.success) return invalidEnvelope();
   return parsed.data as CloudDataEnvelope;
+};
+
+export const parseCloudKeyGrant = (value: unknown): CloudKeyGrantInput => {
+  const parsed = cloudKeyGrantSchema.safeParse(value);
+  if (!parsed.success) return invalidEnvelope();
+  return parsed.data as CloudKeyGrantInput;
 };
 
 export const createCloudDataAad = (input: CloudDataAadInput): string => (

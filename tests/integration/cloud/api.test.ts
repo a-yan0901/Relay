@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { buildCloudApp, type CloudAuthApi, type CloudSnapshotApi, type CloudWorkspaceApi } from '../../../src/cloud/app.js';
+import { buildCloudApp, type CloudAuthApi, type CloudKeyApi, type CloudSnapshotApi, type CloudWorkspaceApi } from '../../../src/cloud/app.js';
 import { loadCloudConfig } from '../../../src/cloud/config.js';
 import type { AccountSession, DeviceDescriptor } from '../../../src/shared/core/models.js';
-import type { CloudDataEnvelope } from '../../../src/shared/cloud/protocol.js';
+import type { CloudDataEnvelope, CloudKeyGrant } from '../../../src/shared/cloud/protocol.js';
 import type { CloudSnapshotHead } from '../../../src/cloud/snapshot-repository.js';
 
 const session: AccountSession = {
@@ -67,6 +67,25 @@ const denyWorkspaces: CloudWorkspaceApi = {
   async canView() { return false; }
 };
 
+const keyGrant: CloudKeyGrant = {
+  protocolVersion: 1,
+  domain: 'account-data',
+  accountId: 'account-1',
+  resourceId: 'account-1',
+  recipientDeviceId: 'device-1',
+  keyVersion: 1,
+  wrappedKey: { scheme: 'test', ciphertext: 'wrapped' },
+  createdAt: '2026-09-17T00:00:00.000Z',
+  revokedAt: null
+};
+
+const createKeys = (): CloudKeyApi => ({
+  async listAccountDataKeys() { return [keyGrant]; },
+  async putAccountDataKey(input, now) { return { ...input, createdAt: now, revokedAt: null }; },
+  async listWorkspaceKeys() { return []; },
+  async putWorkspaceKey(input, now) { return { ...input, createdAt: now, revokedAt: null }; }
+});
+
 describe('cloud API', () => {
   const apps: Array<Awaited<ReturnType<typeof buildCloudApp>>> = [];
 
@@ -118,5 +137,32 @@ describe('cloud API', () => {
 
     expect(response.statusCode).toBe(403);
     expect(response.json().error.code).toBe('ACCOUNT_DEVICE_REVOKED');
+  });
+
+  it('scopes account key grants to the authenticated device and recipient path', async () => {
+    const app = await buildCloudApp({ config, auth: createAuth(), snapshots: createSnapshots(), keys: createKeys() });
+    apps.push(app);
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/v2/account-data/keys',
+      headers: { authorization: `Bearer ${validToken}` }
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toEqual([keyGrant]);
+
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/v2/account-data/keys/device-2',
+      headers: { authorization: `Bearer ${validToken}` },
+      payload: { keyVersion: 1, wrappedKey: { scheme: 'test', ciphertext: 'wrapped-2' } }
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toMatchObject({
+      accountId: 'account-1',
+      resourceId: 'account-1',
+      recipientDeviceId: 'device-2',
+      wrappedKey: { ciphertext: 'wrapped-2' }
+    });
   });
 });

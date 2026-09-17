@@ -41,4 +41,21 @@ describe('cloud HTTP client', () => {
 
     await expect(client.getAccountDataHead('token-value')).rejects.toMatchObject({ code: 'ACCOUNT_DEVICE_REVOKED', statusCode: 403 });
   });
+
+  it('validates bounded key grant responses while keeping the wrapper opaque', async () => {
+    const grant = {
+      protocolVersion: 1,
+      domain: 'account-data',
+      accountId: 'account-1',
+      resourceId: 'account-1',
+      recipientDeviceId: 'device-1',
+      keyVersion: 1,
+      wrappedKey: { scheme: 'test', ciphertext: 'wrapped' },
+      createdAt: '2026-09-17T00:00:00.000Z',
+      revokedAt: null
+    };
+    const client = new CloudApiClient('https://api.example.test', async () => new Response(JSON.stringify([grant]), { status: 200 }));
+
+    await expect(client.listAccountDataKeys('token-value')).resolves.toEqual([grant]);
+  });
 });

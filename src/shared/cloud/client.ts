@@ -1,6 +1,6 @@
 import type { AccountSession, DeviceDescriptor } from '../core/models.js';
 import { AppError, isAppErrorCode } from '../errors.js';
-import { parseCloudDataEnvelope, type CloudDataEnvelope } from './protocol.js';
+import { parseCloudDataEnvelope, parseCloudKeyGrant, type CloudDataEnvelope, type CloudKeyGrant, type CloudKeyGrantInput } from './protocol.js';
 
 export interface CloudAuthResponse {
   account: AccountSession;
@@ -16,6 +16,8 @@ export interface CloudWorkspaceDescriptor {
   updatedAt: string;
   deletedAt: string | null;
 }
+
+export type CloudClientDeviceDescriptor = DeviceDescriptor & { publicKey?: string | null };
 
 export interface CloudSnapshotHead {
   domain: 'account-data' | 'workspace';
@@ -66,6 +68,30 @@ const parseJson = async <T>(response: FetchResponse): Promise<T> => {
   }
 };
 
+const parseKeyGrantResponse = (value: unknown): CloudKeyGrant => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new AppError('PROTOCOL_INVALID_MESSAGE', '云服务返回的密钥封装无效');
+  }
+  const candidate = value as Record<string, unknown>;
+  const input = parseCloudKeyGrant({
+    protocolVersion: candidate.protocolVersion,
+    domain: candidate.domain,
+    accountId: candidate.accountId,
+    resourceId: candidate.resourceId,
+    recipientDeviceId: candidate.recipientDeviceId,
+    keyVersion: candidate.keyVersion,
+    wrappedKey: candidate.wrappedKey
+  });
+  if (typeof candidate.createdAt !== 'string' || (candidate.revokedAt !== null && typeof candidate.revokedAt !== 'string')) {
+    throw new AppError('PROTOCOL_INVALID_MESSAGE', '云服务返回的密钥封装时间字段无效');
+  }
+  return {
+    ...input,
+    createdAt: candidate.createdAt,
+    revokedAt: candidate.revokedAt
+  };
+};
+
 export class CloudApiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: FetchLike;
@@ -89,7 +115,7 @@ export class CloudApiClient {
     return this.request('/v2/auth/logout', { method: 'POST', token });
   }
 
-  listDevices(token: string): Promise<readonly DeviceDescriptor[]> {
+  listDevices(token: string): Promise<readonly CloudClientDeviceDescriptor[]> {
     return this.request('/v2/devices', { token });
   }
 
@@ -114,6 +140,21 @@ export class CloudApiClient {
     return this.request('/v2/account-data/snapshot', { method: 'PUT', token, idempotencyKey, body: envelope });
   }
 
+  async listAccountDataKeys(token: string): Promise<readonly CloudKeyGrant[]> {
+    const grants = await this.request<unknown>('/v2/account-data/keys', { token });
+    if (!Array.isArray(grants)) throw new AppError('PROTOCOL_INVALID_MESSAGE', '云服务返回的密钥封装列表无效');
+    return grants.map(parseKeyGrantResponse);
+  }
+
+  async putAccountDataKey(token: string, recipientDeviceId: string, input: Omit<CloudKeyGrantInput, 'domain' | 'accountId' | 'resourceId' | 'recipientDeviceId'> & { wrappedKey: Record<string, unknown> }): Promise<CloudKeyGrant> {
+    const result = await this.request<unknown>(`/v2/account-data/keys/${encodeURIComponent(recipientDeviceId)}`, {
+      method: 'PUT',
+      token,
+      body: input
+    });
+    return parseKeyGrantResponse(result);
+  }
+
   getWorkspaceHead(token: string, workspaceId: string): Promise<CloudSnapshotHead | null> {
     return this.request(`/v2/workspaces/${encodeURIComponent(workspaceId)}/head`, { token });
   }
@@ -125,6 +166,21 @@ export class CloudApiClient {
 
   putWorkspaceSnapshot(token: string, workspaceId: string, envelope: CloudDataEnvelope, idempotencyKey: string): Promise<CloudSnapshotHead> {
     return this.request(`/v2/workspaces/${encodeURIComponent(workspaceId)}/snapshot`, { method: 'PUT', token, idempotencyKey, body: envelope });
+  }
+
+  async listWorkspaceKeys(token: string, workspaceId: string): Promise<readonly CloudKeyGrant[]> {
+    const grants = await this.request<unknown>(`/v2/workspaces/${encodeURIComponent(workspaceId)}/keys`, { token });
+    if (!Array.isArray(grants)) throw new AppError('PROTOCOL_INVALID_MESSAGE', '云服务返回的工作区密钥封装列表无效');
+    return grants.map(parseKeyGrantResponse);
+  }
+
+  async putWorkspaceKey(token: string, workspaceId: string, recipientDeviceId: string, input: Omit<CloudKeyGrantInput, 'domain' | 'accountId' | 'resourceId' | 'recipientDeviceId'> & { wrappedKey: Record<string, unknown> }): Promise<CloudKeyGrant> {
+    const result = await this.request<unknown>(`/v2/workspaces/${encodeURIComponent(workspaceId)}/keys/${encodeURIComponent(recipientDeviceId)}`, {
+      method: 'PUT',
+      token,
+      body: input
+    });
+    return parseKeyGrantResponse(result);
   }
 
   private async request<T = unknown>(path: string, options: { method?: string; token?: string; idempotencyKey?: string; body?: unknown } = {}): Promise<T> {

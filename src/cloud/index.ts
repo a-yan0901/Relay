@@ -10,6 +10,7 @@ import { loadCloudConfig, type CloudRuntimeConfig } from './config.js';
 import { MySqlCloudDatabase } from './database.js';
 import { applyCloudSchema } from './schema.js';
 import { CloudSnapshotRepository } from './snapshot-repository.js';
+import { CloudKeyRepository } from './key-repository.js';
 import { CloudWorkspaceRepository } from './workspace-repository.js';
 
 export interface CloudServerHandle {
@@ -30,7 +31,8 @@ export const createCloudServer = async (config: CloudRuntimeConfig = loadCloudCo
       }
     });
     const snapshots = new CloudSnapshotRepository(database);
-    const app = await buildCloudApp({ config, auth, snapshots, workspaces });
+    const keys = new CloudKeyRepository(database);
+    const app = await buildCloudApp({ config, auth, snapshots, keys, workspaces });
     let closed = false;
     return {
       app,
