@@ -173,8 +173,10 @@ describe('TerminalPanel mobile selection', () => {
     const { rerender } = render(<TerminalPanel terminalId="terminal-theme" host={host} active onClose={() => {}} preferences={{ theme: 'midnight', fontSize: 13 }} />);
     const terminal = testState.terminalInstances[0] as unknown as { options: { theme: { background?: string }; fontSize: number } };
     expect(terminal.options.theme.background).toBe('#07111f');
+    expect(terminal.options.theme.foreground).toBe('#d9e7f7');
     rerender(<TerminalPanel terminalId="terminal-theme" host={host} active onClose={() => {}} preferences={{ theme: 'light', fontSize: 16 }} />);
     expect(terminal.options.theme.background).toBe('#f5f8fc');
+    expect(terminal.options.theme.foreground).toBe('#1f2f46');
     expect(terminal.options.fontSize).toBe(16);
   });
 
