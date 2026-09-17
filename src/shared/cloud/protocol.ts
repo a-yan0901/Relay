@@ -106,7 +106,18 @@ const invalidEnvelope = (): never => {
 export const parseCloudDataEnvelope = (value: unknown): CloudDataEnvelope => {
   const parsed = cloudDataEnvelopeSchema.safeParse(value);
   if (!parsed.success) return invalidEnvelope();
-  return parsed.data as CloudDataEnvelope;
+  const envelope = parsed.data as CloudDataEnvelope;
+  const expectedAad = createCloudDataAad({
+    domain: envelope.domain,
+    accountId: envelope.accountId,
+    ...(envelope.domain === 'workspace' ? { workspaceId: envelope.workspaceId } : {}),
+    revision: envelope.revision,
+    parentRevision: envelope.parentRevision,
+    keyVersion: envelope.keyVersion,
+    writerDeviceId: envelope.writerDeviceId
+  });
+  if (envelope.aad !== expectedAad) return invalidEnvelope();
+  return envelope;
 };
 
 export const parseCloudKeyGrant = (value: unknown): CloudKeyGrantInput => {

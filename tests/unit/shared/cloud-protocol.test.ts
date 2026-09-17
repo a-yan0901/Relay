@@ -30,6 +30,7 @@ describe('cloud protocol contract', () => {
 
     expect(accountData.domain).toBe('account-data');
     expect(() => parseCloudDataEnvelope({ ...accountData, hosts: [{ password: 'secret' }] })).toThrow('invalid');
+    expect(() => parseCloudDataEnvelope({ ...accountData, aad: 'relay:v1:wrong' })).toThrow('invalid');
 
     expect(parseCloudDataEnvelope({
       ...accountData,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CloudApiClient } from '../../../src/shared/cloud/client.js';
-import type { CloudDataEnvelope } from '../../../src/shared/cloud/protocol.js';
+import { createCloudDataAad, type CloudDataEnvelope } from '../../../src/shared/cloud/protocol.js';
 
 const envelope: CloudDataEnvelope = {
   protocolVersion: 1,
@@ -14,7 +14,7 @@ const envelope: CloudDataEnvelope = {
   nonce: 'nonce',
   ciphertext: 'ciphertext',
   authTag: 'tag',
-  aad: 'aad',
+  aad: createCloudDataAad({ domain: 'account-data', accountId: 'account-1', revision: 1, parentRevision: null, keyVersion: 1, writerDeviceId: 'device-1' }),
   payloadHash: 'a'.repeat(64),
   byteLength: 12
 };
