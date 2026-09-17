@@ -68,7 +68,7 @@ import type { SyncCoordinatorPort, SyncServiceContract, SyncTransport } from './
 import { SyncSnapshotService } from './sync/sync-snapshot.js';
 import { CloudApiClient } from '../shared/cloud/client.js';
 import { CloudBrowserSessionStore } from './cloud/cloud-session-store.js';
-import { CLOUD_ACCOUNT_SESSION_COOKIE_NAME, registerCloudAccountRoutes, type CloudAccountRouteClient } from './cloud/cloud-account-routes.js';
+import { CLOUD_ACCOUNT_SESSION_COOKIE_NAME, registerCloudAccountRoutes, type CloudAccountRouteClient, type CloudSyncRouteClient } from './cloud/cloud-account-routes.js';
 
 export interface AppDependencies {
   database: SqliteDatabase;
@@ -389,7 +389,13 @@ export const buildApp = async (dependencies: AppDependencies): Promise<FastifyIn
       enabled: true,
       client: cloudApiClient,
       sessions: cloudSessionStore!,
-      secureCookie: dependencies.config.nodeEnv === 'production'
+      secureCookie: dependencies.config.nodeEnv === 'production',
+      sync: {
+        client: cloudApiClient as CloudSyncRouteClient,
+        sessions: cloudSessionStore!,
+        vaultSessions: sessionStore,
+        snapshots: syncSnapshotService
+      }
     });
   }
   await registerSyncRoutes(app, withOwnerId({

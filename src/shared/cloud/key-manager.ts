@@ -52,17 +52,25 @@ export class CloudKeyManager {
       if (!(error instanceof AppError) || error.code !== 'SYNC_NOT_FOUND') throw error;
     }
     const material = this.newKey(1);
-    const wrappedKey = await wrapCloudDataKey(material.key, this.options.deviceKeyPair.publicKey, cloudKeyGrantAad('account-data', this.options.accountId, this.options.accountId, material.keyVersion, this.options.deviceId));
-    await this.api.putAccountDataKey(this.options.token, this.options.deviceId, { keyVersion: material.keyVersion, wrappedKey: wrappedKey as unknown as Record<string, unknown> });
-    this.remember('account-data', this.options.accountId, material);
-    return this.copyMaterial(material);
+    try {
+      const wrappedKey = await wrapCloudDataKey(material.key, this.options.deviceKeyPair.publicKey, cloudKeyGrantAad('account-data', this.options.accountId, this.options.accountId, material.keyVersion, this.options.deviceId));
+      await this.api.putAccountDataKey(this.options.token, this.options.deviceId, { keyVersion: material.keyVersion, wrappedKey: wrappedKey as unknown as Record<string, unknown> });
+      this.remember('account-data', this.options.accountId, material);
+      return this.copyMaterial(material);
+    } finally {
+      material.key.fill(0);
+    }
   }
 
   async grantAccountDataKey(recipientDeviceId: string): Promise<void> {
     const material = await this.ensureAccountDataKey();
-    await this.grant('account-data', this.options.accountId, recipientDeviceId, material, async (wrappedKey) => {
-      await this.api.putAccountDataKey(this.options.token, recipientDeviceId, { keyVersion: material.keyVersion, wrappedKey });
-    });
+    try {
+      await this.grant('account-data', this.options.accountId, recipientDeviceId, material, async (wrappedKey) => {
+        await this.api.putAccountDataKey(this.options.token, recipientDeviceId, { keyVersion: material.keyVersion, wrappedKey });
+      });
+    } finally {
+      material.key.fill(0);
+    }
   }
 
   getWorkspaceKey(workspaceId: string): Promise<CloudKeyMaterial> {
@@ -76,17 +84,25 @@ export class CloudKeyManager {
       if (!(error instanceof AppError) || error.code !== 'SYNC_NOT_FOUND') throw error;
     }
     const material = this.newKey(1);
-    const wrappedKey = await wrapCloudDataKey(material.key, this.options.deviceKeyPair.publicKey, cloudKeyGrantAad('workspace', this.options.accountId, workspaceId, material.keyVersion, this.options.deviceId));
-    await this.api.putWorkspaceKey(this.options.token, workspaceId, this.options.deviceId, { keyVersion: material.keyVersion, wrappedKey: wrappedKey as unknown as Record<string, unknown> });
-    this.remember('workspace', workspaceId, material);
-    return this.copyMaterial(material);
+    try {
+      const wrappedKey = await wrapCloudDataKey(material.key, this.options.deviceKeyPair.publicKey, cloudKeyGrantAad('workspace', this.options.accountId, workspaceId, material.keyVersion, this.options.deviceId));
+      await this.api.putWorkspaceKey(this.options.token, workspaceId, this.options.deviceId, { keyVersion: material.keyVersion, wrappedKey: wrappedKey as unknown as Record<string, unknown> });
+      this.remember('workspace', workspaceId, material);
+      return this.copyMaterial(material);
+    } finally {
+      material.key.fill(0);
+    }
   }
 
   async grantWorkspaceKey(workspaceId: string, recipientDeviceId: string): Promise<void> {
     const material = await this.ensureWorkspaceKey(workspaceId);
-    await this.grant('workspace', workspaceId, recipientDeviceId, material, async (wrappedKey) => {
-      await this.api.putWorkspaceKey(this.options.token, workspaceId, recipientDeviceId, { keyVersion: material.keyVersion, wrappedKey });
-    });
+    try {
+      await this.grant('workspace', workspaceId, recipientDeviceId, material, async (wrappedKey) => {
+        await this.api.putWorkspaceKey(this.options.token, workspaceId, recipientDeviceId, { keyVersion: material.keyVersion, wrappedKey });
+      });
+    } finally {
+      material.key.fill(0);
+    }
   }
 
   private async getKey(domain: 'account-data' | 'workspace', resourceId: string, loadGrants: () => Promise<readonly CloudKeyGrant[]>): Promise<CloudKeyMaterial> {
@@ -100,8 +116,12 @@ export class CloudKeyManager {
       try {
         const key = await unwrapCloudDataKey(grant.wrappedKey, this.options.deviceKeyPair.privateKey, cloudKeyGrantAad(domain, this.options.accountId, resourceId, grant.keyVersion, this.options.deviceId));
         const material = { key, keyVersion: grant.keyVersion };
-        this.remember(domain, resourceId, material);
-        return this.copyMaterial(material);
+        try {
+          this.remember(domain, resourceId, material);
+          return this.copyMaterial(material);
+        } finally {
+          material.key.fill(0);
+        }
       } catch (error) {
         lastError = error;
       }
@@ -123,12 +143,24 @@ export class CloudKeyManager {
 
   private remember(domain: 'account-data' | 'workspace', resourceId: string, material: CloudKeyMaterial): void {
     const key = `${domain}:${resourceId}:${material.keyVersion}`;
+    const previous = this.cache.get(key);
+    if (previous) previous.key.fill(0);
     this.cache.set(key, { key: copyKey(material.key), keyVersion: material.keyVersion });
     while (this.cache.size > MAX_CACHED_KEYS) {
       const oldest = this.cache.keys().next().value;
-      if (typeof oldest === 'string') this.cache.delete(oldest);
+      if (typeof oldest === 'string') {
+        const evicted = this.cache.get(oldest);
+        evicted?.key.fill(0);
+        this.cache.delete(oldest);
+      }
       else break;
     }
+  }
+
+  /** Wipe cached data keys when a short-lived sync operation is disposed. */
+  clear(): void {
+    for (const material of this.cache.values()) material.key.fill(0);
+    this.cache.clear();
   }
 
   private copyMaterial(material: CloudKeyMaterial): CloudKeyMaterial {

@@ -26,7 +26,7 @@ import { WorkspaceDirectory } from './components/WorkspaceDirectory';
 import type { SftpOpenRequest } from './components/ServerContextMenu';
 import type { AccountSession, ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, SyncState, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
-import type { BinarySource, NotificationPermission, NotificationPort } from '../shared/core/ports';
+import type { BinarySource, CloudSyncResult, NotificationPermission, NotificationPort } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
@@ -234,6 +234,8 @@ export const App = ({ runtime }: AppProps) => {
   const [workspaceDirectory, setWorkspaceDirectory] = useState<CloudWorkspaceDirectorySnapshot | null>(null);
   const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
   const [workspaceDirectoryError, setWorkspaceDirectoryError] = useState<string | null>(null);
+  const [cloudSyncResult, setCloudSyncResult] = useState<CloudSyncResult | null>(null);
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('denied');
   const [preferencesOpen, setPreferencesOpen] = useState(false);
@@ -276,6 +278,8 @@ export const App = ({ runtime }: AppProps) => {
   const workspaceSaveQueueRef = useRef(Promise.resolve());
   const workspaceLoadRequestRef = useRef(0);
   const activityRequestRef = useRef(0);
+  const cloudSyncTimerRef = useRef<number | null>(null);
+  const cloudSyncInFlightRef = useRef(false);
 
   const quickSwitcherItems = useMemo(() => createQuickSwitcherItems({
     hosts: state.hosts,
@@ -512,6 +516,37 @@ export const App = ({ runtime }: AppProps) => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
     void refreshWorkspaceDirectory();
   }, [refreshWorkspaceDirectory, state.phase, workspaceHydrated]);
+
+  const runCloudSync = useCallback(async (): Promise<void> => {
+    if (!workspaceHydrated || state.phase !== 'ready' || !accountSession || !runtime.cloudSync || !networkOnline) return;
+    if (cloudSyncInFlightRef.current) return;
+    cloudSyncInFlightRef.current = true;
+    setCloudSyncError(null);
+    try {
+      const result = await runtime.cloudSync.sync();
+      setCloudSyncResult(result);
+      if (result.status === 'pulled') await loadWorkspace({ openTerminalView: false });
+    } catch (error: unknown) {
+      setCloudSyncError(messageFromError(error));
+    } finally {
+      cloudSyncInFlightRef.current = false;
+    }
+  }, [accountSession, loadWorkspace, networkOnline, runtime, state.phase, workspaceHydrated]);
+
+  useEffect(() => {
+    if (!workspaceHydrated || state.phase !== 'ready' || !accountSession || !runtime.cloudSync || !networkOnline) return;
+    if (cloudSyncTimerRef.current !== null) window.clearTimeout(cloudSyncTimerRef.current);
+    cloudSyncTimerRef.current = window.setTimeout(() => {
+      cloudSyncTimerRef.current = null;
+      void runCloudSync();
+    }, 700);
+    return () => {
+      if (cloudSyncTimerRef.current !== null) {
+        window.clearTimeout(cloudSyncTimerRef.current);
+        cloudSyncTimerRef.current = null;
+      }
+    };
+  }, [accountSession, identities, loadWorkspace, networkOnline, runCloudSync, runtime.cloudSync, snippets, state.groups, state.hosts, state.phase, state.workspace, terminalProfiles, workspaceHydrated]);
 
   useEffect(() => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
@@ -1321,6 +1356,18 @@ export const App = ({ runtime }: AppProps) => {
         <div className={`global-feedback global-feedback-${connectionFeedback.tone}`} role="status" aria-live="polite">
           <span>{connectionFeedback.message}</span>
           <button className="icon-button" type="button" aria-label="关闭提示" title="关闭提示" onClick={() => setConnectionFeedback(null)}>×</button>
+        </div>
+      )}
+      {cloudSyncError && (
+        <div className="global-feedback global-feedback-info" role="status" aria-live="polite">
+          <span>账号配置同步失败：{cloudSyncError}</span>
+          <button className="button button-ghost button-small" type="button" onClick={() => void runCloudSync()}>重试</button>
+        </div>
+      )}
+      {cloudSyncResult?.status === 'conflict' && !cloudSyncError && (
+        <div className="global-feedback global-feedback-info" role="status" aria-live="polite">
+          <span>账号配置在本端和云端同时发生了修改，已暂停自动覆盖，请先处理冲突。</span>
+          <button className="button button-ghost button-small" type="button" onClick={() => void runCloudSync()}>重新检查</button>
         </div>
       )}
       <div className={`app-body ${terminalView ? 'app-body-terminal' : ''}`}>

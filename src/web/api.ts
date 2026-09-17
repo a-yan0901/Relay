@@ -6,7 +6,7 @@ import type { TerminalProfile } from '@shared/terminal-appearance';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
 import type { ExportOptions, ImportApplyRequest, ImportFormat, ImportPreview } from '@shared/import/types';
 import type { VaultRecoveryInput } from '@shared/core/ports';
-import type { CloudWorkspaceDescriptor } from '@shared/cloud/client';
+import type { CloudSnapshotHead, CloudWorkspaceDescriptor } from '@shared/cloud/client';
 import type { CloudDeviceDescriptor } from '@shared/cloud/protocol';
 
 export interface SetupStatus {
@@ -70,6 +70,12 @@ export interface WebCloudAccountApi {
   trustCloudDevice(deviceId: string): Promise<void>;
   listCloudWorkspaces(): Promise<readonly CloudWorkspaceDescriptor[]>;
   getCloudWorkspace(workspaceId: string): Promise<CloudWorkspaceDescriptor>;
+  syncCloudAccount(): Promise<CloudSyncResponse>;
+}
+
+export interface CloudSyncResponse {
+  status: 'initialized' | 'pulled' | 'pushed' | 'synced' | 'conflict';
+  head: CloudSnapshotHead | null;
 }
 
 export interface WebSyncStateResponse {
@@ -380,6 +386,30 @@ const parseCloudWorkspace = (value: unknown): CloudWorkspaceDescriptor => {
     ...(value.online === undefined ? {} : { online: value.online }),
     ...(value.activeViewerCount === undefined ? {} : { activeViewerCount: value.activeViewerCount })
   };
+};
+
+const parseCloudSyncResponse = (value: unknown): CloudSyncResponse => {
+  if (!isRecord(value) || !hasExactKeys(value, ['status', 'head']) || !['initialized', 'pulled', 'pushed', 'synced', 'conflict'].includes(String(value.status)) || (value.head !== null && !isRecord(value.head))) return invalidResponse();
+  let head: CloudSnapshotHead | null = null;
+  if (value.head !== null) {
+    const candidate = value.head;
+    if (!hasExactKeys(candidate, ['domain', 'resourceId', 'revision', 'payloadHash', 'keyVersion', 'updatedAt'])
+      || candidate.domain !== 'account-data'
+      || !isNonEmptyString(candidate.resourceId)
+      || !isInteger(candidate.revision) || candidate.revision < 1
+      || typeof candidate.payloadHash !== 'string' || !/^[a-f0-9]{64}$/iu.test(candidate.payloadHash)
+      || !isInteger(candidate.keyVersion) || candidate.keyVersion < 1
+      || !isIsoDate(candidate.updatedAt)) return invalidResponse();
+    head = {
+      domain: 'account-data',
+      resourceId: candidate.resourceId,
+      revision: candidate.revision,
+      payloadHash: candidate.payloadHash,
+      keyVersion: candidate.keyVersion,
+      updatedAt: candidate.updatedAt
+    };
+  }
+  return { status: value.status as CloudSyncResponse['status'], head };
 };
 
 const parseSyncHead = (value: unknown): SyncHead => {
@@ -693,6 +723,8 @@ export const listCloudWorkspaces: WebCloudAccountApi['listCloudWorkspaces'] = ()
 });
 
 export const getCloudWorkspace: WebCloudAccountApi['getCloudWorkspace'] = (workspaceId) => request<unknown>(`/api/cloud/workspaces/${encodeURIComponent(workspaceId)}/descriptor`).then(parseCloudWorkspace);
+
+export const syncCloudAccount: WebCloudAccountApi['syncCloudAccount'] = () => request<unknown>('/api/cloud/sync/account', { method: 'POST', ...json({}) }).then(parseCloudSyncResponse);
 
 export const getSyncState: WebSyncApi['getSyncState'] = () => request<unknown>('/api/sync/v1/state').then(parseSyncStateResponse);
 

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { assertAccountSyncContract, assertCoreRuntimeContract } from '../../fixtures/core-runtime-contract.js';
 import type { AccountSession, AccountDeletionState, DeviceDescriptor, SyncConflictExport, SyncDeletionState, SyncDescriptor, SyncEnvelope, SyncState, TransferResumeRequest, VaultRecoveryPreview } from '../../../src/shared/core/models.js';
 import type { HostMetadata } from '../../../src/shared/validation.js';
-import { createWebAdapters, WebAccountSession, WebCloudAccountSession, WebCloudDeviceTrust, WebCloudWorkspaceDirectory, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync, WebVaultRecovery } from '../../../src/web/platform/web-adapters.js';
+import { createWebAdapters, WebAccountSession, WebCloudAccountSession, WebCloudDeviceTrust, WebCloudSync, WebCloudWorkspaceDirectory, WebCommandTransport, WebFileTransport, WebHostStore, WebImportExportAdapter, WebSecretStore, WebSessionTransport, WebSync, WebVaultRecovery } from '../../../src/web/platform/web-adapters.js';
 import type { TerminalSocketLike } from '../../../src/web/hooks/use-terminal-session.js';
 
 const host: HostMetadata = {
@@ -207,14 +207,17 @@ describe('web adapters', () => {
       listCloudDevices: async () => [],
       revokeCloudDevice: async () => {},
       trustCloudDevice: async () => {},
-      listCloudWorkspaces: async () => []
+      listCloudWorkspaces: async () => [],
+      syncCloudAccount: async () => ({ status: 'synced' as const, head: null })
     };
     const runtime = createWebAdapters({ api: client });
     await runtime.negotiateCapabilities();
     expect(runtime.account).toBeInstanceOf(WebCloudAccountSession);
     expect(runtime.devices).toBeInstanceOf(WebCloudDeviceTrust);
+    expect(runtime.cloudSync).toBeInstanceOf(WebCloudSync);
     expect(runtime.sync).toBeUndefined();
     await expect(runtime.account?.status()).resolves.toEqual(account);
+    await expect(runtime.cloudSync?.sync()).resolves.toEqual({ status: 'synced', head: null });
   });
 
   it('exposes a bounded cloud workspace directory without exposing a bearer token to the adapter', async () => {

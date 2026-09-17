@@ -55,4 +55,17 @@ describe('bounded browser cloud session store', () => {
     expect(store.get(second)).not.toBeNull();
     expect(store.revoke(first)).toBe(false);
   });
+
+  it('stores only a bounded sync cursor and returns defensive copies', () => {
+    const store = new CloudBrowserSessionStore();
+    const cookie = store.create('a'.repeat(43), account);
+    const cursor = { remoteRevision: 3, remotePayloadHash: 'a'.repeat(64), localPayloadHash: 'b'.repeat(64) };
+
+    store.setCloudSyncCursor(cookie, cursor);
+    cursor.remoteRevision = 99;
+    const stored = store.get(cookie);
+    expect(stored?.cloudSyncCursor).toEqual({ remoteRevision: 3, remotePayloadHash: 'a'.repeat(64), localPayloadHash: 'b'.repeat(64) });
+    if (stored?.cloudSyncCursor) stored.cloudSyncCursor.localPayloadHash = 'c'.repeat(64);
+    expect(store.get(cookie)?.cloudSyncCursor?.localPayloadHash).toBe('b'.repeat(64));
+  });
 });

@@ -42,6 +42,8 @@ import type {
   AccountSessionPort,
   BinarySource,
   ByteStream,
+  CloudSyncPort,
+  CloudSyncResult,
   CommandTransport,
   ConnectionProbe,
   DeviceTrustPort,
@@ -177,6 +179,7 @@ export interface WebApiClient {
   trustCloudDevice?: typeof api.trustCloudDevice;
   listCloudWorkspaces?: typeof api.listCloudWorkspaces;
   getCloudWorkspace?: typeof api.getCloudWorkspace;
+  syncCloudAccount?: typeof api.syncCloudAccount;
   getSyncState?: typeof api.getSyncState;
   getSyncDescriptor?: typeof api.getSyncDescriptor;
   enableSync?: typeof api.enableSync;
@@ -236,6 +239,8 @@ const hasCloudWorkspaceDirectoryApi = (client: WebApiClient): boolean => (
   && hasFunction(client, 'listCloudDevices')
   && hasFunction(client, 'listCloudWorkspaces')
 );
+
+const hasCloudSyncApi = (client: WebApiClient): boolean => hasFunction(client, 'syncCloudAccount');
 
 const hasSyncApi = (client: WebApiClient): boolean => (
   hasFunction(client, 'getSyncState')
@@ -640,6 +645,14 @@ export class WebCloudWorkspaceDirectory implements WorkspaceDirectoryPort {
   }
 }
 
+export class WebCloudSync implements CloudSyncPort {
+  constructor(private readonly client: Pick<WebApiClient, 'syncCloudAccount'> = api) {}
+
+  sync(): Promise<CloudSyncResult> {
+    return requireApi(this.client.syncCloudAccount)();
+  }
+}
+
 type WebSyncClient = Pick<WebApiClient, 'getSyncState' | 'getSyncDescriptor' | 'enableSync' | 'retrySync' | 'previewPull' | 'resolveConflict'> & Partial<Pick<WebApiClient, 'getSyncEnvelope' | 'pushSyncEnvelope' | 'issueRecoveryKey' | 'confirmRecoveryKey' | 'exportConflict' | 'requestCloudDeletion' | 'restoreCloudDeletion'>>;
 
 export class WebSync implements SyncPort {
@@ -1023,6 +1036,7 @@ export const createWebAdapters = (options: {
   const cloudAccountAdapter = hasCloudAccountApi(client) ? new WebCloudAccountSession(client) : undefined;
   const cloudDeviceAdapter = hasCloudDeviceApi(client) ? new WebCloudDeviceTrust(client) : undefined;
   const cloudWorkspaceDirectoryAdapter = hasCloudWorkspaceDirectoryApi(client) ? new WebCloudWorkspaceDirectory(client) : undefined;
+  const cloudSyncAdapter = hasCloudSyncApi(client) ? new WebCloudSync(client) : undefined;
   const syncAdapter = hasSyncApi(client) ? new WebSync(client) : undefined;
   const vaultRecoveryAdapter = hasVaultRecoveryApi(client) ? new WebVaultRecovery(client) : undefined;
   const browserSystemServices = createBrowserSystemServices();
@@ -1056,6 +1070,7 @@ export const createWebAdapters = (options: {
     devices: undefined,
     sync: undefined,
     workspaceDirectory: undefined,
+    cloudSync: undefined,
     capabilityAdapter,
     accountMode: 'none' as const,
     negotiateCapabilities: async (): Promise<CapabilitySet> => {
@@ -1068,6 +1083,7 @@ export const createWebAdapters = (options: {
         ? runtime.accountMode === 'cloud' ? cloudDeviceAdapter : deviceAdapter
         : undefined;
       runtime.workspaceDirectory = runtime.accountMode === 'cloud' ? cloudWorkspaceDirectoryAdapter : undefined;
+      runtime.cloudSync = runtime.accountMode === 'cloud' ? cloudSyncAdapter : undefined;
       runtime.sync = runtime.capabilities.supports('sync.encrypted') ? syncAdapter : undefined;
       runtime.vaultRecovery = runtime.capabilities.supports('sync.encrypted') ? vaultRecoveryAdapter : undefined;
       return runtime.capabilities;

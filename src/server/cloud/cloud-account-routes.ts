@@ -5,11 +5,25 @@ import type { AccountSession } from '../../shared/core/models.js';
 import type { CloudApiClient, CloudAuthResponse, CloudWorkspaceDescriptor } from '../../shared/cloud/client.js';
 import { generateCloudDeviceKeyPair, type CloudDeviceKeyPair } from '../../shared/cloud/key-crypto.js';
 import { AppError } from '../../shared/errors.js';
-import { CloudBrowserSessionStore } from './cloud-session-store.js';
+import { CloudBrowserSessionStore, type CloudSessionSyncCursor } from './cloud-session-store.js';
+import { CloudAccountSyncCoordinator } from './cloud-account-sync.js';
+import { CloudKeyManager } from '../../shared/cloud/key-manager.js';
+import type { SessionStore } from '../auth/session-store.js';
+import { getSessionId } from '../auth/session-cookie.js';
+import type { SyncSnapshotService } from '../sync/sync-snapshot.js';
 
 export const CLOUD_ACCOUNT_SESSION_COOKIE_NAME = 'relay_cloud_session';
 
 export interface CloudAccountRouteClient extends Pick<CloudApiClient, 'register' | 'signIn' | 'getSession' | 'refresh' | 'signOut' | 'listDevices' | 'revokeDevice' | 'trustDevice' | 'listWorkspaces' | 'getWorkspace'> {}
+
+export interface CloudSyncRouteClient extends Pick<CloudApiClient, 'listDevices' | 'listAccountDataKeys' | 'putAccountDataKey' | 'getAccountDataHead' | 'getAccountDataSnapshot' | 'putAccountDataSnapshot' | 'getWorkspaceHead' | 'getWorkspaceSnapshot' | 'putWorkspaceSnapshot' | 'listWorkspaceKeys' | 'putWorkspaceKey'> {}
+
+export interface CloudSyncRouteDependencies {
+  client: CloudSyncRouteClient;
+  sessions: CloudBrowserSessionStore;
+  vaultSessions: SessionStore;
+  snapshots: SyncSnapshotService;
+}
 
 export interface CloudAccountRouteDependencies {
   enabled: boolean;
@@ -17,6 +31,7 @@ export interface CloudAccountRouteDependencies {
   sessions: CloudBrowserSessionStore;
   secureCookie: boolean;
   createDeviceKeyPair?: () => Promise<CloudDeviceKeyPair>;
+  sync?: CloudSyncRouteDependencies;
 }
 
 const authBodySchema = z.object({
@@ -77,10 +92,17 @@ const authInput = (body: unknown): { email: string; password: string; deviceLabe
 
 const authResponse = (result: CloudAuthResponse): { account: AccountSession } => ({ account: result.account });
 
+/** Preserve the decrypted snapshot buffer instead of allocating a second copy. */
+const asBuffer = (value: Uint8Array): Buffer => Buffer.isBuffer(value)
+  ? value
+  : Buffer.from(value.buffer as ArrayBuffer, value.byteOffset, value.byteLength);
+
 interface ActiveCloudSession {
   id: string;
   token: string;
   account: AccountSession;
+  deviceKeyPair?: CloudDeviceKeyPair;
+  cloudSyncCursor: CloudSessionSyncCursor | null;
 }
 
 const requireSession = (request: FastifyRequest, sessions: CloudBrowserSessionStore): ActiveCloudSession => {
@@ -88,7 +110,7 @@ const requireSession = (request: FastifyRequest, sessions: CloudBrowserSessionSt
   if (!id) throw new AppError('ACCOUNT_SESSION_INVALID');
   const session = sessions.get(id);
   if (!session) throw new AppError('ACCOUNT_SESSION_INVALID');
-  return { id, token: session.token, account: session.account };
+  return { id, token: session.token, account: session.account, deviceKeyPair: session.deviceKeyPair, cloudSyncCursor: session.cloudSyncCursor ?? null };
 };
 
 const isInvalidSession = (error: unknown): boolean => error instanceof AppError && error.code === 'ACCOUNT_SESSION_INVALID';
@@ -201,7 +223,21 @@ export const registerCloudAccountRoutes = async (
     requireEnabled(dependencies.enabled);
     requireEmptyBody(request.body);
     const active = requireSession(request, dependencies.sessions);
-    await dependencies.client.trustDevice(active.token, requireDeviceId(request));
+    const deviceId = requireDeviceId(request);
+    await dependencies.client.trustDevice(active.token, deviceId);
+    if (dependencies.sync && active.deviceKeyPair) {
+      const keyManager = new CloudKeyManager(dependencies.sync.client, {
+        token: active.token,
+        accountId: active.account.accountId,
+        deviceId: active.account.deviceId,
+        deviceKeyPair: active.deviceKeyPair
+      });
+      try {
+        await keyManager.grantAccountDataKey(deviceId);
+      } finally {
+        keyManager.clear();
+      }
+    }
     reply.code(204).send();
   });
 
@@ -216,5 +252,35 @@ export const registerCloudAccountRoutes = async (
     requireEnabled(dependencies.enabled);
     const active = requireSession(request, dependencies.sessions);
     reply.send(await dependencies.client.getWorkspace(active.token, requireWorkspaceId(request)));
+  });
+
+  app.post('/api/cloud/sync/account', async (request, reply) => {
+    requireEnabled(dependencies.enabled);
+    requireEmptyBody(request.body);
+    const sync = dependencies.sync;
+    if (!sync) throw new AppError('CAPABILITY_UNAVAILABLE');
+    const active = requireSession(request, dependencies.sessions);
+    if (!active.deviceKeyPair) throw new AppError('ACCOUNT_SESSION_INVALID');
+    const vaultSessionId = getSessionId(request);
+    const vaultSession = vaultSessionId ? sync.vaultSessions.get(vaultSessionId) : null;
+    if (!vaultSession || vaultSession.ownerId !== active.account.accountId) throw new AppError('VAULT_LOCKED');
+    const coordinator = new CloudAccountSyncCoordinator(sync.client, {
+      async create(vaultKey) { return sync.snapshots.createAccountData(active.account.accountId, vaultKey); },
+      isEmpty(plaintext) {
+        const summary = sync.snapshots.validateAccountData(asBuffer(plaintext));
+        return summary.hosts.length === 0 && summary.groups.length === 0 && (summary.identities?.length ?? 0) === 0 && summary.snippets.length === 0;
+      },
+      async apply(vaultKey, plaintext) { await sync.snapshots.applyAccountData(active.account.accountId, vaultKey, asBuffer(plaintext)); }
+    });
+    const result = await coordinator.run({
+      token: active.token,
+      accountId: active.account.accountId,
+      deviceId: active.account.deviceId,
+      deviceKeyPair: active.deviceKeyPair,
+      vaultKey: vaultSession.vaultKey,
+      cursor: active.cloudSyncCursor
+    });
+    sync.sessions.setCloudSyncCursor(active.id, result.cursor);
+    reply.header('cache-control', 'no-store').send({ status: result.status, head: result.head });
   });
 };

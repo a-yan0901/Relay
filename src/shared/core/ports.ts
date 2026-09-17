@@ -52,6 +52,7 @@ import type { RecoveryKeyState, VaultRecoveryPreview, WorkspaceState, WorkspaceT
 import type { AccountDeletionState, SyncDeletionState } from './models.js';
 import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from './account-sync.js';
 import type { CloudWorkspaceDirectorySnapshot } from '../cloud/directory.js';
+import type { CloudSnapshotHead } from '../cloud/client.js';
 
 export type SecretRef =
   | { kind: 'host'; id: string }
@@ -240,6 +241,16 @@ export interface WorkspaceStore {
 /** Optional account-scoped directory of independent device workspaces. */
 export interface WorkspaceDirectoryPort {
   refresh(): Promise<CloudWorkspaceDirectorySnapshot>;
+}
+
+export interface CloudSyncResult {
+  status: 'initialized' | 'pulled' | 'pushed' | 'synced' | 'conflict';
+  head: CloudSnapshotHead | null;
+}
+
+/** Account-level cloud configuration sync; device workspace state is separate. */
+export interface CloudSyncPort {
+  sync(): Promise<CloudSyncResult>;
 }
 
 export interface SnippetStore {

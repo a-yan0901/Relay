@@ -14,6 +14,7 @@ import { WorkspaceRepository } from '../workspace/workspace-repository.js';
 import { WorkspaceService } from '../workspace/workspace-service.js';
 
 export const SYNC_SNAPSHOT_SCHEMA_VERSION = 1 as const;
+export const CLOUD_ACCOUNT_SNAPSHOT_SCHEMA_VERSION = 2 as const;
 
 export interface SyncSnapshotSnippet {
   id: string;
@@ -30,6 +31,11 @@ export interface SyncSnapshot extends BundlePayload {
   schemaVersion: typeof SYNC_SNAPSHOT_SCHEMA_VERSION;
   snippets: SyncSnapshotSnippet[];
   workspace: WorkspaceState;
+}
+
+export interface CloudAccountSnapshot extends BundlePayload {
+  schemaVersion: typeof CLOUD_ACCOUNT_SNAPSHOT_SCHEMA_VERSION;
+  snippets: SyncSnapshotSnippet[];
 }
 
 export interface SyncSnapshotSummary {
@@ -70,6 +76,7 @@ const SAFE_OWNER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SNAPSHOT_KEYS = new Set(['schemaVersion', 'groups', 'hosts', 'identities', 'snippets', 'workspace', 'terminalProfiles', 'terminalDefaultProfileId']);
 const LEGACY_SNAPSHOT_KEYS = new Set(['schemaVersion', 'groups', 'hosts', 'identities', 'snippets', 'workspace']);
+const CLOUD_ACCOUNT_SNAPSHOT_KEYS = new Set(['schemaVersion', 'groups', 'hosts', 'identities', 'snippets', 'terminalProfiles', 'terminalDefaultProfileId']);
 const SNIPPET_KEYS = new Set(['id', 'name', 'description', 'tags', 'command', 'variables', 'createdAt', 'updatedAt']);
 
 const assertOwner = (ownerId: string): void => {
@@ -129,10 +136,12 @@ const parseSnapshotSnippet = (value: unknown): SyncSnapshotSnippet => {
   };
 };
 
-const toSnapshotBundle = (snapshot: SyncSnapshot): BundlePayload => ({
+const toSnapshotBundle = (snapshot: Pick<BundlePayload, 'groups' | 'hosts' | 'identities' | 'terminalProfiles' | 'terminalDefaultProfileId'>): BundlePayload => ({
   groups: snapshot.groups,
   hosts: snapshot.hosts,
-  identities: snapshot.identities
+  ...(snapshot.identities === undefined ? {} : { identities: snapshot.identities }),
+  ...(snapshot.terminalProfiles === undefined ? {} : { terminalProfiles: snapshot.terminalProfiles }),
+  ...(snapshot.terminalDefaultProfileId === undefined ? {} : { terminalDefaultProfileId: snapshot.terminalDefaultProfileId })
 });
 
 const snippetAad = (id: string): string => `snippet:${id}:payload:v1`;
@@ -142,9 +151,7 @@ export class SyncSnapshotService {
 
   constructor(private readonly options: SyncSnapshotServiceOptions) {}
 
-  async create(ownerId: string, vaultKey: Buffer): Promise<Buffer> {
-    this.assertOwner(ownerId);
-    const bundle = await this.options.bundleService.createPayload(vaultKey);
+  private async createSnippets(vaultKey: Buffer): Promise<SyncSnapshotSnippet[]> {
     const metadata = await this.options.snippetService.list();
     const snippets: SyncSnapshotSnippet[] = [];
     for (const item of metadata) {
@@ -160,6 +167,25 @@ export class SyncSnapshotService {
         updatedAt: snippet.updatedAt
       });
     }
+    return snippets;
+  }
+
+  private async encryptSnippetCommands(vaultKey: Buffer, snippets: readonly SyncSnapshotSnippet[]): Promise<ReadonlyMap<string, string>> {
+    const commandCiphertexts = new Map<string, string>();
+    for (const snippet of snippets) {
+      const encrypted = await this.options.vaultService.encryptJson(vaultKey, snippetAad(snippet.id), {
+        command: snippet.command,
+        variables: snippet.variables
+      } satisfies { command: string; variables: string[] });
+      commandCiphertexts.set(snippet.id, JSON.stringify(encrypted));
+    }
+    return commandCiphertexts;
+  }
+
+  async create(ownerId: string, vaultKey: Buffer): Promise<Buffer> {
+    this.assertOwner(ownerId);
+    const bundle = await this.options.bundleService.createPayload(vaultKey);
+    const snippets = await this.createSnippets(vaultKey);
     const workspace = this.options.workspaceService.load(ownerId);
     return Buffer.from(JSON.stringify({
       schemaVersion: SYNC_SNAPSHOT_SCHEMA_VERSION,
@@ -167,6 +193,18 @@ export class SyncSnapshotService {
       snippets,
       workspace
     } satisfies SyncSnapshot), 'utf8');
+  }
+
+  /** Account data deliberately excludes the device-owned workspace layout and live session state. */
+  async createAccountData(ownerId: string, vaultKey: Buffer): Promise<Buffer> {
+    this.assertOwner(ownerId);
+    const bundle = await this.options.bundleService.createPayload(vaultKey);
+    const snippets = await this.createSnippets(vaultKey);
+    return Buffer.from(JSON.stringify({
+      schemaVersion: CLOUD_ACCOUNT_SNAPSHOT_SCHEMA_VERSION,
+      ...bundle,
+      snippets
+    } satisfies CloudAccountSnapshot), 'utf8');
   }
 
   validate(plaintext: Buffer): SyncSnapshot {
@@ -201,6 +239,32 @@ export class SyncSnapshotService {
       snippets,
       workspace
     };
+  }
+
+  validateAccountData(plaintext: Buffer): CloudAccountSnapshot {
+    const candidate = parseJson(plaintext);
+    const keys = Object.keys(candidate);
+    if (keys.length !== CLOUD_ACCOUNT_SNAPSHOT_KEYS.size || keys.some((key) => !CLOUD_ACCOUNT_SNAPSHOT_KEYS.has(key))) failSnapshot();
+    const snippetValues: unknown[] = candidate.schemaVersion === CLOUD_ACCOUNT_SNAPSHOT_SCHEMA_VERSION && Array.isArray(candidate.snippets)
+      ? candidate.snippets
+      : failSnapshot();
+    if (snippetValues.length > 10_000) failSnapshot();
+    const bundle = (() => {
+      try {
+        return parsePayload({
+          groups: candidate.groups,
+          hosts: candidate.hosts,
+          identities: candidate.identities,
+          terminalProfiles: candidate.terminalProfiles,
+          terminalDefaultProfileId: candidate.terminalDefaultProfileId
+        });
+      } catch {
+        return failSnapshot();
+      }
+    })();
+    const snippets = snippetValues.map((snippet) => parseSnapshotSnippet(snippet));
+    if (new Set(snippets.map((snippet) => snippet.id)).size !== snippets.length) failSnapshot();
+    return { schemaVersion: CLOUD_ACCOUNT_SNAPSHOT_SCHEMA_VERSION, ...bundle, snippets };
   }
 
   describe(plaintext: Buffer): SyncSnapshotSummary {
@@ -249,23 +313,18 @@ export class SyncSnapshotService {
     const snapshot = this.validate(plaintext);
     if (resolution === 'keep-local' || resolution === 'export-both') return;
 
-    const encryptedSnippets = await Promise.all(snapshot.snippets.map(async (snippet) => ({
-      ...snippet,
-      commandCiphertext: JSON.stringify(await this.options.vaultService.encryptJson(vaultKey, snippetAad(snippet.id), {
-        command: snippet.command,
-        variables: snippet.variables
-      } satisfies { command: string; variables: string[] }))
-    })));
+    const commandCiphertexts = await this.encryptSnippetCommands(vaultKey, snapshot.snippets);
     const localSnippetIds = new Set(this.options.snippetRepository.list().map((snippet) => snippet.id));
+    const remoteSnippetIds = new Set(snapshot.snippets.map((snippet) => snippet.id));
     await this.options.bundleService.applyPayload(
       vaultKey,
       toSnapshotBundle(snapshot),
       { hostConflicts: 'replace', groupConflicts: 'replace', identityConflicts: 'replace' },
       () => {
         for (const id of localSnippetIds) {
-          if (!snapshot.snippets.some((snippet) => snippet.id === id)) this.options.snippetRepository.delete(id);
+          if (!remoteSnippetIds.has(id)) this.options.snippetRepository.delete(id);
         }
-        for (const snippet of encryptedSnippets) {
+        for (const snippet of snapshot.snippets) {
           const current = this.options.snippetRepository.get(snippet.id);
           const row = {
             ownerId,
@@ -273,7 +332,7 @@ export class SyncSnapshotService {
             name: snippet.name,
             description: snippet.description,
             tags: [...snippet.tags],
-            commandCiphertext: snippet.commandCiphertext,
+            commandCiphertext: commandCiphertexts.get(snippet.id)!,
             variables: [...snippet.variables],
             createdAt: snippet.createdAt,
             updatedAt: snippet.updatedAt
@@ -282,6 +341,41 @@ export class SyncSnapshotService {
           else this.options.snippetRepository.create(row);
         }
         this.options.workspaceRepository.replaceWithinTransaction(ownerId, snapshot.workspace);
+        afterApply?.();
+      }
+    );
+  }
+
+  async applyAccountData(ownerId: string, vaultKey: Buffer, plaintext: Buffer, afterApply?: () => void): Promise<void> {
+    this.assertOwner(ownerId);
+    const snapshot = this.validateAccountData(plaintext);
+    const commandCiphertexts = await this.encryptSnippetCommands(vaultKey, snapshot.snippets);
+    const localSnippetIds = new Set(this.options.snippetRepository.list().map((snippet) => snippet.id));
+    const remoteSnippetIds = new Set(snapshot.snippets.map((snippet) => snippet.id));
+    await this.options.bundleService.applyPayload(
+      vaultKey,
+      toSnapshotBundle(snapshot),
+      { hostConflicts: 'replace', groupConflicts: 'replace', identityConflicts: 'replace' },
+      () => {
+        for (const id of localSnippetIds) {
+          if (!remoteSnippetIds.has(id)) this.options.snippetRepository.delete(id);
+        }
+        for (const snippet of snapshot.snippets) {
+          const current = this.options.snippetRepository.get(snippet.id);
+          const row = {
+            ownerId,
+            id: snippet.id,
+            name: snippet.name,
+            description: snippet.description,
+            tags: [...snippet.tags],
+            commandCiphertext: commandCiphertexts.get(snippet.id)!,
+            variables: [...snippet.variables],
+            createdAt: snippet.createdAt,
+            updatedAt: snippet.updatedAt
+          };
+          if (current) this.options.snippetRepository.update(snippet.id, row);
+          else this.options.snippetRepository.create(row);
+        }
         afterApply?.();
       }
     );

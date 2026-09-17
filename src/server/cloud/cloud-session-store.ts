@@ -4,10 +4,17 @@ import type { AccountSession } from '../../shared/core/models.js';
 import type { CloudDeviceKeyPair } from '../../shared/cloud/key-crypto.js';
 import { AppError } from '../../shared/errors.js';
 
+export interface CloudSessionSyncCursor {
+  remoteRevision: number;
+  remotePayloadHash: string;
+  localPayloadHash: string;
+}
+
 export interface CloudBrowserSession {
   token: string;
   account: AccountSession;
   deviceKeyPair?: CloudDeviceKeyPair;
+  cloudSyncCursor?: CloudSessionSyncCursor | null;
   readonly createdAt: number;
   readonly expiresAt: number;
   lastUsedAt: number;
@@ -32,6 +39,13 @@ const assertPositiveInteger = (value: number, message: string): void => {
 
 const assertSessionId = (value: string): void => {
   if (typeof value !== 'string' || !TOKEN_PATTERN.test(value)) throw new AppError('ACCOUNT_SESSION_INVALID');
+};
+
+const assertSyncCursor = (value: CloudSessionSyncCursor | null): void => {
+  if (value === null) return;
+  if (!Number.isSafeInteger(value.remoteRevision) || value.remoteRevision < 1 || value.remoteRevision > 1_000_000_000 || !/^[a-f0-9]{64}$/u.test(value.remotePayloadHash) || !/^[a-f0-9]{64}$/u.test(value.localPayloadHash)) {
+    throw new AppError('ACCOUNT_SESSION_INVALID');
+  }
 };
 
 const assertAccount = (account: AccountSession): void => {
@@ -91,6 +105,7 @@ export class CloudBrowserSessionStore {
       token,
       account: { ...account },
       ...(deviceKeyPair === undefined ? {} : { deviceKeyPair: { ...deviceKeyPair } }),
+      cloudSyncCursor: null,
       createdAt: at,
       expiresAt: at + this.absoluteTimeoutMs,
       lastUsedAt: at
@@ -111,8 +126,18 @@ export class CloudBrowserSessionStore {
     return {
       ...session,
       account: { ...session.account },
-      ...(session.deviceKeyPair === undefined ? {} : { deviceKeyPair: { ...session.deviceKeyPair } })
+      ...(session.deviceKeyPair === undefined ? {} : { deviceKeyPair: { ...session.deviceKeyPair } }),
+      cloudSyncCursor: session.cloudSyncCursor === undefined || session.cloudSyncCursor === null ? session.cloudSyncCursor ?? null : { ...session.cloudSyncCursor }
     };
+  }
+
+  setCloudSyncCursor(id: string, cursor: CloudSessionSyncCursor | null): void {
+    assertSessionId(id);
+    assertSyncCursor(cursor);
+    const session = this.sessions.get(id);
+    if (!session) throw new AppError('ACCOUNT_SESSION_INVALID');
+    session.cloudSyncCursor = cursor === null ? null : { ...cursor };
+    session.lastUsedAt = this.clock();
   }
 
   replace(id: string, token: string, account: AccountSession, at = this.clock()): void {
