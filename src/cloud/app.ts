@@ -421,6 +421,28 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
     const close = (): void => subscription.close();
     socket.on('close', close);
     socket.on('error', close);
+    let heartbeatAlive = true;
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+    const stopHeartbeat = (): void => {
+      if (heartbeatTimer !== undefined) clearInterval(heartbeatTimer);
+      heartbeatTimer = undefined;
+    };
+    socket.on('pong', () => { heartbeatAlive = true; });
+    heartbeatTimer = setInterval(() => {
+      if (socket.readyState !== 1) {
+        stopHeartbeat();
+        return;
+      }
+      if (!heartbeatAlive) {
+        socket.close(4000, 'relay heartbeat timeout');
+        stopHeartbeat();
+        return;
+      }
+      heartbeatAlive = false;
+      socket.ping();
+    }, dependencies.config.relay.heartbeatMs);
+    socket.on('close', stopHeartbeat);
+    socket.on('error', stopHeartbeat);
     socket.on('message', (data: RawData) => {
       const frame = asRawBuffer(data);
       if (role === 'owner') {
