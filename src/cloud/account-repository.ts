@@ -2,6 +2,8 @@ import type { ClientPlatform } from '../shared/core/models.js';
 import type { CloudDeviceDescriptor } from '../shared/cloud/protocol.js';
 import type { CloudSqlExecutor, CloudSqlTransaction } from './database.js';
 
+const MAX_CLOUD_DEVICES_PER_ACCOUNT = 256;
+
 export interface CloudAccountRecord {
   id: string;
   email: string;
@@ -179,7 +181,7 @@ export class CloudAccountRepository {
 
   async listDevices(accountId: string): Promise<readonly CloudDeviceRecord[]> {
     const rows = await this.database.query<DeviceSqlRow[]>(
-      'SELECT device_id, account_id, platform, label, public_key, trusted_at, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND revoked_at IS NULL ORDER BY created_at ASC',
+      `SELECT device_id, account_id, platform, label, public_key, trusted_at, created_at, last_seen_at, revoked_at FROM devices WHERE account_id = ? AND revoked_at IS NULL ORDER BY created_at ASC LIMIT ${MAX_CLOUD_DEVICES_PER_ACCOUNT}`,
       [accountId]
     );
     return rows.filter((row) => row.revoked_at === null).map(deviceFromRow);
@@ -247,6 +249,7 @@ export class CloudAccountRepository {
       lastSeenAt: device.lastSeenAt,
       current: device.id === currentDeviceId,
       revokedAt: device.revokedAt,
+      ...(device.publicKey === undefined ? {} : { publicKey: device.publicKey }),
       ...(device.trustedAt === undefined ? {} : { trustedAt: device.trustedAt })
     }));
   }

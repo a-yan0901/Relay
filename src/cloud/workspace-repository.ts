@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { CloudSqlExecutor, CloudSqlTransaction } from './database.js';
 
+const MAX_CLOUD_WORKSPACES_PER_ACCOUNT = 256;
+
 export interface CloudWorkspaceDescriptor {
   id: string;
   accountId: string;
@@ -43,7 +45,7 @@ export class CloudWorkspaceRepository {
 
   async list(accountId: string): Promise<readonly CloudWorkspaceDescriptor[]> {
     const rows = await this.database.query<WorkspaceSqlRow[]>(
-      `${workspaceSelect} WHERE account_id = ? AND deleted_at IS NULL ORDER BY created_at ASC`,
+      `${workspaceSelect} WHERE account_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ${MAX_CLOUD_WORKSPACES_PER_ACCOUNT}`,
       [accountId]
     );
     return rows.filter((row) => row.deleted_at === null).map(fromRow);
