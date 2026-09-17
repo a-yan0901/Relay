@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { CloudDataDomain, CloudDataEnvelope } from '../shared/cloud/protocol.js';
 import { parseCloudDataEnvelope } from '../shared/cloud/protocol.js';
 import { AppError } from '../shared/errors.js';
@@ -33,6 +35,13 @@ export interface PutCloudSnapshotInput {
   idempotencyKeyHash: string;
   now: string;
 }
+
+export const hashCloudIdempotencyKey = (value: string): string => {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 256) {
+    throw new AppError('SYNC_PAYLOAD_INVALID');
+  }
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+};
 
 interface HeadSqlRow {
   revision: number;

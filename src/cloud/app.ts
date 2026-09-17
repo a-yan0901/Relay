@@ -12,7 +12,7 @@ import { AppError } from '../shared/errors.js';
 import type { CloudAuthDeviceInput, CloudAuthResult } from './auth-service.js';
 import type { CloudRuntimeConfig } from './config.js';
 import { BoundedRelayHub, type RelayPeer, type RelaySubscription } from './relay.js';
-import type { CloudSnapshotHead, PutCloudSnapshotInput } from './snapshot-repository.js';
+import { hashCloudIdempotencyKey, type CloudSnapshotHead, type PutCloudSnapshotInput } from './snapshot-repository.js';
 import type { CloudWorkspaceDescriptor } from './workspace-repository.js';
 
 export interface CloudAuthApi {
@@ -252,7 +252,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
       accountId: session.accountId,
       writerDeviceId: session.deviceId,
       envelope: snapshot,
-      idempotencyKeyHash: parseIdempotencyKey(request),
+      idempotencyKeyHash: hashCloudIdempotencyKey(parseIdempotencyKey(request)),
       now: new Date().toISOString()
     });
     reply.send(result);
@@ -297,7 +297,7 @@ export const buildCloudApp = async (dependencies: CloudAppDependencies): Promise
       workspaceId,
       writerDeviceId: session.deviceId,
       envelope: snapshot,
-      idempotencyKeyHash: parseIdempotencyKey(request),
+      idempotencyKeyHash: hashCloudIdempotencyKey(parseIdempotencyKey(request)),
       now: new Date().toISOString()
     });
     reply.send(result);

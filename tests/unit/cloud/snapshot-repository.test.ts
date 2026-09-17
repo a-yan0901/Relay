@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertCloudRevisionChain,
+  hashCloudIdempotencyKey,
   type CloudRevisionInput
 } from '../../../src/cloud/snapshot-repository.js';
 
@@ -18,5 +19,14 @@ describe('cloud snapshot CAS', () => {
     expect(() => assertCloudRevisionChain(2, { revision: 3, parentRevision: 1 })).toThrowError(expect.objectContaining({ code: 'SYNC_CONFLICT' }));
     expect(() => assertCloudRevisionChain(2, { revision: 4, parentRevision: 2 })).toThrowError(expect.objectContaining({ code: 'SYNC_CONFLICT' }));
     expect(() => assertCloudRevisionChain(null, { revision: 2, parentRevision: null })).toThrowError(expect.objectContaining({ code: 'SYNC_CONFLICT' }));
+  });
+
+  it('hashes idempotency keys before they can be persisted', () => {
+    const hashed = hashCloudIdempotencyKey('request-1');
+
+    expect(hashed).toHaveLength(64);
+    expect(hashed).toMatch(/^[a-f0-9]+$/u);
+    expect(hashed).not.toContain('request-1');
+    expect(hashCloudIdempotencyKey('request-1')).toBe(hashed);
   });
 });
