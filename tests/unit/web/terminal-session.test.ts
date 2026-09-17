@@ -442,6 +442,24 @@ describe('TerminalSessionController', () => {
     }
   });
 
+  it('automatically creates a fresh shell after a stale session close', () => {
+    vi.useFakeTimers();
+    try {
+      FakeSocket.instances = [];
+      const controller = new TerminalSessionController({ hostId: 'host-1', terminalId: 'terminal-1', webSocketFactory: (url) => new FakeSocket(url) });
+      controller.connect();
+      const socket = lastSocket();
+      socket.open();
+      socket.close(1008);
+      expect(controller.snapshot.state).toBe('reconnecting');
+      expect(controller.snapshot.error).toBeNull();
+      vi.advanceTimersByTime(0);
+      expect(FakeSocket.instances).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps sanitized connection diagnostics for the status UI', () => {
     FakeSocket.instances = [];
     const controller = new TerminalSessionController({

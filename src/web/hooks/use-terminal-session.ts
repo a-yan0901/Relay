@@ -509,13 +509,20 @@ export class TerminalSessionController {
       return;
     }
     if (isRecord(event) && event.code === 1008) {
-      this.retryBlocked = true;
+      // A stale server-side session is recoverable: reconnect immediately and
+      // let the gateway create a fresh shell instead of asking the user.
+      this.serviceInstanceId = null;
+      this.reattachOnly = false;
+      this.retryBlocked = false;
+      this.reconnectExhausted = false;
+      this.reconnectAttempt = 0;
       this.updateSnapshot({
-        state: 'needs-reopen',
+        state: 'reconnecting',
         reconnectDelayMs: 0,
         networkOffline: false,
-        error: { type: 'error', code: 'SESSION_NEEDS_REOPEN', message: '服务会话已失效，请重新连接终端' }
+        error: null
       });
+      this.scheduleReconnect(0);
       return;
     }
     if (this.retryBlocked) return;
