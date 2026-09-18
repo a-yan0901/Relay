@@ -208,4 +208,39 @@ describe('SftpPanel', () => {
     expect(await screen.findByText('staging')).toBeInTheDocument();
     expect(onList).toHaveBeenLastCalledWith('host-2', '/staging');
   });
+
+  it('keeps only one bounded page in memory and navigates with cursors', async () => {
+    const user = userEvent.setup();
+    const onList = vi.fn(async () => []);
+    const onListPage = vi.fn(async (_hostId: string, _path: string, options?: { cursor?: string; filter?: string }) => {
+      if (options?.filter?.toLowerCase().includes('z')) {
+        return { entries: [{ name: 'z.log', path: '/z.log', type: 'file' as const, size: 2, mode: 0o644, modifiedAt: null }], nextCursor: null };
+      }
+      if (options?.cursor === '2') {
+        return { entries: [{ name: 'z.log', path: '/z.log', type: 'file' as const, size: 2, mode: 0o644, modifiedAt: null }], nextCursor: null };
+      }
+      return {
+        entries: [
+          { name: 'apps', path: '/apps', type: 'directory' as const, size: 0, mode: 0o755, modifiedAt: null },
+          { name: 'alpha', path: '/alpha', type: 'file' as const, size: 1, mode: 0o600, modifiedAt: null }
+        ],
+        nextCursor: '2'
+      };
+    });
+    render(<SftpPanel hostId="host-1" onList={onList} onListPage={onListPage} />);
+
+    expect(await screen.findByText('apps')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '下一页' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '下一页' }));
+    expect(await screen.findByText('z.log')).toBeInTheDocument();
+    expect(screen.queryByText('apps')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '上一页' }));
+    expect(await screen.findByText('apps')).toBeInTheDocument();
+
+    const filter = screen.getByRole('searchbox', { name: '过滤当前目录' });
+    await user.type(filter, 'z');
+    expect(await screen.findByText('z.log')).toBeInTheDocument();
+    expect(onList).not.toHaveBeenCalled();
+    expect(onListPage).toHaveBeenLastCalledWith('host-1', '/', { cursor: undefined, limit: 128, filter: 'z' });
+  });
 });

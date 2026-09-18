@@ -1,6 +1,6 @@
 import { Sha256 } from '../crypto/sha256.js';
 import { createCapabilitySet } from '../core/capabilities.js';
-import type { Capability, ClientPlatform, ConnectionProfile, HostListFilter, SftpEntry, TransferJob, TransferRequest, TransferResumeRequest, CommandRun, CommandRunRequest, ActivityFilter, ActivityPage, IdentityMetadata, GroupNode, WorkspaceState, WorkspaceTemplate, WorkspaceTemplateInput, VaultStatus, ConnectionTestResult, Snippet, SnippetMetadata } from '../core/models.js';
+import type { Capability, ClientPlatform, ConnectionProfile, HostListFilter, SftpEntry, SftpListOptions, SftpListPage, TransferJob, TransferRequest, TransferResumeRequest, CommandRun, CommandRunRequest, ActivityFilter, ActivityPage, IdentityMetadata, GroupNode, WorkspaceState, WorkspaceTemplate, WorkspaceTemplateInput, VaultStatus, ConnectionTestResult, Snippet, SnippetMetadata } from '../core/models.js';
 import type { HostMetadata } from '../validation.js';
 import type { AccountSessionPort, ActivityStore, BinarySource, CommandTransport, ConnectionProbe, DeviceTrustPort, FileTransport, GroupStore, HostStore, IdentityStore, ImportExportPort, PlatformServices, SecretRef, SecretStore, SessionEvent, SessionHandle, SessionTransport, SnippetStore, SyncPort, TerminalProfileStore, VaultSessionPort, WorkspaceStore, OpenShellRequest } from '../core/ports.js';
 import type { CoreRuntime } from '../core/runtime.js';
@@ -145,6 +145,12 @@ const jobFromResult = (value: unknown): TransferJob => {
   const job = asRecord(record?.job ?? value);
   if (!job || typeof job.id !== 'string' || typeof job.status !== 'string') throw new AppError('PROTOCOL_INVALID_MESSAGE');
   return job as unknown as TransferJob;
+};
+
+const sftpListPageFromResult = (value: unknown): SftpListPage => {
+  const record = asRecord(value);
+  if (!record || !Array.isArray(record.entries) || (record.nextCursor !== null && typeof record.nextCursor !== 'string')) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+  return { entries: record.entries as SftpEntry[], nextCursor: record.nextCursor as string | null };
 };
 
 class NativeVaultSession implements VaultSessionPort {
@@ -512,6 +518,9 @@ class NativeFileTransport implements FileTransport {
   constructor(private readonly port: NativeOperationPort) {}
 
   list(hostId: string, path: string): Promise<readonly SftpEntry[]> { return this.port.invoke('files.list', { hostId, path }); }
+  async listPage(hostId: string, path: string, options: SftpListOptions = {}): Promise<SftpListPage> {
+    return sftpListPageFromResult(await this.port.invoke('files.listPage', { hostId, path, ...options }));
+  }
   async createDirectory(hostId: string, path: string): Promise<void> { await this.port.invoke('files.createDirectory', { hostId, path }); }
   async rename(hostId: string, from: string, to: string): Promise<void> { await this.port.invoke('files.rename', { hostId, from, to }); }
   async remove(hostId: string, path: string): Promise<void> { await this.port.invoke('files.remove', { hostId, path }); }

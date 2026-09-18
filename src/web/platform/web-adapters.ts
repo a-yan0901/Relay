@@ -19,6 +19,8 @@ import type {
   IdentityMetadata,
   RecoveryKeyState,
   SftpEntry,
+  SftpListOptions,
+  SftpListPage,
   Snippet,
   SnippetMetadata,
   SyncConflictExport,
@@ -142,6 +144,7 @@ export interface WebApiClient {
   updateIdentity?: typeof api.updateIdentity;
   deleteIdentity?: typeof api.deleteIdentity;
   listSftpEntries?: typeof api.listSftpEntries;
+  listSftpEntriesPage?: typeof api.listSftpEntriesPage;
   mutateSftpEntry?: typeof api.mutateSftpEntry;
   createTransfer?: typeof api.createTransfer;
   listTransfers?: typeof api.listTransfers;
@@ -348,7 +351,7 @@ export class WebSecretStore implements SecretStore {
   }
 }
 
-type WebFileClient = Pick<WebApiClient, 'listSftpEntries' | 'createTransfer' | 'cancelTransfer'> & Partial<Pick<WebApiClient, 'listTransfers' | 'getTransfer' | 'mutateSftpEntry' | 'uploadTransferContent' | 'uploadTransferChunk' | 'downloadTransferContent' | 'pauseTransfer' | 'retryTransfer'>>;
+type WebFileClient = Pick<WebApiClient, 'listSftpEntries' | 'createTransfer' | 'cancelTransfer'> & Partial<Pick<WebApiClient, 'listSftpEntriesPage' | 'listTransfers' | 'getTransfer' | 'mutateSftpEntry' | 'uploadTransferContent' | 'uploadTransferChunk' | 'downloadTransferContent' | 'pauseTransfer' | 'retryTransfer'>>;
 
 const readableStreamToByteStream = (stream: ReadableStream<Uint8Array>): ByteStream => (async function* () {
   const reader = stream.getReader();
@@ -476,6 +479,17 @@ export class WebFileTransport implements FileTransport {
 
   list(hostId: string, path: string): Promise<readonly SftpEntry[]> {
     return requireApi(this.client.listSftpEntries)(hostId, path);
+  }
+
+  async listPage(hostId: string, path: string, options: SftpListOptions = {}): Promise<SftpListPage> {
+    if (this.client.listSftpEntriesPage) return this.client.listSftpEntriesPage(hostId, path, options);
+    const entries = await requireApi(this.client.listSftpEntries)(hostId, path);
+    const filter = options.filter?.trim().toLocaleLowerCase() ?? '';
+    const offset = options.cursor === undefined ? 0 : Number(options.cursor);
+    const limit = options.limit ?? 128;
+    const matching = filter ? entries.filter((entry) => entry.name.toLocaleLowerCase().includes(filter)) : entries;
+    const page = matching.slice(offset, offset + limit);
+    return { entries: page, nextCursor: offset + page.length < matching.length ? String(offset + page.length) : null };
   }
 
   createDirectory(hostId: string, path: string): Promise<void> {

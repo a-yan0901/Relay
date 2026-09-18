@@ -40,7 +40,7 @@ class RelayNativePlugin : Plugin() {
             "workspace.load", "workspace.save", "workspace.listTemplates", "workspace.createTemplate", "workspace.deleteTemplate",
             "terminalProfiles.list", "terminalProfiles.getDefault", "terminalProfiles.create", "terminalProfiles.setDefault", "terminalProfiles.delete",
             "sessions.openShell", "sessions.reconnect", "sessions.write", "sessions.resize", "sessions.hostKeyDecision", "sessions.credential", "sessions.close",
-            "files.list", "files.createDirectory", "files.rename", "files.remove", "files.createTransfer", "files.listTransfers", "files.getTransfer", "files.upload", "files.download", "files.pauseTransfer", "files.cancelTransfer", "files.retryTransfer",
+            "files.list", "files.listPage", "files.createDirectory", "files.rename", "files.remove", "files.createTransfer", "files.listTransfers", "files.getTransfer", "files.upload", "files.download", "files.pauseTransfer", "files.cancelTransfer", "files.retryTransfer",
             "commands.start", "commands.get", "commands.cancel",
             "snippets.list", "snippets.get", "snippets.create", "snippets.update", "snippets.delete",
             "activity.list",

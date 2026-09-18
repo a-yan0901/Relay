@@ -834,6 +834,14 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
     }));
 
     router.register('files.list', (payload) => withSession(async (record) => { if (!isRecord(payload)) throw new AppError('SFTP_PATH_INVALID'); return sftpService.listEntries(text(payload.hostId), text(payload.path), record.vaultKey); }));
+    router.register('files.listPage', (payload) => withSession(async (record) => {
+      if (!isRecord(payload)) throw new AppError('SFTP_PATH_INVALID');
+      return sftpService.listEntriesPage(text(payload.hostId), text(payload.path), {
+        ...(typeof payload.cursor === 'string' ? { cursor: payload.cursor } : {}),
+        ...(typeof payload.limit === 'number' ? { limit: payload.limit } : {}),
+        ...(typeof payload.filter === 'string' ? { filter: payload.filter } : {})
+      }, record.vaultKey);
+    }));
     router.register('files.createDirectory', (payload) => withSession(async (record) => { if (!isRecord(payload)) throw new AppError('SFTP_PATH_INVALID'); await sftpService.createDirectory(text(payload.hostId), text(payload.path), record.vaultKey); }));
     router.register('files.rename', (payload) => withSession(async (record) => { if (!isRecord(payload)) throw new AppError('SFTP_PATH_INVALID'); await sftpService.renameEntry(text(payload.hostId), text(payload.from), text(payload.to), record.vaultKey); }));
     router.register('files.remove', (payload) => withSession(async (record) => { if (!isRecord(payload)) throw new AppError('SFTP_PATH_INVALID'); await sftpService.removeEntry(text(payload.hostId), text(payload.path), true, record.vaultKey); }));

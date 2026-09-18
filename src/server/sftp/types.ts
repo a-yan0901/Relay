@@ -1,5 +1,10 @@
 import type { SftpEntry } from '../../shared/core/models.js';
 
+export interface SftpResourceListPage {
+  entries: readonly SftpEntry[];
+  hasMore: boolean;
+}
+
 export interface SftpWriteOptions {
   /** Byte offset in the remote file. A zero offset always truncates the file. */
   offset?: number;
@@ -14,6 +19,8 @@ export interface SftpReadOptions {
 
 export interface SftpResource {
   list(path: string): Promise<readonly SftpEntry[]>;
+  /** Optional bounded listing. Offset is a stateless cursor supplied by the service. */
+  listPage?(path: string, offset: number, limit: number, filter?: string): Promise<SftpResourceListPage>;
   stat(path: string): Promise<SftpEntry | null>;
   mkdir(path: string, recursive?: boolean): Promise<void>;
   rename(from: string, to: string): Promise<void>;

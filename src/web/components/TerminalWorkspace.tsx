@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 
 import { type TerminalProfile } from '@shared/terminal-appearance';
 import type { HostMetadataState, TerminalTabState } from '../state/app-state';
-import type { SftpEntry, TransferJob, WorkspaceLayout } from '../../shared/core/models';
+import type { SftpEntry, SftpListOptions, SftpListPage, TransferJob, WorkspaceLayout } from '../../shared/core/models';
 import type { ClipboardPort, DialogPort, ExternalLinkPort, FileTransport } from '../../shared/core/ports';
 import { sftpParentPath } from '../../shared/core/sftp-path';
 import type { TerminalSessionSnapshot } from '../hooks/use-terminal-session';
@@ -58,13 +58,14 @@ export interface TerminalWorkspaceProps {
   openSftpRequest?: SftpOpenRequest | null;
   onSftpRequestConsumed?: (requestId: string) => void;
   onListSftp?: (hostId: string, path: string) => Promise<readonly SftpEntry[]>;
+  onListSftpPage?: (hostId: string, path: string, options?: SftpListOptions) => Promise<SftpListPage>;
   onCreateDirectorySftp?: (hostId: string, path: string) => Promise<void>;
   onRenameSftp?: (hostId: string, from: string, to: string) => Promise<void>;
   onDeleteSftp?: (hostId: string, path: string) => Promise<void>;
   onUploadSftp?: (hostId: string, file: File, path: string) => Promise<void>;
   onDownloadSftp?: (hostId: string, path: string, name: string) => Promise<void>;
   onCopyText?: (value: string) => Promise<void> | void;
-  fileTransport?: Pick<FileTransport, 'list' | 'createDirectory' | 'rename' | 'remove'>;
+  fileTransport?: Pick<FileTransport, 'list' | 'listPage' | 'createDirectory' | 'rename' | 'remove'>;
   transferJobs?: readonly TransferJob[];
   onCancelTransfer?: (id: string) => void;
   onPauseTransfer?: (id: string) => void;
@@ -140,6 +141,7 @@ export const TerminalWorkspace = ({
   openSftpRequest = null,
   onSftpRequestConsumed,
   onListSftp,
+  onListSftpPage,
   onCreateDirectorySftp,
   onRenameSftp,
   onDeleteSftp,
@@ -746,7 +748,7 @@ export const TerminalWorkspace = ({
               onCopyText={onCopyText}
             />
             : onListSftp && <>
-              <SftpPanel hostId={activeHostId} remotePath={sftpPathByHostId[activeHostId] ?? '/'} onNavigate={handleRemotePathChange} onList={onListSftp} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={localFilesEnabled && onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} onCopyText={onCopyText} />
+              <SftpPanel hostId={activeHostId} remotePath={sftpPathByHostId[activeHostId] ?? '/'} onNavigate={handleRemotePathChange} onList={onListSftp} onListPage={onListSftpPage} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={localFilesEnabled && onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} onCopyText={onCopyText} />
               <TransferQueue jobs={transferJobs} onCancel={onCancelTransfer} onRetry={onRetryTransfer} />
             </>}
         </aside>

@@ -921,6 +921,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sftp-entry-name:disabled { color: var(--muted); cursor: default; }
 .sftp-entry-meta { color: var(--faint); font-size: 9px; }
 .sftp-empty-state { color: var(--faint); font-size: 11px; text-align: center; }
+.sftp-pagination { align-items: center; border-top: 1px solid var(--border); color: var(--faint); display: flex; font-size: 10px; gap: 8px; justify-content: center; margin-top: 10px; padding-top: 10px; }
+.sftp-pagination span { min-width: 150px; text-align: center; }
 .sftp-workspace-error { margin: 0; }
 .terminal-layout.is-grid { display: grid; gap: 7px; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
 .terminal-layout.is-grid .terminal-pane-grid { min-height: 0; }

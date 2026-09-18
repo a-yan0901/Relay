@@ -4,7 +4,7 @@ import type { Readable, Writable } from 'node:stream';
 import { AppError } from '../../shared/errors.js';
 import type { SftpEntry } from '../../shared/core/models.js';
 import type { SshConnectionResource, SshSftpResource } from '../ssh/types.js';
-import type { SftpReadOptions, SftpResource, SftpWriteOptions } from './types.js';
+import type { SftpReadOptions, SftpResource, SftpResourceListPage, SftpWriteOptions } from './types.js';
 
 interface RawSftpAttributes {
   mode?: number;
@@ -25,7 +25,9 @@ interface RawStreamOptions {
 }
 
 interface RawSftpResource {
-  readdir(path: string, callback: (error: Error | undefined, entries: RawSftpEntry[]) => void): void;
+  opendir?(path: string, callback: (error: Error | undefined, handle: Buffer) => void): void;
+  readdir(location: string | Buffer, callback: (error: Error | undefined, entries: RawSftpEntry[]) => void): void;
+  close?(handle: Buffer, callback: (error?: Error) => void): void;
   stat(path: string, callback: (error: Error | undefined, attrs: RawSftpAttributes) => void): void;
   mkdir(path: string, callback: (error: Error | undefined) => void): void;
   rename(from: string, to: string, callback: (error: Error | undefined) => void): void;
@@ -66,6 +68,55 @@ const mapEntry = (basePath: string, entry: RawSftpEntry): SftpEntry => {
   };
 };
 
+const isDirectoryEnd = (error: unknown): boolean => {
+  const candidate = error as { code?: unknown; message?: unknown } | null;
+  const code = candidate?.code;
+  if (code === 1 || code === 'EOF' || code === 'STATUS_CODE.EOF') return true;
+  return typeof candidate?.message === 'string' && /(?:eof|end of file|no more files)/iu.test(candidate.message);
+};
+
+const readDirectoryPage = async (
+  resource: RawSftpResource,
+  path: string,
+  offset: number,
+  limit: number,
+  filter: string
+): Promise<SftpResourceListPage> => {
+  if (!resource.opendir || !resource.close) throw new AppError('SFTP_CONNECTION_FAILED');
+  const handle = await callbackOperation<Buffer>((callback) => resource.opendir?.(path, callback));
+  const entries: SftpEntry[] = [];
+  let skipped = 0;
+  let hasMore = false;
+  try {
+    while (!hasMore) {
+      let batch: RawSftpEntry[];
+      try {
+        batch = await callbackOperation<RawSftpEntry[]>((callback) => resource.readdir(handle, callback));
+      } catch (error) {
+        if (isDirectoryEnd(error)) break;
+        throw error;
+      }
+      if (batch.length === 0) break;
+      for (const entry of batch) {
+        if (entry.filename === '.' || entry.filename === '..') continue;
+        if (filter && !entry.filename.toLocaleLowerCase().includes(filter)) continue;
+        if (skipped < offset) {
+          skipped += 1;
+          continue;
+        }
+        if (entries.length >= limit) {
+          hasMore = true;
+          break;
+        }
+        entries.push(mapEntry(path, entry));
+      }
+    }
+  } finally {
+    await callbackVoid((callback) => resource.close?.(handle, callback));
+  }
+  return { entries, hasMore };
+};
+
 const writeStream = async (stream: Writable, source: AsyncIterable<Uint8Array>, onProgress?: (completedBytes: number) => void, signal?: AbortSignal, initialOffset = 0): Promise<void> => {
   let aborted = false;
   const onAbort = (): void => {
@@ -98,6 +149,7 @@ export const createSftpResource = (raw: unknown): SftpResource => {
       const entries = await callbackOperation<RawSftpEntry[]>((callback) => resource.readdir(path, callback));
       return entries.map((entry) => mapEntry(path, entry));
     },
+    listPage: (path, offset, limit, filter = '') => readDirectoryPage(resource, path, offset, limit, filter),
     stat: async (path) => {
       try {
         const attrs = await callbackOperation<RawSftpAttributes>((callback) => resource.stat(path, callback));

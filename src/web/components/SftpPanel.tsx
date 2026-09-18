@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import { AppError } from '@shared/errors';
-import type { SftpEntry } from '../../shared/core/models';
+import type { SftpEntry, SftpListOptions, SftpListPage } from '../../shared/core/models';
 import { sftpChildPath, sftpParentPath } from '../../shared/core/sftp-path';
 import { Dialog } from './Dialog';
 import { SftpBreadcrumbs } from './SftpBreadcrumbs';
@@ -10,6 +10,8 @@ import type { ContextMenuItem } from '../context-menu';
 import { useContextMenu } from '../hooks/use-context-menu';
 
 type SftpAction = '读取' | '上传' | '下载' | '删除' | '新建目录' | '重命名';
+const SFTP_PAGE_SIZE = 128;
+const MAX_PAGE_HISTORY = 32;
 
 export const sftpErrorMessage = (error: unknown, action: SftpAction, path?: string): string => {
   if (error instanceof AppError) {
@@ -27,6 +29,8 @@ export const sftpErrorMessage = (error: unknown, action: SftpAction, path?: stri
 export interface SftpPanelProps {
   hostId: string;
   onList: (hostId: string, path: string) => Promise<readonly SftpEntry[]>;
+  /** Optional bounded listing. When present, the panel keeps only one page in memory. */
+  onListPage?: (hostId: string, path: string, options?: SftpListOptions) => Promise<SftpListPage>;
   /** Parent-owned path keeps the SFTP view scoped to the active Host/Workspace. */
   remotePath?: string;
   /** Increment after an upload/drop outside this component to refresh the listing. */
@@ -49,6 +53,7 @@ type SftpDialog =
 export const SftpPanel = ({
   hostId,
   onList,
+  onListPage,
   remotePath,
   refreshToken,
   onCreateDirectory,
@@ -64,6 +69,9 @@ export const SftpPanel = ({
   const [pathInput, setPathInput] = useState(initialPath);
   const [filterQuery, setFilterQuery] = useState('');
   const [entries, setEntries] = useState<readonly SftpEntry[]>([]);
+  const [pageCursor, setPageCursor] = useState<string | undefined>(undefined);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [previousCursors, setPreviousCursors] = useState<readonly string[]>([]);
   const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string>>(new Set());
   const [dialog, setDialog] = useState<SftpDialog>(null);
   const [directoryName, setDirectoryName] = useState('');
@@ -80,21 +88,26 @@ export const SftpPanel = ({
     setLoading(true);
     setError(null);
     try {
-      const nextEntries = await onList(hostId, path);
+      const page = onListPage
+        ? await onListPage(hostId, path, { cursor: pageCursor, limit: SFTP_PAGE_SIZE, filter: filterQuery })
+        : { entries: await onList(hostId, path), nextCursor: null };
+      const nextEntries = page.entries;
       if (sequence === loadSequence.current) {
         setEntries(nextEntries);
+        setNextCursor(page.nextCursor);
         setSelectedPaths((current) => new Set([...current].filter((selectedPath) => nextEntries.some((entry) => entry.path === selectedPath))));
       }
     } catch (listError) {
       if (sequence === loadSequence.current) {
         setEntries([]);
+        setNextCursor(null);
         setSelectedPaths(new Set());
         setError(sftpErrorMessage(listError, '读取', path));
       }
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
-  }, [hostId, onList, path]);
+  }, [filterQuery, hostId, onList, onListPage, pageCursor, path]);
 
   useEffect(() => {
     if (remotePath === undefined) return;
@@ -102,6 +115,9 @@ export const SftpPanel = ({
     setPath(nextPath);
     setPathInput(nextPath);
     setFilterQuery('');
+    setPageCursor(undefined);
+    setNextCursor(null);
+    setPreviousCursors([]);
     setSelectedPaths(new Set());
   }, [hostId, remotePath]);
 
@@ -277,7 +293,7 @@ export const SftpPanel = ({
         <div><p className="eyebrow">REMOTE FILES</p><h2>SFTP</h2></div>
         <div className="sftp-panel-actions">
           <label className="sftp-path-input"><span className="visually-hidden">远程路径</span><input aria-label="远程路径" value={pathInput} onChange={(event) => setPathInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') navigateToPath(); }} /></label>
-          <label className="sftp-filter-input"><span className="visually-hidden">过滤当前目录</span><input type="search" aria-label="过滤当前目录" placeholder="按名称过滤当前目录" value={filterQuery} onChange={(event) => setFilterQuery(event.target.value)} /></label>
+          <label className="sftp-filter-input"><span className="visually-hidden">过滤当前目录</span><input type="search" aria-label="过滤当前目录" placeholder="按名称过滤当前目录" value={filterQuery} onChange={(event) => { setFilterQuery(event.target.value); setPageCursor(undefined); setNextCursor(null); setPreviousCursors([]); }} /></label>
           <button className="button button-ghost button-small" type="button" onClick={navigateToPath}>跳转</button>
           <button className="button button-ghost button-small" type="button" onClick={() => void load()}>刷新</button>
           {onCreateDirectory && <button className="button button-ghost button-small" type="button" onClick={() => { setDirectoryName(''); setError(null); setDialog({ type: 'create-directory' }); }}>新建目录</button>}
@@ -300,6 +316,20 @@ export const SftpPanel = ({
           {onRename && <button type="button" className="icon-button" aria-label={`重命名 ${entry.name}`} title={`重命名 ${entry.name}`} onClick={() => openRename(entry)} disabled={busy}>✎</button>}
           {onDelete && <button type="button" className="icon-button" aria-label={`删除 ${entry.name}`} title={`删除 ${entry.name}`} onClick={() => openDelete([entry.path])} disabled={busy}>×</button>}
         </li>)}</ul>
+        {onListPage && <div className="sftp-pagination" role="navigation" aria-label="远程文件分页">
+          <button className="button button-ghost button-small" type="button" disabled={previousCursors.length === 0 || loading || busy} onClick={() => {
+            const previous = previousCursors.at(-1);
+            if (previous === undefined) return;
+            setPreviousCursors((current) => current.slice(0, -1));
+            setPageCursor(previous || undefined);
+          }}>上一页</button>
+          <span>{nextCursor ? `当前页 ${entries.length} 项 · 还有更多` : `当前页 ${entries.length} 项`}</span>
+          <button className="button button-ghost button-small" type="button" disabled={!nextCursor || loading || busy} onClick={() => {
+            if (!nextCursor) return;
+            setPreviousCursors((current) => [...current, pageCursor ?? ''].slice(-MAX_PAGE_HISTORY));
+            setPageCursor(nextCursor);
+          }}>下一页</button>
+        </div>}
       </>}
       {fileContextMenu.state && <ContextMenu state={fileContextMenu.state} items={fileContextItems} onClose={fileContextMenu.close} ariaLabel={`${fileContextEntry?.name ?? '远程文件'} 菜单`} />}
       {dialog?.type === 'create-directory' && <Dialog title="新建目录" onClose={() => setDialog(null)} closeOnBackdrop={false} initialFocusSelector="#sftp-new-directory-name"><label htmlFor="sftp-new-directory-name">目录名称</label><input id="sftp-new-directory-name" aria-label="新目录名称" value={directoryName} onChange={(event) => setDirectoryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createDirectory(); }} /><p className="dialog-copy">将在 {path} 下创建目录。</p><div className="dialog-actions"><button className="button button-ghost" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-primary" type="button" disabled={busy} onClick={() => void createDirectory()}>创建目录</button></div></Dialog>}

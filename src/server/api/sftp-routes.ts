@@ -24,7 +24,12 @@ export interface SftpRouteDependencies {
 
 const hostParamsSchema = z.object({ hostId: z.string().min(1).max(128) }).strict();
 const transferParamsSchema = z.object({ transferId: z.string().min(1).max(128) }).strict();
-const listQuerySchema = z.object({ path: z.string().min(1).max(4096).default('/') }).strict();
+const listQuerySchema = z.object({
+  path: z.string().min(1).max(4096).default('/'),
+  cursor: z.string().regex(/^(?:0|[1-9]\d*)$/u).max(16).optional(),
+  limit: z.coerce.number().int().min(1).max(256).default(128),
+  filter: z.string().max(128).default('')
+}).strict();
 const entryBodySchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('mkdir'), path: z.string().min(1).max(4096) }).strict(),
   z.object({ action: z.literal('rename'), from: z.string().min(1).max(4096), to: z.string().min(1).max(4096) }).strict(),
@@ -109,6 +114,13 @@ export const registerSftpRoutes = async (app: FastifyInstance, dependencies: Sft
     const hostId = readHostId(request.params);
     const query = parse(listQuerySchema, request.query);
     reply.send(await dependencies.sftpService.listEntries(hostId, query.path, session.record.vaultKey));
+  });
+
+  app.get('/api/sftp/:hostId/list-page', async (request, reply) => {
+    const session = requireUnlockedSession(request, dependencies.sessionStore);
+    const hostId = readHostId(request.params);
+    const query = parse(listQuerySchema, request.query);
+    reply.send(await dependencies.sftpService.listEntriesPage(hostId, query.path, query, session.record.vaultKey));
   });
 
   app.post('/api/sftp/:hostId/entries', async (request, reply) => {

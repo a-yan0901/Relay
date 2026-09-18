@@ -12,6 +12,8 @@ import type {
   HostListFilter,
   IdentityMetadata,
   SftpEntry,
+  SftpListOptions,
+  SftpListPage,
   Snippet,
   SnippetMetadata,
   SyncConflictExport,
@@ -339,6 +341,8 @@ export interface SessionTransport {
 export interface FileTransport {
   /** Paths are normalized/validated by the adapter and never treated as local paths. */
   list(hostId: string, path: string): Promise<readonly SftpEntry[]>;
+  /** Optional bounded listing used by large-directory UIs. */
+  listPage?(hostId: string, path: string, options?: SftpListOptions): Promise<SftpListPage>;
   createDirectory(hostId: string, path: string): Promise<void>;
   rename(hostId: string, from: string, to: string): Promise<void>;
   remove(hostId: string, path: string): Promise<void>;

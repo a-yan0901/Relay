@@ -27,6 +27,13 @@ const remotePath = z.string().min(1).max(4096).refine((value) => (
   !value.includes('\0') && !localPathPattern.test(value)
 ), 'invalid remote path');
 const hostPathPayload = z.object({ hostId: safeId, path: remotePath }).strict();
+const sftpListPagePayload = z.object({
+  hostId: safeId,
+  path: remotePath,
+  cursor: z.string().regex(/^(?:0|[1-9]\d*)$/u).max(16).optional(),
+  limit: z.number().int().min(1).max(256).optional(),
+  filter: z.string().max(128).optional()
+}).strict();
 const boundedObject = z.record(z.string().max(96), z.unknown()).superRefine((value, context) => {
   try {
     const bytes = new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -88,6 +95,7 @@ export const DESKTOP_IPC_OPERATIONS = [
   'sessions.credential',
   'sessions.close',
   'files.list',
+  'files.listPage',
   'files.createDirectory',
   'files.rename',
   'files.remove',
@@ -187,6 +195,7 @@ const operationPayloadSchemas: Record<DesktopIpcOperation, z.ZodTypeAny> = {
   'sessions.credential': z.object({ sessionId: safeId, hostId: safeId, credential: hostCredentialSchema }).strict(),
   'sessions.close': sessionIdPayload,
   'files.list': hostPathPayload,
+  'files.listPage': sftpListPagePayload,
   'files.createDirectory': hostPathPayload,
   'files.rename': z.object({ hostId: safeId, from: remotePath, to: remotePath }).strict(),
   'files.remove': hostPathPayload,

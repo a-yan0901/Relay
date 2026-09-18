@@ -17,6 +17,7 @@ describe('native core runtime adapter', () => {
       if (operation === 'files.getTransfer') return null as T;
       if (operation === 'files.listTransfers') return [] as T;
       if (operation === 'files.list') return [] as T;
+      if (operation === 'files.listPage') return { entries: [], nextCursor: null } as T;
       if (operation === 'imports.exportOpenSshConfig' || operation === 'imports.exportCsv') return { data: '' } as T;
       if (operation === 'imports.exportVaultBundle') return { bundle: 'opaque-bundle' } as T;
       return undefined as T;
@@ -31,6 +32,7 @@ describe('native core runtime adapter', () => {
     expect(runtime.capabilities.supports('session.reattach')).toBe(false);
     await expect(runtime.vault.status()).resolves.toEqual({ phase: 'unlocked' });
     await runtime.hosts.list({ query: 'prod' });
+    await runtime.files.listPage?.('host-1', '/', { limit: 128, filter: 'log' });
     const session = await runtime.sessions.openShell({
       sessionId: 'session-1',
       profile: {

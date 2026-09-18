@@ -324,6 +324,18 @@ export interface SftpEntry {
   modifiedAt: string | null;
 }
 
+/** A bounded remote directory page. The cursor is opaque to UI clients. */
+export interface SftpListPage {
+  entries: readonly SftpEntry[];
+  nextCursor: string | null;
+}
+
+export interface SftpListOptions {
+  cursor?: string;
+  limit?: number;
+  filter?: string;
+}
+
 export type TransferKind = 'upload' | 'download';
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 

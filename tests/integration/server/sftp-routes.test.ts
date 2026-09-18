@@ -35,6 +35,9 @@ describe('sftp routes', () => {
     const response = await app.inject({ method: 'GET', url: '/api/sftp/host-1/list?path=/', headers: { cookie } });
     expect(response.statusCode).toBe(404);
     expect(response.json().error.code).toBe('HOST_NOT_FOUND');
+    const pageResponse = await app.inject({ method: 'GET', url: '/api/sftp/host-1/list-page?path=/&limit=128&filter=log', headers: { cookie } });
+    expect(pageResponse.statusCode).toBe(404);
+    expect(pageResponse.json().error.code).toBe('HOST_NOT_FOUND');
 
     const transferResponse = await app.inject({
       method: 'POST',

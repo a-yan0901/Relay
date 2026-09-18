@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react';
 
 import type { FileTransport } from '../../shared/core/ports';
-import type { SftpEntry, TransferJob } from '../../shared/core/models';
+import type { SftpEntry, SftpListOptions, SftpListPage, TransferJob } from '../../shared/core/models';
 import { SftpPanel, sftpErrorMessage } from './SftpPanel';
 import { LocalFilePanel } from './LocalFilePanel';
 import { TransferCenter } from './TransferCenter';
 
-export type SftpFileOperations = Pick<FileTransport, 'list' | 'createDirectory' | 'rename' | 'remove'>;
+export type SftpFileOperations = Pick<FileTransport, 'list' | 'createDirectory' | 'rename' | 'remove'> & Pick<FileTransport, 'listPage'>;
 
 export interface SftpWorkspaceProps {
   hostId: string;
@@ -58,6 +58,10 @@ export const SftpWorkspace = ({
   const [dropError, setDropError] = useState<string | null>(null);
 
   const list = useCallback((nextHostId: string, path: string): Promise<readonly SftpEntry[]> => fileTransport.list(nextHostId, path), [fileTransport]);
+  const listPage = useCallback(async (nextHostId: string, path: string, options?: SftpListOptions): Promise<SftpListPage> => {
+    if (fileTransport.listPage) return fileTransport.listPage(nextHostId, path, options);
+    return { entries: await fileTransport.list(nextHostId, path), nextCursor: null };
+  }, [fileTransport]);
   const createDirectory = useCallback((path: string): Promise<void> => fileTransport.createDirectory(hostId, path), [fileTransport, hostId]);
   const rename = useCallback((from: string, to: string): Promise<void> => fileTransport.rename(hostId, from, to), [fileTransport, hostId]);
   const remove = useCallback((path: string): Promise<void> => fileTransport.remove(hostId, path), [fileTransport, hostId]);
@@ -99,6 +103,7 @@ export const SftpWorkspace = ({
             remotePath={currentPath}
             refreshToken={refreshToken}
             onList={list}
+            onListPage={fileTransport.listPage ? listPage : undefined}
             onCreateDirectory={mutationsEnabled ? createDirectory : undefined}
             onRename={mutationsEnabled ? rename : undefined}
             onDelete={mutationsEnabled ? remove : undefined}

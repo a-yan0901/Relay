@@ -1,6 +1,6 @@
 import { AppError } from '../../shared/errors.js';
 import { normalizeSftpPath } from '../../shared/validation.js';
-import type { SftpEntry } from '../../shared/core/models.js';
+import type { SftpEntry, SftpListOptions, SftpListPage } from '../../shared/core/models.js';
 import type { SftpResource, SftpResourceLease } from './types.js';
 import { mapSftpError } from './error-mapping.js';
 import type { OwnerIdProvider } from '../db/repositories.js';
@@ -26,6 +26,33 @@ const sortEntries = (entries: readonly SftpEntry[]): SftpEntry[] => [...entries]
   return leftDirectory - rightDirectory || left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
 });
 
+const DEFAULT_LIST_LIMIT = 128;
+const MAX_LIST_LIMIT = 256;
+const MAX_LIST_FILTER_LENGTH = 128;
+
+const readListOffset = (cursor: string | undefined): number => {
+  if (cursor === undefined) return 0;
+  if (!/^(?:0|[1-9]\d*)$/u.test(cursor) || cursor.length > 16) throw new AppError('SFTP_PATH_INVALID');
+  const offset = Number(cursor);
+  if (!Number.isSafeInteger(offset)) throw new AppError('SFTP_PATH_INVALID');
+  return offset;
+};
+
+const readListLimit = (limit: number | undefined): number => {
+  if (limit === undefined) return DEFAULT_LIST_LIMIT;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_LIST_LIMIT) throw new AppError('SFTP_PATH_INVALID');
+  return limit;
+};
+
+const readListFilter = (filter: string | undefined): string => {
+  if (filter === undefined) return '';
+  const normalized = filter.trim();
+  if (normalized.length > MAX_LIST_FILTER_LENGTH) throw new AppError('SFTP_PATH_INVALID');
+  return normalized.toLocaleLowerCase();
+};
+
+const matchesFilter = (entry: SftpEntry, filter: string): boolean => filter.length === 0 || entry.name.toLocaleLowerCase().includes(filter);
+
 export class SftpService {
   private readonly options: SftpServiceOptions;
 
@@ -41,6 +68,26 @@ export class SftpService {
 
   async listEntries(hostId: string, path: string, sessionKey?: Buffer): Promise<SftpEntry[]> {
     return this.withResource(hostId, path, (resource, normalized) => resource.list(normalized).then(sortEntries), sessionKey);
+  }
+
+  async listEntriesPage(hostId: string, path: string, options: SftpListOptions = {}, sessionKey?: Buffer): Promise<SftpListPage> {
+    const offset = readListOffset(options.cursor);
+    const limit = readListLimit(options.limit);
+    const filter = readListFilter(options.filter);
+    return this.withResource(hostId, path, async (resource, normalized) => {
+      const page = await (resource.listPage
+        ? resource.listPage(normalized, offset, limit, filter)
+        : resource.list(normalized).then((allEntries) => {
+          const matching = sortEntries(allEntries.filter((entry) => matchesFilter(entry, filter)));
+          const entries = matching.slice(offset, offset + limit);
+          return { entries, hasMore: offset + entries.length < matching.length };
+        }));
+      const entries = sortEntries(page.entries.filter((entry) => matchesFilter(entry, filter)));
+      return {
+        entries,
+        nextCursor: page.hasMore ? String(offset + page.entries.length) : null
+      };
+    }, sessionKey);
   }
 
   async statEntry(hostId: string, path: string, sessionKey?: Buffer): Promise<SftpEntry | null> {

@@ -67,4 +67,24 @@ describe('SftpService', () => {
     await sftpService.removeEntry('host-1', '/alpha', true);
     expect(close).toHaveBeenCalledTimes(3);
   });
+
+  it('returns bounded directory pages without changing the legacy sorted listing', async () => {
+    const { service: sftpService } = createService(resource());
+
+    const first = await sftpService.listEntriesPage('host-1', '/', { limit: 2 });
+    expect(first.entries.map((entry) => entry.name)).toEqual(['apps', 'alpha']);
+    expect(first.nextCursor).toBe('2');
+
+    const second = await sftpService.listEntriesPage('host-1', '/', { cursor: first.nextCursor ?? undefined, limit: 2 });
+    expect(second.entries.map((entry) => entry.name)).toEqual(['z.log']);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it('applies the bounded name filter before slicing a page', async () => {
+    const { service: sftpService } = createService(resource());
+    const page = await sftpService.listEntriesPage('host-1', '/', { filter: 'A', limit: 1 });
+
+    expect(page.entries.map((entry) => entry.name)).toEqual(['apps']);
+    expect(page.nextCursor).toBe('1');
+  });
 });

@@ -300,6 +300,7 @@ describe('web adapters', () => {
   it('keeps file and command HTTP operations behind shared ports', async () => {
     const api = {
       listSftpEntries: vi.fn(async () => []),
+      listSftpEntriesPage: vi.fn(async (_hostId: string, _path: string, _options: unknown) => ({ entries: [], nextCursor: '2' })),
       mutateSftpEntry: vi.fn(async () => {}),
       createTransfer: vi.fn(async () => ({ id: 'transfer-1', kind: 'download' as const, hostId: 'host-1', sourcePath: '/source', targetPath: 'target', status: 'queued' as const, completedBytes: 0, totalBytes: null, createdAt: '', updatedAt: '' })),
       getTransfer: vi.fn(async (id: string) => ({ id, kind: 'download' as const, hostId: 'host-1', sourcePath: '/source', targetPath: 'target', status: 'queued' as const, completedBytes: 0, totalBytes: null, createdAt: '', updatedAt: '' })),
@@ -322,6 +323,7 @@ describe('web adapters', () => {
     const download = vi.fn(async () => undefined);
     const files = new WebFileTransport(api, { download });
     await files.list('host-1', '/');
+    await expect(files.listPage?.('host-1', '/', { cursor: '1', limit: 128, filter: 'app' })).resolves.toEqual({ entries: [], nextCursor: '2' });
     await files.createTransfer({ kind: 'download', hostId: 'host-1', sourcePath: '/source', targetPath: 'target' });
     await files.getTransfer('transfer-1');
     await files.createDirectory('host-1', '/tmp/new');
@@ -335,6 +337,7 @@ describe('web adapters', () => {
     await files.pauseTransfer('transfer-1');
     await files.retryTransfer('transfer-1');
     expect(api.listSftpEntries).toHaveBeenCalledWith('host-1', '/');
+    expect(api.listSftpEntriesPage).toHaveBeenCalledWith('host-1', '/', { cursor: '1', limit: 128, filter: 'app' });
     expect(api.getTransfer).toHaveBeenCalledWith('transfer-1');
     expect(api.mutateSftpEntry).toHaveBeenCalledWith('host-1', { action: 'mkdir', path: '/tmp/new' });
     expect(api.mutateSftpEntry).toHaveBeenCalledWith('host-1', { action: 'rename', from: '/tmp/new', to: '/tmp/renamed' });

@@ -1,6 +1,6 @@
 import { AppError, isAppErrorCode } from '@shared/errors';
 import type { AccountDeletionConfirmation, CloudSyncDeletionConfirmation } from '@shared/core/account-sync';
-import type { AccountSession, AccountDeletionState, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, Snippet, SnippetMetadata, SyncConflictExport, SyncDeletionState, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
+import type { AccountSession, AccountDeletionState, ActivityFilter, AuditEvent, Capability, ClientPlatform, CommandRun, CommandRunRequest, ConnectionTestResult as SharedConnectionTestResult, DeviceDescriptor, GroupNode, HostListFilter, IdentityMetadata, RecoveryKeyState, SftpEntry, SftpListOptions, SftpListPage, Snippet, SnippetMetadata, SyncConflictExport, SyncDeletionState, SyncDescriptor, SyncEnvelope, SyncHead, SyncPreview, SyncResolution, SyncState, SyncStatus, TransferJob, TransferResumeRequest, VaultRecoveryPreview, WorkspaceState, WorkspaceTemplate } from '@shared/core/models';
 import { parseSyncConflictExport } from '@shared/core/sync-conflict-export';
 import type { TerminalProfile } from '@shared/terminal-appearance';
 import type { GroupPatchInput, GroupMutationInput, HostCreateInput, HostMetadata, HostPatchInput, IdentityCreateInput, IdentityUpdateInput } from '@shared/validation';
@@ -945,6 +945,13 @@ export const getCommandRun = (id: string): Promise<CommandRunResponse> => reques
 export const cancelCommandRun = (id: string): Promise<void> => request<void>(`/api/command-runs/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 export const listSftpEntries = (hostId: string, path = '/'): Promise<SftpEntry[]> => request<SftpEntry[]>(`/api/sftp/${encodeURIComponent(hostId)}/list?path=${encodeURIComponent(path)}`);
+
+export const listSftpEntriesPage = (hostId: string, path = '/', options: SftpListOptions = {}): Promise<SftpListPage> => {
+  const query = new URLSearchParams({ path, limit: String(options.limit ?? 128) });
+  if (options.cursor !== undefined) query.set('cursor', options.cursor);
+  if (options.filter?.trim()) query.set('filter', options.filter.trim());
+  return request<SftpListPage>(`/api/sftp/${encodeURIComponent(hostId)}/list-page?${query.toString()}`);
+};
 
 export const mutateSftpEntry = (hostId: string, input: { action: 'mkdir'; path: string } | { action: 'rename'; from: string; to: string } | { action: 'delete'; path: string; confirmed: boolean }): Promise<void> => request<void>(`/api/sftp/${encodeURIComponent(hostId)}/entries`, {
   method: 'POST',

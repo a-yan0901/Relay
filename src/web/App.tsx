@@ -25,7 +25,7 @@ import { SyncCenter } from './components/SyncCenter';
 import { WorkspaceDirectory } from './components/WorkspaceDirectory';
 import { RemoteWorkspacePanel } from './components/RemoteWorkspacePanel';
 import type { SftpOpenRequest } from './components/ServerContextMenu';
-import type { AccountSession, ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, Snippet, SnippetMetadata, SyncState, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
+import type { AccountSession, ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, SftpListPage, SftpListOptions, Snippet, SnippetMetadata, SyncState, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
 import type { BinarySource, CloudSyncResult, FileWriter, NotificationPermission, NotificationPort } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
@@ -1553,6 +1553,7 @@ export const App = ({ runtime }: AppProps) => {
             onOpenSnippetPalette={capabilities.supports('automation.snippets') ? handleOpenSnippetPalette : undefined}
             onBackRequest={(handler) => { terminalBackHandlerRef.current = handler; }}
             onListSftp={capabilities.supports('sftp.browse') ? (hostId, path) => runtime.files.list(hostId, path) : undefined}
+            onListSftpPage={capabilities.supports('sftp.browse') && runtime.files.listPage ? (hostId: string, path: string, options?: SftpListOptions): Promise<SftpListPage> => runtime.files.listPage!(hostId, path, options) : undefined}
             onCreateDirectorySftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.createDirectory(hostId, path) : undefined}
             onRenameSftp={capabilities.supports('sftp.entry-mutations') ? (hostId, from, to) => runtime.files.rename(hostId, from, to) : undefined}
             onDeleteSftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.remove(hostId, path) : undefined}

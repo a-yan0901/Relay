@@ -273,6 +273,7 @@ internal class AndroidLocalExecutor(
         "sessions.credential" -> failNative("CAPABILITY_UNAVAILABLE")
         "sessions.close" -> sessionClose(requiredText(payload, "sessionId", 128))
         "files.list" -> filesList(payload)
+        "files.listPage" -> filesListPage(payload)
         "files.createDirectory" -> filesMkdir(payload)
         "files.rename" -> filesRename(payload)
         "files.remove" -> filesRemove(payload)
@@ -1540,7 +1541,7 @@ internal class AndroidLocalExecutor(
         val writerId = UUID.randomUUID().toString()
         synchronized(fileWriters) {
             if (fileWriters.size >= MAX_FILE_WRITERS) {
-                writer.close()
+                writer.cancel()
                 failNative("OPERATION_INTERRUPTED")
             }
             fileWriters[writerId] = writer
@@ -1610,6 +1611,56 @@ internal class AndroidLocalExecutor(
                         .put("modifiedAt", Instant.ofEpochSecond(attrs.mTime.toLong()).toString()))
                 }
             }
+        }
+    }
+
+    private fun filesListPage(payload: JSONObject): JSONObject {
+        val host = requireHost(requiredText(payload, "hostId", 128))
+        val path = AndroidNativeValidation.normalizeRemotePath(requiredText(payload, "path", 4096))
+        val cursorText = payload.optString("cursor", "0")
+        val offset = cursorText.toLongOrNull() ?: failNative("SFTP_PATH_INVALID")
+        val limit = payload.optInt("limit", 128)
+        val filter = payload.optString("filter", "").trim().lowercase(Locale.ROOT)
+        if (offset < 0 || offset > Long.MAX_VALUE - 256 || limit !in 1..256 || filter.length > 128) failNative("SFTP_PATH_INVALID")
+        var skipped = 0L
+        var hasMore = false
+        return withSftpValue(host) { sftp ->
+            val selected = ArrayList<ChannelSftp.LsEntry>(limit)
+            sftp.ls(path, ChannelSftp.LsEntrySelector { entry ->
+                if (entry.filename == "." || entry.filename == "..") return@LsEntrySelector ChannelSftp.LsEntrySelector.CONTINUE
+                if (filter.isNotEmpty() && !entry.filename.lowercase(Locale.ROOT).contains(filter)) return@LsEntrySelector ChannelSftp.LsEntrySelector.CONTINUE
+                if (skipped < offset) {
+                    skipped += 1
+                    return@LsEntrySelector ChannelSftp.LsEntrySelector.CONTINUE
+                }
+                if (selected.size >= limit) {
+                    hasMore = true
+                    return@LsEntrySelector ChannelSftp.LsEntrySelector.BREAK
+                }
+                selected += entry
+                ChannelSftp.LsEntrySelector.CONTINUE
+            })
+            val entries = selected
+                .sortedWith(compareBy<ChannelSftp.LsEntry>({ if (it.attrs.isDir) 0 else 1 }, { it.filename.lowercase(Locale.ROOT) }))
+            JSONObject().put("entries", JSONArray().also { output ->
+                entries.forEach { entry ->
+                    val childPath = if (path == "/") "/${entry.filename}" else "$path/${entry.filename}"
+                    val attrs = entry.attrs
+                    val type = when {
+                        attrs.isDir -> "directory"
+                        attrs.isLink -> "symlink"
+                        attrs.isReg -> "file"
+                        else -> "other"
+                    }
+                    output.put(JSONObject()
+                        .put("name", entry.filename)
+                        .put("path", childPath)
+                        .put("type", type)
+                        .put("size", maxOf(0L, attrs.size))
+                        .put("mode", attrs.permissions)
+                        .put("modifiedAt", Instant.ofEpochSecond(attrs.mTime.toLong()).toString()))
+                }
+            }).put("nextCursor", if (hasMore) (offset + entries.size).toString() else JSONObject.NULL)
         }
     }
 
