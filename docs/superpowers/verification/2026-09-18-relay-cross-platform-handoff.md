@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-18
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**APK/Windows 包构建源码基线：** `75cc630`；本轮 APK 与 Windows portable 包均在该提交上重新构建并复核 hash。后续重新构建必须以新的源码 commit、构建时间、工具链和制品哈希为准。
-**验收机器应检出：** `75cc630`，或与重新构建制品清单匹配的新源码 commit。
+**APK 构建源码基线：** `7caa316`；**Windows portable 包构建源码基线：** `75cc630`。后续重新构建必须以新的源码 commit、构建时间、工具链和制品哈希为准。
+**验收机器应检出：** Android 验收使用 `7caa316`；Windows portable 验收使用 `75cc630`，或与重新构建制品清单匹配的新源码 commit。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -13,15 +13,15 @@
 
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
-| Web | ✅ 自动化基线可复现 | 160 个测试文件通过、1 个跳过；718 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
+| Web | ✅ 自动化基线可复现 | 160 个测试文件通过、1 个跳过；719 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
 | Windows | 🟡 可构建技术预览 | Electron shell、IPC/native contract、Windows x64 portable 包生成；SHA-256 已记录 | Windows native ABI、安装/升级迁移、退出/重开、SSH/SFTP 任务链 |
-| Android | 🟡 APK 已安装启动 smoke，不代表设备完成 | Kotlin 编译、JVM 单元测试、Debug APK 构建；已安装到 API 35/x86_64 `emulator-5554` 并启动 Activity | SSH/SFTP、Keystore、URI、返回键、软键盘、锁屏/进程回收、网络切换和 A-01～A-17 |
+| Android | 🟡 已完成有限设备 SSH 证据，不代表平台完成 | Kotlin 编译、JVM 单元测试、connected 测试 2/2、Debug APK 构建；最终 APK 已安装到 API 35/x86_64 `emulator-5554`，完成首次 Host Key 展示/信任和一次 Shell 建立 | SFTP、私钥、Host Key 变更、URI、返回键、软键盘、锁屏/进程回收、网络切换、低内存和 A-01～A-17 其余项目 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
-本机历史上有一次 AOSP 软件模拟器因缺少 `/dev/kvm` 处于 `adb offline` 后退出；本轮现有 `emulator-5554` 已恢复为 `device`（API 35、Android 15、x86_64），仅形成 APK 安装/Activity 启动 smoke。该 smoke 不替代 Android SSH/SFTP、Keystore、生命周期和低内存验收。
+本机历史上有一次 AOSP 软件模拟器因缺少 `/dev/kvm` 处于 `adb offline` 后退出；本轮现有 `emulator-5554` 为 `device`（API 35、Android 15、x86_64）。最终 APK 已完成安装，并在测试 SSH fixture 上完成首次 Host Key 指纹展示、信任和 Shell 建立；这仍不替代 Android SFTP、Keystore 完整生命周期、网络切换和低内存验收。
 
-本轮已执行的设备 smoke：`adb devices` 返回 `emulator-5554 device`；`adb install -r -d app-debug.apk` 返回 `Success`；`adb shell am start -n cn.ayan.relay/.MainActivity` 后 `dumpsys activity` 显示当前焦点为 `cn.ayan.relay/.MainActivity`；最近一段 Relay 相关 logcat 未出现 `FATAL EXCEPTION`。没有使用真实 SSH 凭据，也没有把该 smoke 记入 A-01～A-17 的“通过”。
+本轮设备验证：`adb devices` 返回 `emulator-5554 device`；最终 APK `8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52` 安装返回 `Success`；`cn.ayan.relay/.MainActivity` 启动正常。使用本地 in-process `ssh2` fixture（密码为测试数据）创建 Host，首次连接展示并确认 `SHA256:RrDNThMGT8sF6lsRsqnQ37vum6+6Q/NmrSXZCM2zf6g`，Host 卡片显示“指纹已验证”并记录最近连接；最近 Relay SSH logcat 无错误。该证据只将 A-02 记为通过，不把它扩大为 A-01～A-17 全部通过。
 
 ## 2. 产物位置、溯源和工具链
 
@@ -31,9 +31,9 @@
 
 - 文件：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`
 - 应用 ID：`cn.ayan.relay`
-- 构建时间（文件时间，Asia/Shanghai）：`2026-09-18 18:15:19`
-- 大小：`8,284,171` bytes
-- SHA-256：`4F84641808A110142B068F33A28F39D1251C37F14A33DC96318F75A72E19D5CA`
+- 构建时间（文件时间，Asia/Shanghai）：`2026-09-18 21:36:41`
+- 大小：`8,633,239` bytes
+- SHA-256：`8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52`
 - 构建命令：
 
   ```powershell
@@ -116,7 +116,7 @@
 | 编号 | 验收任务 | 预期结果 | 结果/证据 |
 | --- | --- | --- | --- |
 | A-01 | 首次打开、创建 Host、保存凭据 | 不需要 Relay URL 或 cookie；Host 重启后仍存在 | 待执行 |
-| A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 待执行 |
+| A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 通过：最终 APK 在 `emulator-5554` 展示 `ssh-ed25519` 指纹 `SHA256:RrDNThMGT8sF6lsRsqnQ37vum6+6Q/NmrSXZCM2zf6g`；点击“信任并连接”后 Host 显示“指纹已验证”、记录最近连接并保持 Shell 页面；无 Relay SSH 错误日志。 |
 | A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | 待执行 |
 | A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行 |
 | A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行 |

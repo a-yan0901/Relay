@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- | --- |
 | Host 搜索、收藏、grid/list、标签过滤 | ✅ | 🟡 | 🟡 | Web DOM/E2E；native runtime 复用 HostStore | Windows 窗口和 Android 触控走查 |
 | 创建/编辑/删除 Host 与本地 Vault | ✅ | 🟡 | 🟡 | Web E2E；Windows IPC/native contract；Android JVM/编译 | 两端安装后持久化和锁定走查 |
-| 首次 Host Key 确认、变更拒绝 | ✅ | 🟡 | 🟡 | Server/Windows/Android 状态机和定向测试 | Windows/Android 真机连接证据 |
+| 首次 Host Key 确认、变更拒绝 | ✅ | 🟡 | 🟡 | Server/Windows/Android 状态机和定向测试；Android emulator 已完成首次指纹展示/信任/建 Shell | Windows 实机连接、Android Host Key 变更拒绝 |
 | SSH 输入、复制/粘贴、断连重连 | ✅ | 🟡 | 🟡 | Web E2E、TerminalSession/Native socket 测试 | Windows 原生 ABI、Android 真机网络切换 |
 | 多标签、分屏与移动单 pane | ✅ | 🟡 | 🟡 | Web 320/390px E2E；共享 runtime capability | Windows/Android UI 和生命周期走查 |
 | SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract | 两端真实 SSH/SFTP、取消和部分失败 |
@@ -23,7 +23,7 @@
 
 - Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 和 `npm run test:e2e -- --project=chromium`；默认 E2E 4/4 通过，Playwright 共享数据目录固定单 worker。
 - Windows：源码 commit `75cc630` 上执行 `npm run build:windows` 和 `npm run package:windows:portable`；本机生成 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`，大小 457,281,531 bytes，签名状态为 `NotSigned`。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
-- Android：源码 commit `75cc630` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker、离线依赖执行 `:app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug`；Debug APK SHA-256 为 `4F84641808A110142B068F33A28F39D1251C37F14A33DC96318F75A72E19D5CA`，大小 8,284,171 bytes。本轮已安装到 `emulator-5554`（API 35/x86_64）并启动 `cn.ayan.relay/.MainActivity`；这只证明安装/启动 smoke，真 SSH/SFTP、Keystore、网络切换、锁屏/进程回收和 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
+- Android：源码 commit `7caa316` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker 执行 `:app:testDebugUnitTest :app:connectedDebugAndroidTest :app:assembleDebug`；connected 测试 2/2 通过。最终 Debug APK SHA-256 为 `8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52`，大小 8,633,239 bytes；已安装到 `emulator-5554`（API 35/x86_64），完成密码 Host 创建、首次 Host Key 指纹展示/信任和一次 Shell 建立。SFTP、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
 
 ## 任务状态与门禁边界
 
