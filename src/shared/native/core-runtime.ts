@@ -15,6 +15,8 @@ export const NATIVE_MAX_SESSION_HANDLERS = 16;
 export const NATIVE_MAX_SESSIONS = 32;
 export const NATIVE_MAX_PENDING_WRITES = 8;
 export const NATIVE_MAX_PENDING_WRITE_BYTES = 64 * 1024;
+const NATIVE_MAX_EARLY_EVENTS = 16;
+const NATIVE_MAX_EARLY_EVENT_BYTES = 64 * 1024;
 
 const createTextDecoder = (): globalThis.TextDecoder => new globalThis.TextDecoder();
 type NativeTextDecoder = ReturnType<typeof createTextDecoder>;
@@ -230,7 +232,8 @@ interface NativeSessionRecord {
   id: string;
   hostId: string;
   listeners: Set<(event: SessionEvent) => void>;
-  earlyEvents: SessionEvent[];
+  earlyEvents: Array<{ event: SessionEvent; bytes: number }>;
+  earlyEventBytes: number;
   stdoutDecoder: NativeTextDecoder;
   stderrDecoder: NativeTextDecoder;
   pendingWrites: number;
@@ -276,13 +279,31 @@ const sessionEventFromNative = (event: NativeEventFrame, record: NativeSessionRe
   return null;
 };
 
+const sessionEventBytes = (event: SessionEvent): number => {
+  try {
+    return utf8ByteLength(JSON.stringify(event) ?? '');
+  } catch {
+    return NATIVE_MAX_EARLY_EVENT_BYTES + 1;
+  }
+};
+
 class NativeSessionTransport implements SessionTransport {
   private readonly sessions = new Map<string, NativeSessionRecord>();
   private stopEvents: (() => void) | undefined;
 
   private publish(record: NativeSessionRecord, event: SessionEvent): void {
     if (record.listeners.size === 0) {
-      if (record.earlyEvents.length < 16) record.earlyEvents.push(event);
+      const bytes = sessionEventBytes(event);
+      if (bytes > NATIVE_MAX_EARLY_EVENT_BYTES) return;
+      while (record.earlyEvents.length >= NATIVE_MAX_EARLY_EVENTS || record.earlyEventBytes + bytes > NATIVE_MAX_EARLY_EVENT_BYTES) {
+        const removed = record.earlyEvents.shift();
+        if (!removed) break;
+        record.earlyEventBytes -= removed.bytes;
+      }
+      if (record.earlyEventBytes + bytes <= NATIVE_MAX_EARLY_EVENT_BYTES) {
+        record.earlyEvents.push({ event, bytes });
+        record.earlyEventBytes += bytes;
+      }
       return;
     }
     for (const listener of [...record.listeners]) {
@@ -405,7 +426,8 @@ class NativeSessionTransport implements SessionTransport {
         record.listeners.add(listener);
         if (record.earlyEvents.length > 0) {
           const earlyEvents = record.earlyEvents.splice(0, record.earlyEvents.length);
-          for (const event of earlyEvents) {
+          record.earlyEventBytes = 0;
+          for (const { event } of earlyEvents) {
             try {
               listener(event);
             } catch {
@@ -422,7 +444,7 @@ class NativeSessionTransport implements SessionTransport {
     await this.close(request.sessionId);
     if (this.sessions.size >= NATIVE_MAX_SESSIONS) throw new AppError('SSH_SESSION_LIMIT');
     this.ensureEvents();
-    const record: NativeSessionRecord = { id: request.sessionId, hostId: request.profile.hostId, listeners: new Set(), earlyEvents: [], stdoutDecoder: createTextDecoder(), stderrDecoder: createTextDecoder(), pendingWrites: 0, writeQueue: [], writeQueueBytes: 0, writePumpActive: false, writeBackpressureNotified: false, closed: false };
+    const record: NativeSessionRecord = { id: request.sessionId, hostId: request.profile.hostId, listeners: new Set(), earlyEvents: [], earlyEventBytes: 0, stdoutDecoder: createTextDecoder(), stderrDecoder: createTextDecoder(), pendingWrites: 0, writeQueue: [], writeQueueBytes: 0, writePumpActive: false, writeBackpressureNotified: false, closed: false };
     this.sessions.set(record.id, record);
     let result: { sessionId?: string; hostId?: string };
     try {
@@ -446,7 +468,7 @@ class NativeSessionTransport implements SessionTransport {
   async reconnect(sessionId: string): Promise<SessionHandle> {
     this.ensureEvents();
     const existing = this.sessions.get(sessionId);
-    const record = existing ?? { id: sessionId, hostId: '', listeners: new Set(), earlyEvents: [], stdoutDecoder: createTextDecoder(), stderrDecoder: createTextDecoder(), pendingWrites: 0, writeQueue: [], writeQueueBytes: 0, writePumpActive: false, writeBackpressureNotified: false, closed: false };
+    const record = existing ?? { id: sessionId, hostId: '', listeners: new Set(), earlyEvents: [], earlyEventBytes: 0, stdoutDecoder: createTextDecoder(), stderrDecoder: createTextDecoder(), pendingWrites: 0, writeQueue: [], writeQueueBytes: 0, writePumpActive: false, writeBackpressureNotified: false, closed: false };
     if (!existing) this.sessions.set(record.id, record);
     let result: { sessionId?: string; hostId?: string };
     try {

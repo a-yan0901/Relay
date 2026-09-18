@@ -132,6 +132,31 @@ describe('native core runtime adapter', () => {
     expect(onEvent).toHaveBeenCalledWith({ type: 'data', data: 'early' });
   });
 
+  it('bounds native output that arrives before the session subscriber', async () => {
+    const earlyOutput = 'x'.repeat(30_000);
+    const port: NativeOperationPort = {
+      invoke: vi.fn(async <T,>(operation: string): Promise<T> => {
+        if (operation === 'sessions.openShell') {
+          for (let sequence = 1; sequence <= 3; sequence += 1) {
+            emit?.({ version: 1, generation: 1, sequence, kind: 'terminal.output', sessionId: 'session-1', payload: { stream: 'stdout', data: earlyOutput } });
+          }
+          return { sessionId: 'session-1', hostId: 'host-1' } as T;
+        }
+        return undefined as T;
+      }),
+      subscribe(listener) { emit = listener; return () => { emit = undefined; }; }
+    };
+    let emit: ((event: NativeEventFrame) => void) | undefined;
+    const runtime = createNativeCoreRuntime({ platform: 'desktop', port });
+    const handle = await runtime.sessions.openShell({ sessionId: 'session-1', profile: { hostId: 'host-1', address: 'host', port: 22, username: 'u', authType: 'password', jumpHostIds: [], keepaliveIntervalMs: 1000, keepaliveCountMax: 3, reconnect: { enabled: true, maxAttempts: 1, baseDelayMs: 10, maxDelayMs: 10 }, hostKeyAlgorithm: null, hostKeyFingerprint: null }, cols: 80, rows: 24 });
+    const received: string[] = [];
+    handle.subscribe((event) => { if (event.type === 'data') received.push(event.data); });
+
+    expect(received.length).toBeLessThanOrEqual(2);
+    expect(received.join('').length).toBeLessThanOrEqual(64 * 1024);
+    await runtime.sessions.close(handle.id);
+  });
+
   it('bounds terminal write buffering and reports backpressure instead of dropping silently', async () => {
     const pendingWrites: Array<() => void> = [];
     const writeCalls: string[] = [];
