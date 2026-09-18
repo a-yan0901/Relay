@@ -31,15 +31,15 @@
 | 1 共享 contract | 🟡 主要 contract、capability 和 UI 增量已落地 | shared/native contract、Web/DOM 定向测试、[三端验收矩阵](../verification/2026-09-18-relay-cross-platform-acceptance-matrix.md) | 三端最终视口走查 |
 | 2 浏览器调用抽离 | 🟡 平台 ports、系统能力和下载边界已抽离 | Web/native TypeScript、定向 ESLint/DOM 测试 | 完整跨端路径审计 |
 | 3 手机布局与输入 | 🟡 返回键、移动工具条、SFTP 布局和过滤已实现 | DOM 测试、Web 构建 | 真机软键盘、安全区、最后一行和滚动走查 |
-| 4 Android SSH 可行性 | 🟡 JSch 候选和执行器已接入 | Kotlin 编译、Android JVM 测试 | 真机认证、PTY、Host Key、ProxyJump、SFTP 资源释放 |
+| 4 Android SSH 可行性 | 🟡 JSch 候选和执行器已接入 | Kotlin 编译、Android JVM 测试；两台 Android 16 真机已完成用户指定密码主机的认证、Host Key 信任、PTY 基础操作和 SFTP 连接 smoke | 私钥、ProxyJump、Host Key 变更、完整 SFTP 资源释放和异常边界 |
 | 5 Vault bundle v1 | 🟡 Android 端格式/加解密/冲突应用已实现 | bundle 定向测试、分块边界测试 | Web↔Windows↔Android 固定向量正反向实测 |
 | 6 Electron shell | 🟡 shell、preload、导航和打包配置已实现 | Windows TS/构建、IPC 测试 | Windows 安装包启动和窗口行为 |
 | 7 Windows 本地 runtime | 🟡 SQLite/Vault/SSH/SFTP/IPC 闭环代码已实现 | `build:windows`、IPC/服务端定向测试 | Windows 原生 ABI、升级迁移、崩溃恢复和任务链 |
 | 8 Windows 系统能力 | 🟡 文件句柄、剪贴板、确认、偏好已接入 | 受影响 TypeScript/DOM 测试 | Windows 实机安装/退出/重开/无监听检查 |
-| 9 Android bridge | 🟡 有界帧、事件代际/序列、队列和文件流已实现 | Android JVM、native bridge/core 定向测试 | 真机乱序、取消、进程回收和大文件 |
-| 10 Android 本地数据/Vault | 🟡 本地 store、Keystore、Vault、模板和导入导出已实现 | Android JVM/编译 | 锁屏、重启、备份排除和秘密不入 WebView 实测 |
-| 11 Android SSH Shell | 🟡 Shell、Host Key、ProxyJump、重连代码已实现 | Kotlin 编译/JVM 测试 | 真机网络切换、后台/前台和认证走查 |
-| 12 Android SFTP/批量任务 | 🟡 SFTP、任务持久化、分页和有界传输已实现 | Android JVM、跨端分页/服务测试 | 真机浏览、上传下载、重试、取消和部分失败 |
+| 9 Android bridge | 🟡 有界帧、事件代际/序列、队列和文件流已实现 | Android JVM、native bridge/core 定向测试；两台真机已完成 native invoke、终端 resize/写入/关闭和 SFTP list smoke | 真机乱序、取消、进程回收和大文件 |
+| 10 Android 本地数据/Vault | 🟡 本地 store、Keystore、Vault、模板和导入导出已实现 | Android JVM/编译；第二台真机已创建测试 Vault 并保存真实测试 Host | 锁屏、重启、备份排除和秘密不入 WebView 实测 |
+| 11 Android SSH Shell | 🟡 Shell、Host Key、ProxyJump、重连代码已实现 | Kotlin 编译/JVM 测试；两台 Android 16 真机已完成密码认证、首次 Host Key 信任、PTY resize、写入和关闭 | 私钥、网络切换、后台/前台、Host Key 变更和完整认证走查 |
+| 12 Android SFTP/批量任务 | 🟡 SFTP、任务持久化、分页和有界传输已实现 | Android JVM、跨端分页/服务测试；两台真机读取真实主机 `/tmp`，每台返回 19 项 | 真机 UI 浏览、上传下载、重试、取消和部分失败 |
 | 13 Android 生命周期/UI | 🟡 返回键、移动 UI、恢复语义已实现 | DOM、Android 编译 | 真机旋转、锁屏、软键盘和进程回收 |
 | 14 三端统一回归 | ⏳ 尚未达到完成条件 | 已有本地 contract/定向验证 | Windows + Android 实机及发布检查 |
 | 15 同步兼容性预留 | 🟡 可选 account/devices/sync ports 和本地优先边界已保留 | shared schema/能力边界 | 形成独立云同步 M4 计划；本期不实现云同步 |
@@ -96,6 +96,7 @@
 - 交互与构建稳定性增量（2026-09-18）：Host 卡片右键改为捕获阶段处理，避免点到卡片内动作按钮时丢失 Server 菜单，同时保留标签专属右键菜单；上下文菜单首次定位/聚焦不再被布局滚动立即关闭。Playwright 主题回归同步到当前主题预览卡交互，主流程 E2E 4/4 通过。浏览器端远端异常重连不再主动调用规范禁止的 WebSocket `1011` 关闭码，改用合法的 `1000` 并保留自动重连语义；相关单测通过。Server/Cloud 构建脚本将 `ws` 标为 external，产物可直接被 Node ESM 加载，避免生产构建后启动崩溃。
 - 跨平台回归增量（2026-09-18，本轮 Windows checkout）：Windows Playwright 配置改为使用 `webServer.env`，并加入可在非 Linux/root 环境运行的 in-process `ssh2` E2E fixture；共享 `.tmp-e2e-data` 的 E2E worker 固定为 1，避免多个 spec 并行初始化 Vault。默认 E2E 4/4 通过，覆盖 Vault、Host Key、终端、多标签、SFTP、批量命令、离线窄屏和旧 Shell 恢复为 `needs-reopen`。全量 Vitest 为 160 个文件通过、1 个跳过，719 个测试通过、2 个跳过；`npm run typecheck`、`npm run lint`、`npm run build` 和 `npm run build:windows` 通过。
 - 原生制品与设备回归增量（2026-09-18，源码 `7caa316`）：Android 使用 JDK 21、Gradle 9.3.1、单 worker 构建，`testDebugUnitTest`、`connectedDebugAndroidTest`（2/2）和 `assembleDebug` 均通过；最终 Debug APK 为 8,633,239 bytes，SHA-256 `8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52`。最终 APK 已安装到 `emulator-5554`（API 35/x86_64），首次连接显示并确认 `ssh-ed25519` Host Key 指纹 `SHA256:RrDNThMGT8sF6lsRsqnQ37vum6+6Q/NmrSXZCM2zf6g`，Host 卡片持久化为“指纹已验证”并记录最近连接；本轮未见 Relay SSH 错误日志。该证据只覆盖 Android Vault/Host 创建、首次 Host Key 和一次 Shell 建立，仍不替代 A-01～A-17 的完整验收。
+- 真实设备回归增量（2026-09-18）：同一 Debug APK 已安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`。两台设备均使用用户指定的密码主机完成首次 Host Key native trust（指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`）、再次连接测试、`/tmp` SFTP 列举（19 项/台）以及终端 resize/写入/关闭；密码未写入仓库。该条只证明真实设备原生 SSH/SFTP 通路，不能替代完整 UI、Host Key 变更、私钥、上传下载取消、生命周期和低内存验收。
 - Windows x64 portable 包已从源码 commit `75cc630` 在本机生成（`npm run package:windows:portable`，`npmRebuild=false`），文件 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，大小 457,281,531 bytes，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`；Electron 44.4.1 已通过镜像下载，签名状态为 `NotSigned`。该包仍未证明 better-sqlite3/argon2 的 Windows Electron native ABI、升级迁移、安装/退出/重开和完整 SSH/SFTP 任务链。
 
 验证记录（2026-09-18）：
@@ -117,8 +118,8 @@
 - 历史增量回归（Linux 旧工作树，已被本轮 Windows checkout 记录取代）：`npm run test:e2e -- --workers=1` 通过 4/4；`npm run package:windows:portable` 的旧包 SHA256 为 `91af49081e8a477a99fe5993ace1777797115f0b32355249cd31ebf4bb435478`，旧 Debug APK SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`。该条只保留历史溯源，不代表当前制品或设备结果。
 ## 当前设备交接状态（2026-09-18）
 
-- Android 代码、Kotlin 编译、JVM 单元测试、connected 测试（2/2）和 Debug APK 构建已完成；本机 `emulator-5554` 当前为 `device`（API 35、x86_64），最终 APK 已安装并完成一次真实密码 SSH 首次 Host Key 确认与 Shell 建立。SFTP、私钥认证、Host Key 变更、网络切换、锁屏/进程回收、低内存和 A-01～A-17 其余项目仍未完成。
-- 之前的 AOSP 软件模拟器 `/dev/kvm` 阻塞记录仍保留为历史环境证据；本轮可用设备已补充一次真实密码 SSH 首次 Host Key/建 Shell 证据，但仍不应扩大解释为完整 Android 设备验收。
+- Android 代码、Kotlin 编译、JVM 单元测试、connected 测试（2/2）和 Debug APK 构建已完成；本机 `emulator-5554` 当前为 `device`（API 35、x86_64），两台 Android 16 真机 `2407FRK8EC`、`25091RP04C` 也已安装并启动当前 APK。两台真机已完成用户指定密码主机的 Host Key trust、连接测试、`/tmp` SFTP 列举和终端 resize/写入/关闭 smoke；完整 SFTP、私钥认证、Host Key 变更、网络切换、锁屏/进程回收、低内存和 A-01～A-17 其余项目仍未完成。
+- 之前的 AOSP 软件模拟器 `/dev/kvm` 阻塞记录仍保留为历史环境证据；当前真机 native smoke 已补充真实设备 SSH/SFTP 通路证据，但仍不应扩大解释为完整 Android UI 和生命周期验收。
 - Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由目标设备执行人继续回填。任务 4–14 仍保持未完成；任务 15 只是未来同步兼容性预留，不属于本期客户端发布门禁。
 - Windows x64 portable 包已在本机生成，但仍等待 Windows native ABI、升级迁移、安装/退出/重开和本地 SSH/SFTP 任务链验证；`npmRebuild=false` 的打包结果不能替代 native ABI 验收。
 - APK 和 portable 包当前只存在于本机 gitignored 生成目录，不会随 `git clone` 或 `git checkout` 出现；当前没有可追溯的 Release 附件、制品服务器或共享目录作为持久来源。最终签收前必须登记可访问的制品来源，并记录源码 commit、工具链版本和 SHA-256。

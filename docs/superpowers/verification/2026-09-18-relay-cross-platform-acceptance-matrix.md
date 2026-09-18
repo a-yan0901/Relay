@@ -8,10 +8,10 @@
 | --- | --- | --- | --- | --- | --- |
 | Host 搜索、收藏、grid/list、标签过滤 | ✅ | 🟡 | 🟡 | Web DOM/E2E；native runtime 复用 HostStore | Windows 窗口和 Android 触控走查 |
 | 创建/编辑/删除 Host 与本地 Vault | ✅ | 🟡 | 🟡 | Web E2E；Windows IPC/native contract；Android JVM/编译 | 两端安装后持久化和锁定走查 |
-| 首次 Host Key 确认、变更拒绝 | ✅ | 🟡 | 🟡 | Server/Windows/Android 状态机和定向测试；Android emulator 已完成首次指纹展示/信任/建 Shell | Windows 实机连接、Android Host Key 变更拒绝 |
-| SSH 输入、复制/粘贴、断连重连 | ✅ | 🟡 | 🟡 | Web E2E、TerminalSession/Native socket 测试 | Windows 原生 ABI、Android 真机网络切换 |
+| 首次 Host Key 确认、变更拒绝 | ✅ | 🟡 | 🟡 | Server/Windows/Android 状态机和定向测试；Android emulator 已完成首次指纹展示/信任/建 Shell；两台 Android 16 真机已完成同一真实主机指纹的 native trust | Windows 实机连接、Android Host Key 变更拒绝 |
+| SSH 输入、复制/粘贴、断连重连 | ✅ | 🟡 | 🟡 | Web E2E、TerminalSession/Native socket 测试；两台 Android 16 真机已完成 native resize/写入/关闭 smoke | Windows 原生 ABI、Android 真机网络切换和完整 UI 走查 |
 | 多标签、分屏与移动单 pane | ✅ | 🟡 | 🟡 | Web 320/390px E2E；共享 runtime capability | Windows/Android UI 和生命周期走查 |
-| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract | 两端真实 SSH/SFTP、取消和部分失败 |
+| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；两台 Android 16 真机已通过真实主机读取 `/tmp`，每台返回 19 项 | 两端真实 UI SFTP、上传/下载/取消和部分失败 |
 | SFTP 单层滚动、终端最后一行可见 | ✅ | 🟡 | 🟡 | Web 窄视口几何断言 | Windows 窗口和 Android 软键盘/安全区 |
 | Vault 锁定、重开、任务恢复状态 | ✅ | 🟡 | 🟡 | Web/Windows/Android 本地实现与 JVM/DOM 测试 | 崩溃、重启、锁屏/进程回收 |
 | 主题、字号、grid/list 偏好持久化 | ✅ | 🟡 | 🟡 | Web E2E 主题持久化与第三方 `data-theme` 隔离 | 两端重启后视觉走查 |
@@ -23,7 +23,7 @@
 
 - Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 和 `npm run test:e2e -- --project=chromium`；默认 E2E 4/4 通过，Playwright 共享数据目录固定单 worker。
 - Windows：源码 commit `75cc630` 上执行 `npm run build:windows` 和 `npm run package:windows:portable`；本机生成 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`，大小 457,281,531 bytes，签名状态为 `NotSigned`。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
-- Android：源码 commit `7caa316` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker 执行 `:app:testDebugUnitTest :app:connectedDebugAndroidTest :app:assembleDebug`；connected 测试 2/2 通过。最终 Debug APK SHA-256 为 `8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52`，大小 8,633,239 bytes；已安装到 `emulator-5554`（API 35/x86_64），完成密码 Host 创建、首次 Host Key 指纹展示/信任和一次 Shell 建立。SFTP、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
+- Android：源码 commit `7caa316` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker 执行 `:app:testDebugUnitTest :app:connectedDebugAndroidTest :app:assembleDebug`；connected 测试 2/2 通过。最终 Debug APK SHA-256 为 `8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52`，大小 8,633,239 bytes；已安装到 `emulator-5554`（API 35/x86_64）以及两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`。两台真机对用户指定密码主机完成 Host Key native trust、连接测试、`/tmp` SFTP 列举（19 项/台）以及终端 resize/写入/关闭 smoke。SFTP 上传下载取消、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
 
 ## 任务状态与门禁边界
 

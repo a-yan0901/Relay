@@ -15,13 +15,20 @@
 | --- | --- | --- | --- |
 | Web | ✅ 自动化基线可复现 | 160 个测试文件通过、1 个跳过；719 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
 | Windows | 🟡 可构建技术预览 | Electron shell、IPC/native contract、Windows x64 portable 包生成；SHA-256 已记录 | Windows native ABI、安装/升级迁移、退出/重开、SSH/SFTP 任务链 |
-| Android | 🟡 已完成有限设备 SSH 证据，不代表平台完成 | Kotlin 编译、JVM 单元测试、connected 测试 2/2、Debug APK 构建；最终 APK 已安装到 API 35/x86_64 `emulator-5554`，完成首次 Host Key 展示/信任和一次 Shell 建立 | SFTP、私钥、Host Key 变更、URI、返回键、软键盘、锁屏/进程回收、网络切换、低内存和 A-01～A-17 其余项目 |
+| Android | 🟡 已完成有限设备 SSH 证据，不代表平台完成 | Kotlin 编译、JVM 单元测试、connected 测试 2/2、Debug APK 构建；最终 APK 已安装到 API 35/x86_64 `emulator-5554`，并安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`；真机已完成用户指定密码主机的首次 Host Key 信任、SSH 连接、SFTP `/tmp` 列举和终端基础 native smoke | SFTP 上传/下载/取消、私钥、Host Key 变更、URI、返回键、软键盘、锁屏/进程回收、网络切换、低内存和 A-01～A-17 其余项目 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
 本机历史上有一次 AOSP 软件模拟器因缺少 `/dev/kvm` 处于 `adb offline` 后退出；本轮现有 `emulator-5554` 为 `device`（API 35、Android 15、x86_64）。最终 APK 已完成安装，并在测试 SSH fixture 上完成首次 Host Key 指纹展示、信任和 Shell 建立；这仍不替代 Android SFTP、Keystore 完整生命周期、网络切换和低内存验收。
 
 本轮设备验证：`adb devices` 返回 `emulator-5554 device`；最终 APK `8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52` 安装返回 `Success`；`cn.ayan.relay/.MainActivity` 启动正常。使用本地 in-process `ssh2` fixture（密码为测试数据）创建 Host，首次连接展示并确认 `SHA256:RrDNThMGT8sF6lsRsqnQ37vum6+6Q/NmrSXZCM2zf6g`，Host 卡片显示“指纹已验证”并记录最近连接；最近 Relay SSH logcat 无错误。该证据只将 A-02 记为通过，不把它扩大为 A-01～A-17 全部通过。
+
+### 真实 Android 设备补充证据（2026-09-18）
+
+- 设备：`2407FRK8EC`、`25091RP04C`，均为 Android 16；两台均安装同一 Debug APK（应用 ID `cn.ayan.relay`），安装返回 `Success`，并成功启动 `MainActivity`。
+- 测试主机：使用用户指定的密码认证 SSH 主机；密码不写入仓库。两台设备均返回同一 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`，确认后再次 `connection.test` 均返回成功。
+- native bridge smoke：两台设备均通过真实 JSch 连接读取 `/tmp`（每台返回 19 项），并完成终端 `resize`、写入测试命令和关闭会话；该证据证明真实设备到 SSH/SFTP 的原生通路可用。
+- 边界：本次没有把 native smoke 扩大为完整 UI 验收；Host Key 变更拒绝、私钥认证、SFTP 上传/下载/取消/重试、网络切换、返回键/软键盘、锁屏/进程回收、低内存和 A-17 仍保持待执行。
 
 ## 2. 产物位置、溯源和工具链
 
