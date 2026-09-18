@@ -22,7 +22,8 @@ const testState = vi.hoisted(() => ({
   credential: null as { hostId: string; authType: 'password' | 'private_key'; name: string; address: string; port: number; username: string } | null,
   submitCredential: vi.fn(),
   sendInput: vi.fn(),
-  resize: vi.fn()
+  resize: vi.fn(),
+  sessionOptions: null as { autoConnect?: boolean; reattachOnly?: boolean } | null
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -112,10 +113,14 @@ vi.mock('@xterm/addon-web-links', () => ({
 }));
 
 vi.mock('../../../src/web/hooks/use-terminal-session', () => ({
-  useTerminalSession: (options: { onOutput?: (data: Uint8Array) => void }) => {
+  useTerminalSession: (options: { onOutput?: (data: Uint8Array) => void; autoConnect?: boolean; reattachOnly?: boolean }) => {
     testState.onOutput = options.onOutput ?? null;
+    testState.sessionOptions = options;
+    const sessionState = options.autoConnect === false
+      ? 'closed'
+      : testState.credential ? 'awaiting-credential' : 'connected';
     return {
-      state: { state: testState.credential ? 'awaiting-credential' : 'connected', reconnectDelayMs: 0, error: null, hostKey: null, credential: testState.credential, diagnostics: testState.diagnostics },
+      state: { state: sessionState, reconnectDelayMs: 0, error: null, hostKey: null, credential: testState.credential, diagnostics: testState.diagnostics },
       resize: testState.resize,
       sendInput: testState.sendInput,
       decideHostKey: () => {},
@@ -157,6 +162,7 @@ describe('TerminalPanel mobile selection', () => {
     testState.submitCredential.mockReset();
     testState.sendInput.mockReset();
     testState.resize.mockReset();
+    testState.sessionOptions = null;
     vi.stubGlobal('requestAnimationFrame', (callback: (timestamp: number) => void) => {
       callback(0);
       return 1;
@@ -192,6 +198,19 @@ describe('TerminalPanel mobile selection', () => {
     render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} />);
 
     expect(testState.terminalInstances[0]?.constructorOptions.rightClickSelectsWord).toBe(false);
+  });
+
+  it('does not auto-open a native session after the saved shell is gone', () => {
+    render(<TerminalPanel terminalId="terminal-reopen" host={host} active onClose={() => {}} recoveryStatus="needs-reopen" />);
+
+    expect(testState.sessionOptions).toEqual(expect.objectContaining({ autoConnect: false, reattachOnly: false }));
+    expect(screen.getByText('此 Console 需要重新连接')).toBeInTheDocument();
+  });
+
+  it('reattaches a browser session restored from the server workspace', () => {
+    render(<TerminalPanel terminalId="terminal-restored" host={host} active onClose={() => {}} recoveryStatus="restored" />);
+
+    expect(testState.sessionOptions).toEqual(expect.objectContaining({ autoConnect: true, reattachOnly: true }));
   });
 
   it('removes the redundant session heading and exposes its tools to the workspace bar', () => {

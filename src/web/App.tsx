@@ -347,6 +347,18 @@ export const App = ({ runtime }: AppProps) => {
     })
     .map(({ terminalId, hostId }) => ({ terminalId, hostId, workspaceTabId: tabIds[terminalId] }));
 
+  const persistTerminalDescriptors = useCallback((descriptors: readonly TerminalDescriptor[]): void => {
+    // Electron/Android SSH handles belong to the native process and cannot be
+    // safely revived after a renderer or process restart. Keep the descriptor
+    // cache only for the Web gateway, whose server-side sessions support
+    // reattach; native durable tabs are restored as explicit needs-reopen tabs.
+    if (runtime.platform !== 'web') {
+      clearTerminalDescriptors();
+      return;
+    }
+    saveTerminalDescriptors(descriptors);
+  }, [runtime.platform]);
+
   const enqueueWorkspaceSave = useCallback((requestWorkspace: WorkspaceState): void => {
     const requestComparable = JSON.stringify({ ...requestWorkspace, version: undefined });
     if (lastSavedWorkspaceRef.current === requestComparable) return;
@@ -407,10 +419,11 @@ export const App = ({ runtime }: AppProps) => {
         setTransferJobs([]);
       }
       const availableHostIds = new Set(hosts.map((host) => host.id));
-      const restoreResults = restoreWorkspace(workspace, availableHostIds, loadTerminalDescriptors(), () => createTerminalId());
+      const savedDescriptors = runtime.platform === 'web' ? loadTerminalDescriptors() : [];
+      const restoreResults = restoreWorkspace(workspace, availableHostIds, savedDescriptors, () => createTerminalId());
       if (workspaceLoadRequestRef.current !== loadRequest || latestStateRef.current.phase === 'locked') return;
       const terminalIds = Object.fromEntries(restoreResults.map((result) => [result.tabId, result.terminalId]));
-      saveTerminalDescriptors(restoreResults
+      persistTerminalDescriptors(restoreResults
         .filter((result) => result.status === 'restored' && availableHostIds.has(result.hostId))
         .map((result) => ({ terminalId: result.terminalId, hostId: result.hostId, workspaceTabId: result.tabId })));
       dispatch({ type: 'workspaceLoaded', workspace, terminalIds, restoreResults });
@@ -421,7 +434,7 @@ export const App = ({ runtime }: AppProps) => {
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
     }
-  }, [enqueueWorkspaceSave, runtime]);
+  }, [enqueueWorkspaceSave, persistTerminalDescriptors, runtime]);
 
   useEffect(() => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
@@ -552,8 +565,8 @@ export const App = ({ runtime }: AppProps) => {
 
   useEffect(() => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
-    saveTerminalDescriptors(terminalDescriptorsFor(state.terminals, state.workspaceTabIdByTerminalId));
-  }, [state.phase, state.terminals, workspaceHydrated]);
+    persistTerminalDescriptors(terminalDescriptorsFor(state.terminals, state.workspaceTabIdByTerminalId));
+  }, [persistTerminalDescriptors, state.phase, state.terminals, workspaceHydrated]);
 
   const retryBoot = (): void => {
     dispatch({ type: 'error', message: null });
@@ -1173,7 +1186,7 @@ export const App = ({ runtime }: AppProps) => {
       await runtime.hosts.delete(host.id);
       const remainingTerminals = state.terminals.filter((terminal) => terminal.hostId !== host.id);
       dispatch({ type: 'hostDeleted', hostId: host.id });
-      saveTerminalDescriptors(remainingTerminals.map(({ terminalId, hostId }) => ({ terminalId, hostId, workspaceTabId: state.workspaceTabIdByTerminalId[terminalId] })));
+      persistTerminalDescriptors(remainingTerminals.map(({ terminalId, hostId }) => ({ terminalId, hostId, workspaceTabId: state.workspaceTabIdByTerminalId[terminalId] })));
       if (state.terminals.length > 0 && remainingTerminals.length === 0) setTerminalView(false);
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
@@ -1228,7 +1241,9 @@ export const App = ({ runtime }: AppProps) => {
 
   const handleCloseTerminal = (terminalId: string): void => {
     dispatch({ type: 'terminalClosed', terminalId });
-    saveTerminalDescriptors(loadTerminalDescriptors().filter((descriptor) => descriptor.terminalId !== terminalId));
+    persistTerminalDescriptors(runtime.platform === 'web'
+      ? loadTerminalDescriptors().filter((descriptor) => descriptor.terminalId !== terminalId)
+      : []);
     if (state.terminals.length <= 1) setTerminalView(false);
   };
 

@@ -109,7 +109,11 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     reconnectBaseMs: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.baseDelayMs,
     reconnectMaxMs: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.maxDelayMs,
     networkAware: true,
-    autoConnect: true,
+    // Native SSH handles are process-local. A restored durable tab must wait
+    // for the user to explicitly create a new shell; browser sessions can
+    // first attempt the server-side reattach path.
+    autoConnect: recoveryStatus !== 'needs-reopen',
+    reattachOnly: recoveryStatus === 'restored',
     getSize: () => ({
       cols: terminalRef.current?.cols ?? 80,
       rows: terminalRef.current?.rows ?? 24
