@@ -55,13 +55,20 @@ internal class AndroidLocalExecutor(
         private const val MAX_OUTPUT_CHUNK = 32 * 1024
         private const val MAX_FRAME_BYTES = 64 * 1024
         private const val MAX_ENCODED_CHUNK_BYTES = 48 * 1024
+        private val EVENT_TYPE_PATTERN = Regex("^[a-z][a-z0-9._-]{1,63}$")
+        private val SAFE_ID_PATTERN = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+        private val ACTIVITY_STATUSES = setOf("queued", "running", "succeeded", "failed", "cancelled", "interrupted")
+        private val ACTIVITY_METADATA_KEYS = setOf(
+            "runId", "transferId", "action", "resolution", "reason", "status", "targetCount",
+            "successCount", "failureCount", "cancelledCount", "interruptedCount", "anomalyCount", "truncatedCount"
+        )
     }
 
     private val appContext = context.applicationContext
     private val store = AndroidLocalStore(appContext)
     private val vault = AndroidVault(store)
     private val bundleService = AndroidBundleService(store, vault)
-    private val commandRunner = AndroidCommandRunner(store, vault, ::emitEvent)
+    private val commandRunner = AndroidCommandRunner(store, vault, ::emitEvent, ::recordActivity)
     private val operationExecutor = boundedExecutor("relay-android-op", 2, MAX_OPERATION_QUEUE)
     private val connectionExecutor = boundedExecutor("relay-android-ssh", MAX_SESSIONS, MAX_CONNECTION_QUEUE)
     private val readerExecutor = boundedExecutor("relay-android-read", MAX_SESSIONS, MAX_SESSIONS * 2)
@@ -277,7 +284,10 @@ internal class AndroidLocalExecutor(
         "snippets.create" -> snippetCreate(payload.optJSONObject("input") ?: failNative("COMMAND_RUN_VALIDATION_FAILED"))
         "snippets.update" -> snippetUpdate(requiredText(payload, "id", 128), payload.optJSONObject("input") ?: failNative("COMMAND_RUN_VALIDATION_FAILED"))
         "snippets.delete" -> snippetDelete(requiredText(payload, "id", 128))
-        "activity.list" -> JSONObject().put("items", JSONArray()).put("hasMore", false)
+        "activity.list" -> {
+            requireUnlocked()
+            activityList(payload)
+        }
         "imports.exportVaultBundle" -> {
             requireUnlocked()
             bundleService.beginExport(requiredText(payload, "exportPassword", 4096))
@@ -894,6 +904,135 @@ internal class AndroidLocalExecutor(
         }
     }
 
+    private fun activityList(payload: JSONObject): JSONObject {
+        val filter = payload.optJSONObject("filter") ?: JSONObject()
+        val limit = intField(filter, "limit", 50, 1, 100)
+        val eventType = nullableText(filter, "eventType", 64)
+        if (eventType != null && !EVENT_TYPE_PATTERN.matches(eventType)) failNative("AUDIT_METADATA_INVALID")
+        val hostId = nullableText(filter, "hostId", 128)?.also { AndroidNativeValidation.requireSafeId(it) }
+        val requestId = nullableText(filter, "requestId", 128)?.also { AndroidNativeValidation.requireSafeId(it) }
+        val status = nullableText(filter, "status", 32)
+        if (status != null && status !in ACTIVITY_STATUSES) failNative("AUDIT_METADATA_INVALID")
+        val from = nullableText(filter, "from", 64)?.also { parseActivityTime(it) }
+        val to = nullableText(filter, "to", 64)?.also { parseActivityTime(it) }
+        if (from != null && to != null && from > to) failNative("AUDIT_METADATA_INVALID")
+        val cursor = decodeActivityCursor(nullableText(filter, "cursor", 512))
+        val matched = ArrayList<AndroidActivityRecord>(limit + 1)
+        for (event in store.listActivities()) {
+            if (cursor != null && !isAfterActivityCursor(event, cursor)) continue
+            if (eventType != null && event.eventType != eventType) continue
+            if (hostId != null && event.hostId != hostId) continue
+            if (requestId != null && event.requestId != requestId) continue
+            if (from != null && event.createdAt < from) continue
+            if (to != null && event.createdAt > to) continue
+            val metadata = parseActivityMetadata(event.metadataJson)
+            if (status != null && activityStatus(event.eventType, metadata) != status) continue
+            matched += event
+            if (matched.size > limit) break
+        }
+        val hasMore = matched.size > limit
+        val page = matched.take(limit)
+        val output = JSONObject().put("items", JSONArray().also { items -> page.forEach { items.put(activityJson(it)) } })
+        if (hasMore) {
+            val last = page.lastOrNull() ?: failNative("AUDIT_METADATA_INVALID")
+            output.put("nextCursor", encodeActivityCursor(last))
+        }
+        return output
+    }
+
+    private fun activityJson(event: AndroidActivityRecord): JSONObject = JSONObject()
+        .put("id", event.id)
+        .put("ownerId", "local")
+        .put("eventType", event.eventType)
+        .put("hostId", event.hostId ?: JSONObject.NULL)
+        .put("requestId", event.requestId)
+        .put("remoteAddress", JSONObject.NULL)
+        .put("metadata", parseActivityMetadata(event.metadataJson))
+        .put("createdAt", event.createdAt)
+
+    private fun recordActivity(eventType: String, hostId: String?, requestId: String, metadata: JSONObject) {
+        try {
+            if (!EVENT_TYPE_PATTERN.matches(eventType) || !SAFE_ID_PATTERN.matches(requestId)) return
+            if (hostId != null && !SAFE_ID_PATTERN.matches(hostId)) return
+            val sanitized = JSONObject()
+            val keys = metadata.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                if (key !in ACTIVITY_METADATA_KEYS) continue
+                val value = metadata.opt(key)
+                when (value) {
+                    null, JSONObject.NULL -> sanitized.put(key, JSONObject.NULL)
+                    is String -> if (value.length <= 128 && value.none { it.code <= 0x1f || it.code == 0x7f }) sanitized.put(key, value)
+                    is Number -> if (value.toLong() >= 0L) sanitized.put(key, value.toLong())
+                    is Boolean -> sanitized.put(key, value)
+                }
+            }
+            val encoded = sanitized.toString()
+            if (encoded.toByteArray(StandardCharsets.UTF_8).size > 4 * 1024) return
+            store.putActivity(AndroidActivityRecord(UUID.randomUUID().toString(), eventType, hostId, requestId, encoded, Instant.now().toString()))
+        } catch (_: Exception) {
+            // Activity history is diagnostic only; it must never break SSH/SFTP work.
+        }
+    }
+
+    private fun parseActivityMetadata(value: String): JSONObject = try {
+        val parsed = JSONObject(value)
+        if (parsed.length() > 32) JSONObject() else parsed
+    } catch (_: Exception) {
+        JSONObject()
+    }
+
+    private fun activityStatus(eventType: String, metadata: JSONObject): String {
+        val explicit = metadata.optString("status", "")
+        if (explicit in ACTIVITY_STATUSES) return explicit
+        if (eventType == "command_run_summary") {
+            if (metadata.optInt("failureCount", 0) > 0) return "failed"
+            if (metadata.optInt("interruptedCount", 0) > 0) return "interrupted"
+            if (metadata.optInt("cancelledCount", 0) > 0) return "cancelled"
+            return "succeeded"
+        }
+        return when {
+            eventType.endsWith("_queued") -> "queued"
+            eventType.endsWith("_started") || eventType.endsWith("_running") -> "running"
+            eventType.endsWith("_failed") -> "failed"
+            eventType.endsWith("_cancelled") -> "cancelled"
+            eventType.endsWith("_interrupted") -> "interrupted"
+            else -> "succeeded"
+        }
+    }
+
+    private fun parseActivityTime(value: String): String = try {
+        Instant.parse(value).toString()
+    } catch (_: Exception) {
+        failNative("AUDIT_METADATA_INVALID")
+    }
+
+    private data class ActivityCursor(val createdAt: String, val id: String)
+
+    private fun encodeActivityCursor(event: AndroidActivityRecord): String = Base64.encodeToString(
+        JSONObject().put("createdAt", event.createdAt).put("id", event.id).toString().toByteArray(StandardCharsets.UTF_8),
+        Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+    )
+
+    private fun decodeActivityCursor(value: String?): ActivityCursor? {
+        if (value == null) return null
+        return try {
+            val json = JSONObject(String(Base64.decode(value, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING), StandardCharsets.UTF_8))
+            val createdAt = requiredText(json, "createdAt", 64)
+            parseActivityTime(createdAt)
+            val id = requiredText(json, "id", 128)
+            if (!SAFE_ID_PATTERN.matches(id)) failNative("AUDIT_METADATA_INVALID")
+            ActivityCursor(createdAt, id)
+        } catch (error: NativeVaultFailure) {
+            throw error
+        } catch (_: Exception) {
+            failNative("AUDIT_METADATA_INVALID")
+        }
+    }
+
+    private fun isAfterActivityCursor(event: AndroidActivityRecord, cursor: ActivityCursor): Boolean =
+        event.createdAt < cursor.createdAt || (event.createdAt == cursor.createdAt && event.id < cursor.id)
+
     private fun openShell(request: JSONObject): JSONObject {
         requireUnlocked()
         val sessionId = AndroidNativeValidation.requireSafeId(request.optString("requestId", ""))
@@ -1181,6 +1320,12 @@ internal class AndroidLocalExecutor(
         )
         transfers[transfer.id] = transfer
         persistTransfer(transfer)
+        recordActivity(
+            "sftp_${kind}_queued",
+            hostId,
+            transfer.id,
+            JSONObject().put("transferId", transfer.id).put("status", "queued").put("action", kind)
+        )
         return transferJson(transfer)
     }
 
@@ -1231,7 +1376,15 @@ internal class AndroidLocalExecutor(
         }
         transfer.checksum = nextChecksum.lowercase(Locale.ROOT)
         transfer.updatedAt = Instant.now().toString()
-        if (final) transfer.status = "completed"
+        if (final) {
+            transfer.status = "completed"
+            recordActivity(
+                "sftp_upload_succeeded",
+                transfer.hostId,
+                transfer.id,
+                JSONObject().put("transferId", transfer.id).put("status", "succeeded")
+            )
+        }
         persistTransfer(transfer)
         val result = transferJson(transfer)
         emitTransferProgress(transfer)
@@ -1259,6 +1412,12 @@ internal class AndroidLocalExecutor(
                 transfer.status = "completed"
                 transfer.updatedAt = Instant.now().toString()
                 persistTransfer(transfer)
+                recordActivity(
+                    "sftp_download_succeeded",
+                    transfer.hostId,
+                    transfer.id,
+                    JSONObject().put("transferId", transfer.id).put("status", "succeeded")
+                )
                 emitTransferProgress(transfer)
                 JSONObject().put("data", "").put("done", true)
             } else if (count == 0) {
@@ -1308,6 +1467,12 @@ internal class AndroidLocalExecutor(
             transfer.updatedAt = Instant.now().toString()
             transfer.closeDownload()
             persistTransfer(transfer)
+            recordActivity(
+                "sftp_${transfer.kind}_interrupted",
+                transfer.hostId,
+                transfer.id,
+                JSONObject().put("transferId", transfer.id).put("status", "interrupted").put("reason", "paused")
+            )
             transferJson(transfer)
         }
     }
@@ -1320,6 +1485,12 @@ internal class AndroidLocalExecutor(
             transfer.updatedAt = Instant.now().toString()
             transfer.closeDownload()
             persistTransfer(transfer)
+            recordActivity(
+                "sftp_${transfer.kind}_cancelled",
+                transfer.hostId,
+                transfer.id,
+                JSONObject().put("transferId", transfer.id).put("status", "cancelled")
+            )
             transferJson(transfer)
         }
     }
@@ -1334,6 +1505,12 @@ internal class AndroidLocalExecutor(
             transfer.updatedAt = Instant.now().toString()
             transfer.closeDownload()
             persistTransfer(transfer)
+            recordActivity(
+                "sftp_${transfer.kind}_queued",
+                transfer.hostId,
+                transfer.id,
+                JSONObject().put("transferId", transfer.id).put("status", "queued").put("action", "retry")
+            )
             transferJson(transfer)
         }
     }

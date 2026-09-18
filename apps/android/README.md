@@ -19,7 +19,7 @@ npm run build:android:release
 - 事件带 `generation/sequence` 以及 `sessionId` 或 `transferId`，输出和文件流单块不超过 32 KiB，事件处理不得积压无界队列。
 - Vault 主密码、私钥、passphrase 只能进入受信原生方法，不写日志、通知、WebView 存储或系统备份。
 - Host Key、远程路径、传输目标和取消逻辑由原生层再次校验；进程恢复时重新读取任务状态，旧 Shell 句柄显示 `needs-reopen`。
-- 当前 native capability 只广告已接入的本地工作区、身份/分组、终端外观、Vault bundle、Snippet、批量命令、SSH/ProxyJump、SFTP 和有限断点传输；Activity 审计、外部导入、后台 UI 恢复和真实设备验证仍隐藏为后续增量。命令与传输任务的状态会写入 app-private SQLite，进程重启或 Vault 锁定时运行中的任务标记为 `interrupted`，解锁后可读取有限历史结果。批量命令限制为最多 8 台主机、4 个原生 worker、每目标 16 KiB 输出；Vault bundle 通过 32 KiB 分块跨越 64 KiB Capacitor 帧，原生侧最多保留一个带 TTL 的导入/导出/预览缓冲。
+- 当前 native capability 只广告已接入的本地工作区、身份/分组、终端外观、Vault bundle、Snippet、批量命令、SSH/ProxyJump、SFTP、有限断点传输和脱敏 Activity 审计；外部导入、后台 UI 恢复和真实设备验证仍隐藏为后续增量。命令、传输任务和安全摘要会写入 app-private SQLite，进程重启或 Vault 锁定时运行中的任务标记为 `interrupted`，解锁后可读取有限历史结果。批量命令限制为最多 8 台主机、4 个原生 worker、每目标 16 KiB 输出；Vault bundle 通过 32 KiB 分块跨越 64 KiB Capacitor 帧，原生侧最多保留一个带 TTL 的导入/导出/预览缓冲。
 
 低内存构建默认使用 `org.gradle.jvmargs=-Xmx768m`、单 worker、关闭 Gradle 并行；真实 CI/发布机可在测量峰值后单独提高预算。
 

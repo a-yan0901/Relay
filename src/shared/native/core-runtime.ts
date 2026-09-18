@@ -79,6 +79,7 @@ export const ANDROID_LOCAL_CAPABILITIES: readonly Capability[] = [
   'automation.snippet-manager',
   'automation.batch-exec',
   'automation.target-picker',
+  'audit.activity',
   'session.lifecycle-status'
 ];
 

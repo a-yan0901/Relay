@@ -119,6 +119,15 @@ internal data class AndroidCommandTargetRecord(
     val finishedAt: String?
 )
 
+internal data class AndroidActivityRecord(
+    val id: String,
+    val eventType: String,
+    val hostId: String?,
+    val requestId: String,
+    val metadataJson: String,
+    val createdAt: String
+)
+
 internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
     context.applicationContext,
     DATABASE_NAME,
@@ -127,7 +136,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
 ) {
     companion object {
         private const val DATABASE_NAME = "relay-local.db"
-        private const val DATABASE_VERSION = 5
+        private const val DATABASE_VERSION = 6
         private const val MAX_HOSTS = 256
         private const val MAX_IDENTITIES = 128
         private const val MAX_GROUPS = 256
@@ -136,6 +145,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         private const val MAX_TRANSFERS = 32
         private const val MAX_COMMAND_RUNS = 32
         private const val MAX_COMMAND_TARGETS = 256
+        private const val MAX_ACTIVITY_EVENTS = 512
         private const val MAX_LIST_RESULTS = 128
         private const val META_TABLE = "relay_meta"
         private const val HOST_TABLE = "relay_hosts"
@@ -146,6 +156,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         private const val TRANSFER_TABLE = "relay_transfers"
         private const val COMMAND_RUN_TABLE = "relay_command_runs"
         private const val COMMAND_TARGET_TABLE = "relay_command_targets"
+        private const val ACTIVITY_TABLE = "relay_activity_events"
     }
 
     override fun onCreate(database: SQLiteDatabase) {
@@ -201,6 +212,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         if (oldVersion < 3) createSnippetTable(database)
         if (oldVersion < 4) createTransferTable(database)
         if (oldVersion < 5) createCommandTables(database)
+        if (oldVersion < 6) createActivityTable(database)
         createAuxiliaryTables(database)
         // A release build must never silently discard local connection data.
         if (oldVersion != newVersion) error("unsupported local database upgrade")
@@ -254,6 +266,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         createSnippetTable(database)
         createTransferTable(database)
         createCommandTables(database)
+        createActivityTable(database)
     }
 
     private fun createSnippetTable(database: SQLiteDatabase) {
@@ -329,6 +342,23 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         )
         database.execSQL("CREATE INDEX IF NOT EXISTS relay_command_runs_created_idx ON $COMMAND_RUN_TABLE(created_at DESC)")
         database.execSQL("CREATE INDEX IF NOT EXISTS relay_command_targets_run_idx ON $COMMAND_TARGET_TABLE(run_id)")
+    }
+
+    private fun createActivityTable(database: SQLiteDatabase) {
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $ACTIVITY_TABLE (
+                id TEXT PRIMARY KEY NOT NULL,
+                event_type TEXT NOT NULL,
+                host_id TEXT,
+                request_id TEXT NOT NULL,
+                metadata_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        database.execSQL("CREATE INDEX IF NOT EXISTS relay_activity_created_idx ON $ACTIVITY_TABLE(created_at DESC)")
+        database.execSQL("CREATE INDEX IF NOT EXISTS relay_activity_request_idx ON $ACTIVITY_TABLE(request_id)")
     }
 
     fun getMeta(key: String): String? {
@@ -959,6 +989,53 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         runCount
     }
 
+    fun putActivity(event: AndroidActivityRecord) {
+        val values = ContentValues().apply {
+            put("id", event.id)
+            put("event_type", event.eventType)
+            if (event.hostId == null) putNull("host_id") else put("host_id", event.hostId)
+            put("request_id", event.requestId)
+            put("metadata_json", event.metadataJson)
+            put("created_at", event.createdAt)
+        }
+        writableDatabase.insertWithOnConflict(ACTIVITY_TABLE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        val count = countRows(ACTIVITY_TABLE)
+        val overflow = count - MAX_ACTIVITY_EVENTS
+        if (overflow > 0) {
+            writableDatabase.query(
+                ACTIVITY_TABLE,
+                arrayOf("id"),
+                null,
+                null,
+                null,
+                null,
+                "created_at ASC, rowid ASC",
+                overflow.toString()
+            ).use { cursor ->
+                val ids = ArrayList<String>(overflow)
+                while (cursor.moveToNext()) ids += cursor.getString(0)
+                ids.forEach { writableDatabase.delete(ACTIVITY_TABLE, "id = ?", arrayOf(it)) }
+            }
+        }
+    }
+
+    fun listActivities(): List<AndroidActivityRecord> {
+        val result = ArrayList<AndroidActivityRecord>(MAX_ACTIVITY_EVENTS)
+        readableDatabase.query(
+            ACTIVITY_TABLE,
+            ACTIVITY_COLUMNS,
+            null,
+            null,
+            null,
+            null,
+            "created_at DESC, rowid DESC",
+            MAX_ACTIVITY_EVENTS.toString()
+        ).use { cursor -> while (cursor.moveToNext() && result.size < MAX_ACTIVITY_EVENTS) result += readActivity(cursor) }
+        return result
+    }
+
+    fun countActivities(): Int = countRows(ACTIVITY_TABLE)
+
     fun <T> transaction(block: () -> T): T {
         val database = writableDatabase
         database.beginTransaction()
@@ -1106,6 +1183,15 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         finishedAt = cursor.getStringOrNull(9)
     )
 
+    private fun readActivity(cursor: android.database.Cursor): AndroidActivityRecord = AndroidActivityRecord(
+        id = cursor.getString(0),
+        eventType = cursor.getString(1),
+        hostId = cursor.getStringOrNull(2),
+        requestId = cursor.getString(3),
+        metadataJson = cursor.getString(4),
+        createdAt = cursor.getString(5)
+    )
+
     private fun countRows(table: String): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM $table", null).use { cursor ->
         if (cursor.moveToFirst()) cursor.getInt(0) else 0
     }
@@ -1146,4 +1232,5 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
     private val TRANSFER_COLUMNS = arrayOf("id", "kind", "host_id", "source_path", "target_path", "status", "completed_bytes", "total_bytes", "checksum", "error_code", "created_at", "updated_at")
     private val COMMAND_RUN_COLUMNS = arrayOf("id", "command_ciphertext", "host_ids_json", "status", "persist_output", "created_at", "finished_at")
     private val COMMAND_TARGET_COLUMNS = arrayOf("run_id", "host_id", "status", "exit_code", "output_ciphertext", "output_bytes", "output_truncated", "error_code", "started_at", "finished_at")
+    private val ACTIVITY_COLUMNS = arrayOf("id", "event_type", "host_id", "request_id", "metadata_json", "created_at")
 }

@@ -28,7 +28,8 @@ import org.json.JSONObject
 internal class AndroidCommandRunner(
     private val store: AndroidLocalStore,
     private val vault: AndroidVault,
-    private val emit: (String, String, JSONObject) -> Unit
+    private val emit: (String, String, JSONObject) -> Unit,
+    private val recordActivity: (String, String?, String, JSONObject) -> Unit
 ) : AutoCloseable {
     companion object {
         private const val MAX_RUNS = 32
@@ -75,7 +76,8 @@ internal class AndroidCommandRunner(
         val channels: MutableMap<String, ChannelExec> = mutableMapOf(),
         var status: String = "queued",
         var finishedAt: String? = null,
-        var remaining: AtomicInteger = AtomicInteger(hostIds.size)
+        var remaining: AtomicInteger = AtomicInteger(hostIds.size),
+        val activityRecorded: AtomicBoolean = AtomicBoolean(false)
     )
 
     private val runs = Collections.synchronizedMap(object : LinkedHashMap<String, Run>(MAX_RUNS, 0.75f, true) {
@@ -127,6 +129,12 @@ internal class AndroidCommandRunner(
         }
         persistRun(run)
         hostIds.forEach { persistTarget(run, run.targets[it] ?: return@forEach) }
+        recordActivity(
+            "command_run_queued",
+            null,
+            run.requestId,
+            JSONObject().put("runId", run.id).put("status", "queued").put("targetCount", run.targets.size)
+        )
         publish(run)
         hostIds.forEach { hostId ->
             try {
@@ -344,6 +352,21 @@ internal class AndroidCommandRunner(
         finishTarget(run, target, status, exitCode, errorCode, output, outputBytes, truncated)
         persistTarget(run, target)
         persistRun(run)
+        val summary = synchronized(run) {
+            if (run.finishedAt != null && run.activityRecorded.compareAndSet(false, true)) {
+                JSONObject()
+                    .put("runId", run.id)
+                    .put("status", run.status)
+                    .put("targetCount", run.targets.size)
+                    .put("successCount", run.targets.values.count { it.status == "completed" })
+                    .put("failureCount", run.targets.values.count { it.status == "failed" })
+                    .put("cancelledCount", run.targets.values.count { it.status == "cancelled" })
+                    .put("interruptedCount", run.targets.values.count { it.status == "interrupted" })
+                    .put("anomalyCount", run.targets.values.count { it.status == "failed" || it.status == "cancelled" || it.status == "interrupted" })
+                    .put("truncatedCount", run.targets.values.count { it.truncated })
+            } else null
+        }
+        if (summary != null) recordActivity("command_run_summary", null, run.requestId, summary)
     }
 
     private fun publish(run: Run) = emit("command.progress", run.id, JSONObject().put("run", runJson(run)))
