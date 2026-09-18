@@ -12,7 +12,6 @@ import android.os.Handler
 import android.os.Looper
 import androidx.activity.result.ActivityResult
 import androidx.appcompat.app.AlertDialog
-import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -57,7 +56,9 @@ class RelayNativePlugin : Plugin() {
 
     private var executor: Executor? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val pendingEvents = ArrayBlockingQueue<JSObject>(8)
+    private val pendingEvents = AndroidEventQueue<JSObject>(8) { event ->
+        event.optString("kind") == "terminal.output" || event.optString("kind") == "transfer.progress"
+    }
     private val eventDrainScheduled = AtomicBoolean(false)
     private val confirmInFlight = AtomicBoolean(false)
     private val fileSaveInFlight = AtomicBoolean(false)
@@ -127,13 +128,7 @@ class RelayNativePlugin : Plugin() {
 
     fun emitNativeEvent(event: JSObject) {
         if (event.toString().toByteArray(Charsets.UTF_8).size > MAX_FRAME_BYTES) return
-        if (!pendingEvents.offer(event)) {
-            // Output is lossy under a saturated WebView queue, while control
-            // events must still be delivered so sessions can be closed.
-            if (event.optString("kind") == "terminal.output" || event.optString("kind") == "transfer.progress") return
-            pendingEvents.poll()
-            if (!pendingEvents.offer(event)) return
-        }
+        if (!pendingEvents.offer(event)) return
         scheduleEventDrain()
     }
 

@@ -26,6 +26,30 @@ describe('Windows desktop main shell', () => {
     await expect(listener({ sender: { id: 7 } }, { version: 1, requestId: 'request-1', operation: 'vault.status', payload: {} })).resolves.toMatchObject({ ok: false, error: { code: 'CAPABILITY_UNAVAILABLE' } });
   });
 
+  it('allows only the packaged renderer file during navigation', async () => {
+    const handle = vi.fn();
+    const ipcMain = { handle, removeHandler: vi.fn() };
+    const navigation = vi.fn();
+    const window = {
+      id: 42,
+      loadFile: vi.fn(async () => undefined),
+      on: vi.fn(),
+      webContents: { send: vi.fn(), on: navigation }
+    };
+    await createDesktopMainController(ipcMain, { create: vi.fn(() => window) }, '/opt/relay/dist/index.html', (router) => {
+      router.register('vault.status', async () => ({ phase: 'locked' }));
+    });
+
+    const listener = navigation.mock.calls[0]?.[1] as (event: { preventDefault(): void }, url: string) => void;
+    const blocked = { preventDefault: vi.fn() };
+    listener(blocked, 'file:///etc/passwd');
+    expect(blocked.preventDefault).toHaveBeenCalledOnce();
+
+    const allowed = { preventDefault: vi.fn() };
+    listener(allowed, 'file:///opt/relay/dist/index.html');
+    expect(allowed.preventDefault).not.toHaveBeenCalled();
+  });
+
   it('composes the local runtime with the renderer shell and forwards bounded events', async () => {
     const handle = vi.fn();
     const ipcMain = { handle, removeHandler: vi.fn() };

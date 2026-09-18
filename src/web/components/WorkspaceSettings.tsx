@@ -19,6 +19,7 @@ export interface WorkspaceSettingsProps {
   mode: WorkspaceSettingsMode;
   onClose: () => void;
   onExport: (password: string) => Promise<string>;
+  onExportStream?: (password: string) => Promise<AsyncIterable<Uint8Array>>;
   fileSave?: FileSavePort;
   fileWriter?: FileWriterPort;
   onPreviewImport: (password: string, bundle: string) => Promise<VaultBundlePreview>;
@@ -83,6 +84,14 @@ const writeBundleChunks = async (writer: Awaited<ReturnType<FileWriterPort['open
   }
 };
 
+const writeBundleStream = async (writer: Awaited<ReturnType<FileWriterPort['open']>>, stream: AsyncIterable<Uint8Array>): Promise<void> => {
+  if (!writer) throw new Error('file writer unavailable');
+  for await (const chunk of stream) {
+    if (!(chunk instanceof Uint8Array) || chunk.byteLength === 0 || chunk.byteLength > BUNDLE_WRITE_CHUNK_BYTES) throw new Error('bundle chunk too large');
+    await writer.write(chunk);
+  }
+};
+
 const downloadBundle = async (bundle: string, fileSave?: FileSavePort, fileWriter?: FileWriterPort): Promise<void> => {
   const name = `relay-vault-${new Date().toISOString().slice(0, 10)}.json`;
   if (fileWriter) {
@@ -111,7 +120,7 @@ const downloadBundle = async (bundle: string, fileSave?: FileSavePort, fileWrite
   URL.revokeObjectURL(url);
 };
 
-export const WorkspaceSettings = ({ mode, onClose, onExport, fileSave, fileWriter, onPreviewImport, onApplyImport, onPreviewExternalImport, onApplyExternalImport }: WorkspaceSettingsProps) => {
+export const WorkspaceSettings = ({ mode, onClose, onExport, onExportStream, fileSave, fileWriter, onPreviewImport, onApplyImport, onPreviewExternalImport, onApplyExternalImport }: WorkspaceSettingsProps) => {
   const [password, setPassword] = useState('');
   const [files, setFiles] = useState<ImportSourceFile[]>([]);
   const [bundle, setBundle] = useState('');
@@ -281,7 +290,24 @@ export const WorkspaceSettings = ({ mode, onClose, onExport, fileSave, fileWrite
     setBusy(true);
     setMessage(null);
     try {
-      await downloadBundle(await onExport(password), fileSave, fileWriter);
+      let streamed = false;
+      if (onExportStream && fileWriter) {
+        const name = `relay-vault-${new Date().toISOString().slice(0, 10)}.json`;
+        const writer = await fileWriter.open({ name, mimeType: 'application/json' });
+        if (!writer) {
+          setMessage('已取消导出。');
+          return;
+        }
+        streamed = true;
+        try {
+          await writeBundleStream(writer, await onExportStream(password));
+          await writer.close();
+        } catch (error) {
+          await writer.cancel?.();
+          throw error;
+        }
+      }
+      if (!streamed) await downloadBundle(await onExport(password), fileSave, fileWriter);
       setPassword('');
       setMessage('导出完成，请妥善保存加密数据包。');
     } catch {

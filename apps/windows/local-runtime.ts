@@ -37,6 +37,7 @@ import { CommandRunStore } from '../../src/server/automation/command-run-store.j
 import { CommandRunner } from '../../src/server/automation/command-runner.js';
 import { AuditService } from '../../src/server/audit/audit-service.js';
 import { DesktopIpcRouter } from './ipc-contract.js';
+import { BoundedBundleParts } from './bounded-bundle.js';
 
 const LOCAL_OWNER_ID = DEFAULT_OWNER_ID;
 const LOCAL_MAX_EVENT_SUBSCRIBERS = 16;
@@ -123,8 +124,7 @@ interface LocalBundleExport {
 
 interface LocalBundleImport {
   exportPassword: string;
-  chunks: string[];
-  bytes: number;
+  content: BoundedBundleParts;
   expiresAt: number;
 }
 
@@ -288,7 +288,7 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
     for (const [id, state] of bundleExports) if (state.expiresAt <= now) bundleExports.delete(id);
     for (const [id, state] of bundleImports) {
       if (state.expiresAt <= now) {
-        state.chunks.length = 0;
+        state.content.clear();
         bundleImports.delete(id);
       }
     }
@@ -734,7 +734,7 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       activeSessionId = null;
       vaultBundleService.clearPreviews();
       bundleExports.clear();
-      bundleImports.forEach((state) => { state.chunks.length = 0; });
+      bundleImports.forEach((state) => state.content.clear());
       bundleImports.clear();
     });
 
@@ -922,10 +922,10 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       const exportPassword = text(isRecord(payload) ? payload.exportPassword : '');
       if (exportPassword.length < 8 || exportPassword.length > 4096) throw new AppError('VAULT_BUNDLE_INVALID');
       pruneBundleBuffers();
-      bundleImports.forEach((state) => { state.chunks.length = 0; });
+      bundleImports.forEach((state) => state.content.clear());
       bundleImports.clear();
       const importId = randomUUID();
-      bundleImports.set(importId, { exportPassword, chunks: [], bytes: 0, expiresAt: Date.now() + LOCAL_BUNDLE_TTL_MS });
+      bundleImports.set(importId, { exportPassword, content: new BoundedBundleParts(LOCAL_MAX_BUNDLE_BYTES), expiresAt: Date.now() + LOCAL_BUNDLE_TTL_MS });
       return { importId };
     }));
     router.register('imports.writeVaultImportChunk', (payload) => withSession(async () => {
@@ -935,11 +935,14 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       const state = bundleImports.get(importId);
       if (!state) throw new AppError('VAULT_BUNDLE_PREVIEW_EXPIRED');
       const bytes = fromBase64Url(payload.data);
-      const chunk = Buffer.from(bytes).toString('utf8');
-      const chunkBytes = Buffer.byteLength(chunk, 'utf8');
-      if (state.bytes > LOCAL_MAX_BUNDLE_BYTES - chunkBytes) throw new AppError('FILE_TOO_LARGE');
-      state.chunks.push(chunk);
-      state.bytes += chunkBytes;
+      try {
+        state.content.append(bytes);
+      } catch (error) {
+        if (error instanceof Error && error.message === 'bundle too large') throw new AppError('FILE_TOO_LARGE');
+        throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      } finally {
+        bytes.fill(0);
+      }
     }));
     router.register('imports.finishVaultImport', (payload) => withSession(async (record) => {
       if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
@@ -948,15 +951,14 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       const state = bundleImports.get(importId);
       if (!state) throw new AppError('VAULT_BUNDLE_PREVIEW_EXPIRED');
       bundleImports.delete(importId);
-      const bundle = state.chunks.join('');
-      state.chunks.length = 0;
+      const bundle = state.content.takeText();
       return vaultBundleService.previewImport(record.vaultKey, state.exportPassword, bundle);
     }));
     router.register('imports.cancelVaultImport', (payload) => withSession(async () => {
       if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
       const importId = text(payload.importId);
       const state = bundleImports.get(importId);
-      if (state) state.chunks.length = 0;
+      state?.content.clear();
       bundleImports.delete(importId);
     }));
     router.register('imports.previewVaultImport', (payload) => withSession(async (record) => { if (!isRecord(payload)) throw new AppError('VAULT_BUNDLE_INVALID'); return vaultBundleService.previewImport(record.vaultKey, text(payload.exportPassword), text(payload.bundle)); }));
@@ -996,7 +998,7 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       for (const writer of fileWriters.values()) await writer.cancel().catch(() => undefined);
       fileWriters.clear();
       bundleExports.clear();
-      bundleImports.forEach((state) => { state.chunks.length = 0; });
+      bundleImports.forEach((state) => state.content.clear());
       bundleImports.clear();
       vaultBundleService.clearPreviews();
       sshSessionManager.closeAll();

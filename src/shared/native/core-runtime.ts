@@ -633,36 +633,49 @@ class NativeImportExport implements ImportExportPort {
   applyExternalImport(previewId: string, input: ImportApplyRequest): Promise<ImportApplyResult> { return this.port.invoke('imports.applyExternalImport', { previewId, input }); }
   async exportOpenSshConfig(): Promise<Uint8Array> { return bytesFromResult(await this.port.invoke('imports.exportOpenSshConfig', {})); }
   async exportCsv(options?: ExportOptions): Promise<Uint8Array> { return bytesFromResult(await this.port.invoke('imports.exportCsv', { ...(options === undefined ? {} : { options }) })); }
-  async exportVaultBundle(exportPassword: string): Promise<string> {
+  async exportVaultBundleStream(exportPassword: string): Promise<AsyncIterable<Uint8Array>> {
     if (!this.chunkedBundle) {
       const result = await this.port.invoke<{ bundle?: string }>('imports.exportVaultBundle', { exportPassword });
       if (!result.bundle) throw new AppError('PROTOCOL_INVALID_MESSAGE');
-      return result.bundle;
+      const bytes = new globalThis.TextEncoder().encode(result.bundle);
+      return (async function* (): AsyncGenerator<Uint8Array> { yield bytes; })();
     }
     const started = await this.port.invoke<{ bundleId?: unknown }>('imports.exportVaultBundle', { exportPassword });
     if (typeof started.bundleId !== 'string') throw new AppError('PROTOCOL_INVALID_MESSAGE');
-    const chunks: string[] = [];
-    let cursor = 0;
-    let totalBytes = 0;
-    try {
-      for (;;) {
-        const result = await this.port.invoke<{ data?: unknown; nextCursor?: unknown; done?: unknown }>('imports.readVaultBundleChunk', { bundleId: started.bundleId, cursor });
-        if (typeof result.data !== 'string' || typeof result.nextCursor !== 'number' || !Number.isSafeInteger(result.nextCursor) || typeof result.done !== 'boolean') throw new AppError('PROTOCOL_INVALID_MESSAGE');
-        const bytes = fromBase64Url(result.data);
-        totalBytes += bytes.byteLength;
-        if (totalBytes > MAX_NATIVE_BUNDLE_BYTES || chunks.length >= MAX_NATIVE_BUNDLE_BYTES / BOUNDED_NATIVE_CHUNK_BYTES) throw new AppError('FILE_TOO_LARGE');
-        chunks.push(new globalThis.TextDecoder().decode(bytes));
-        if (result.done) {
-          if (result.nextCursor < cursor) throw new AppError('PROTOCOL_INVALID_MESSAGE');
-          break;
+    const port = this.port;
+    const bundleId = started.bundleId;
+    return (async function* (): AsyncGenerator<Uint8Array> {
+      let cursor = 0;
+      let totalBytes = 0;
+      try {
+        for (;;) {
+          const result = await port.invoke<{ data?: unknown; nextCursor?: unknown; done?: unknown }>('imports.readVaultBundleChunk', { bundleId, cursor });
+          if (typeof result.data !== 'string' || typeof result.nextCursor !== 'number' || !Number.isSafeInteger(result.nextCursor) || typeof result.done !== 'boolean') throw new AppError('PROTOCOL_INVALID_MESSAGE');
+          const bytes = fromBase64Url(result.data);
+          totalBytes += bytes.byteLength;
+          if (totalBytes > MAX_NATIVE_BUNDLE_BYTES) throw new AppError('FILE_TOO_LARGE');
+          if (result.done) {
+            if (result.nextCursor < cursor) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+            if (bytes.byteLength > 0) yield bytes;
+            break;
+          }
+          if (result.nextCursor <= cursor || bytes.byteLength === 0) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+          cursor = result.nextCursor;
+          yield bytes;
         }
-        if (result.nextCursor <= cursor) throw new AppError('PROTOCOL_INVALID_MESSAGE');
-        cursor = result.nextCursor;
+      } finally {
+        await port.invoke('imports.releaseVaultBundle', { bundleId }).catch(() => undefined);
       }
-      return chunks.join('');
-    } finally {
-      await this.port.invoke('imports.releaseVaultBundle', { bundleId: started.bundleId }).catch(() => undefined);
-    }
+    })();
+  }
+
+  async exportVaultBundle(exportPassword: string): Promise<string> {
+    const stream = await this.exportVaultBundleStream(exportPassword);
+    const decoder = new globalThis.TextDecoder();
+    const chunks: string[] = [];
+    for await (const bytes of stream) chunks.push(decoder.decode(bytes, { stream: true }));
+    chunks.push(decoder.decode());
+    return chunks.join('');
   }
   async previewVaultImport(exportPassword: string, bundle: string): Promise<VaultBundlePreview> {
     if (!this.chunkedBundle) return this.port.invoke('imports.previewVaultImport', { exportPassword, bundle });

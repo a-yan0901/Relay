@@ -12,3 +12,5 @@ npm run dev:windows
 `npm run package:windows` 生成 NSIS 与 portable x64 包，实际安装、升级、退出重开、原生 ABI（`better-sqlite3`、`argon2`、`ssh2`）、签名和无监听端口检查仍应在 Windows CI/开发机完成后，才把 Windows 任务标记为完成。开发机内存有限时保持 Gradle/Node 构建串行，不要并发运行 Web、Electron 打包和测试。
 
 renderer 不得通过 preload 获取任意 Node API；所有新增 native 能力必须先进入 `apps/windows/ipc-contract.ts` 的 allowlist，并保持单次 IPC frame 不超过 64 KiB。
+
+Vault 导入按 32 KiB IPC 块写入有界二进制收集器，最多保留 8 MiB，完成时只做一次 UTF-8 组装；原生 Vault 导出在有文件写入句柄时按块直接落盘，避免 renderer 同时持有完整 bundle 和 `Uint8Array`。窗口导航只允许当前打包的 renderer 文件，任意其它 `file://` 或外部 URL 均被拦截。

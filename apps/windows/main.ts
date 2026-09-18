@@ -1,3 +1,6 @@
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import { DesktopIpcRouter, type DesktopIpcResponse } from './ipc-contract.js';
 
 export const DESKTOP_IPC_CHANNEL = 'relay:invoke';
@@ -53,10 +56,11 @@ export const registerDesktopIpc = (
   });
 };
 
-export const configureDesktopNavigationGuards = (window: DesktopWindowLike): void => {
+export const configureDesktopNavigationGuards = (window: DesktopWindowLike, rendererFile: string): void => {
+  const rendererUrl = pathToFileURL(resolve(rendererFile)).href;
   window.webContents.setWindowOpenHandler?.(() => ({ action: 'deny' }));
   window.webContents.on?.('will-navigate', (event, url) => {
-    if (!url.startsWith('file:')) event.preventDefault();
+    if (url !== rendererUrl) event.preventDefault();
   });
 };
 
@@ -70,7 +74,7 @@ export const createDesktopMainController = async (
   const router = existingRouter ?? new DesktopIpcRouter();
   registerHandlers(router);
   const window = windowFactory.create(DESKTOP_RENDERER_POLICY);
-  configureDesktopNavigationGuards(window);
+  configureDesktopNavigationGuards(window, rendererFile);
   registerDesktopIpc(ipcMain, router, (senderId) => senderId === window.id);
   let closed = false;
   window.on('closed', () => { closed = true; });

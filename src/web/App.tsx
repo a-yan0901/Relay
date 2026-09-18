@@ -1586,11 +1586,12 @@ export const App = ({ runtime }: AppProps) => {
       {workspaceSettingsMode && <WorkspaceSettings
         mode={workspaceSettingsMode}
         onClose={() => setWorkspaceSettingsMode(null)}
-        onExport={runtime.imports.exportVaultBundle}
+        onExport={(password) => runtime.imports.exportVaultBundle(password)}
+        onExportStream={runtime.imports.exportVaultBundleStream ? (password) => runtime.imports.exportVaultBundleStream!(password) : undefined}
         fileSave={runtime.platformServices?.fileSave}
         fileWriter={runtime.platformServices?.fileWriter}
-        onPreviewImport={runtime.imports.previewVaultImport}
-        onPreviewExternalImport={runtime.imports.previewExternalImport}
+        onPreviewImport={(password, bundle) => runtime.imports.previewVaultImport(password, bundle)}
+        onPreviewExternalImport={(files, formatHint) => runtime.imports.previewExternalImport(files, formatHint)}
         onApplyImport={async (previewId, resolution) => {
           const result = await runtime.imports.applyVaultImport(previewId, resolution);
           const [hosts, groups, workspace] = await Promise.all([runtime.hosts.list(), runtime.groups.list(), runtime.workspace.load()]);

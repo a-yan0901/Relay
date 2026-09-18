@@ -303,6 +303,8 @@ export interface ImportExportPort {
   exportOpenSshConfig(): Promise<Uint8Array>;
   exportCsv(options?: ExportOptions): Promise<Uint8Array>;
   exportVaultBundle(exportPassword: string): Promise<string>;
+  /** Native shells may stream directly to a file writer to avoid renderer aggregation. */
+  exportVaultBundleStream?: (exportPassword: string) => Promise<AsyncIterable<Uint8Array>>;
   previewVaultImport(exportPassword: string, bundle: string): Promise<VaultBundlePreview>;
   applyVaultImport(previewId: string, resolution: VaultBundleResolution): Promise<VaultBundleApplyResult>;
 }
