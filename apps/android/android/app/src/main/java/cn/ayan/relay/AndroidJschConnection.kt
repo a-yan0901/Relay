@@ -103,8 +103,7 @@ private fun connectSingleAndroidJsch(
     )
     onRepository(repository)
     jsch.hostKeyRepository = repository
-    val credentialCiphertext = host.credentialCiphertext ?: failJsch("AUTH_REQUIRED")
-    val credential = org.json.JSONObject(vault.decryptSecret(credentialCiphertext, "host:${host.id}:credentials:v1"))
+    val credential = credentialForHost(host, store, vault)
     val session = try {
         jsch.getSession(host.username, host.address, host.port)
     } catch (_: JSchException) {
@@ -143,6 +142,43 @@ private fun connectSingleAndroidJsch(
         val code = repository.failureCode() ?: mapJschError(error)
         failJsch(code)
     }
+}
+
+private fun credentialForHost(host: AndroidHost, store: AndroidLocalStore, vault: AndroidVault): org.json.JSONObject {
+    val credentialCiphertext: String
+    val aad: String
+    when (host.credentialSource) {
+        "inline" -> {
+            credentialCiphertext = host.credentialCiphertext ?: failJsch("AUTH_REQUIRED")
+            aad = "host:${host.id}:credentials:v1"
+        }
+        "identity" -> {
+            val identityId = host.identityId ?: failJsch("IDENTITY_NOT_FOUND")
+            val identity = store.getIdentity(identityId) ?: failJsch("IDENTITY_NOT_FOUND")
+            credentialCiphertext = identity.credentialCiphertext
+            aad = "identity:${identity.id}:credentials:v1"
+        }
+        "group" -> {
+            val identity = groupIdentity(store, host.groupId) ?: failJsch("IDENTITY_NOT_FOUND")
+            credentialCiphertext = identity.credentialCiphertext
+            aad = "identity:${identity.id}:credentials:v1"
+        }
+        else -> failJsch("HOST_VALIDATION_FAILED")
+    }
+    return org.json.JSONObject(vault.decryptSecret(credentialCiphertext, aad))
+}
+
+private fun groupIdentity(store: AndroidLocalStore, groupId: String?): AndroidIdentity? {
+    var currentId = groupId
+    val visited = HashSet<String>()
+    repeat(8) {
+        if (currentId == null || !visited.add(currentId!!)) return null
+        val group = store.getGroup(currentId!!) ?: return null
+        val identityId = group.defaultIdentityId
+        if (identityId != null) return store.getIdentity(identityId)
+        currentId = group.parentId
+    }
+    return null
 }
 
 private class AndroidJumpProxy(private val jumpSession: Session) : Proxy {

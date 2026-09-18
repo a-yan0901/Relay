@@ -44,6 +44,9 @@ const LOCAL_EVENT_CHUNK_BYTES = 32 * 1024;
 const LOCAL_MAX_DOWNLOAD_STREAMS = 4;
 const LOCAL_MAX_RETAINED_SESSION_REQUESTS = 32;
 const LOCAL_MAX_FILE_WRITERS = 4;
+const LOCAL_BUNDLE_CHUNK_BYTES = 32 * 1024;
+const LOCAL_MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
+const LOCAL_BUNDLE_TTL_MS = 10 * 60 * 1000;
 
 export interface WindowsLocalSystemServices {
   clipboard?: {
@@ -113,6 +116,18 @@ interface DownloadState {
   pending: Uint8Array | null;
 }
 
+interface LocalBundleExport {
+  bundle: string;
+  expiresAt: number;
+}
+
+interface LocalBundleImport {
+  exportPassword: string;
+  chunks: string[];
+  bytes: number;
+  expiresAt: number;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const text = (value: unknown): string => typeof value === 'string' ? value : '';
@@ -124,6 +139,19 @@ const fromBase64Url = (value: string): Uint8Array => {
   const bytes = Buffer.from(value, 'base64url');
   if (bytes.byteLength > LOCAL_EVENT_CHUNK_BYTES) throw new AppError('FILE_TOO_LARGE');
   return new Uint8Array(bytes);
+};
+
+const utf8ChunkEnd = (value: string, start: number): number => {
+  if (start >= value.length) return start;
+  let end = Math.min(value.length, start + LOCAL_BUNDLE_CHUNK_BYTES);
+  if (end < value.length && end > start && (value.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
+  while (end > start) {
+    const bytes = Buffer.byteLength(value.slice(start, end), 'utf8');
+    if (bytes <= LOCAL_BUNDLE_CHUNK_BYTES) return end;
+    end -= Math.max(1, Math.ceil((bytes - LOCAL_BUNDLE_CHUNK_BYTES) / 4));
+    if (end < value.length && end > start && (value.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
+  }
+  throw new AppError('FILE_TOO_LARGE');
 };
 
 const parseEncryptedCredential = (value: string): EncryptedJson => {
@@ -252,6 +280,19 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
   const sessionPolicies = new Map<string, Map<string, HostKeyPolicy>>();
   const downloads = new Map<string, DownloadState>();
   const fileWriters = new Map<string, WindowsLocalFileWriter>();
+  const bundleExports = new Map<string, LocalBundleExport>();
+  const bundleImports = new Map<string, LocalBundleImport>();
+
+  const pruneBundleBuffers = (): void => {
+    const now = Date.now();
+    for (const [id, state] of bundleExports) if (state.expiresAt <= now) bundleExports.delete(id);
+    for (const [id, state] of bundleImports) {
+      if (state.expiresAt <= now) {
+        state.chunks.length = 0;
+        bundleImports.delete(id);
+      }
+    }
+  };
 
   const emit = (kind: string, payload: unknown, ids: { sessionId?: string; transferId?: string } = {}): void => {
     if (closed) return;
@@ -688,7 +729,14 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       activeSessionId = sessionStore.create(key, LOCAL_OWNER_ID);
       return { phase: 'unlocked' };
     });
-    router.register('vault.lock', async () => { sessionStore.revokeAll(); activeSessionId = null; });
+    router.register('vault.lock', async () => {
+      sessionStore.revokeAll();
+      activeSessionId = null;
+      vaultBundleService.clearPreviews();
+      bundleExports.clear();
+      bundleImports.forEach((state) => { state.chunks.length = 0; });
+      bundleImports.clear();
+    });
 
     router.register('hosts.list', (payload) => withSession(async () => {
       const filter = isRecord(payload) ? payload as HostListFilter : {};
@@ -845,7 +893,72 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
     router.register('imports.applyExternalImport', (payload) => withSession(async (record) => { if (!isRecord(payload)) throw new AppError('IMPORT_APPLY_INVALID'); return sshImportService.apply(record.vaultKey, text(payload.previewId), (payload.input ?? {}) as never); }));
     router.register('imports.exportOpenSshConfig', () => withSession(async (record) => ({ data: toBase64Url(Buffer.from(await sshImportService.exportOpenSsh(record.vaultKey), 'utf8')) })));
     router.register('imports.exportCsv', (payload) => withSession(async (record) => ({ data: toBase64Url(Buffer.from(await sshImportService.exportCsv(record.vaultKey, (isRecord(payload) ? payload.options : {}) as never), 'utf8')) })));
-    router.register('imports.exportVaultBundle', (payload) => withSession(async (record) => ({ bundle: await vaultBundleService.export(record.vaultKey, text(isRecord(payload) ? payload.exportPassword : '')) })));
+    router.register('imports.exportVaultBundle', (payload) => withSession(async (record) => {
+      const bundle = await vaultBundleService.export(record.vaultKey, text(isRecord(payload) ? payload.exportPassword : ''));
+      if (Buffer.byteLength(bundle, 'utf8') > LOCAL_MAX_BUNDLE_BYTES) throw new AppError('FILE_TOO_LARGE');
+      const bundleId = randomUUID();
+      pruneBundleBuffers();
+      bundleExports.clear();
+      bundleExports.set(bundleId, { bundle, expiresAt: Date.now() + LOCAL_BUNDLE_TTL_MS });
+      return { bundleId };
+    }));
+    router.register('imports.readVaultBundleChunk', (payload) => withSession(async () => {
+      if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const bundleId = text(payload.bundleId);
+      const cursor = payload.cursor;
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(bundleId) || typeof cursor !== 'number' || !Number.isSafeInteger(cursor) || cursor < 0) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      pruneBundleBuffers();
+      const state = bundleExports.get(bundleId);
+      if (!state) throw new AppError('VAULT_BUNDLE_PREVIEW_EXPIRED');
+      if (cursor > state.bundle.length) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const nextCursor = utf8ChunkEnd(state.bundle, cursor);
+      return { data: toBase64Url(Buffer.from(state.bundle.slice(cursor, nextCursor), 'utf8')), nextCursor, done: nextCursor >= state.bundle.length };
+    }));
+    router.register('imports.releaseVaultBundle', (payload) => withSession(async () => {
+      if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      bundleExports.delete(text(payload.bundleId));
+    }));
+    router.register('imports.beginVaultImport', (payload) => withSession(async () => {
+      const exportPassword = text(isRecord(payload) ? payload.exportPassword : '');
+      if (exportPassword.length < 8 || exportPassword.length > 4096) throw new AppError('VAULT_BUNDLE_INVALID');
+      pruneBundleBuffers();
+      bundleImports.forEach((state) => { state.chunks.length = 0; });
+      bundleImports.clear();
+      const importId = randomUUID();
+      bundleImports.set(importId, { exportPassword, chunks: [], bytes: 0, expiresAt: Date.now() + LOCAL_BUNDLE_TTL_MS });
+      return { importId };
+    }));
+    router.register('imports.writeVaultImportChunk', (payload) => withSession(async () => {
+      if (!isRecord(payload) || typeof payload.data !== 'string') throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const importId = text(payload.importId);
+      pruneBundleBuffers();
+      const state = bundleImports.get(importId);
+      if (!state) throw new AppError('VAULT_BUNDLE_PREVIEW_EXPIRED');
+      const bytes = fromBase64Url(payload.data);
+      const chunk = Buffer.from(bytes).toString('utf8');
+      const chunkBytes = Buffer.byteLength(chunk, 'utf8');
+      if (state.bytes > LOCAL_MAX_BUNDLE_BYTES - chunkBytes) throw new AppError('FILE_TOO_LARGE');
+      state.chunks.push(chunk);
+      state.bytes += chunkBytes;
+    }));
+    router.register('imports.finishVaultImport', (payload) => withSession(async (record) => {
+      if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const importId = text(payload.importId);
+      pruneBundleBuffers();
+      const state = bundleImports.get(importId);
+      if (!state) throw new AppError('VAULT_BUNDLE_PREVIEW_EXPIRED');
+      bundleImports.delete(importId);
+      const bundle = state.chunks.join('');
+      state.chunks.length = 0;
+      return vaultBundleService.previewImport(record.vaultKey, state.exportPassword, bundle);
+    }));
+    router.register('imports.cancelVaultImport', (payload) => withSession(async () => {
+      if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const importId = text(payload.importId);
+      const state = bundleImports.get(importId);
+      if (state) state.chunks.length = 0;
+      bundleImports.delete(importId);
+    }));
     router.register('imports.previewVaultImport', (payload) => withSession(async (record) => { if (!isRecord(payload)) throw new AppError('VAULT_BUNDLE_INVALID'); return vaultBundleService.previewImport(record.vaultKey, text(payload.exportPassword), text(payload.bundle)); }));
     router.register('imports.applyVaultImport', (payload) => withSession(async (record) => { if (!isRecord(payload)) throw new AppError('VAULT_BUNDLE_INVALID'); return vaultBundleService.applyImport(record.vaultKey, text(payload.previewId), (payload.resolution ?? {}) as never); }));
   };
@@ -882,6 +995,10 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       downloads.clear();
       for (const writer of fileWriters.values()) await writer.cancel().catch(() => undefined);
       fileWriters.clear();
+      bundleExports.clear();
+      bundleImports.forEach((state) => { state.chunks.length = 0; });
+      bundleImports.clear();
+      vaultBundleService.clearPreviews();
       sshSessionManager.closeAll();
       eventListeners.clear();
       if (closeDatabase) database.close();

@@ -7,7 +7,7 @@ import type { CoreRuntime } from '../core/runtime.js';
 import type { ImportApplyRequest, ImportApplyResult, ImportFormat, ImportPreview, ImportSourceFile, ExportOptions, VaultBundleApplyResult, VaultBundlePreview, VaultBundleResolution } from '../import/types.js';
 import type { TerminalProfile } from '../terminal-appearance.js';
 import { AppError } from '../errors.js';
-import { type NativeEventFrame } from './bridge.js';
+import { BOUNDED_NATIVE_CHUNK_BYTES, type NativeEventFrame } from './bridge.js';
 
 export const NATIVE_TRANSFER_CHUNK_BYTES = 32 * 1024;
 export const NATIVE_MAX_SESSION_HANDLERS = 16;
@@ -60,9 +60,8 @@ const NATIVE_CAPABILITIES: readonly Capability[] = [
 
 /**
  * Android only advertises the operations backed by the current native slice.
- * Keeping this list explicit prevents the UI from exposing identities,
- * snippets, templates or other unsupported automation while their native
- * ports are not present.
+ * Keeping this list explicit prevents the UI from exposing snippets, templates
+ * or other unsupported automation while their native ports are not present.
  */
 export const ANDROID_LOCAL_CAPABILITIES: readonly Capability[] = [
   'workspace.persistence',
@@ -74,6 +73,8 @@ export const ANDROID_LOCAL_CAPABILITIES: readonly Capability[] = [
   'transfer.resume',
   'sftp.local-files',
   'sftp.entry-mutations',
+  'vault.bundle',
+  'vault.identities',
   'session.lifecycle-status'
 ];
 
@@ -99,6 +100,29 @@ const fromBase64Url = (value: string): Uint8Array => {
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.codePointAt(index) ?? 0;
   return bytes;
+};
+
+const MAX_NATIVE_BUNDLE_BYTES = 8 * 1024 * 1024;
+
+const forEachUtf8Chunk = async (value: string, callback: (encoded: string) => Promise<void>): Promise<void> => {
+  const encoder = new globalThis.TextEncoder();
+  let offset = 0;
+  let total = 0;
+  while (offset < value.length) {
+    let end = Math.min(value.length, offset + BOUNDED_NATIVE_CHUNK_BYTES);
+    if (end < value.length && end > offset && (value.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
+    let bytes = encoder.encode(value.slice(offset, end));
+    while (bytes.byteLength > BOUNDED_NATIVE_CHUNK_BYTES && end > offset + 1) {
+      end -= Math.max(1, Math.ceil((bytes.byteLength - BOUNDED_NATIVE_CHUNK_BYTES) / 4));
+      if (end < value.length && end > offset && (value.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
+      bytes = encoder.encode(value.slice(offset, end));
+    }
+    if (bytes.byteLength === 0 || bytes.byteLength > BOUNDED_NATIVE_CHUNK_BYTES) throw new AppError('FILE_TOO_LARGE');
+    total += bytes.byteLength;
+    if (total > MAX_NATIVE_BUNDLE_BYTES) throw new AppError('FILE_TOO_LARGE');
+    await callback(toBase64Url(bytes));
+    offset = end;
+  }
 };
 
 const bytesFromResult = (value: unknown): Uint8Array => {
@@ -594,7 +618,7 @@ class NativeActivityStore implements ActivityStore {
 }
 
 class NativeImportExport implements ImportExportPort {
-  constructor(private readonly port: NativeOperationPort) {}
+  constructor(private readonly port: NativeOperationPort, private readonly chunkedBundle = true) {}
 
   previewExternalImport(files: readonly ImportSourceFile[], formatHint?: ImportFormat): Promise<ImportPreview> {
     const encoded = files.map((file) => ({ filename: file.filename, content: typeof file.content === 'string' ? file.content : toBase64Url(file.content), encoding: typeof file.content === 'string' ? 'text' : 'base64' }));
@@ -603,8 +627,49 @@ class NativeImportExport implements ImportExportPort {
   applyExternalImport(previewId: string, input: ImportApplyRequest): Promise<ImportApplyResult> { return this.port.invoke('imports.applyExternalImport', { previewId, input }); }
   async exportOpenSshConfig(): Promise<Uint8Array> { return bytesFromResult(await this.port.invoke('imports.exportOpenSshConfig', {})); }
   async exportCsv(options?: ExportOptions): Promise<Uint8Array> { return bytesFromResult(await this.port.invoke('imports.exportCsv', { ...(options === undefined ? {} : { options }) })); }
-  async exportVaultBundle(exportPassword: string): Promise<string> { const result = await this.port.invoke<{ bundle?: string }>('imports.exportVaultBundle', { exportPassword }); if (!result.bundle) throw new AppError('PROTOCOL_INVALID_MESSAGE'); return result.bundle; }
-  previewVaultImport(exportPassword: string, bundle: string): Promise<VaultBundlePreview> { return this.port.invoke('imports.previewVaultImport', { exportPassword, bundle }); }
+  async exportVaultBundle(exportPassword: string): Promise<string> {
+    if (!this.chunkedBundle) {
+      const result = await this.port.invoke<{ bundle?: string }>('imports.exportVaultBundle', { exportPassword });
+      if (!result.bundle) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      return result.bundle;
+    }
+    const started = await this.port.invoke<{ bundleId?: unknown }>('imports.exportVaultBundle', { exportPassword });
+    if (typeof started.bundleId !== 'string') throw new AppError('PROTOCOL_INVALID_MESSAGE');
+    const chunks: string[] = [];
+    let cursor = 0;
+    let totalBytes = 0;
+    try {
+      for (;;) {
+        const result = await this.port.invoke<{ data?: unknown; nextCursor?: unknown; done?: unknown }>('imports.readVaultBundleChunk', { bundleId: started.bundleId, cursor });
+        if (typeof result.data !== 'string' || typeof result.nextCursor !== 'number' || !Number.isSafeInteger(result.nextCursor) || typeof result.done !== 'boolean') throw new AppError('PROTOCOL_INVALID_MESSAGE');
+        const bytes = fromBase64Url(result.data);
+        totalBytes += bytes.byteLength;
+        if (totalBytes > MAX_NATIVE_BUNDLE_BYTES || chunks.length >= MAX_NATIVE_BUNDLE_BYTES / BOUNDED_NATIVE_CHUNK_BYTES) throw new AppError('FILE_TOO_LARGE');
+        chunks.push(new globalThis.TextDecoder().decode(bytes));
+        if (result.done) {
+          if (result.nextCursor < cursor) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+          break;
+        }
+        if (result.nextCursor <= cursor) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+        cursor = result.nextCursor;
+      }
+      return chunks.join('');
+    } finally {
+      await this.port.invoke('imports.releaseVaultBundle', { bundleId: started.bundleId }).catch(() => undefined);
+    }
+  }
+  async previewVaultImport(exportPassword: string, bundle: string): Promise<VaultBundlePreview> {
+    if (!this.chunkedBundle) return this.port.invoke('imports.previewVaultImport', { exportPassword, bundle });
+    const started = await this.port.invoke<{ importId?: unknown }>('imports.beginVaultImport', { exportPassword });
+    if (typeof started.importId !== 'string') throw new AppError('PROTOCOL_INVALID_MESSAGE');
+    try {
+      await forEachUtf8Chunk(bundle, (data) => this.port.invoke('imports.writeVaultImportChunk', { importId: started.importId, data }));
+      return await this.port.invoke('imports.finishVaultImport', { importId: started.importId });
+    } catch (error) {
+      await this.port.invoke('imports.cancelVaultImport', { importId: started.importId }).catch(() => undefined);
+      throw error;
+    }
+  }
   applyVaultImport(previewId: string, resolution: VaultBundleResolution): Promise<VaultBundleApplyResult> { return this.port.invoke('imports.applyVaultImport', { previewId, resolution }); }
 }
 

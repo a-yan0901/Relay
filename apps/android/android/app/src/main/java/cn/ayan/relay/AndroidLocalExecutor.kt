@@ -60,6 +60,7 @@ internal class AndroidLocalExecutor(
     private val appContext = context.applicationContext
     private val store = AndroidLocalStore(appContext)
     private val vault = AndroidVault(store)
+    private val bundleService = AndroidBundleService(store, vault)
     private val operationExecutor = boundedExecutor("relay-android-op", 2, MAX_OPERATION_QUEUE)
     private val connectionExecutor = boundedExecutor("relay-android-ssh", MAX_SESSIONS, MAX_CONNECTION_QUEUE)
     private val readerExecutor = boundedExecutor("relay-android-read", MAX_SESSIONS, MAX_SESSIONS * 2)
@@ -122,6 +123,7 @@ internal class AndroidLocalExecutor(
             fileWriters.values.forEach { it.cancel() }
             fileWriters.clear()
         }
+        bundleService.close()
         vault.close()
         operationExecutor.shutdownNow()
         connectionExecutor.shutdownNow()
@@ -155,6 +157,7 @@ internal class AndroidLocalExecutor(
         }
         "vault.lock" -> {
             closeAllSessions()
+            bundleService.clearPreviews()
             vault.lock()
             JSONObject.NULL
         }
@@ -182,17 +185,25 @@ internal class AndroidLocalExecutor(
         "hosts.update" -> updateHost(requiredText(payload, "id", 128), payload.optJSONObject("input") ?: failNative("HOST_VALIDATION_FAILED"))
         "hosts.delete" -> deleteHost(requiredText(payload, "id", 128))
         "hosts.clearHostKey" -> clearHostKey(requiredText(payload, "id", 128))
-        "groups.list" -> JSONArray()
-        "groups.get", "groups.create", "groups.update", "groups.delete" -> failNative("CAPABILITY_UNAVAILABLE")
-        "identities.list" -> JSONArray()
-        "identities.get", "identities.create", "identities.update", "identities.delete" -> failNative("CAPABILITY_UNAVAILABLE")
+        "groups.list" -> groupsList()
+        "groups.get" -> groupJson(requireGroup(requiredText(payload, "id", 128)))
+        "groups.create" -> createGroup(payload.optJSONObject("input") ?: failNative("HOST_VALIDATION_FAILED"))
+        "groups.update" -> updateGroup(requiredText(payload, "id", 128), payload.optJSONObject("input") ?: failNative("HOST_VALIDATION_FAILED"))
+        "groups.delete" -> deleteGroup(requiredText(payload, "id", 128))
+        "identities.list" -> identitiesList()
+        "identities.get" -> identityMetadata(requireIdentity(requiredText(payload, "id", 128)))
+        "identities.create" -> createIdentity(payload.optJSONObject("input") ?: failNative("HOST_VALIDATION_FAILED"))
+        "identities.update" -> updateIdentity(requiredText(payload, "id", 128), payload.optJSONObject("input") ?: failNative("HOST_VALIDATION_FAILED"))
+        "identities.delete" -> deleteIdentity(requiredText(payload, "id", 128))
         "workspace.load" -> workspaceLoad()
         "workspace.save" -> workspaceSave(payload)
         "workspace.listTemplates" -> JSONArray()
         "workspace.createTemplate", "workspace.deleteTemplate" -> failNative("CAPABILITY_UNAVAILABLE")
-        "terminalProfiles.list" -> JSONArray().put(termiusProfile())
-        "terminalProfiles.getDefault" -> termiusProfile()
-        "terminalProfiles.create", "terminalProfiles.setDefault", "terminalProfiles.delete" -> failNative("CAPABILITY_UNAVAILABLE")
+        "terminalProfiles.list" -> terminalProfilesList()
+        "terminalProfiles.getDefault" -> terminalProfileDefault()
+        "terminalProfiles.create" -> createTerminalProfile(payload.optJSONObject("input") ?: failNative("HOST_VALIDATION_FAILED"))
+        "terminalProfiles.setDefault" -> setDefaultTerminalProfile(requiredText(payload, "id", 128))
+        "terminalProfiles.delete" -> deleteTerminalProfile(requiredText(payload, "id", 128))
         "sessions.openShell" -> openShell(payload.optJSONObject("request") ?: failNative("PROTOCOL_INVALID_MESSAGE"))
         "sessions.reconnect" -> reconnect(requiredText(payload, "sessionId", 128))
         "sessions.write" -> sessionWrite(payload)
@@ -216,7 +227,46 @@ internal class AndroidLocalExecutor(
         "snippets.list" -> JSONArray()
         "snippets.get", "snippets.create", "snippets.update", "snippets.delete" -> failNative("CAPABILITY_UNAVAILABLE")
         "activity.list" -> JSONObject().put("items", JSONArray()).put("hasMore", false)
-        "imports.previewExternalImport", "imports.applyExternalImport", "imports.exportOpenSshConfig", "imports.exportCsv", "imports.exportVaultBundle", "imports.previewVaultImport", "imports.applyVaultImport" -> failNative("CAPABILITY_UNAVAILABLE")
+        "imports.exportVaultBundle" -> {
+            requireUnlocked()
+            bundleService.beginExport(requiredText(payload, "exportPassword", 4096))
+        }
+        "imports.readVaultBundleChunk" -> {
+            requireUnlocked()
+            bundleService.readExportChunk(requiredText(payload, "bundleId", 128), intField(payload, "cursor", 0, 0, AndroidBundleCrypto.MAX_BUNDLE_BYTES))
+        }
+        "imports.releaseVaultBundle" -> {
+            requireUnlocked()
+            bundleService.releaseExport(requiredText(payload, "bundleId", 128))
+            JSONObject.NULL
+        }
+        "imports.beginVaultImport" -> {
+            requireUnlocked()
+            bundleService.beginImport(requiredText(payload, "exportPassword", 4096))
+        }
+        "imports.writeVaultImportChunk" -> {
+            requireUnlocked()
+            bundleService.appendImportChunk(requiredText(payload, "importId", 128), requiredText(payload, "data", 48 * 1024))
+            JSONObject.NULL
+        }
+        "imports.finishVaultImport" -> {
+            requireUnlocked()
+            bundleService.finishImport(requiredText(payload, "importId", 128))
+        }
+        "imports.cancelVaultImport" -> {
+            requireUnlocked()
+            bundleService.cancelImport(requiredText(payload, "importId", 128))
+            JSONObject.NULL
+        }
+        "imports.previewVaultImport" -> {
+            requireUnlocked()
+            bundleService.preview(requiredText(payload, "exportPassword", 4096), requiredText(payload, "bundle", AndroidBundleCrypto.MAX_BUNDLE_BYTES))
+        }
+        "imports.applyVaultImport" -> {
+            requireUnlocked()
+            bundleService.apply(requiredText(payload, "previewId", 128), payload.optJSONObject("resolution") ?: failNative("VAULT_BUNDLE_INVALID"))
+        }
+        "imports.previewExternalImport", "imports.applyExternalImport", "imports.exportOpenSshConfig", "imports.exportCsv" -> failNative("CAPABILITY_UNAVAILABLE")
         else -> failNative("CAPABILITY_UNAVAILABLE")
     }
 
@@ -279,6 +329,199 @@ internal class AndroidLocalExecutor(
         return JSONObject()
     }
 
+    private fun requireIdentity(id: String): AndroidIdentity {
+        requireUnlocked()
+        AndroidNativeValidation.requireSafeId(id)
+        return store.getIdentity(id) ?: failNative("IDENTITY_NOT_FOUND")
+    }
+
+    private fun requireGroup(id: String): AndroidGroup {
+        requireUnlocked()
+        AndroidNativeValidation.requireSafeId(id)
+        return store.getGroup(id) ?: failNative("GROUP_NOT_FOUND")
+    }
+
+    private fun identitiesList(): JSONArray {
+        requireUnlocked()
+        val output = JSONArray()
+        store.listIdentities().forEach { output.put(identityMetadata(it)) }
+        return output
+    }
+
+    private fun identityMetadata(identity: AndroidIdentity): JSONObject = JSONObject()
+        .put("id", identity.id)
+        .put("name", identity.name)
+        .put("type", identity.type)
+        .put("username", identity.username)
+        .put("keyFingerprint", identity.keyFingerprint ?: JSONObject.NULL)
+        .put("usageCount", store.countIdentityReferences(identity.id))
+        .put("createdAt", identity.createdAt)
+        .put("updatedAt", identity.updatedAt)
+
+    private fun createIdentity(input: JSONObject): JSONObject {
+        requireUnlocked()
+        val identity = identityFromInput(UUID.randomUUID().toString(), input, null)
+        if (!store.putIdentity(identity)) failNative("GROUP_ALREADY_EXISTS")
+        return identityMetadata(identity)
+    }
+
+    private fun updateIdentity(id: String, input: JSONObject): JSONObject {
+        val current = requireIdentity(id)
+        val identity = identityFromInput(id, input, current)
+        if (!store.putIdentity(identity)) failNative("GROUP_ALREADY_EXISTS")
+        return identityMetadata(identity)
+    }
+
+    private fun deleteIdentity(id: String): JSONObject {
+        val identity = requireIdentity(id)
+        if (store.countIdentityReferences(identity.id) > 0) failNative("IDENTITY_IN_USE")
+        if (!store.deleteIdentity(identity.id)) failNative("IDENTITY_NOT_FOUND")
+        return JSONObject()
+    }
+
+    private fun identityFromInput(id: String, input: JSONObject, current: AndroidIdentity?): AndroidIdentity {
+        val name = textField(input, "name", current?.name, 120)
+        val type = if (input.has("type")) requiredText(input, "type", 32) else current?.type ?: failNative("HOST_VALIDATION_FAILED")
+        if (type != "password" && type != "private_key") failNative("HOST_VALIDATION_FAILED")
+        val username = textField(input, "username", current?.username, 255)
+        if (username.any { it.isWhitespace() }) failNative("HOST_VALIDATION_FAILED")
+        val auth = if (input.has("auth") && !input.isNull("auth")) input.optJSONObject("auth") ?: failNative("HOST_VALIDATION_FAILED") else null
+        val authJson: JSONObject
+        val keyFingerprint: String?
+        if (auth != null) {
+            authJson = validateAuth(auth)
+            if (authJson.optString("type") != type) failNative("HOST_VALIDATION_FAILED")
+            keyFingerprint = null
+        } else {
+            if (current == null || current.type != type) failNative("HOST_VALIDATION_FAILED")
+            authJson = try { JSONObject(vault.decryptSecret(current.credentialCiphertext, "identity:${current.id}:credentials:v1")) } catch (_: Exception) { failNative("VAULT_CRYPTO_FAILED") }
+            keyFingerprint = current.keyFingerprint
+        }
+        val now = Instant.now().toString()
+        return AndroidIdentity(
+            id = id,
+            name = name,
+            type = type,
+            username = username,
+            keyFingerprint = keyFingerprint,
+            credentialCiphertext = if (auth != null) vault.encryptSecret(authJson.toString(), "identity:$id:credentials:v1") else current!!.credentialCiphertext,
+            createdAt = current?.createdAt ?: now,
+            updatedAt = now
+        )
+    }
+
+    private fun groupsList(): JSONArray {
+        requireUnlocked()
+        val output = JSONArray()
+        store.listGroups().forEach { output.put(groupJson(it)) }
+        return output
+    }
+
+    private fun groupJson(group: AndroidGroup): JSONObject = JSONObject()
+        .put("id", group.id)
+        .put("name", group.name)
+        .put("parentId", group.parentId ?: JSONObject.NULL)
+        .put("sortOrder", group.sortOrder)
+        .put("defaultIdentityId", group.defaultIdentityId ?: JSONObject.NULL)
+        .put("connectionProfile", group.connectionProfileJson?.let { jsonObjectOrNull(it) } ?: JSONObject.NULL)
+
+    private fun createGroup(input: JSONObject): JSONObject {
+        requireUnlocked()
+        val group = groupFromInput(UUID.randomUUID().toString(), input, null)
+        if (!store.putGroup(group)) failNative("GROUP_ALREADY_EXISTS")
+        return groupJson(group)
+    }
+
+    private fun updateGroup(id: String, input: JSONObject): JSONObject {
+        val current = requireGroup(id)
+        val group = groupFromInput(id, input, current)
+        if (!store.putGroup(group)) failNative("GROUP_ALREADY_EXISTS")
+        return groupJson(group)
+    }
+
+    private fun deleteGroup(id: String): JSONObject {
+        requireGroup(id)
+        if (!store.deleteGroup(id)) failNative("GROUP_NOT_FOUND")
+        return JSONObject()
+    }
+
+    private fun groupFromInput(id: String, input: JSONObject, current: AndroidGroup?): AndroidGroup {
+        val name = textField(input, "name", current?.name, 120)
+        val parentId = if (input.has("parentId")) nullableText(input, "parentId", 128) else current?.parentId
+        validateGroupParent(id, parentId)
+        val sortOrder = intField(input, "sortOrder", current?.sortOrder ?: 0, 0, 1_000_000)
+        val defaultIdentityId = if (input.has("defaultIdentityId")) nullableText(input, "defaultIdentityId", 128) else current?.defaultIdentityId
+        if (defaultIdentityId != null) requireIdentity(defaultIdentityId)
+        val connectionProfileJson = if (!input.has("connectionProfile") || input.isNull("connectionProfile")) {
+            if (input.has("connectionProfile")) null else current?.connectionProfileJson
+        } else normalizeProfilePatch(input.optJSONObject("connectionProfile") ?: failNative("HOST_VALIDATION_FAILED")).toString()
+        val now = Instant.now().toString()
+        return AndroidGroup(id, name, parentId, sortOrder, defaultIdentityId, connectionProfileJson, current?.createdAt ?: now, now)
+    }
+
+    private fun validateGroupParent(groupId: String, parentId: String?) {
+        if (parentId == null) return
+        AndroidNativeValidation.requireSafeId(parentId)
+        if (parentId == groupId) failNative("GROUP_CYCLE")
+        val seen = HashSet<String>()
+        var cursor: String? = parentId
+        var depth = 1
+        while (cursor != null) {
+            if (!seen.add(cursor)) failNative("GROUP_CYCLE")
+            val group = store.getGroup(cursor) ?: failNative("GROUP_NOT_FOUND")
+            depth += 1
+            if (depth > 8) failNative("GROUP_DEPTH_EXCEEDED")
+            cursor = group.parentId
+        }
+    }
+
+    private fun terminalProfilesList(): JSONArray {
+        requireUnlocked()
+        val output = JSONArray().put(termiusProfile())
+        store.listTerminalProfiles().forEach { output.put(terminalProfileJson(it)) }
+        return output
+    }
+
+    private fun terminalProfileDefault(): JSONObject {
+        requireUnlocked()
+        val id = store.getDefaultTerminalProfileId()
+        return if (id == null || id == "builtin:termius") termiusProfile() else store.getTerminalProfile(id)?.let(::terminalProfileJson) ?: termiusProfile()
+    }
+
+    private fun createTerminalProfile(input: JSONObject): JSONObject {
+        requireUnlocked()
+        val name = textField(input, "name", null, 120)
+        val appearance = validateAppearance(input.optJSONObject("appearance") ?: failNative("HOST_VALIDATION_FAILED"))
+        val now = Instant.now().toString()
+        val profile = AndroidTerminalProfile(UUID.randomUUID().toString(), name, appearance.toString(), now, now)
+        if (!store.putTerminalProfile(profile)) failNative("GROUP_ALREADY_EXISTS")
+        return terminalProfileJson(profile)
+    }
+
+    private fun setDefaultTerminalProfile(id: String): JSONObject {
+        requireUnlocked()
+        AndroidNativeValidation.requireSafeId(id)
+        val profile = if (id == "builtin:termius") termiusProfile() else store.getTerminalProfile(id)?.let(::terminalProfileJson) ?: failNative("NOT_FOUND")
+        store.setDefaultTerminalProfileId(id)
+        return profile
+    }
+
+    private fun deleteTerminalProfile(id: String): JSONObject {
+        requireUnlocked()
+        AndroidNativeValidation.requireSafeId(id)
+        if (id == "builtin:termius" || store.getTerminalProfile(id) == null) failNative("NOT_FOUND")
+        if (store.getDefaultTerminalProfileId() == id || store.countTerminalProfileReferences(id) > 0) failNative("TERMINAL_PROFILE_IN_USE")
+        if (!store.deleteTerminalProfile(id)) failNative("NOT_FOUND")
+        return JSONObject()
+    }
+
+    private fun terminalProfileJson(profile: AndroidTerminalProfile): JSONObject = JSONObject()
+        .put("id", profile.id)
+        .put("name", profile.name)
+        .put("appearance", jsonObjectOrNull(profile.appearanceJson) ?: failNative("INTERNAL_ERROR"))
+        .put("createdAt", profile.createdAt)
+        .put("updatedAt", profile.updatedAt)
+
     private fun hostFromInput(id: String, input: JSONObject, current: AndroidHost?): AndroidHost {
         val name = textField(input, "name", current?.name, 120)
         val address = textField(input, "address", current?.address, 253)
@@ -293,19 +536,43 @@ internal class AndroidLocalExecutor(
         val settings = mergeSettings(current, input.optJSONObject("connectionProfile"))
         val favorite = if (input.has("isFavorite")) input.optBoolean("isFavorite") else current?.favorite ?: false
 
-        val source = if (input.has("credentialSource") && !input.isNull("credentialSource")) input.optJSONObject("credentialSource") else null
-        if (source != null && source.optString("type") != "inline") failNative("CAPABILITY_UNAVAILABLE")
+        val source = if (input.has("credentialSource") && !input.isNull("credentialSource")) input.optJSONObject("credentialSource") ?: failNative("HOST_VALIDATION_FAILED") else null
         val auth = if (input.has("auth") && !input.isNull("auth")) input.optJSONObject("auth") else null
         val credentialCiphertext: String?
         val authType: String
+        val credentialSource: String
+        val identityId: String?
         if (auth != null) {
+            if (source != null && source.optString("type") != "inline") failNative("HOST_VALIDATION_FAILED")
             val parsedAuth = validateAuth(auth)
             authType = parsedAuth.optString("type")
             credentialCiphertext = vault.encryptSecret(parsedAuth.toString(), "host:$id:credentials:v1")
+            credentialSource = "inline"
+            identityId = null
         } else {
-            if (current == null) failNative("HOST_VALIDATION_FAILED")
-            authType = current.authType
-            credentialCiphertext = current.credentialCiphertext
+            credentialSource = source?.optString("type") ?: current?.credentialSource ?: "inline"
+            when (credentialSource) {
+                "inline" -> {
+                    val existing = current ?: failNative("HOST_VALIDATION_FAILED")
+                    authType = existing.authType
+                    credentialCiphertext = existing.credentialCiphertext
+                    identityId = null
+                    if (credentialCiphertext == null) failNative("AUTH_REQUIRED")
+                }
+                "identity" -> {
+                    identityId = source?.let { nullableText(it, "identityId", 128) } ?: current?.identityId
+                    val identity = identityId?.let(::requireIdentity) ?: failNative("IDENTITY_NOT_FOUND")
+                    authType = identity.type
+                    credentialCiphertext = null
+                }
+                "group" -> {
+                    identityId = null
+                    val group = groupId?.let { requireGroup(it) } ?: failNative("GROUP_NOT_FOUND")
+                    authType = groupIdentity(group.id)?.type ?: failNative("IDENTITY_NOT_FOUND")
+                    credentialCiphertext = null
+                }
+                else -> failNative("HOST_VALIDATION_FAILED")
+            }
         }
         val now = Instant.now().toString()
         return AndroidHost(
@@ -316,6 +583,8 @@ internal class AndroidLocalExecutor(
             username = username,
             authType = authType,
             credentialCiphertext = credentialCiphertext,
+            credentialSource = credentialSource,
+            identityId = identityId,
             groupId = groupId,
             terminalProfileId = terminalProfileId,
             jumpHostIdsJson = JSONArray(jumpHostIds).toString(),
@@ -335,26 +604,37 @@ internal class AndroidLocalExecutor(
         )
     }
 
-    private fun hostMetadata(host: AndroidHost): JSONObject = JSONObject()
-        .put("id", host.id)
-        .put("name", host.name)
-        .put("address", host.address)
-        .put("port", host.port)
-        .put("username", host.username)
-        .put("authType", host.authType)
-        .put("groupId", host.groupId ?: JSONObject.NULL)
-        .put("terminalProfileId", host.terminalProfileId ?: JSONObject.NULL)
-        .put("tags", JSONArray(decodeList(host.tagsJson)))
-        .put("isFavorite", host.favorite)
-        .put("hostKeyAlgorithm", host.hostKeyAlgorithm ?: JSONObject.NULL)
-        .put("hostKeyFingerprint", host.hostKeyFingerprint ?: JSONObject.NULL)
-        .put("lastConnectedAt", host.lastConnectedAt ?: JSONObject.NULL)
-        .put("createdAt", host.createdAt)
-        .put("updatedAt", host.updatedAt)
-        .put("jumpHostIds", JSONArray(decodeList(host.jumpHostIdsJson)))
-        .put("connectionProfile", settingsJson(host))
-        .put("connectionProfileOverrides", JSONObject.NULL)
-        .put("credentialSource", JSONObject().put("type", "inline").put("authType", host.authType))
+    private fun hostMetadata(host: AndroidHost): JSONObject {
+        val identity = hostIdentity(host)
+        val source = when (host.credentialSource) {
+            "identity" -> JSONObject().put("type", "identity").put("identityId", host.identityId ?: JSONObject.NULL)
+            "group" -> JSONObject().put("type", "group")
+            else -> JSONObject().put("type", "inline").put("authType", host.authType)
+        }
+        return JSONObject()
+            .put("id", host.id)
+            .put("name", host.name)
+            .put("address", host.address)
+            .put("port", host.port)
+            .put("username", host.username)
+            .put("authType", identity?.type ?: host.authType)
+            .put("groupId", host.groupId ?: JSONObject.NULL)
+            .put("terminalProfileId", host.terminalProfileId ?: JSONObject.NULL)
+            .put("tags", JSONArray(decodeList(host.tagsJson)))
+            .put("isFavorite", host.favorite)
+            .put("hostKeyAlgorithm", host.hostKeyAlgorithm ?: JSONObject.NULL)
+            .put("hostKeyFingerprint", host.hostKeyFingerprint ?: JSONObject.NULL)
+            .put("lastConnectedAt", host.lastConnectedAt ?: JSONObject.NULL)
+            .put("createdAt", host.createdAt)
+            .put("updatedAt", host.updatedAt)
+            .put("jumpHostIds", JSONArray(decodeList(host.jumpHostIdsJson)))
+            .put("connectionProfile", settingsJson(host))
+            .put("connectionProfileOverrides", JSONObject.NULL)
+            .put("credentialSource", source)
+            .also { output ->
+                if (identity != null) output.put("identityName", identity.name).put("identitySource", if (host.credentialSource == "group") "group" else "host")
+            }
+    }
 
     private fun hostProfile(host: AndroidHost): JSONObject = JSONObject()
         .put("hostId", host.id)
@@ -372,6 +652,24 @@ internal class AndroidLocalExecutor(
             .put("maxDelayMs", host.reconnectMaxDelayMs))
         .put("hostKeyAlgorithm", host.hostKeyAlgorithm ?: JSONObject.NULL)
         .put("hostKeyFingerprint", host.hostKeyFingerprint ?: JSONObject.NULL)
+
+    private fun hostIdentity(host: AndroidHost): AndroidIdentity? = when (host.credentialSource) {
+        "identity" -> host.identityId?.let { store.getIdentity(it) }
+        "group" -> groupIdentity(host.groupId)
+        else -> null
+    }
+
+    private fun groupIdentity(groupId: String?): AndroidIdentity? {
+        var currentId = groupId
+        val visited = HashSet<String>()
+        repeat(8) {
+            if (currentId == null || !visited.add(currentId!!)) return null
+            val group = store.getGroup(currentId!!) ?: return null
+            if (group.defaultIdentityId != null) return store.getIdentity(group.defaultIdentityId)
+            currentId = group.parentId
+        }
+        return null
+    }
 
     private fun workspaceLoad(): JSONObject {
         requireUnlocked()
@@ -983,6 +1281,58 @@ internal class AndroidLocalExecutor(
             .put("cursorStyle", "bar")
             .put("cursorBlink", true)
             .put("scrollback", 5_000))
+
+    private fun jsonObjectOrNull(value: String): JSONObject? = try {
+        JSONObject(value)
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun normalizeProfilePatch(input: JSONObject): JSONObject {
+        val output = JSONObject()
+        if (input.has("keepaliveIntervalMs")) output.put("keepaliveIntervalMs", intField(input, "keepaliveIntervalMs", 0, 0, 600_000))
+        if (input.has("keepaliveCountMax")) output.put("keepaliveCountMax", intField(input, "keepaliveCountMax", 0, 0, 100))
+        if (input.has("reconnect")) {
+            val reconnect = input.optJSONObject("reconnect") ?: failNative("HOST_VALIDATION_FAILED")
+            val normalized = JSONObject()
+            if (reconnect.has("enabled")) {
+                if (reconnect.opt("enabled") !is Boolean) failNative("HOST_VALIDATION_FAILED")
+                normalized.put("enabled", reconnect.optBoolean("enabled"))
+            }
+            if (reconnect.has("maxAttempts")) normalized.put("maxAttempts", intField(reconnect, "maxAttempts", 0, 0, 20))
+            if (reconnect.has("baseDelayMs")) normalized.put("baseDelayMs", intField(reconnect, "baseDelayMs", 0, 0, 60_000))
+            if (reconnect.has("maxDelayMs")) normalized.put("maxDelayMs", intField(reconnect, "maxDelayMs", 0, 0, 600_000))
+            if (normalized.has("baseDelayMs") && normalized.has("maxDelayMs") && normalized.optInt("maxDelayMs") < normalized.optInt("baseDelayMs")) failNative("HOST_VALIDATION_FAILED")
+            output.put("reconnect", normalized)
+        }
+        return output
+    }
+
+    private fun validateAppearance(input: JSONObject): JSONObject {
+        val output = JSONObject()
+        val colors = listOf(
+            "foreground", "background", "cursor", "cursorAccent", "selectionBackground", "selectionForeground",
+            "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white", "brightBlack",
+            "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite"
+        )
+        colors.forEach { key ->
+            val value = requiredText(input, key, 7)
+            if (!value.matches(Regex("^#[0-9a-fA-F]{6}$"))) failNative("HOST_VALIDATION_FAILED")
+            output.put(key, value.lowercase(Locale.ROOT))
+        }
+        output.put("fontFamily", requiredText(input, "fontFamily", 160))
+        output.put("fontSize", intField(input, "fontSize", 13, 10, 24))
+        val lineHeight = input.opt("lineHeight")
+        if (lineHeight !is Number || lineHeight.toDouble() !in 1.0..2.0) failNative("HOST_VALIDATION_FAILED")
+        output.put("lineHeight", lineHeight.toDouble())
+        val cursorStyle = requiredText(input, "cursorStyle", 16)
+        if (cursorStyle !in setOf("block", "bar", "underline")) failNative("HOST_VALIDATION_FAILED")
+        output.put("cursorStyle", cursorStyle)
+        if (input.opt("cursorBlink") !is Boolean) failNative("HOST_VALIDATION_FAILED")
+        output.put("cursorBlink", input.optBoolean("cursorBlink"))
+        output.put("scrollback", intField(input, "scrollback", 5_000, 500, 20_000))
+        return output
+    }
 
     private fun requiredText(value: JSONObject, key: String, maxLength: Int): String {
         val text = if (value.has(key) && !value.isNull(key)) value.optString(key, "") else ""

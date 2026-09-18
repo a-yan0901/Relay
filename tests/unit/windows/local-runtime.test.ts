@@ -84,4 +84,33 @@ describe('Windows local runtime', () => {
     expect(writer.close).toHaveBeenCalledOnce();
     expect(writer.cancel).not.toHaveBeenCalled();
   });
+
+  it('chunks portable vault bundles across the bounded desktop IPC frame', async () => {
+    runtime = createWindowsLocalRuntime({ dataDir: ':memory:' });
+    await request(runtime, 'setup-bundle', 'vault.setup', { masterPassword: 'test-password' });
+    const password = 'p'.repeat(3500);
+    for (let index = 0; index < 10; index += 1) {
+      await request(runtime, `host-bundle-${index}`, 'hosts.create', {
+        input: { name: `Bundle host ${index}`, address: `bundle-${index}.example.com`, port: 22, username: 'root', auth: { type: 'password', password } }
+      });
+    }
+
+    const started = await request(runtime, 'bundle-export', 'imports.exportVaultBundle', { exportPassword: 'test-password' }) as { bundleId: string };
+    const chunks: string[] = [];
+    let cursor = 0;
+    for (;;) {
+      const part = await request(runtime, `bundle-read-${cursor}`, 'imports.readVaultBundleChunk', { bundleId: started.bundleId, cursor }) as { data: string; nextCursor: number; done: boolean };
+      chunks.push(Buffer.from(part.data, 'base64url').toString('utf8'));
+      if (part.done) break;
+      expect(part.nextCursor).toBeGreaterThan(cursor);
+      cursor = part.nextCursor;
+    }
+    expect(chunks.length).toBeGreaterThan(1);
+    const bundle = chunks.join('');
+    expect(Buffer.byteLength(bundle, 'utf8')).toBeGreaterThan(32 * 1024);
+    expect(bundle).toContain('"format":"webssh-vault"');
+
+    await request(runtime, 'bundle-release', 'imports.releaseVaultBundle', { bundleId: started.bundleId });
+    await expect(request(runtime, 'bundle-read-expired', 'imports.readVaultBundleChunk', { bundleId: started.bundleId, cursor: 0 })).rejects.toThrow('VAULT_BUNDLE_PREVIEW_EXPIRED');
+  });
 });

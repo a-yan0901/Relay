@@ -354,6 +354,10 @@ export class VaultBundleService {
 
   constructor(private readonly options: VaultBundleServiceOptions) {}
 
+  clearPreviews(): void {
+    this.previews.clear();
+  }
+
   /** Build the canonical plaintext payload shared by export and encrypted sync. */
   async createPayload(sessionKey: Buffer): Promise<BundlePayload> {
     assertSessionKey(sessionKey);

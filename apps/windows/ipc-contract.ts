@@ -113,6 +113,12 @@ export const DESKTOP_IPC_OPERATIONS = [
   'imports.exportOpenSshConfig',
   'imports.exportCsv',
   'imports.exportVaultBundle',
+  'imports.readVaultBundleChunk',
+  'imports.releaseVaultBundle',
+  'imports.beginVaultImport',
+  'imports.writeVaultImportChunk',
+  'imports.finishVaultImport',
+  'imports.cancelVaultImport',
   'imports.previewVaultImport',
   'imports.applyVaultImport'
 ] as const;
@@ -206,6 +212,12 @@ const operationPayloadSchemas: Record<DesktopIpcOperation, z.ZodTypeAny> = {
   'imports.exportOpenSshConfig': emptyPayload,
   'imports.exportCsv': z.object({ options: boundedObject.optional() }).strict(),
   'imports.exportVaultBundle': z.object({ exportPassword: z.string().min(1).max(4096) }).strict(),
+  'imports.readVaultBundleChunk': z.object({ bundleId: safeId, cursor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }).strict(),
+  'imports.releaseVaultBundle': z.object({ bundleId: safeId }).strict(),
+  'imports.beginVaultImport': z.object({ exportPassword: z.string().min(1).max(4096) }).strict(),
+  'imports.writeVaultImportChunk': z.object({ importId: safeId, data: z.string().min(1).max(48 * 1024) }).strict(),
+  'imports.finishVaultImport': z.object({ importId: safeId }).strict(),
+  'imports.cancelVaultImport': z.object({ importId: safeId }).strict(),
   'imports.previewVaultImport': z.object({ exportPassword: z.string().min(1).max(4096), bundle: z.string().min(1).max(DESKTOP_IPC_MAX_FRAME_BYTES) }).strict(),
   'imports.applyVaultImport': z.object({ previewId: safeId, resolution: boundedObject }).strict()
 };

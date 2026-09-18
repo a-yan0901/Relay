@@ -43,6 +43,9 @@ dependencies {
     // Pure-Java SSH/SFTP transport. Android support is validated by our
     // device matrix; keep the adapter behind the native executor boundary.
     implementation 'com.github.mwiede:jsch:2.27.7'
+    // Used only for the portable Vault bundle KDF. Keep the version pinned so
+    // Android exports remain compatible with the Node/Web implementation.
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.79'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

@@ -45,7 +45,7 @@ class RelayNativePlugin : Plugin() {
             "commands.start", "commands.get", "commands.cancel",
             "snippets.list", "snippets.get", "snippets.create", "snippets.update", "snippets.delete",
             "activity.list",
-            "imports.previewExternalImport", "imports.applyExternalImport", "imports.exportOpenSshConfig", "imports.exportCsv", "imports.exportVaultBundle", "imports.previewVaultImport", "imports.applyVaultImport"
+            "imports.previewExternalImport", "imports.applyExternalImport", "imports.exportOpenSshConfig", "imports.exportCsv", "imports.exportVaultBundle", "imports.readVaultBundleChunk", "imports.releaseVaultBundle", "imports.beginVaultImport", "imports.writeVaultImportChunk", "imports.finishVaultImport", "imports.cancelVaultImport", "imports.previewVaultImport", "imports.applyVaultImport"
         )
     }
 
@@ -265,6 +265,7 @@ class RelayNativePlugin : Plugin() {
             if (!isSafeId(payload.optString("sessionId", ""))) return false
         }
         if (operation == "files.upload" && payload.optString("data", "").length > MAX_ENCODED_CHUNK_BYTES) return false
+        if (operation == "imports.writeVaultImportChunk" && payload.optString("data", "").length > MAX_ENCODED_CHUNK_BYTES) return false
         if (operation == "system.fileSave.seek") {
             val writerId = payload.optString("writerId", "")
             if (!isSafeId(writerId) || payload.optLong("position", -1L) < 0L) return false

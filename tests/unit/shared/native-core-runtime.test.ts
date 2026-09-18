@@ -75,6 +75,43 @@ describe('native core runtime adapter', () => {
     expect(onEvent).toHaveBeenCalledWith({ type: 'data', data: 'ok' });
   });
 
+  it('chunks Android Vault bundles instead of exceeding the native frame limit', async () => {
+    const calls: Array<{ operation: string; payload: unknown }> = [];
+    const writtenChunks: string[] = [];
+    const port: NativeOperationPort = {
+      invoke: vi.fn(async <T,>(operation: string, payload: unknown): Promise<T> => {
+        calls.push({ operation, payload });
+        if (operation === 'imports.exportVaultBundle') return { bundleId: 'bundle-1' } as T;
+        if (operation === 'imports.readVaultBundleChunk') return { data: 'cG9ydGFibGU', nextCursor: 9, done: true } as T;
+        if (operation === 'imports.beginVaultImport') return { importId: 'import-1' } as T;
+        if (operation === 'imports.writeVaultImportChunk') {
+          writtenChunks.push((payload as { data: string }).data);
+          return undefined as T;
+        }
+        if (operation === 'imports.finishVaultImport') return { previewId: 'preview-1', hostCount: 1, groupCount: 0, identityCount: 0, conflicts: [], expiresAt: '' } as T;
+        return undefined as T;
+      }),
+      subscribe() { return () => undefined; }
+    };
+    const runtime = createNativeCoreRuntime({ platform: 'android', port });
+
+    await expect(runtime.imports.exportVaultBundle('export-password')).resolves.toBe('portable');
+    await expect(runtime.imports.previewVaultImport('export-password', 'x'.repeat(70_000))).resolves.toMatchObject({ previewId: 'preview-1' });
+
+    expect(calls.map(({ operation }) => operation)).toEqual([
+      'imports.exportVaultBundle',
+      'imports.readVaultBundleChunk',
+      'imports.releaseVaultBundle',
+      'imports.beginVaultImport',
+      'imports.writeVaultImportChunk',
+      'imports.writeVaultImportChunk',
+      'imports.writeVaultImportChunk',
+      'imports.finishVaultImport'
+    ]);
+    expect(writtenChunks).toHaveLength(3);
+    expect(writtenChunks.every((chunk) => chunk.length <= 48 * 1024)).toBe(true);
+  });
+
   it('does not lose the first status event emitted during shell open', async () => {
     let emit: ((event: NativeEventFrame) => void) | undefined;
     const port: NativeOperationPort = {

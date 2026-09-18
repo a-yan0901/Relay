@@ -57,7 +57,7 @@
 
 - M0/共享边界：已加入 `NativeOperationPort`、事件代际/序列、Android bridge、共享 native `CoreRuntime` 和原生终端 socket 适配；平台 ports 还覆盖确认对话框、外链和有界文件写入。Web 仍默认使用 Web adapter，浏览器 File System Access API 不可用时回退到小文件下载。
 - M1/Windows：已加入实际 Electron main/preload shell、版本化 IPC allowlist、sender 校验、窗口导航防护、本地 SQLite/Vault/SSH/SFTP/命令/导入导出组合、剪贴板桥接，以及 Host Key/凭据交互和 ECONNRESET 回归测试。文件导出使用临时文件句柄、32 KiB 分块写入和关闭后替换；`npm run build:windows` 已通过，但真实 Windows 安装、原生 ABI、升级迁移和实机任务走查仍未完成。
-- M2/Android：已生成 Capacitor Android 工程，注册 Kotlin `RelayNative` 插件并接入共享操作/文件流边界；已加入 JSch 2.27.7 候选、app-private SQLite Host/Workspace store、Android Keystore + AES-GCM Vault、inline 凭据、逐跳 Host Key 确认、PTY Shell、断线重连、ProxyJump、SFTP 浏览/目录变更/有界上传下载，以及 Android Confirm/SAF 文件写入。native capability 只广告当前已接入的本地工作区、SSH/ProxyJump、SFTP 和有限断点能力。Kotlin 编译与 Android JVM 单元测试已通过，但身份/分组/Snippet/批量命令/import bundle、传输持久化、后台/进程恢复、真实设备与发布 ABI/签名仍未完成，不能宣称 Android 独立客户端交付。
+- M2/Android：已生成 Capacitor Android 工程，注册 Kotlin `RelayNative` 插件并接入共享操作/文件流边界；已加入 JSch 2.27.7 候选、app-private SQLite Host/Workspace store、Android Keystore + AES-GCM Vault、inline/Identity/Group 凭据、逐跳 Host Key 确认、PTY Shell、断线重连、ProxyJump、SFTP 浏览/目录变更/有界上传下载，以及 Android Confirm/SAF 文件写入。当前已补齐 Identity、Group、终端 profile 的本地 CRUD 和 Vault bundle v1 的 Android 加解密、预览、冲突应用；bundle 在 Android 上通过 32 KiB 分块跨越 64 KiB bridge 帧，原生最多保留一个有 TTL 的导入/导出/预览缓冲。native capability 只广告当前真实接入的本地工作区、Identity/Vault bundle、SSH/ProxyJump、SFTP 和有限断点能力。Kotlin 编译与 Android JVM 单元测试已通过，但 Snippet/批量命令/外部导入、传输持久化、后台/进程恢复、真实设备与发布 ABI/签名仍未完成，不能宣称 Android 独立客户端交付。
 - 内存预算：原生文件与终端传输使用 32 KiB 单块；终端输入使用每会话最多 8 条、总量 64 KiB 的有界队列，超限显式报错；Windows 默认最多 4 个 SSH 会话、每会话 64 KiB 脱离缓冲、最多 4 个下载流、最多 32 个可重连请求；IPC/事件订阅和 payload 也有上限。验证默认关闭文件并行并限制 worker，避免在无 Swap 主机上同时启动多份 Node/Vite。
 
 验证记录（2026-09-18）：
