@@ -2,6 +2,8 @@ import { AppError } from '../../shared/errors';
 import type {
   ClipboardPort,
   DialogPort,
+  DownloadPort,
+  DownloadRequest,
   ExternalLinkPort,
   FileSavePort,
   FileSaveRequest,
@@ -41,6 +43,7 @@ export interface BrowserSystemHosts {
   confirm?: (message: string) => boolean | Promise<boolean>;
   openExternal?: (url: string) => void | Promise<void>;
   legacyCopy?: (text: string) => boolean | void;
+  download?: (request: DownloadRequest) => void | Promise<void>;
   fileSave?: BrowserFileHost;
   fileWriter?: BrowserFileWriterHost;
   notifications?: BrowserNotificationHost;
@@ -53,6 +56,7 @@ export interface BrowserSystemCapabilities {
   externalLinks: boolean;
   fileSave: boolean;
   fileWriter: boolean;
+  downloads: boolean;
   notifications: boolean;
 }
 
@@ -133,6 +137,15 @@ const defaultBrowserSystemHosts = (): BrowserSystemHosts => {
     openExternal: typeof globalThis.open === 'function' ? (url: string) => {
       globalThis.open(url, '_blank', 'noopener,noreferrer');
     } : undefined,
+    download: browserDocument ? ({ url, name }: DownloadRequest) => {
+      const anchor = browserDocument.createElement('a');
+      anchor.href = url;
+      anchor.download = name;
+      anchor.hidden = true;
+      (browserDocument.body ?? browserDocument.documentElement).append(anchor);
+      anchor.click();
+      anchor.remove();
+    } : undefined,
     legacyCopy,
     fileSave: browserDocument && browserUrl && browserBlob && typeof browserUrl.createObjectURL === 'function' ? {
       save: ({ name, content, mimeType }: FileSaveRequest) => {
@@ -193,6 +206,7 @@ export const detectBrowserSystemCapabilities = (
   externalLinks: typeof hosts.openExternal === 'function',
   fileSave: typeof hosts.fileSave?.save === 'function',
   fileWriter: typeof hosts.fileWriter?.open === 'function',
+  downloads: typeof hosts.download === 'function',
   notifications: hosts.notifications !== undefined
 });
 
@@ -294,6 +308,21 @@ const createExternalLinkPort = (
   }
 });
 
+const createDownloadPort = (
+  hosts: BrowserSystemHosts,
+  capabilities: BrowserSystemCapabilities
+): DownloadPort => ({
+  async download(request): Promise<void> {
+    if (!capabilities.downloads || !hosts.download) throw unavailable();
+    if (!request.name || request.name.length > 255 || request.name.includes('\u0000')) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+    try {
+      await hosts.download(request);
+    } catch {
+      throw unavailable();
+    }
+  }
+});
+
 const createNotificationPort = (
   hosts: BrowserSystemHosts,
   capabilities: BrowserSystemCapabilities
@@ -332,6 +361,7 @@ export const createBrowserSystemServices = (
     clipboard: createClipboardPort(hosts, capabilities),
     dialogs: createDialogPort(hosts, capabilities),
     externalLinks: createExternalLinkPort(hosts, capabilities),
+    downloads: createDownloadPort(hosts, capabilities),
     fileSave: createFileSavePort(hosts, capabilities),
     fileWriter: createFileWriterPort(hosts, capabilities),
     notifications: createNotificationPort(hosts, capabilities)

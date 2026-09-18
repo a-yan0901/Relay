@@ -103,6 +103,15 @@ export interface ExternalLinkPort {
   open(url: string): Promise<void>;
 }
 
+export interface DownloadRequest {
+  url: string;
+  name: string;
+}
+
+export interface DownloadPort {
+  download(request: DownloadRequest): Promise<void>;
+}
+
 export interface FileSaveRequest {
   name: string;
   content: Uint8Array;
@@ -137,6 +146,7 @@ export interface PlatformServices {
   clipboard?: ClipboardPort;
   dialogs?: DialogPort;
   externalLinks?: ExternalLinkPort;
+  downloads?: DownloadPort;
   fileSave?: FileSavePort;
   fileWriter?: FileWriterPort;
   notifications?: NotificationPort;
@@ -338,6 +348,8 @@ export interface FileTransport {
   /** Resume arguments are optional so clients without `transfer.resume` can use a fresh transfer. */
   upload(transferId: string, source: BinarySource, resume?: TransferResumeRequest): Promise<TransferJob>;
   download(transferId: string, resume?: TransferResumeRequest): Promise<ByteStream>;
+  /** Optional browser fallback when no user-selected streaming writer exists. */
+  directDownload?(transferId: string, name: string): Promise<void>;
   pauseTransfer(transferId: string): Promise<void>;
   cancelTransfer(transferId: string): Promise<void>;
   retryTransfer(transferId: string): Promise<TransferJob>;

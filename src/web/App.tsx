@@ -72,14 +72,6 @@ type ConnectionFeedback = {
 
 interface DownloadWriter extends FileWriter {}
 
-interface SaveFileHandle {
-  createWritable(): Promise<DownloadWriter>;
-}
-
-type FilePickerWindow = Window & {
-  showSaveFilePicker?: (options?: { suggestedName?: string }) => Promise<SaveFileHandle>;
-};
-
 const createTerminalId = (): string => {
   if (typeof globalThis.crypto?.randomUUID === 'function') return `terminal-${globalThis.crypto.randomUUID()}`;
   return `terminal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -993,27 +985,10 @@ export const App = ({ runtime }: AppProps) => {
     }
   });
 
-  const triggerNativeDownload = (transferId: string, name: string): void => {
-    const anchor = document.createElement('a');
-    anchor.href = `/api/transfers/${encodeURIComponent(transferId)}/content?offset=0`;
-    anchor.download = name;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-  };
-
   const openDownloadWriter = async (name: string): Promise<DownloadWriter | null> => {
-    if (runtime.platformServices?.fileWriter) {
-      return runtime.platformServices.fileWriter.open({ name, mimeType: 'application/octet-stream' });
-    }
-    const picker = (window as FilePickerWindow).showSaveFilePicker;
-    if (!picker) return null;
-    try {
-      return await (await picker({ suggestedName: name })).createWritable();
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'NotAllowedError') return null;
-      throw error;
-    }
+    return runtime.platformServices?.fileWriter
+      ? runtime.platformServices.fileWriter.open({ name, mimeType: 'application/octet-stream' })
+      : null;
   };
 
   const saveDownloadStream = async (transferId: string, stream: AsyncIterable<Uint8Array>, name: string, offset: number, preparedWriter?: DownloadWriter | null): Promise<void> => {
@@ -1074,8 +1049,13 @@ export const App = ({ runtime }: AppProps) => {
           await refreshTransferJob(job.id);
           return;
         }
-        triggerNativeDownload(job.id, name);
-        return;
+        if (runtime.files.directDownload) {
+          await runtime.files.directDownload(job.id, name);
+          return;
+        }
+        await runtime.files.cancelTransfer(job.id).catch(() => undefined);
+        await refreshTransferJob(job.id);
+        throw new AppError('CAPABILITY_UNAVAILABLE', '当前平台不支持保存文件');
       }
       await saveDownloadStream(job.id, await runtime.files.download(job.id), name, 0, writer);
       await refreshTransferJob(job.id);
@@ -1118,7 +1098,11 @@ export const App = ({ runtime }: AppProps) => {
           void runtime.files.cancelTransfer(id).then(() => refreshTransferJob(id));
           return;
         }
-        triggerNativeDownload(id, job.targetPath);
+        if (runtime.files.directDownload) {
+          void runtime.files.directDownload(id, job.targetPath).catch(() => refreshTransferJob(id));
+          return;
+        }
+        void runtime.files.cancelTransfer(id).then(() => refreshTransferJob(id));
         return;
       }
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });

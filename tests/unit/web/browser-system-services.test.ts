@@ -31,6 +31,7 @@ describe('browser system services', () => {
       clipboardWrite: true,
       dialogs: false,
       externalLinks: false,
+      downloads: false,
       notifications: true,
       fileSave: false,
       fileWriter: false
@@ -175,6 +176,15 @@ describe('browser system services', () => {
 
     expect(services.preferences).toBe(preferences);
     expect(services.session).toBe(session);
+  });
+
+  it('keeps direct downloads behind an injected browser host', async () => {
+    const download = vi.fn(async () => undefined);
+    const services = createBrowserSystemServices(createHosts({ download }));
+
+    expect(services.capabilities.downloads).toBe(true);
+    await services.downloads?.download({ url: '/api/transfers/transfer-1/content?offset=0', name: 'output.txt' });
+    expect(download).toHaveBeenCalledWith({ url: '/api/transfers/transfer-1/content?offset=0', name: 'output.txt' });
   });
 
   it('passes an already-redacted notification request through unchanged', async () => {

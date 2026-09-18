@@ -319,7 +319,8 @@ describe('web adapters', () => {
       getCommandRun: vi.fn(async () => null),
       cancelCommandRun: vi.fn(async () => {})
     };
-    const files = new WebFileTransport(api);
+    const download = vi.fn(async () => undefined);
+    const files = new WebFileTransport(api, { download });
     await files.list('host-1', '/');
     await files.createTransfer({ kind: 'download', hostId: 'host-1', sourcePath: '/source', targetPath: 'target' });
     await files.getTransfer('transfer-1');
@@ -329,6 +330,7 @@ describe('web adapters', () => {
     await files.upload('transfer-1', { name: 'source', size: 3, async *stream() { yield new Uint8Array([1, 2, 3]); } }, { transferId: 'transfer-1', expectedOffset: 0, checksum: null });
     const downloaded: Uint8Array[] = [];
     for await (const chunk of await files.download('transfer-1')) downloaded.push(chunk);
+    await files.directDownload?.('transfer-1', 'target');
     await files.cancelTransfer('transfer-1');
     await files.pauseTransfer('transfer-1');
     await files.retryTransfer('transfer-1');
@@ -345,6 +347,7 @@ describe('web adapters', () => {
     expect(uploadCall?.[3]).toBe('039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81');
     expect(uploadCall?.[4]).toBe(true);
     expect(downloaded).toEqual([new Uint8Array([99, 111]), new Uint8Array([110, 116, 101, 110, 116])]);
+    expect(download).toHaveBeenCalledWith({ url: '/api/transfers/transfer-1/content?offset=0', name: 'target' });
     expect(api.cancelTransfer).toHaveBeenCalledWith('transfer-1');
     expect(api.pauseTransfer).toHaveBeenCalledWith('transfer-1');
     expect(api.retryTransfer).toHaveBeenCalledWith('transfer-1');

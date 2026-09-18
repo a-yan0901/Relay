@@ -47,6 +47,7 @@ import type {
   CommandTransport,
   ConnectionProbe,
   DeviceTrustPort,
+  DownloadPort,
   FileTransport,
   GroupStore,
   HostStore,
@@ -471,7 +472,7 @@ const uploadChunks = async function* (transferId: string, source: ByteStream, so
 };
 
 export class WebFileTransport implements FileTransport {
-  constructor(private readonly client: WebFileClient = api) {}
+  constructor(private readonly client: WebFileClient = api, private readonly downloads?: DownloadPort) {}
 
   list(hostId: string, path: string): Promise<readonly SftpEntry[]> {
     return requireApi(this.client.listSftpEntries)(hostId, path);
@@ -518,6 +519,11 @@ export class WebFileTransport implements FileTransport {
 
   async download(transferId: string, resume?: TransferResumeRequest): Promise<ByteStream> {
     return readableStreamToByteStream(await requireApi(this.client.downloadTransferContent)(transferId, resume));
+  }
+
+  async directDownload(transferId: string, name: string): Promise<void> {
+    if (!this.downloads) throw new AppError('CAPABILITY_UNAVAILABLE');
+    await this.downloads.download({ url: `/api/transfers/${encodeURIComponent(transferId)}/content?offset=0`, name });
   }
 
   cancelTransfer(transferId: string): Promise<void> {
@@ -1047,11 +1053,14 @@ export const createWebAdapters = (options: {
   const vaultRecoveryAdapter = hasVaultRecoveryApi(client) ? new WebVaultRecovery(client) : undefined;
   const browserSystemServices = createBrowserSystemServices();
   const platformServices = options.platformServices ?? {
+    preferences: browserSystemServices.preferences,
+    session: browserSystemServices.session,
     clipboard: browserSystemServices.capabilities.clipboardRead || browserSystemServices.capabilities.clipboardWrite
       ? browserSystemServices.clipboard
       : undefined,
     dialogs: browserSystemServices.capabilities.dialogs ? browserSystemServices.dialogs : undefined,
     externalLinks: browserSystemServices.capabilities.externalLinks ? browserSystemServices.externalLinks : undefined,
+    downloads: browserSystemServices.capabilities.downloads ? browserSystemServices.downloads : undefined,
     fileSave: browserSystemServices.capabilities.fileSave ? browserSystemServices.fileSave : undefined,
     fileWriter: browserSystemServices.capabilities.fileWriter ? browserSystemServices.fileWriter : undefined,
     notifications: browserSystemServices.capabilities.notifications ? browserSystemServices.notifications : undefined
@@ -1065,7 +1074,7 @@ export const createWebAdapters = (options: {
     connection: new WebConnectionProbe(client as Pick<WebApiClient, 'testConnection'>),
     workspace: createWorkspaceWebAdapter(client),
     sessions: new WebSessionTransport({ webSocketFactory: options.webSocketFactory }),
-    files: new WebFileTransport(client),
+    files: new WebFileTransport(client, platformServices.downloads),
     commands: new WebCommandTransport(client),
     hosts: new WebHostStore(client as Pick<WebApiClient, 'listHosts' | 'getHost'>),
     terminalProfiles: new WebTerminalProfileStore(client as Pick<WebApiClient, 'listTerminalProfiles'> & Partial<Pick<WebApiClient, 'createTerminalProfile' | 'setDefaultTerminalProfile' | 'deleteTerminalProfile'>>),

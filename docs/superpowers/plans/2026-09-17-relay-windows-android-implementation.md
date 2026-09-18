@@ -66,7 +66,7 @@
 - 原生能力声明修正（2026-09-18）：移除桌面原生核心错误暴露的 `session.reattach`；跨进程恢复不再作为原生能力，原生工作区必须由用户明确重新打开。native core 与 adapter contract 定向测试 9/9、受影响 ESLint 和 TypeScript 检查通过。
 - 原生输入内存边界增量（2026-09-18）：终端输入队列改按 UTF-8 字节计量，不再以 JS 字符数放大 32 KiB 单次输入和 64 KiB 队列预算；shared runtime 与 WebView/native socket 共用无临时编码缓冲的字节长度计算。相关定向测试 12/12、受影响 ESLint 和 native TypeScript 检查通过。
 - 原生早到输出缓存增量（2026-09-18）：Shell 订阅建立前的事件缓存增加每会话最多 16 条、累计 64 KiB 的双重上限，避免高频输出在 UI 尚未接管时按事件数累积；相关定向测试 13/13、受影响 ESLint 和 native TypeScript 检查通过。
-- 平台系统能力抽离增量（2026-09-18）：`StoragePort` 注入 Web/Windows/Android UI 的本地偏好与 Web 会话恢复意图；`TerminalPanel` 粘贴确认只调用 `DialogPort`，无平台确认能力时不发送剪贴板内容。相关 Web/DOM 测试 41/41、受影响 ESLint 和根 TypeScript 检查通过；浏览器流式下载 fallback 仍待迁移到平台端口。
+- 平台系统能力抽离增量（2026-09-18）：`StoragePort` 注入 Web/Windows/Android UI 的本地偏好与 Web 会话恢复意图；`TerminalPanel` 粘贴确认只调用 `DialogPort`，无平台确认能力时不发送剪贴板内容；浏览器直链下载 fallback 收敛到 `DownloadPort` 与 `WebFileTransport`，UI 不再直接创建下载锚点或拼接传输 URL，原生端不会误走 Web 下载路径。相关 Web/DOM 测试、受影响 ESLint 和根 TypeScript 检查随本增量验证。
 
 验证记录（2026-09-18）：
 
