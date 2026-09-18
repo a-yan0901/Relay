@@ -307,11 +307,15 @@ describe('TerminalWorkspace', () => {
     expect(screen.getByText('Relay')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '偏好设置' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: '新建终端' })).toHaveLength(1);
-    expect(screen.queryByRole('button', { name: '搜索' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '清屏' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '全屏' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '重新连接' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '关闭终端' })).not.toBeInTheDocument();
+    const mobileToolbar = screen.getByRole('toolbar', { name: 'Console 快捷操作' });
+    expect(mobileToolbar).toBeInTheDocument();
+    expect(mobileToolbar.closest('.terminal-topbar')).toBeNull();
+    expect(mobileToolbar).toHaveClass('terminal-mobile-toolbar');
+    expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '清屏' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '全屏' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新连接' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '关闭终端' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '锁定' }));
     await user.click(screen.getByRole('button', { name: '偏好设置' }));
