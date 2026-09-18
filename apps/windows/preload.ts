@@ -116,6 +116,7 @@ export const createDesktopPreloadApi = (transport: DesktopIpcTransport, options:
     subscribe(listener): () => void {
       if (typeof listener !== 'function') throw new Error('invalid desktop IPC subscriber');
       if (listeners.size >= maxSubscribers) throw new Error('desktop IPC subscriber limit reached');
+      if (listeners.size === 0) gate.reset();
       listeners.add(listener);
       if (listeners.size === 1) stopTransportSubscription = transport.subscribe(onTransportEvent);
       return () => {
@@ -123,6 +124,7 @@ export const createDesktopPreloadApi = (transport: DesktopIpcTransport, options:
         if (listeners.size === 0) {
           stopTransportSubscription?.();
           stopTransportSubscription = undefined;
+          gate.reset();
         }
       };
     }

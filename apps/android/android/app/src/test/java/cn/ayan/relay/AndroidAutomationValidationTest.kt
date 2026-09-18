@@ -6,6 +6,13 @@ import org.junit.Test
 
 class AndroidAutomationValidationTest {
     @Test
+    fun dispatchesSessionCloseOffTheMainThread() {
+        assertEquals(AndroidOperationExecutor.OPERATION, androidOperationExecutor("sessions.close"))
+        assertEquals(AndroidOperationExecutor.CONNECTION, androidOperationExecutor("sessions.openShell"))
+        assertEquals(AndroidOperationExecutor.DIRECT, androidOperationExecutor("sessions.hostKeyDecision"))
+    }
+
+    @Test
     fun validatesSnippetVariablesAndNormalizesTags() {
         val snippet = AndroidAutomationValidation.validateSnippet(
             "Deploy",

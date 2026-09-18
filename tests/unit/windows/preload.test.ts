@@ -58,6 +58,28 @@ describe('Windows desktop preload API', () => {
     expect(() => exposeDesktopPreloadApi({ exposeInMainWorld: expose }, api, 'bad-key')).toThrow('invalid preload key');
   });
 
+  it('starts a fresh event sequence baseline when renderer subscriptions are recreated', () => {
+    const listeners = new Set<(event: NativeEventFrame) => void>();
+    const transport: DesktopIpcTransport = {
+      invoke: vi.fn(),
+      subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); }
+    };
+    const api = createDesktopPreloadApi(transport);
+    const first = vi.fn();
+    const unsubscribe = api.subscribe(first);
+    const initialEvent: NativeEventFrame = { version: 1, generation: 1, sequence: 1, kind: 'terminal.status', sessionId: 'session-1', payload: { state: 'connected' } };
+    for (const listener of listeners) listener(initialEvent);
+    expect(first).toHaveBeenCalledWith(initialEvent);
+    unsubscribe();
+
+    const second = vi.fn();
+    api.subscribe(second);
+    const eventAfterGap = { ...initialEvent, sequence: 3 };
+    for (const listener of listeners) listener(eventAfterGap);
+
+    expect(second).toHaveBeenCalledWith(eventAfterGap);
+  });
+
   it('preserves stable application errors from the main process', async () => {
     const transport: DesktopIpcTransport = {
       invoke: vi.fn(async (request) => ({ version: 1 as const, requestId: request.requestId, ok: false as const, error: { code: 'VAULT_LOCKED' as const, message: 'locked' } })),

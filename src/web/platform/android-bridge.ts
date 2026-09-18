@@ -62,6 +62,7 @@ const eventValue = (value: unknown): unknown => {
 class AndroidNativeBridge implements NativeOperationPort {
   private readonly listeners = new Set<(event: NativeEventFrame) => void>();
   private readonly gate: NativeEventGate;
+  private sessionCloseQueue: Promise<void> = Promise.resolve();
   private eventReady: Promise<{ remove(): void }> | null = null;
   private registration: { remove(): void } | null = null;
 
@@ -72,7 +73,22 @@ class AndroidNativeBridge implements NativeOperationPort {
   async invoke<T = unknown>(operation: string, payload: unknown): Promise<T> {
     if (this.listeners.size > 0) await this.ensureEventListener();
     const request = parseNativeOperation({ version: NATIVE_BRIDGE_VERSION, requestId: nextRequestId(), operation, payload });
-    const raw = await this.plugin.invoke(request);
+    let raw: unknown;
+    if (operation === 'sessions.close') {
+      // JSch disconnect can still be unwinding after the native close response
+      // is requested. Serialize closes and make a subsequent shell wait for
+      // the entire close chain, otherwise a rapid close/open can race native
+      // session cleanup on Android.
+      const queuedClose = this.sessionCloseQueue.then(
+        () => this.plugin.invoke(request),
+        () => this.plugin.invoke(request)
+      );
+      this.sessionCloseQueue = queuedClose.then(() => undefined, () => undefined);
+      raw = await queuedClose;
+    } else {
+      if (operation === 'sessions.openShell' || operation === 'sessions.reconnect') await this.sessionCloseQueue;
+      raw = await this.plugin.invoke(request);
+    }
     const parsed = responseSchema.safeParse(raw);
     if (!parsed.success) throw new AppError('PROTOCOL_INVALID_MESSAGE');
     if (parsed.data.requestId !== request.requestId) throw new AppError('PROTOCOL_INVALID_MESSAGE', '原生请求响应不匹配');
@@ -83,6 +99,7 @@ class AndroidNativeBridge implements NativeOperationPort {
   subscribe(listener: (event: NativeEventFrame) => void): () => void {
     if (typeof listener !== 'function') throw new Error('invalid android native subscriber');
     if (this.listeners.size >= this.maxSubscribers) throw new Error('android native subscriber limit reached');
+    if (this.listeners.size === 0) this.gate.reset();
     this.listeners.add(listener);
     void this.ensureEventListener();
     return () => {
@@ -114,6 +131,7 @@ class AndroidNativeBridge implements NativeOperationPort {
     this.eventReady = null;
     const registration = this.registration;
     this.registration = null;
+    this.gate.reset();
     if (registration) {
       registration.remove();
       return;

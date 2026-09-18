@@ -34,6 +34,18 @@ import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal enum class AndroidOperationExecutor {
+    DIRECT,
+    OPERATION,
+    CONNECTION
+}
+
+internal fun androidOperationExecutor(operation: String): AndroidOperationExecutor = when {
+    operation == "sessions.hostKeyDecision" || operation == "sessions.credential" || operation == "vault.lock" -> AndroidOperationExecutor.DIRECT
+    operation == "sessions.openShell" || operation == "sessions.reconnect" -> AndroidOperationExecutor.CONNECTION
+    else -> AndroidOperationExecutor.OPERATION
+}
+
 /**
  * Android's local-mode executor. It is intentionally an adapter instead of a
  * second Web server: the WebView can ask for bounded operations, while SQLite,
@@ -127,11 +139,11 @@ internal class AndroidLocalExecutor(
             return
         }
         val operation = request.optString("operation", "")
-        if (operation == "sessions.hostKeyDecision" || operation == "sessions.credential" || operation == "sessions.close" || operation == "vault.lock") {
+        if (androidOperationExecutor(operation) == AndroidOperationExecutor.DIRECT) {
             complete(runSafely(request))
             return
         }
-        val executor = if (operation == "sessions.openShell" || operation == "sessions.reconnect") connectionExecutor else operationExecutor
+        val executor = if (androidOperationExecutor(operation) == AndroidOperationExecutor.CONNECTION) connectionExecutor else operationExecutor
         try {
             executor.execute {
                 val response = runSafely(request)

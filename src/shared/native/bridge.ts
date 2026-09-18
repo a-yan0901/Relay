@@ -112,6 +112,11 @@ export class NativeEventGate {
   private generation: number | null = null;
   private sequence = 0;
 
+  reset(): void {
+    this.generation = null;
+    this.sequence = 0;
+  }
+
   accept(event: NativeEventFrame): NativeEventGateResult {
     if (this.generation === null) {
       this.generation = event.generation;
