@@ -55,15 +55,15 @@
 ## M1：Windows 独立桌面版
 
 - [ ] **任务 6：受限 Electron shell。** 新增 `apps/windows/main.ts`、`preload.ts`、打包配置及根构建脚本。只加载包内静态 UI，启用 sandbox/context isolation，禁用 Node integration 与任意导航；preload 只暴露枚举的业务调用和系统能力。测试未知 IPC、外部 URL、第二实例和窗口销毁后订阅清理。交付：可启动的 Windows 安装包/解压包。
-- [ ] **任务 7：本地服务类组合与 IPC runtime。** 从 `src/server/app.ts` 提取可复用的 Vault/SQLite/Host/SFTP/SSH/Command 服务构造，Web 路由继续使用原实例；新增 `apps/windows/local-runtime.ts`、`apps/windows/ipc-contract.ts`、`src/web/platform/desktop-adapters.ts`。main 或 utility process 初始化用户 app data 数据库，adapter 以版本化 `requestId + operation + payload` 调用服务类，映射全部 `CoreRuntime` 必选 ports；Shell/任务使用按 id 订阅事件，文件大流经原生文件句柄，关闭幂等。不调用 `startServer()`，不打开 TCP 端口，不使用 cookie。打包时验证 `better-sqlite3`、`argon2`、`ssh2` 的 Electron/Windows 运行时兼容和目标架构，并检查升级后数据库仍可打开。测试操作 allowlist、参数/大小校验、失败码、进程崩溃、数据恢复及 Web API 回归。交付：Windows 免账号本地 SSH/SFTP 闭环。
+- [ ] **任务 7：本地服务类组合与 IPC runtime。** 从 `src/server/app.ts` 提取可复用的 Vault/SQLite/Host/SFTP/SSH/Command 服务构造，Web 路由继续使用原实例；Windows 原生入口为 `apps/windows/local-runtime.ts`、`apps/windows/ipc-contract.ts`、`apps/windows/electron-main.ts`、`apps/windows/electron-preload.ts`，renderer 侧平台适配通过 `src/web/platform/native-port.ts`、`src/web/platform/native-platform-services.ts`、`src/web/platform/runtime-bootstrap.ts` 接入。main 或 utility process 初始化用户 app data 数据库，adapter 以版本化 `requestId + operation + payload` 调用服务类，映射全部 `CoreRuntime` 必选 ports；Shell/任务使用按 id 订阅事件，文件大流经原生文件句柄，关闭幂等。不调用 `startServer()`，不打开 TCP 端口，不使用 cookie。打包时验证 `better-sqlite3`、`argon2`、`ssh2` 的 Electron/Windows 运行时兼容和目标架构，并检查升级后数据库仍可打开。测试操作 allowlist、参数/大小校验、失败码、进程崩溃、数据恢复及 Web API 回归。交付：Windows 免账号本地 SSH/SFTP 闭环。
 - [ ] **任务 8：Windows 系统能力与任务链。** 接入本地文件选择/保存、剪贴板、通知、窗口休眠/恢复与偏好持久化；按任务矩阵验证菜单、主题、Host Key、传输、终端复制粘贴和 Vault 锁定。Windows 实机检查安装/升级/退出/重开，以及无本地监听端口、无远端 Relay 地址。交付：独立 Windows 技术预览。
 
 ## M2：Android 独立 app
 
 - [ ] **任务 9：Android bridge 与事件/流契约。** 新增 `apps/android/` 插件接口与 `src/web/platform/android-bridge.ts`：操作帧包含 `version/requestId/operation/payload`，事件包含 `sessionId` 或 `transferId`、代际、单调 `sequence`；类型/大小/权限由两侧校验，失败映射 shared 错误码。Shell 先订阅再连接，迟到事件丢弃；同步 `write/resize/close` 在 adapter 入有界队列，原生失败回传诊断。文件流以最多 32 KiB/块、4 个未确认块的 `ack` 窗口为默认上限，取消/失败释放 URI 与 SSH 句柄；原生直传也须证明有界内存。以乱序、重复、进程回收、取消和大文件用例验证。交付：可用于 Vault/SSH/SFTP 的稳定 bridge。
-- [ ] **任务 10：本地数据、Vault 与便携格式。** 在 `apps/android/` 实现私有数据库、Keystore 包装和 Vault 插件；`src/web/platform/android-adapters.ts` 实现 `HostStore`、`IdentityStore`、`GroupStore`、`WorkspaceStore`、`SnippetStore`、`TerminalProfileStore`、`SecretStore`、`VaultSessionPort` 与 `ImportExportPort`。依任务 5 的 bundle v1 向量验证导入导出；原生层校验字段与版本，事务性应用，损坏/错误密码不改写旧数据。测试重启、锁屏、系统备份排除、飞行模式与秘密不进 WebView 持久化。交付：本机 Host/Vault 独立可用。
-- [ ] **任务 11：本机 SSH Shell 与 Host Key。** 将任务 4 选定的库接入任务 9 的 bridge，`android-adapters.ts` 实现 `ConnectionProbe`、`SessionTransport`。映射 shared profile、逐跳 Host Key 挑战/确认、密码/私钥认证、PTY resize、输出、主动关闭与重连；旧挑战不得放行新连接。测试首连、指纹变化、ProxyJump、断线、后台/前台与网络切换。交付：手机不依赖 Relay 服务可直连 SSH。
-- [ ] **任务 12：本机 SFTP 与批量任务。** `android-adapters.ts` 实现 `FileTransport`、`CommandTransport`、`ActivityStore`；Android 插件接入系统 URI 文件选择/分享和任务 9 的流协议。原生层执行远端路径规范化、目标快照、并发/超时/输出上限、取消和脱敏审计；capability 只广告真实已支持的行为。真实设备验证浏览、上传下载、重试、批量取消和部分失败。交付：Android 独立客户端核心任务闭环。
+- [ ] **任务 10：本地数据、Vault 与便携格式。** 在 `apps/android/` 实现私有数据库、Keystore 包装和 Vault 插件；React 侧通过 `src/web/platform/android-bridge.ts`、`src/web/platform/native-port.ts`、`src/web/platform/native-platform-services.ts` 和 `src/shared/native/core-runtime.ts` 接入 `HostStore`、`IdentityStore`、`GroupStore`、`WorkspaceStore`、`SnippetStore`、`TerminalProfileStore`、`SecretStore`、`VaultSessionPort` 与 `ImportExportPort`，原生实现位于 `apps/android/android/app/src/main/java/cn/ayan/relay/RelayNativePlugin.kt`、`AndroidLocalStore.kt`、`AndroidVault.kt`、`AndroidBundleService.kt`。依任务 5 的 bundle v1 向量验证导入导出；原生层校验字段与版本，事务性应用，损坏/错误密码不改写旧数据。测试重启、锁屏、系统备份排除、飞行模式与秘密不进 WebView 持久化。交付：本机 Host/Vault 独立可用。
+- [ ] **任务 11：本机 SSH Shell 与 Host Key。** 将任务 4 选定的库接入任务 9 的 bridge，React 侧仍通过 `src/web/platform/android-bridge.ts` 和 `src/shared/native/core-runtime.ts` 调用；Android 原生连接实现位于 `apps/android/android/app/src/main/java/cn/ayan/relay/AndroidJschConnection.kt`、`AndroidSshSession.kt`、`AndroidHostKeyRepository.kt` 和 `RelayNativePlugin.kt`。映射 shared profile、逐跳 Host Key 挑战/确认、密码/私钥认证、PTY resize、输出、主动关闭与重连；旧挑战不得放行新连接。测试首连、指纹变化、ProxyJump、断线、后台/前台与网络切换。交付：手机不依赖 Relay 服务可直连 SSH。
+- [ ] **任务 12：本机 SFTP 与批量任务。** React 侧通过 `src/web/platform/android-bridge.ts` 和 `src/shared/native/core-runtime.ts` 调用；Android 原生任务与文件边界位于 `apps/android/android/app/src/main/java/cn/ayan/relay/AndroidLocalExecutor.kt`、`AndroidCommandRunner.kt`、`AndroidSshSession.kt`、`AndroidBundleService.kt` 和 `RelayNativePlugin.kt`。原生层执行远端路径规范化、目标快照、并发/超时/输出上限、取消和脱敏审计；capability 只广告真实已支持的行为。真实设备验证浏览、上传下载、重试、批量取消和部分失败。交付：Android 独立客户端核心任务闭环。
 - [ ] **任务 13：移动生命周期与 UI 完成。** 处理系统返回、旋转、动态字体、软键盘、锁屏与进程回收；重新打开先读取本地工作区和任务实际状态。按任务矩阵比对 Web/Windows/Android 的菜单语义、错误与主题；验证终端最后一行和 SFTP 无双滚动。交付：Android APK 技术预览及真机验证记录。
 
 ## M3：统一回归与云同步预留
@@ -73,7 +73,7 @@
 
 ## 追踪与退出条件
 
-任务 1–3 是共同依赖，任务 4 只阻塞 Android SSH，任务 5 阻塞 Android bundle 导入；Windows 与 Android 可并行推进。两端均通过任务 14 才称为本期完成。每个勾选项必须附对应 commit、针对性测试、真实平台结果和未解决缺陷；本计划未勾选的任务不视为已实现。云端同步服务不在本期完成范围内。
+任务 1–3 是共同依赖，任务 4 只阻塞 Android SSH，任务 5 是本次交接的跨端 Vault bundle 门禁并阻塞任务 10、14；Windows 与 Android 可并行推进。任务 4–14 是本期客户端发布门禁，全部通过任务 14 才称为本期完成。任务 15 仅是未来云同步兼容性预留，不是本期客户端完成条件。每个勾选项必须附对应 commit、针对性测试、真实平台结果和未解决缺陷；本计划未勾选的任务不视为已实现。云端同步服务不在本期完成范围内。
 
 ## 当前实施记录（2026-09-18）
 
@@ -114,7 +114,8 @@
 
 - Android 代码、Kotlin 编译、JVM 单元测试、Debug APK 构建已完成；当前开发机内存不足，停止继续启动 Android 模拟器。
 - 本机尝试过 AOSP x86_64 软件模拟器，但没有 `/dev/kvm`，设备长期处于 `adb offline` 后退出；该过程没有形成安装、SSH/SFTP 或生命周期验收证据，也不再作为后续验证路径。
-- Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由内存充足且有 Android 真机/可用模拟器的机器执行。任务 4、9–13、14 仍保持未完成，必须把设备结果和日志/截图回填后才能勾选。
+- Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由内存充足且有 Android 真机/可用模拟器的机器执行。任务 4–14 仍保持未完成；任务 15 只是未来同步兼容性预留，不属于本期客户端发布门禁。必须把设备结果和日志/截图回填后才能勾选。
 - Windows 仍等待 Windows 主机上的安装、原生 ABI、升级迁移和本地任务链验证；Linux portable 包仅是交接预览，不替代 Windows 验收。
+- 当前工作区确实保留了 APK 和 portable 包，但两个路径都被 `.gitignore` 忽略，产物不会随 `git clone` 或 `git checkout` 出现；没有 Release 附件、制品服务器或共享目录作为持久来源。最终签收前必须重新生成或登记可访问的制品来源，并记录源码 commit、工具链版本和 SHA-256；交接任务书中的当前路径只表示本机缓存位置。
 
 当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及交接机器上的 Android SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。
