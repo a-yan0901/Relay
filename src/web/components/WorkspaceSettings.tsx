@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { FileSavePort } from '../../shared/core/ports';
+import type { FileSavePort, FileWriterPort } from '../../shared/core/ports';
 import type {
   ImportedCredential,
   ImportApplyRequest,
@@ -20,6 +20,7 @@ export interface WorkspaceSettingsProps {
   onClose: () => void;
   onExport: (password: string) => Promise<string>;
   fileSave?: FileSavePort;
+  fileWriter?: FileWriterPort;
   onPreviewImport: (password: string, bundle: string) => Promise<VaultBundlePreview>;
   onApplyImport: (previewId: string, resolution: VaultBundleResolution) => Promise<VaultBundleApplyResult>;
   onPreviewExternalImport: (files: readonly ImportSourceFile[], formatHint?: ImportFormat) => Promise<ImportPreview>;
@@ -45,8 +46,58 @@ const isVaultBundle = (content: string): boolean => {
   }
 };
 
-const downloadBundle = async (bundle: string, fileSave?: FileSavePort): Promise<void> => {
+const MAX_EXTERNAL_IMPORT_BYTES = 48 * 1024;
+const MAX_VAULT_BUNDLE_BYTES = 8 * 1024 * 1024;
+const MAX_IMPORT_FILES = 4;
+const BUNDLE_WRITE_CHUNK_BYTES = 32 * 1024;
+
+const looksLikeVaultBundle = (content: string): boolean => (
+  (content.includes('"format"') && /"format"\s*:\s*"webssh-vault"/u.test(content) && /"version"\s*:\s*1(?:\D|$)/u.test(content))
+  || isVaultBundle(content)
+);
+
+const readImportFile = async (file: File): Promise<string> => {
+  if (file.size > MAX_VAULT_BUNDLE_BYTES) throw new Error('import file too large');
+  const probe = await file.slice(0, Math.min(file.size, MAX_EXTERNAL_IMPORT_BYTES)).text();
+  if (looksLikeVaultBundle(probe)) return file.text();
+  if (file.size > MAX_EXTERNAL_IMPORT_BYTES) throw new Error('external import file too large');
+  return probe;
+};
+
+const writeBundleChunks = async (writer: Awaited<ReturnType<FileWriterPort['open']>>, bundle: string): Promise<void> => {
+  if (!writer) throw new Error('file writer unavailable');
+  const encoder = new TextEncoder();
+  let offset = 0;
+  while (offset < bundle.length) {
+    let end = Math.min(bundle.length, offset + BUNDLE_WRITE_CHUNK_BYTES);
+    if (end < bundle.length && end > offset && (bundle.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
+    let bytes = encoder.encode(bundle.slice(offset, end));
+    while (bytes.byteLength > BUNDLE_WRITE_CHUNK_BYTES && end > offset + 1) {
+      end -= Math.max(1, Math.ceil((bytes.byteLength - BUNDLE_WRITE_CHUNK_BYTES) / 4));
+      if (end < bundle.length && end > offset && (bundle.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
+      bytes = encoder.encode(bundle.slice(offset, end));
+    }
+    if (bytes.byteLength === 0 || bytes.byteLength > BUNDLE_WRITE_CHUNK_BYTES) throw new Error('bundle chunk too large');
+    await writer.write(bytes);
+    offset = end;
+  }
+};
+
+const downloadBundle = async (bundle: string, fileSave?: FileSavePort, fileWriter?: FileWriterPort): Promise<void> => {
   const name = `relay-vault-${new Date().toISOString().slice(0, 10)}.json`;
+  if (fileWriter) {
+    const writer = await fileWriter.open({ name, mimeType: 'application/json' });
+    if (writer) {
+      try {
+        await writeBundleChunks(writer, bundle);
+        await writer.close();
+      } catch (error) {
+        await writer.cancel?.();
+        throw error;
+      }
+      return;
+    }
+  }
   if (fileSave) {
     await fileSave.save({ name, content: new TextEncoder().encode(bundle), mimeType: 'application/json' });
     return;
@@ -60,7 +111,7 @@ const downloadBundle = async (bundle: string, fileSave?: FileSavePort): Promise<
   URL.revokeObjectURL(url);
 };
 
-export const WorkspaceSettings = ({ mode, onClose, onExport, fileSave, onPreviewImport, onApplyImport, onPreviewExternalImport, onApplyExternalImport }: WorkspaceSettingsProps) => {
+export const WorkspaceSettings = ({ mode, onClose, onExport, fileSave, fileWriter, onPreviewImport, onApplyImport, onPreviewExternalImport, onApplyExternalImport }: WorkspaceSettingsProps) => {
   const [password, setPassword] = useState('');
   const [files, setFiles] = useState<ImportSourceFile[]>([]);
   const [bundle, setBundle] = useState('');
@@ -104,11 +155,24 @@ export const WorkspaceSettings = ({ mode, onClose, onExport, fileSave, onPreview
       return;
     }
     try {
-      const sources = await Promise.all(selectedFiles.map(async (file): Promise<ImportSourceFile> => ({ filename: file.name, content: await file.text() })));
+      if (selectedFiles.length > MAX_IMPORT_FILES) throw new Error('too many import files');
+      const firstFile = selectedFiles[0];
+      if (!firstFile) throw new Error('empty import');
+      const firstContent = await readImportFile(firstFile);
+      const sources: ImportSourceFile[] = [{ filename: firstFile.name, content: firstContent }];
+      if (!looksLikeVaultBundle(firstContent)) {
+        let totalBytes = new TextEncoder().encode(firstContent).byteLength;
+        for (const file of selectedFiles.slice(1)) {
+          const content = await readImportFile(file);
+          totalBytes += new TextEncoder().encode(content).byteLength;
+          if (totalBytes > MAX_EXTERNAL_IMPORT_BYTES) throw new Error('external import too large');
+          sources.push({ filename: file.name, content });
+        }
+      }
       setFiles(sources);
       const content = sources[0]?.content;
       if (typeof content !== 'string') throw new Error('empty file');
-      if (isVaultBundle(content)) {
+      if (looksLikeVaultBundle(content)) {
         setImportKind('vault');
         setBundle(content);
         setMessage('识别为 Vault 数据包，请输入导出密码后预览。');
@@ -217,7 +281,7 @@ export const WorkspaceSettings = ({ mode, onClose, onExport, fileSave, onPreview
     setBusy(true);
     setMessage(null);
     try {
-      await downloadBundle(await onExport(password), fileSave);
+      await downloadBundle(await onExport(password), fileSave, fileWriter);
       setPassword('');
       setMessage('导出完成，请妥善保存加密数据包。');
     } catch {

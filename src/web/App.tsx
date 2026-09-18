@@ -1588,6 +1588,7 @@ export const App = ({ runtime }: AppProps) => {
         onClose={() => setWorkspaceSettingsMode(null)}
         onExport={runtime.imports.exportVaultBundle}
         fileSave={runtime.platformServices?.fileSave}
+        fileWriter={runtime.platformServices?.fileWriter}
         onPreviewImport={runtime.imports.previewVaultImport}
         onPreviewExternalImport={runtime.imports.previewExternalImport}
         onApplyImport={async (previewId, resolution) => {

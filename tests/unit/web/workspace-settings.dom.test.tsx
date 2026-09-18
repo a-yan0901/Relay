@@ -143,4 +143,52 @@ describe('WorkspaceSettings import/export flows', () => {
     expect(createObjectUrl).toHaveBeenCalledOnce();
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:fixture');
   });
+
+  it('streams a large Vault bundle through the bounded native writer', async () => {
+    const user = userEvent.setup();
+    const writer = {
+      write: vi.fn(async (_chunk: Uint8Array) => undefined),
+      close: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined)
+    };
+    const openWriter = vi.fn(async () => writer);
+    render(<WorkspaceSettings
+      mode="export"
+      onClose={vi.fn()}
+      onExport={vi.fn(async () => 'x'.repeat(70 * 1024))}
+      fileWriter={{ open: openWriter }}
+      onPreviewImport={vi.fn(async () => ({ previewId: 'vault', hostCount: 0, groupCount: 0, conflicts: [], expiresAt: '' }))}
+      onApplyImport={vi.fn(async () => ({ importedHosts: 0, importedGroups: 0, skippedHosts: 0, skippedGroups: 0 }))}
+      onPreviewExternalImport={vi.fn(async () => preview)}
+      onApplyExternalImport={vi.fn(async () => ({ importedHosts: 0, skippedHosts: 0, importedGroups: 0, skippedGroups: 0, warnings: [] }))}
+    />);
+
+    await user.type(screen.getByLabelText('导出密码'), 'bundle-password');
+    await user.click(screen.getByRole('button', { name: '导出' }));
+
+    expect(openWriter).toHaveBeenCalledOnce();
+    expect(writer.write).toHaveBeenCalledTimes(3);
+    expect(writer.write.mock.calls.every(([chunk]) => chunk.byteLength <= 32 * 1024)).toBe(true);
+    expect(writer.close).toHaveBeenCalledOnce();
+    expect(writer.cancel).not.toHaveBeenCalled();
+  });
+
+  it('rejects an oversized external file before sending it to the native boundary', async () => {
+    const user = userEvent.setup();
+    const onPreviewExternalImport = vi.fn(async () => preview);
+    render(<WorkspaceSettings
+      mode="import"
+      onClose={vi.fn()}
+      onExport={vi.fn(async () => '{}')}
+      onPreviewImport={vi.fn(async () => ({ previewId: 'vault', hostCount: 0, groupCount: 0, conflicts: [], expiresAt: '' }))}
+      onApplyImport={vi.fn(async () => ({ importedHosts: 0, importedGroups: 0, skippedHosts: 0, skippedGroups: 0 }))}
+      onPreviewExternalImport={onPreviewExternalImport}
+      onApplyExternalImport={vi.fn(async () => ({ importedHosts: 0, skippedHosts: 0, importedGroups: 0, skippedGroups: 0, warnings: [] }))}
+    />);
+
+    await user.upload(screen.getByLabelText('导入文件'), new File(['x'.repeat(49 * 1024)], 'large.csv', { type: 'text/csv' }));
+    await user.click(screen.getByRole('button', { name: '预览导入' }));
+
+    expect(onPreviewExternalImport).not.toHaveBeenCalled();
+  });
 });
