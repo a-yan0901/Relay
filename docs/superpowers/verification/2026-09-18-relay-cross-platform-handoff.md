@@ -1,10 +1,10 @@
 # Relay 跨端验收交接任务书
 
-**交接日期：** 2026-09-18
+**交接日期：** 2026-09-19
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**APK 构建源码基线：** `7caa316`；**Windows portable 包构建源码基线：** `75cc630`。后续重新构建必须以新的源码 commit、构建时间、工具链和制品哈希为准。
-**验收机器应检出：** Android 验收使用 `7caa316`；Windows portable 验收使用 `75cc630`，或与重新构建制品清单匹配的新源码 commit。
+**APK 构建源码基线：** `d3c4c62`；**Windows portable 包构建源码基线：** `75cc630`。后续重新构建必须以新的源码 commit、构建时间、工具链和制品哈希为准。
+**验收机器应检出：** Android 验收使用 `d3c4c62`；Windows portable 验收使用 `75cc630`，或与重新构建制品清单匹配的新源码 commit。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -15,20 +15,23 @@
 | --- | --- | --- | --- |
 | Web | ✅ 自动化基线可复现 | 160 个测试文件通过、1 个跳过；719 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
 | Windows | 🟡 可构建技术预览 | Electron shell、IPC/native contract、Windows x64 portable 包生成；SHA-256 已记录 | Windows native ABI、安装/升级迁移、退出/重开、SSH/SFTP 任务链 |
-| Android | 🟡 已完成有限设备 SSH 证据，不代表平台完成 | Kotlin 编译、JVM 单元测试、connected 测试 2/2、Debug APK 构建；最终 APK 已安装到 API 35/x86_64 `emulator-5554`，并安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`；真机已完成用户指定密码主机的首次 Host Key 信任、SSH 连接、SFTP `/tmp` 列举和终端基础 native smoke | SFTP 上传/下载/取消、私钥、Host Key 变更、URI、返回键、软键盘、锁屏/进程回收、网络切换、低内存和 A-01～A-17 其余项目 |
+| Android | 🟡 已完成有限设备 SSH 证据，不代表平台完成 | Kotlin 编译、JVM 单元测试、Debug APK 构建；源码 `d3c4c62` 的 APK 已重新安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`；真机已使用用户提供的 `106.14.61.92:22` 完成首次 Host Key 信任、SSH 连接、SFTP `/tmp` 列举、终端基础 native smoke，以及 3 轮关闭/重开后 `whoami → t2` 输入回归 | SFTP 上传/下载/取消、私钥、Host Key 变更、URI、返回键、软键盘、锁屏/进程回收、网络切换、低内存和 A-01～A-17 其余项目 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
-本机历史上有一次 AOSP 软件模拟器因缺少 `/dev/kvm` 处于 `adb offline` 后退出；本轮现有 `emulator-5554` 为 `device`（API 35、Android 15、x86_64）。最终 APK 已完成安装，并在测试 SSH fixture 上完成首次 Host Key 指纹展示、信任和 Shell 建立；这仍不替代 Android SFTP、Keystore 完整生命周期、网络切换和低内存验收。
+本机历史上有一次 AOSP 软件模拟器因缺少 `/dev/kvm` 处于 `adb offline` 后退出；`emulator-5554` 的 fixture 结果仅作为历史可重复回归证据，不作为本次真实主机验收结论。当前交接以两台 Android 16 真机和用户提供的 SSH 主机为准。
 
-本轮设备验证：`adb devices` 返回 `emulator-5554 device`；最终 APK `8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52` 安装返回 `Success`；`cn.ayan.relay/.MainActivity` 启动正常。使用本地 in-process `ssh2` fixture（密码为测试数据）创建 Host，首次连接展示并确认 `SHA256:RrDNThMGT8sF6lsRsqnQ37vum6+6Q/NmrSXZCM2zf6g`，Host 卡片显示“指纹已验证”并记录最近连接；最近 Relay SSH logcat 无错误。该证据只将 A-02 记为通过，不把它扩大为 A-01～A-17 全部通过。
+历史模拟器验证：`adb devices` 曾返回 `emulator-5554 device`；旧 APK `8F307F...` 在本地 in-process `ssh2` fixture 上完成 Host Key 展示、信任和 Shell 建立。该证据仅用于自动化回归溯源，不替代真实服务器证据。
 
-### 真实 Android 设备补充证据（2026-09-18）
+### 真实 Android 设备补充证据（2026-09-19）
 
-- 设备：`2407FRK8EC`、`25091RP04C`，均为 Android 16；两台均安装同一 Debug APK（应用 ID `cn.ayan.relay`），安装返回 `Success`，并成功启动 `MainActivity`。
-- 测试主机：使用用户指定的密码认证 SSH 主机；密码不写入仓库。两台设备均返回同一 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`，确认后再次 `connection.test` 均返回成功。
+- 设备：Xiaomi `2407FRK8EC`、Xiaomi `25091RP04C`，均为 Android 16/API 36、arm64-v8a；两台均重新安装同一 Debug APK（应用 ID `cn.ayan.relay`），安装返回 `Success`，并成功启动 `MainActivity`。
+- 制品：源码 `d3c4c62`，APK 8,633,367 bytes，SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。
+- 测试主机：明确使用用户提供的 `106.14.61.92:22`、账号 `t2` 和用户提供的密码；密码不写入仓库。两台设备均返回同一 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`，确认后连接成功。
+- UI 重开与输入回归：每台设备连续 3 轮执行关闭当前 Shell、重新打开 Host、等待 raw native `terminal.status=connected`、聚焦 Console 并输入 `whoami`；6/6 轮均成功返回 `t2`，Console 输入框均可聚焦，活动终端标签均显示 `status-dot-green`。
 - native bridge smoke：两台设备均通过真实 JSch 连接读取 `/tmp`（每台返回 19 项），并完成终端 `resize`、写入测试命令和关闭会话；该证据证明真实设备到 SSH/SFTP 的原生通路可用。
-- 边界：本次没有把 native smoke 扩大为完整 UI 验收；Host Key 变更拒绝、私钥认证、SFTP 上传/下载/取消/重试、网络切换、返回键/软键盘、锁屏/进程回收、低内存和 A-17 仍保持待执行。
+- 边界：本次没有把上述结果扩大为完整平台验收；Host Key 变更拒绝、私钥认证、SFTP 上传/下载/取消/重试、网络切换、返回键/软键盘、锁屏/进程回收、低内存和 A-17 仍保持待执行。
+- 口径：本地 in-process SSH fixture 仅用于可重复自动化回归，不作为本次真机结论的测试服务器。
 
 ## 2. 产物位置、溯源和工具链
 
@@ -38,22 +41,25 @@
 
 - 文件：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`
 - 应用 ID：`cn.ayan.relay`
-- 构建时间（文件时间，Asia/Shanghai）：`2026-09-18 21:36:41`
-- 大小：`8,633,239` bytes
-- SHA-256：`8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52`
+- 构建时间（文件时间，Asia/Shanghai）：`2026-09-19 00:37:47`
+- 大小：`8,633,367` bytes
+- SHA-256：`D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`
 - 构建命令：
 
   ```powershell
   $env:JAVA_HOME = 'C:\path\to\jdk-21'
   $env:ANDROID_HOME = 'C:\path\to\Android\Sdk'
   $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
-  npm --prefix apps/android run sync
+  Push-Location apps/android
+  npm run build:web
+  npx cap copy android
+  Pop-Location
   Push-Location apps/android/android
-  & 'C:\path\to\gradle-9.3.1\bin\gradle.bat' :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug --offline --no-daemon --max-workers=1 --console=plain
+  & 'C:\path\to\gradle-9.3.1\bin\gradle.bat' :app:testDebugUnitTest :app:assembleDebug --offline --max-workers=1 --console=plain
   Pop-Location
   ```
 
-  本轮 wrapper 声明 `8.14.3` 的发行版下载不可用，实际使用已缓存的 Gradle `9.3.1`；交接机须记录实际版本。
+  本轮 wrapper 声明 `8.14.3` 的发行版下载不可用，实际使用已缓存的 Gradle `9.3.1`；`testDebugUnitTest` 用时约 1 分 14 秒，`assembleDebug` 用时约 27 秒且 73 项任务均为 up-to-date；交接机须记录实际版本，不应把本轮描述成首次建立 Gradle classpath。
 
 ### Windows portable 预览包
 
@@ -123,10 +129,10 @@
 | 编号 | 验收任务 | 预期结果 | 结果/证据 |
 | --- | --- | --- | --- |
 | A-01 | 首次打开、创建 Host、保存凭据 | 不需要 Relay URL 或 cookie；Host 重启后仍存在 | 待执行 |
-| A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 通过：最终 APK 在 `emulator-5554` 展示 `ssh-ed25519` 指纹 `SHA256:RrDNThMGT8sF6lsRsqnQ37vum6+6Q/NmrSXZCM2zf6g`；点击“信任并连接”后 Host 显示“指纹已验证”、记录最近连接并保持 Shell 页面；无 Relay SSH 错误日志。 |
+| A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 通过（真实主机密码路径）：两台 Android 16 真机在 `106.14.61.92:22` 展示 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`；点击“信任并连接”后均成功建立 Shell。旧模拟器 fixture 结果仅保留为历史回归证据。 |
 | A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | 待执行 |
 | A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行 |
-| A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行 |
+| A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行；已补充真实主机证据：两台真机连续 3 轮关闭/重开后输入 `whoami`，6/6 返回 `t2`；复制、粘贴确认、中文/长输入和底部布局仍待完整走查。 |
 | A-06 | 断网后恢复 | 网络切换/短暂断开显示真实 `reconnecting` 或 `interrupted`；恢复后按交互约定重连，不伪造 connected | 待执行 |
 | A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行 |
 | A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | 待执行 |
