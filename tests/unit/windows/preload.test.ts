@@ -87,4 +87,30 @@ describe('Windows desktop preload API', () => {
     };
     await expect(createDesktopPreloadApi(transport).invoke('vault.status', {})).rejects.toBeInstanceOf(AppError);
   });
+
+  it('serializes native session close before opening the next shell', async () => {
+    const operations: string[] = [];
+    let releaseClose!: () => void;
+    const closeReleased = new Promise<void>((resolve) => { releaseClose = resolve; });
+    const transport: DesktopIpcTransport = {
+      invoke: vi.fn(async (request) => {
+        operations.push(request.operation);
+        if (request.operation === 'sessions.close') await closeReleased;
+        return response(request.requestId, request.operation === 'sessions.openShell' ? { sessionId: 'next-session' } : undefined);
+      }),
+      subscribe: () => () => undefined
+    };
+    const api = createDesktopPreloadApi(transport);
+
+    const closePromise = api.invoke('sessions.close', { sessionId: 'old-session' });
+    await vi.waitFor(() => expect(operations).toEqual(['sessions.close']));
+    const openPromise = api.invoke('sessions.openShell', { request: { requestId: 'next-session', hostId: 'host-1', cols: 80, rows: 24 } });
+    await Promise.resolve();
+    expect(operations).toEqual(['sessions.close']);
+
+    releaseClose();
+    await expect(closePromise).resolves.toBeUndefined();
+    await expect(openPromise).resolves.toEqual({ sessionId: 'next-session' });
+    expect(operations).toEqual(['sessions.close', 'sessions.openShell']);
+  });
 });

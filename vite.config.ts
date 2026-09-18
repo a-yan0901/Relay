@@ -3,6 +3,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react()],
+  // The Electron renderer is loaded from a file:// URL. Absolute asset URLs
+  // resolve to the drive root there instead of the packaged renderer folder.
+  base: './',
   resolve: {
     alias: {
       '@shared': '/src/shared'

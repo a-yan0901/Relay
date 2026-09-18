@@ -90,6 +90,7 @@ export const createDesktopPreloadApi = (transport: DesktopIpcTransport, options:
   const gate = options.eventGate ?? new NativeEventGate();
   const listeners = new Set<(event: NativeEventFrame) => void>();
   let stopTransportSubscription: (() => void) | undefined;
+  let sessionCloseQueue: Promise<void> = Promise.resolve();
 
   const onTransportEvent = (value: NativeEventFrame): void => {
     let event: NativeEventFrame;
@@ -106,7 +107,21 @@ export const createDesktopPreloadApi = (transport: DesktopIpcTransport, options:
   return {
     async invoke(operation, payload): Promise<unknown> {
       const request = encodeDesktopIpcRequest({ version: 1, requestId: requestId(), operation, payload });
-      const rawResponse = await transport.invoke(request);
+      let rawResponse: DesktopIpcResponse;
+      if (operation === 'sessions.close') {
+        // The native SSH channel may still be unwinding after a close response.
+        // Serialize close operations and make a subsequent shell wait for the
+        // complete close chain, matching the Android bridge behavior.
+        const queuedClose = sessionCloseQueue.then(
+          () => transport.invoke(request),
+          () => transport.invoke(request)
+        );
+        sessionCloseQueue = queuedClose.then(() => undefined, () => undefined);
+        rawResponse = await queuedClose;
+      } else {
+        if (operation === 'sessions.openShell' || operation === 'sessions.reconnect') await sessionCloseQueue;
+        rawResponse = await transport.invoke(request);
+      }
       const parsedResponse = responseSchema.safeParse(rawResponse);
       if (!parsedResponse.success) throw new AppError('PROTOCOL_INVALID_MESSAGE');
       if (parsedResponse.data.requestId !== request.requestId) throw new Error('desktop IPC response mismatch');

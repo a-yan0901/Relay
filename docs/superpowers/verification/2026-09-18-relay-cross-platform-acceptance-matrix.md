@@ -22,7 +22,7 @@
 ## 当前可复现证据
 
 - Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 和 `npm run test:e2e -- --project=chromium`；默认 E2E 4/4 通过，Playwright 共享数据目录固定单 worker。
-- Windows：源码 commit `75cc630` 上执行 `npm run build:windows` 和 `npm run package:windows:portable`；本机生成 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`，大小 457,281,531 bytes，签名状态为 `NotSigned`。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
+- Windows（历史预览记录，非本轮新产物）：源码 commit `75cc630` 上曾执行 `npm run build:windows` 和 `npm run package:windows:portable`；本机残留 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`，大小 457,281,531 bytes，签名状态为 `NotSigned`。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
 - Android：源码 commit `d3c4c62` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker 执行 `:app:testDebugUnitTest` 和 `:app:assembleDebug`；两项均返回 `BUILD SUCCESSFUL`，APK 大小 8,633,367 bytes，SHA-256 为 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。该 APK 已重新安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`；两台真机对用户提供的 `106.14.61.92:22` 密码主机完成 Host Key trust、`/tmp` SFTP 列举（19 项/台）、终端 resize/写入/关闭，并连续 3 轮关闭/重开后输入 `whoami` 返回 `t2`。SFTP 上传下载取消、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
 
 - 说明：本地 in-process SSH fixture 只用于可重复的自动化回归；上述 Android 真机结论使用的是用户提供的 `106.14.61.92:22`，账号为 `t2`，密码未写入仓库。
@@ -32,3 +32,16 @@
 - 当前仍未完成：任务 4–14；其中任务 5 的完整跨端 bundle v1 固定向量由[交接任务书 A-17](./2026-09-18-relay-cross-platform-handoff.md)执行，未通过前不能勾选任务 5、10 或 14。
 - 任务 15 仍是 🟡 的未来同步兼容性预留，但不属于本期 Windows/Android 客户端发布门禁；本期只要求云服务缺席时本地功能不受影响。
 - 矩阵不把 Web 浏览器验证、portable 生成或 APK 安装/启动 smoke 视为 Windows/Android 完整验收；Android 交接机器应按任务书逐项回填结果，不以“能安装 APK”替代 SSH、SFTP、Vault、生命周期和低内存边界验证。
+
+## 2026-09-19 复审增量：Windows 实际 UI 证据与打包边界
+
+### 已新增的 Windows 证据
+
+- 在本机 root Electron UI 中使用真实主机 `106.14.61.92:22`、账号 `t2` 完成 Host Key 已信任后的 Shell 打开；终端输入 `echo WINDOWS_UI_STABLE` 得到回显和 `t2` 提示符。
+- 关闭 Console 后重新进入同一 Host，输入 `echo WINDOWS_UI_REOPEN_STABLE` 仍得到回显和 `t2` 提示符；两次打开均只有一个稳定 native session，没有连续重连、`SSH_CONNECTION_FAILED` 或重复 Shell。
+- 相关实现和测试覆盖了 file URL 资源、sandbox preload schema、close/open 顺序、唯一 native request ID、open 完成前 resize 竞态和 clean-close service instance。Windows/native 定向套件为 7 个测试文件、30 个测试通过；类型检查、lint 和 `build:windows` 通过。
+
+### 仍不能勾选的边界
+
+- 上述是 root Electron 开发运行时的真实服务器 UI smoke，不是签名安装包验收。`package:windows` 因缺少 Visual Studio/MSVC 的 `node-gyp` native rebuild 阻塞；portable 重试还受到外部 builder 下载超时影响。旧的 gitignored portable 文件不得当作本轮新产物或 ABI 证据。
+- Windows 安装/升级/退出重开、native ABI、SFTP UI、低内存和完整任务链仍保持 `🟡`；Android 的 A-01～A-17 仍按交接任务书逐项维护，不因 Windows smoke 自动变更状态。

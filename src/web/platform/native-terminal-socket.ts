@@ -12,7 +12,14 @@ const SOCKET_CLOSED = 3;
 const NATIVE_INPUT_CHUNK_BYTES = 32 * 1024;
 const NATIVE_INPUT_QUEUE_CHUNKS = 8;
 const NATIVE_INPUT_QUEUE_BYTES = 64 * 1024;
+const NATIVE_SERVICE_INSTANCE_ID = 'desktop-local';
+let nativeSessionRequestNumber = 0;
 
+const nextNativeSessionRequestId = (terminalId: string): string => {
+  nativeSessionRequestNumber = nativeSessionRequestNumber >= Number.MAX_SAFE_INTEGER - 1 ? 1 : nativeSessionRequestNumber + 1;
+  const suffix = `native-${Date.now().toString(36)}-${nativeSessionRequestNumber.toString(36)}`;
+  return `${terminalId.slice(0, Math.max(1, 128 - suffix.length - 1))}:${suffix}`;
+};
 interface QueuedInput {
   data: string;
   bytes: number;
@@ -66,7 +73,6 @@ export class NativeTerminalSocket implements TerminalSocketLike {
   private inputQueueBytes = 0;
   private inputInFlightBytes = 0;
   private inputPumpActive = false;
-
   constructor(private readonly port: NativeOperationPort, _url: string) {
     this.stopEvents = port.subscribe((event) => this.handleNativeEvent(event));
     queueMicrotask(() => {
@@ -156,20 +162,23 @@ export class NativeTerminalSocket implements TerminalSocketLike {
       switch (message.type) {
         case 'open': {
           if (this.requestId !== null) throw new Error('terminal already opened');
-          this.requestId = message.requestId;
-          this.sessionId = message.requestId;
-          const result = await this.port.invoke<{ sessionId?: string }>('sessions.openShell', { request: message });
+          const nativeRequestId = nextNativeSessionRequestId(message.requestId);
+          const nativeRequest = { ...message, requestId: nativeRequestId };
+          this.requestId = nativeRequestId;
+          this.sessionId = nativeRequestId;
+          const result = await this.port.invoke<{ sessionId?: string }>('sessions.openShell', { request: nativeRequest });
           if (typeof result.sessionId === 'string') this.sessionId = result.sessionId;
           if (this.closedByUser || this.readyState !== SOCKET_OPEN) {
             if (this.sessionId) await this.port.invoke('sessions.close', { sessionId: this.sessionId }).catch(() => undefined);
             return;
           }
           this.nativeSessionReady = true;
+          if (this.shellReady) void this.flushShellReadyQueue();
           return;
         }
         case 'resize':
           this.pendingResize = { cols: message.cols, rows: message.rows };
-          if (!this.shellReady) return;
+          if (!this.nativeSessionReady || !this.shellReady) return;
           await this.invokeSession('sessions.resize', { cols: message.cols, rows: message.rows });
           return;
         case 'input':
@@ -220,7 +229,7 @@ export class NativeTerminalSocket implements TerminalSocketLike {
         if (state === 'connected') {
           this.needsReopen = false;
           this.shellReady = true;
-          void this.flushShellReadyQueue();
+          if (this.nativeSessionReady) void this.flushShellReadyQueue();
         }
         this.emitServerEvent({ type: 'status', state: state as TerminalStatus, serviceInstanceId: asText(payload?.serviceInstanceId) ?? 'native-local' });
         return;
@@ -242,7 +251,7 @@ export class NativeTerminalSocket implements TerminalSocketLike {
         return;
       case 'terminal.close':
         if (payload?.clean === true) {
-          this.emitServerEvent({ type: 'status', state: 'closed', serviceInstanceId: 'native-local' });
+          this.emitServerEvent({ type: 'status', state: 'closed', serviceInstanceId: NATIVE_SERVICE_INSTANCE_ID });
         } else {
           this.finishClose(this.needsReopen ? 1000 : 1011, this.needsReopen ? 'native session needs reopen' : 'remote connection interrupted');
         }

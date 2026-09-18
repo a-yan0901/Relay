@@ -98,7 +98,7 @@
 - 原生制品与设备回归增量（2026-09-18，源码 `7caa316`）：Android 使用 JDK 21、Gradle 9.3.1、单 worker 构建，`testDebugUnitTest`、`connectedDebugAndroidTest`（2/2）和 `assembleDebug` 均通过；最终 Debug APK 为 8,633,239 bytes，SHA-256 `8F307F8DCC937BD7C6B0444B0834D83B0E7067D87F6FDB5F4DF41E621F2E4C52`。最终 APK 已安装到 `emulator-5554`（API 35/x86_64），首次连接显示并确认 `ssh-ed25519` Host Key 指纹 `SHA256:RrDNThMGT8sF6lsRsqnQ37vum6+6Q/NmrSXZCM2zf6g`，Host 卡片持久化为“指纹已验证”并记录最近连接；本轮未见 Relay SSH 错误日志。该证据只覆盖 Android Vault/Host 创建、首次 Host Key 和一次 Shell 建立，仍不替代 A-01～A-17 的完整验收。
 - 真实设备回归增量（2026-09-18）：同一 Debug APK 已安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`。两台设备均使用用户指定的密码主机完成首次 Host Key native trust（指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`）、再次连接测试、`/tmp` SFTP 列举（19 项/台）以及终端 resize/写入/关闭；密码未写入仓库。该条只证明真实设备原生 SSH/SFTP 通路，不能替代完整 UI、Host Key 变更、私钥、上传下载取消、生命周期和低内存验收。
 - 真实服务器 UI 重开与输入回归（2026-09-19，源码 `d3c4c62`，APK SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`）：在 Xiaomi `2407FRK8EC` 和 `25091RP04C` 两台 Android 16 真机上，明确使用 `106.14.61.92:22`、账号 `t2` 的用户提供密码主机；两台均连续 3 轮执行“关闭当前 Shell→重新打开 Host→等待 raw native `terminal.status=connected`→聚焦 Console→输入 `whoami`”，每轮均返回 `t2`，终端标签状态均为 `status-dot-green`。本条最终真机结论不使用本地 fixture；fixture 仅保留为可重复回归测试工具。
-- Windows x64 portable 包已从源码 commit `75cc630` 在本机生成（`npm run package:windows:portable`，`npmRebuild=false`），文件 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，大小 457,281,531 bytes，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`；Electron 44.4.1 已通过镜像下载，签名状态为 `NotSigned`。该包仍未证明 better-sqlite3/argon2 的 Windows Electron native ABI、升级迁移、安装/退出/重开和完整 SSH/SFTP 任务链。
+- 历史记录：Windows x64 portable 包曾从源码 commit `75cc630` 在本机生成（`npm run package:windows:portable`，`npmRebuild=false`），文件 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，大小 457,281,531 bytes，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`；Electron 44.4.1 已通过镜像下载，签名状态为 `NotSigned`。该包不是本轮新产物，也未证明 better-sqlite3/argon2 的 Windows Electron native ABI、升级迁移、安装/退出/重开和完整 SSH/SFTP 任务链。
 
 验证记录（2026-09-18）：
 
@@ -122,7 +122,14 @@
 - Android 代码、Kotlin 编译、JVM 单元测试、connected 测试（2/2）和 Debug APK 构建已完成；源码提交 `d3c4c62` 构建的 APK（SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`）已重新安装并启动于两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`，`emulator-5554` 仅作为历史模拟器证据保留。两台真机已使用 `106.14.61.92:22` 的用户提供密码主机完成 Host Key trust、连接测试、`/tmp` SFTP 列举、终端 resize/写入/关闭，以及 3 轮关闭/重开后输入 `whoami` 返回 `t2`；完整 SFTP、私钥认证、Host Key 变更、网络切换、锁屏/进程回收、低内存和 A-01～A-17 其余项目仍未完成。
 - 之前的 AOSP 软件模拟器 `/dev/kvm` 阻塞记录仍保留为历史环境证据；当前真机 native smoke 已补充真实设备 SSH/SFTP 通路证据，但仍不应扩大解释为完整 Android UI 和生命周期验收。
 - Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由目标设备执行人继续回填。任务 4–14 仍保持未完成；任务 15 只是未来同步兼容性预留，不属于本期客户端发布门禁。
-- Windows x64 portable 包已在本机生成，但仍等待 Windows native ABI、升级迁移、安装/退出/重开和本地 SSH/SFTP 任务链验证；`npmRebuild=false` 的打包结果不能替代 native ABI 验收。
+- 历史 Windows x64 portable 预览文件曾在本机生成，但本轮 portable 重试未形成新的可交接产物；仍等待 Windows native ABI、升级迁移、安装/退出/重开和本地 SSH/SFTP 任务链验证，`npmRebuild=false` 的打包结果不能替代 native ABI 验收。
 - APK 和 portable 包当前只存在于本机 gitignored 生成目录，不会随 `git clone` 或 `git checkout` 出现；当前没有可追溯的 Release 附件、制品服务器或共享目录作为持久来源。最终签收前必须登记可访问的制品来源，并记录源码 commit、工具链版本和 SHA-256。
 
 当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及交接机器上的 Android SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。
+
+## 2026-09-19 增量复审：Windows UI 与真实测试主机
+
+- Windows root Electron UI 已使用本机 `npm run build:windows` 产物启动，并连接用户提供的真实 SSH 主机 `106.14.61.92:22`（账号 `t2`；密码未写入仓库）。UI 已完成 Host Key 已信任后的 Shell 打开、终端输入 `echo WINDOWS_UI_STABLE`、关闭 Console、重新打开 Host、再次输入 `echo WINDOWS_UI_REOPEN_STABLE`；两次均收到远端 `t2` 提示符和命令回显，生命周期诊断中没有重复打开循环或 `SSH_CONNECTION_FAILED`。
+- 本轮修复了四个 Windows/native 生命周期问题：Electron file URL 使用相对 renderer 资源；sandbox preload 内置 `zod`；Windows preload 串行化 `sessions.close` 与下一次 `sessions.openShell`；原生 Shell 使用唯一 request ID、在 `sessions.openShell` 完成前不发送 resize，并将 clean close 的 service instance 统一为 `desktop-local`。
+- 受影响的 native/Windows 定向回归为 7 个测试文件、30 个测试全部通过；`npm run typecheck`、`npm run lint`、`npm run build:windows` 全部通过。此前完整 Web/Server 基线为 160 个测试文件、722 个测试通过、2 个跳过，E2E 为 4/4；本轮没有把未受影响的完整套件重复作为新的跨端设备证据。
+- `npm run package:windows` 当前仍被本机缺少 Visual Studio/MSVC 阻塞，`node-gyp` 无法找到 Visual Studio；portable 打包重试又受到外部 builder 下载 `ETIMEDOUT` 影响。因此本轮只确认了可运行的 root Electron UI 和 source build，不宣称 Windows 安装包、native ABI、升级迁移或签名已验收。仓库中已有的 portable 预览文件若时间早于本记录，只能作为旧产物，不能作为本轮构建结果。

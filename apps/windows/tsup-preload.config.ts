@@ -8,5 +8,6 @@ export default defineConfig({
   sourcemap: true,
   clean: false,
   external: ['electron'],
+  noExternal: ['zod'],
   outExtension: () => ({ js: '.cjs' })
 });

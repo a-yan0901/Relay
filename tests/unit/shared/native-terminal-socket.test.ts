@@ -5,6 +5,36 @@ import type { NativeOperationPort } from '../../../src/shared/native/core-runtim
 import { createNativeTerminalSocket } from '../../../src/web/platform/native-terminal-socket.js';
 
 describe('native terminal socket adapter', () => {
+  it('uses a unique native request id for each shell open', async () => {
+    const requestIds: string[] = [];
+    const port: NativeOperationPort = {
+      invoke: vi.fn(async <T,>(operation: string, payload: unknown): Promise<T> => {
+        if (operation === 'sessions.openShell') {
+          const requestId = (payload as { request: { requestId: string } }).request.requestId;
+          requestIds.push(requestId);
+          return { sessionId: requestId, hostId: 'host-1' } as T;
+        }
+        return undefined as T;
+      }),
+      subscribe() { return () => undefined; }
+    };
+
+    const openAndClose = async (expectedCount: number): Promise<void> => {
+      const socket = createNativeTerminalSocket(port, 'native://terminal');
+      socket.onopen = () => socket.send(JSON.stringify({ type: 'open', hostId: 'host-1', cols: 80, rows: 24, requestId: 'terminal-1' }));
+      await vi.waitFor(() => expect(requestIds.length).toBe(expectedCount));
+      socket.close();
+    };
+
+    await openAndClose(1);
+    await openAndClose(2);
+
+    expect(requestIds).toHaveLength(2);
+    expect(requestIds[0]).toMatch(/^terminal-1:native-/u);
+    expect(requestIds[1]).toMatch(/^terminal-1:native-/u);
+    expect(requestIds[1]).not.toBe(requestIds[0]);
+  });
+
   it('maps the shared terminal control protocol onto bounded native operations', async () => {
     const calls: Array<{ operation: string; payload: unknown }> = [];
     let emit: ((event: NativeEventFrame) => void) | undefined;
@@ -64,10 +94,15 @@ describe('native terminal socket adapter', () => {
     socket.send(JSON.stringify({ type: 'resize', cols: 100, rows: 30 }));
     expect(calls).not.toContain('sessions.resize');
 
+    emit?.({ version: 1, generation: 1, sequence: 1, kind: 'terminal.status', payload: { state: 'connected', serviceInstanceId: 'android-local' } });
+    await Promise.resolve();
+    expect(calls).not.toContain('sessions.resize');
+    socket.send(JSON.stringify({ type: 'resize', cols: 110, rows: 32 }));
+    await Promise.resolve();
+    expect(calls).not.toContain('sessions.resize');
+
     resolveOpen();
     await vi.waitFor(() => expect(openResolved).toBe(true));
-    expect(calls).not.toContain('sessions.resize');
-    emit?.({ version: 1, generation: 1, sequence: 1, kind: 'terminal.status', sessionId: 'session-1', payload: { state: 'connected', serviceInstanceId: 'android-local' } });
     await vi.waitFor(() => expect(calls).toContain('sessions.resize'));
     socket.close();
   });

@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-19
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**APK 构建源码基线：** `d3c4c62`；**Windows portable 包构建源码基线：** `75cc630`。后续重新构建必须以新的源码 commit、构建时间、工具链和制品哈希为准。
-**验收机器应检出：** Android 验收使用 `d3c4c62`；Windows portable 验收使用 `75cc630`，或与重新构建制品清单匹配的新源码 commit。
+**APK 构建源码基线：** `d3c4c62`；**Windows portable 历史预览源码基线：** `75cc630`。后续重新构建必须以新的源码 commit、构建时间、工具链和制品哈希为准。
+**验收机器应检出：** Android 验收使用 `d3c4c62`；Windows root Electron UI smoke 使用本轮最新源码，Windows portable 验收必须使用与重新构建制品清单匹配的新源码 commit。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -222,3 +222,24 @@
 - 不为了“通过验收”把 Android SSH/SFTP 路径改成调用 Web 服务或 Relay 服务。
 - 不把 APK 能安装、Kotlin 能编译或 JVM 测试通过，等同于真机验收通过。
 - 不把真实密码、私钥、恢复密钥或生产 Host Key 放入 issue、截图、普通日志或测试 bundle。
+
+## 9. 2026-09-19 Windows 复审回填
+
+### 已完成的真实主机 UI smoke
+
+- 运行入口：本机 root Electron，使用 `npm run build:windows` 后启动；不是 portable 安装包。
+- 测试主机：`106.14.61.92:22`，账号 `t2`；认证材料未写入仓库、日志或本任务书。
+- UI 结果：Host Key 已信任后打开 Shell，输入 `echo WINDOWS_UI_STABLE` 返回远端提示符；关闭 Console 后重新进入 Host，输入 `echo WINDOWS_UI_REOPEN_STABLE` 同样返回远端提示符。两次连接各自只有一个 native session，未出现自动重连循环或 `SSH_CONNECTION_FAILED`。
+- 对应代码边界：renderer 使用相对 file URL 资源；preload 内置 `zod`；close/open 通过队列串行；native request ID 每个 Shell 唯一；open 响应完成前 resize 不调用 native session；clean close 使用统一 desktop service instance。
+- 自动化证据：native/Windows 定向测试 7 个文件、30 个测试通过；`npm run typecheck`、`npm run lint`、`npm run build:windows` 通过。Web/Server 完整基线和 Android 真机证据仍以本任务书前文记录为准。
+
+### Windows 当前阻塞项
+
+- `npm run package:windows` 在本机缺少 Visual Studio/MSVC 时被 `node-gyp` native rebuild 阻塞；portable 打包重试还遇到外部 builder 下载 `ETIMEDOUT`。因此本次没有新的可交接 Windows installer/portable artifact，也没有签名、ABI、安装升级或卸载证据。
+- 现有 gitignored portable 文件如果时间早于本节记录，只能作为历史预览，不能回填为本次产物。后续交接必须在具备 MSVC 和稳定 builder 下载的 Windows 机器上重新构建，并记录源码 commit、生成时间、文件大小、SHA-256、签名状态和安装/升级结果。
+
+### 下一步验收顺序
+
+1. 在具备 Visual Studio/MSVC 的 Windows 机器上完成 native rebuild、package、安装/升级/退出重开和 ABI 证据。
+2. 在同一台 Windows 机器上补 SFTP UI、Vault lock/reopen、文件/剪贴板能力和低内存边界。
+3. Android 继续按 A-01～A-17 回填；当前两台真机的真实 SSH/SFTP smoke 不替代剩余 UI、Host Key 变更、私钥、生命周期、网络切换和低内存验收。

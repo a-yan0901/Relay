@@ -15,7 +15,7 @@
     "build:windows:main": "tsup --config apps/windows/tsup-main.config.ts",
     "build:windows:preload": "tsup --config apps/windows/tsup-preload.config.ts",
     "build:windows": "npm run build:web && npm run build:windows:main && npm run build:windows:preload",
-    "dev:windows": "npm run build:windows && electron dist/windows/electron-main.js",
+    "dev:windows": "npm run build:windows && electron .",
     "package:windows": "npm run build:windows && electron-builder --win nsis portable --x64",
     "package:windows:portable": "npm run build:windows && electron-builder --win portable --x64 --config.npmRebuild=false --config.directories.output=dist/releases-portable-preview --config.compression=store --publish never",
     "build:android:debug": "npm --prefix apps/android run build:debug",
