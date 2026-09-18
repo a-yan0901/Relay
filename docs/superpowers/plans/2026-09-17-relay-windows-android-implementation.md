@@ -10,6 +10,8 @@
 
 **设计：** [独立 Windows 与 Android 客户端设计](../specs/2026-09-17-relay-windows-android-unified-experience-design.md)。
 
+**验收交接：** [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)。
+
 ## 全局约束
 
 - SSH、SFTP、本地 Vault 和工作区必须在各自设备上运行；云服务不存在时功能照常可用。
@@ -108,5 +110,11 @@
 - `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 159 个测试文件、695 个测试，695 个全部通过。期间修正了 bundle 导出仍回退到旧内置主题 ID 的实现缺陷，并将 shared core 边界测试收敛到真正的 `src/shared/core` 目录，避免把 cloud WebSocket 适配器误判为 core 依赖。
 - 最新跨端回归（2026-09-18）：`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 161 个测试文件、720 个测试，全部通过；`npm run typecheck`、`npm run lint`、`npm run build`（Web/Server/Cloud）和 `npm run build:windows` 全部通过。Android Debug APK 已通过单 worker Gradle 构建、APK ZIP 完整性检查；Windows x64 portable 预览包已通过 PE 格式检查和 Linux Electron 启动烟测。为避免原生构建产物被误当源码，ESLint 明确忽略 Capacitor 的 `app/build` 与 `app/src/main/assets` 生成目录。当前仍缺 Windows 实机 ABI/升级验证、NSIS（本机构建缺 Wine）和 Android 真机 SSH/SFTP/Keystore/生命周期验证，不能据此将任务 14 标记完成。
 - 本轮增量回归（2026-09-18）：`npm run test:e2e -- --workers=1` 通过 4/4；HostCard、ContextMenu、ServerContextMenu、TerminalSession 定向测试通过 4 个文件、27 个测试；`npm run typecheck`、`npm run lint`、`npm run build`、Server/Cloud 产物 Node ESM 加载和 `npm run build:windows` 全部通过。`npm run package:windows:portable` 已验证可复现 Windows x64 portable 预览包，PE 检查通过，最新 SHA256 为 `91af49081e8a477a99fe5993ace1777797115f0b32355249cd31ebf4bb435478`。修正 Android `build:debug` 脚本后，使用 `ANDROID_HOME=/usr/lib/android-sdk ANDROID_SDK_ROOT=/usr/lib/android-sdk npm run build:android:debug` 通过真实 `:app:assembleDebug` 构建（73 actionable tasks，单 worker、无 daemon），最新 Debug APK 已通过 ZIP 完整性检查，SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`；`testDebugUnitTest` 通过 7 个 suite、25 个测试。真实 Windows/Android 设备证据仍缺失。
+## 当前设备交接状态（2026-09-18）
 
-当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及 Android 真机上的 SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。
+- Android 代码、Kotlin 编译、JVM 单元测试、Debug APK 构建已完成；当前开发机内存不足，停止继续启动 Android 模拟器。
+- 本机尝试过 AOSP x86_64 软件模拟器，但没有 `/dev/kvm`，设备长期处于 `adb offline` 后退出；该过程没有形成安装、SSH/SFTP 或生命周期验收证据，也不再作为后续验证路径。
+- Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由内存充足且有 Android 真机/可用模拟器的机器执行。任务 4、9–13、14 仍保持未完成，必须把设备结果和日志/截图回填后才能勾选。
+- Windows 仍等待 Windows 主机上的安装、原生 ABI、升级迁移和本地任务链验证；Linux portable 包仅是交接预览，不替代 Windows 验收。
+
+当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及交接机器上的 Android SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。

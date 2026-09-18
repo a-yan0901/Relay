@@ -1,6 +1,6 @@
 # Relay 跨端验收矩阵
 
-本矩阵对应 [独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md) 和 [统一体验设计](../specs/2026-09-17-relay-windows-android-unified-experience-design.md)。
+本矩阵对应 [独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)、[统一体验设计](../specs/2026-09-17-relay-windows-android-unified-experience-design.md) 和 [跨端验收交接任务书](./2026-09-18-relay-cross-platform-handoff.md)。
 
 状态含义：`✅` 有当前自动化/构建证据；`🟡` 代码和自动化已覆盖，但缺少目标平台证据；`⛔` 当前环境无法验证，不能按完成处理。
 
@@ -23,6 +23,6 @@
 
 - Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm run test:e2e -- --workers=1`。
 - Windows：`npm run build:windows`；预览包使用 `npm run package:windows:portable`，真实安装器和 native ABI 仍需 Windows 主机。
-- Android：设置 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 后执行 `npm run build:android:debug`；JVM 回归使用 `./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain`。当前无 Android 真机/模拟器。
+- Android：设置 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 后执行 `npm run build:android:debug`；JVM 回归使用 `./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain`。当前 Debug APK SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`；开发机因内存不足不再启动模拟器，AOSP 软件模拟器曾处于 `adb offline` 后退出，真机/可用模拟器验收已交接到[交接任务书](./2026-09-18-relay-cross-platform-handoff.md)。
 
-矩阵不把 Web 浏览器验证、Linux Electron 烟测或 APK 构建视为 Windows/Android 真机验收；设备门禁完成前，实施计划任务 4、6–14 保持未完成状态。
+矩阵不把 Web 浏览器验证、Linux Electron 烟测或 APK 构建视为 Windows/Android 真机验收；设备门禁完成前，实施计划任务 4、6–14 保持未完成状态。Android 交接机器应按任务书逐项回填结果，不以“能安装 APK”替代 SSH、SFTP、Vault、生命周期和低内存边界验证。
