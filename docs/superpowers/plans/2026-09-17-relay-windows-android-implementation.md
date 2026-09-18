@@ -137,7 +137,9 @@
 ## 2026-09-19 续验：Android 真机、Web/Server 与安全边界
 
 - 真实服务器证据继续使用用户提供的 `106.14.61.92:22`、账号 `t2`；本地 in-process SSH fixture 只用于自动化回归。两台设备均从“需要重新打开”的 Console 状态重新打开 Host 后，分别在真实远端输入 `echo REAL_SERVER_2407` 和 `echo REAL_SERVER_25091`，均收到远端命令回显和 `t2` 提示符，证明绿色状态对应的 Console 已恢复实际输入通路，而不是只看状态点颜色。
-- `25091RP04C` 的真实 SFTP UI 已打开并浏览远端 `/`（36 项）和 `/tmp`（25 项）；通过 HTML 文件选择器的自动化上传没有形成传输任务，不能记为上传通过。下载、取消、重试、部分失败和系统 URI 交互仍保持待验收。
+- `25091RP04C` 的真实 SFTP UI 已打开并浏览远端 `/`（36 项）和 `/tmp`（25 项）；初次通过非用户手势的 HTML 文件选择器自动化没有形成传输任务，不能作为证据。随后真实系统文件选择器和 DocumentsUI 的上传/下载 100% 证据见本节后续条目；32 MiB/25% 取消、重试、部分失败和完整 URI 交互仍保持待验收。
 - Android 原生验证环境使用已安装的 JDK 21、缓存 Gradle 9.3.1、单 worker 和离线模式：`:app:testDebugUnitTest :app:assembleDebug` 成功；`:app:connectedDebugAndroidTest` 在 `2407FRK8EC` 完成 2/2。测试 runner 随后清理了目标 APK，`adb install -r` 和 `--no-streaming` 均返回 `INSTALL_FAILED_USER_RESTRICTED`；下一步需在该设备上确认安装提示/厂商安装权限，不能通过改动应用代码替代。
 - `25091RP04C` 的安全检查：普通 logcat 无 `relay-device-test-2026` 标记，app-private 数据无该标记，`ss -lntp` 未发现 Relay app 或 5173/3000/4173 监听；`aapt dump xmltree` 显示 APK `android:allowBackup` 为 `0`。这些是部分 A-16 证据，不替代带专用标记密码的完整日志/WebView/备份流程。
 - Web/Server 标准全量回归第一次出现 `sync-routes` 单测 5 秒超时，针对文件 13/13 通过后再次运行标准命令完整通过；该次复跑结果为 161 个测试文件通过、1 个跳过，727 个测试通过、2 个跳过，E2E 4/4。未修改超时阈值，也未把 `--isolate=false` 的污染结果当作验收证据。
+- Android 系统文件交互续验：`25091RP04C` 通过真实 MIUI 文件选择器选取本地 33,817-byte PNG，上传到用户服务器 `/tmp` 后 Transfer Center 显示 `已完成 · 100%`；再通过 Android DocumentsUI 保存对话框下载回本机，保存文件为 33,817 bytes，Transfer Center 同样显示 `已完成 · 100%`。在远端 `/` 无写权限时，上传任务保持 0% 并被取消，未产生目标文件。该证据仍未覆盖 32 MiB/25% 取消、重试和部分失败矩阵。
+- URI 边界：传输完成后当前 Activity 仍可观察到本轮选择产生的临时 URI grant；`force-stop` 后重启 Relay，`readUriPermissions/writeUriPermissions` 均清空，未形成持久化授权。A-11 的任务结束立即释放、拒绝权限提示和分享链路仍待单独验收，不能只凭进程重启后的清理判定通过。

@@ -138,8 +138,8 @@
 | A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行 |
 | A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | 待执行 |
 | A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | 待执行；`25091RP04C` 已在真实主机 UI 浏览 `/`（36 项）和 `/tmp`（25 项），过滤、分页、滚动和安全区仍待完整走查。 |
-| A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行 |
-| A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 待执行 |
+| A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行；`25091RP04C` 通过真实 MIUI 文件选择器上传 33,817-byte PNG 到用户服务器 `/tmp`，Transfer Center `已完成 · 100%`；再通过 Android DocumentsUI 下载回本机，保存文件 33,817 bytes 且 Transfer Center `已完成 · 100%`。远端 `/` 无写权限时任务 0% 后取消；32 MiB/25% 取消、重试、部分失败和临时文件断言仍待执行。 |
+| A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 待执行；真实系统文件选择与 DocumentsUI 保存已走通；传输完成后 Activity 内仍可观察到临时 URI grant，`force-stop` 后重启 Relay 才清空 `readUriPermissions/writeUriPermissions`。任务结束立即释放、拒绝权限提示和分享仍待执行。 |
 | A-12 | Vault 锁定和重开 | 锁定后秘密不可读取；正确解锁恢复；错误密码/损坏 bundle 不覆盖旧数据 | 待执行 |
 | A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行 |
 | A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | 待执行 |
@@ -248,7 +248,9 @@
 ## 10. 2026-09-19 Android/Web/Server 续验记录
 
 - 真实测试主机再次明确为用户提供的 `106.14.61.92:22`、账号 `t2`；本地 in-process SSH fixture 没有用于本轮真机结论。两台真机从“需要重新打开”的 Console 状态重新打开 Host 后，分别输入 `echo REAL_SERVER_2407` 和 `echo REAL_SERVER_25091`，均得到远端回显和 `t2` 提示符；这证明命令实际可输入，不以绿色状态点单独判定通过。
-- `25091RP04C` 已在真实 SFTP UI 浏览远端 `/`（36 项）并跳转 `/tmp`（25 项）。通过 HTML 文件选择器的自动化上传没有形成传输任务，故 A-10/A-11 的上传、下载、取消、重试、部分失败和 SAF URI 不得回填为通过。
+- `25091RP04C` 已在真实 SFTP UI 浏览远端 `/`（36 项）并跳转 `/tmp`（25 项）。初次通过非用户手势的 HTML 文件选择器自动化没有形成传输任务，不能作为证据；随后真实 MIUI 文件选择器上传和 DocumentsUI 下载均完成 100%，但 A-10/A-11 的大文件取消、重试、部分失败、任务结束 URI 释放和分享仍不得回填为通过。
 - Android 验证使用 JDK 21、已缓存 Gradle 9.3.1、单 worker、离线模式；`:app:testDebugUnitTest :app:assembleDebug` 成功，`:app:connectedDebugAndroidTest` 在 `2407FRK8EC` 完成 2/2。connected test 结束后 runner 清理了目标 APK；该设备随后两次安装尝试均返回 `INSTALL_FAILED_USER_RESTRICTED`，当前需在设备端确认安装提示/厂商安装权限，不能静默改动设备安全设置。`25091RP04C` 当前仍安装 APK。
 - `25091RP04C` 部分 A-16 检查结果：普通 logcat 无 `relay-device-test-2026` 标记，`run-as` app-private 数据无该标记，`ss -lntp` 未发现 Relay app 或 5173/3000/4173 监听；`aapt dump xmltree` 显示 APK `android:allowBackup` 为 `0`。因未按 A-16 要求使用专用无敏感标记密码完成全流程，这些记录只算部分证据。
 - Web/Server 标准全量回归复跑通过：161 个测试文件通过、1 个跳过；727 个测试通过、2 个跳过；E2E 4/4。此前一次全量运行的 `sync-routes` 5 秒超时经针对文件 13/13 通过后复跑通过，未修改测试超时或把 `--isolate=false` 结果当作验收依据。
+- Android SFTP 系统交互续验：`25091RP04C` 的真实 MIUI 文件选择器上传到用户服务器 `/tmp` 和 DocumentsUI 下载均显示 100%，本机保存结果为 33,817 bytes；远端根目录无写权限路径的 0% 任务已取消。该结果不替代 A-10 的大文件取消/重试/部分失败矩阵。
+- URI 观察：传输完成后 Activity 内仍存在本轮 URI grant；`force-stop` 后重新启动 Relay 时 grants 已清空。由于尚未证明每个任务结束立即释放、拒绝权限和分享路径，A-11 继续保持待执行。

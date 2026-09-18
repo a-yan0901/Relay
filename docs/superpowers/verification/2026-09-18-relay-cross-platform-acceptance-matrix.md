@@ -11,7 +11,7 @@
 | 首次 Host Key 确认、变更拒绝 | ✅ | 🟡 | 🟡 | Server/Windows/Android 状态机和定向测试；两台 Android 16 真机已在用户提供的 `106.14.61.92:22` 上完成同一真实指纹的 native trust 和建 Shell | Windows 实机连接、Android Host Key 变更拒绝 |
 | SSH 输入、复制/粘贴、断连重连 | ✅ | 🟡 | 🟡 | Web E2E、TerminalSession/Native socket 测试；两台 Android 16 真机在真实主机上连续 3 轮关闭/重开，均收到 raw `terminal.status=connected`，`whoami` 返回 `t2` 且 Console 可输入；本轮又分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到真实远端回显 | Windows 原生 ABI、Android 真机网络切换、复制/粘贴和完整 UI 走查 |
 | 多标签、分屏与移动单 pane | ✅ | 🟡 | 🟡 | Web 320/390px E2E；共享 runtime capability | Windows/Android UI 和生命周期走查 |
-| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；Android 真实主机证据包括两台设备 `/tmp` 各 19 项，以及本轮 `25091RP04C` 的 `/` 36 项、`/tmp` 25 项；上传自动化未形成传输任务，未记为通过 | 两端真实 UI SFTP、上传/下载/取消和部分失败 |
+| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；Android 真实主机证据包括两台设备 `/tmp` 各 19 项、本轮 `25091RP04C` 的 `/` 36 项和 `/tmp` 25 项；真实系统选择器上传与 DocumentsUI 下载均完成 100%，根目录无写权限路径已取消 0% 任务 | 两端真实 UI SFTP、32 MiB/25% 取消、重试、部分失败和 URI 任务边界 |
 | SFTP 单层滚动、终端最后一行可见 | ✅ | 🟡 | 🟡 | Web 窄视口几何断言 | Windows 窗口和 Android 软键盘/安全区 |
 | Vault 锁定、重开、任务恢复状态 | ✅ | 🟡 | 🟡 | Web/Windows/Android 本地实现与 JVM/DOM 测试 | 崩溃、重启、锁屏/进程回收 |
 | 主题、字号、grid/list 偏好持久化 | ✅ | 🟡 | 🟡 | Web E2E 主题持久化与第三方 `data-theme` 隔离 | 两端重启后视觉走查 |
@@ -49,6 +49,7 @@
 ## 2026-09-19 续验增量：Android 真实 UI 与安全边界
 
 - 两台 Android 16 真机均使用用户提供的 `106.14.61.92:22`/`t2`，从 Console 的“需要重新打开”状态执行重新打开；`2407FRK8EC` 输入 `echo REAL_SERVER_2407`、`25091RP04C` 输入 `echo REAL_SERVER_25091` 均得到远端回显和 `t2` 提示符。该证据专门覆盖“状态点变绿但命令不可输入”的风险，不把绿色状态单独视为通过。
-- `25091RP04C` 真实 SFTP UI 浏览 `/` 得到 36 项，跳转 `/tmp` 得到 25 项；文件选择器自动化没有形成上传任务，因此上传/下载/取消/重试/部分失败和 SAF URI 仍是待补平台证据。
+- `25091RP04C` 真实 SFTP UI 浏览 `/` 得到 36 项，跳转 `/tmp` 得到 25 项；初次非用户手势文件选择器自动化没有形成传输任务，不能作为证据；随后真实系统选择器上传/下载均已完成 100%，其余大文件取消/重试/部分失败和 SAF URI 边界仍待补平台证据。
 - `25091RP04C` 的部分安全检查无秘密标记、无 app-private 标记、无 Relay/常用开发端口监听；APK manifest 的 `android:allowBackup` 为 `0`。这不能替代使用专用无敏感标记密码完成的完整 A-16 过程。
 - `2407FRK8EC` 的 connected instrumentation 2/2 已通过，但 runner 清理 APK 后设备拒绝 `adb install -r`（`INSTALL_FAILED_USER_RESTRICTED`）；需设备侧确认安装权限后才能恢复该设备的当前 APK 状态。该阻塞不改变已取得的 connected test 结果，也不应通过静默修改厂商安全设置规避。
+- `25091RP04C` 已通过真实 MIUI 文件选择器上传一个 33,817-byte 文件到用户服务器 `/tmp`，并通过 Android DocumentsUI 保存对话框下载回本机；两次 Transfer Center 均显示 100%。根目录无写权限时的 0% 上传任务已取消。32 MiB/25% 取消、重试、部分失败和任务结束立即释放 URI 仍保持待验收；force-stop 后重启时 URI grant 已清空。
