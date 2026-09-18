@@ -2,6 +2,7 @@ import { isAppErrorCode, type AppErrorCode } from '../../shared/errors.js';
 import { terminalClientMessageSchema, type TerminalClientMessage, type TerminalServerEvent, type TerminalStatus } from '../../shared/protocol.js';
 import type { NativeEventFrame } from '../../shared/native/bridge.js';
 import type { NativeOperationPort } from '../../shared/native/core-runtime.js';
+import { utf8ByteLength } from '../../shared/utf8.js';
 import type { TerminalSocketLike } from '../hooks/use-terminal-session.js';
 
 const SOCKET_CONNECTING = 0;
@@ -11,6 +12,11 @@ const SOCKET_CLOSED = 3;
 const NATIVE_INPUT_CHUNK_BYTES = 32 * 1024;
 const NATIVE_INPUT_QUEUE_CHUNKS = 8;
 const NATIVE_INPUT_QUEUE_BYTES = 64 * 1024;
+
+interface QueuedInput {
+  data: string;
+  bytes: number;
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -53,7 +59,7 @@ export class NativeTerminalSocket implements TerminalSocketLike {
   private requestId: string | null = null;
   private closedByUser = false;
   private needsReopen = false;
-  private readonly inputQueue: string[] = [];
+  private readonly inputQueue: QueuedInput[] = [];
   private inputQueueBytes = 0;
   private inputInFlightBytes = 0;
   private inputPumpActive = false;
@@ -102,12 +108,13 @@ export class NativeTerminalSocket implements TerminalSocketLike {
 
   private enqueueTextInput(data: string): boolean {
     if (!this.sessionId || data.length === 0) return true;
-    if (this.inputQueue.length + (this.inputPumpActive ? 1 : 0) >= NATIVE_INPUT_QUEUE_CHUNKS || this.inputQueueBytes + this.inputInFlightBytes + data.length > NATIVE_INPUT_QUEUE_BYTES) {
+    const bytes = utf8ByteLength(data);
+    if (bytes > NATIVE_INPUT_CHUNK_BYTES || this.inputQueue.length + (this.inputPumpActive ? 1 : 0) >= NATIVE_INPUT_QUEUE_CHUNKS || this.inputQueueBytes + this.inputInFlightBytes + bytes > NATIVE_INPUT_QUEUE_BYTES) {
       this.emitError('SSH_CONNECTION_FAILED', '终端输入过快，请稍后重试');
       return false;
     }
-    this.inputQueue.push(data);
-    this.inputQueueBytes += data.length;
+    this.inputQueue.push({ data, bytes });
+    this.inputQueueBytes += bytes;
     void this.drainInputQueue();
     return true;
   }
@@ -117,12 +124,12 @@ export class NativeTerminalSocket implements TerminalSocketLike {
     this.inputPumpActive = true;
     try {
       while (this.readyState === SOCKET_OPEN && this.sessionId !== null && this.inputQueue.length > 0) {
-        const data = this.inputQueue.shift();
-        if (data === undefined) break;
-        this.inputQueueBytes -= data.length;
-        this.inputInFlightBytes = data.length;
+        const queued = this.inputQueue.shift();
+        if (queued === undefined) break;
+        this.inputQueueBytes -= queued.bytes;
+        this.inputInFlightBytes = queued.bytes;
         try {
-          await this.port.invoke('sessions.write', { sessionId: this.sessionId, data });
+          await this.port.invoke('sessions.write', { sessionId: this.sessionId, data: queued.data });
         } catch (error) {
           const details = errorDetails(error);
           this.emitError(details.code, details.message);

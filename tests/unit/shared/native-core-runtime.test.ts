@@ -167,4 +167,30 @@ describe('native core runtime adapter', () => {
     await runtime.sessions.close(handle.id);
     expect(writeCalls).toHaveLength(8);
   });
+
+  it('counts multibyte terminal input by UTF-8 bytes', async () => {
+    const writeCalls: string[] = [];
+    const port: NativeOperationPort = {
+      invoke: vi.fn(async <T,>(operation: string, payload: unknown): Promise<T> => {
+        if (operation === 'sessions.openShell') return { sessionId: 'session-1', hostId: 'host-1' } as T;
+        if (operation === 'sessions.write') writeCalls.push((payload as { data: string }).data);
+        return undefined as T;
+      }),
+      subscribe() { return () => undefined; }
+    };
+    const runtime = createNativeCoreRuntime({ platform: 'desktop', port });
+    const handle = await runtime.sessions.openShell({ sessionId: 'session-1', profile: { hostId: 'host-1', address: 'host', port: 22, username: 'u', authType: 'password', jumpHostIds: [], keepaliveIntervalMs: 1000, keepaliveCountMax: 3, reconnect: { enabled: true, maxAttempts: 1, baseDelayMs: 10, maxDelayMs: 10 }, hostKeyAlgorithm: null, hostKeyFingerprint: null }, cols: 80, rows: 24 });
+    const onEvent = vi.fn();
+    handle.subscribe(onEvent);
+
+    handle.write('界'.repeat(11_000));
+    await Promise.resolve();
+
+    expect(writeCalls).toHaveLength(0);
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'diagnostic',
+      diagnostic: expect.objectContaining({ errorCode: 'NATIVE_WRITE_BACKPRESSURE' })
+    }));
+    await runtime.sessions.close(handle.id);
+  });
 });

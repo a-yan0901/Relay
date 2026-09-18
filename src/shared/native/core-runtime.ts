@@ -8,6 +8,7 @@ import type { ImportApplyRequest, ImportApplyResult, ImportFormat, ImportPreview
 import type { TerminalProfile } from '../terminal-appearance.js';
 import { AppError } from '../errors.js';
 import { BOUNDED_NATIVE_CHUNK_BYTES, type NativeEventFrame } from './bridge.js';
+import { utf8ByteLength } from '../utf8.js';
 
 export const NATIVE_TRANSFER_CHUNK_BYTES = 32 * 1024;
 export const NATIVE_MAX_SESSION_HANDLERS = 16;
@@ -233,7 +234,7 @@ interface NativeSessionRecord {
   stdoutDecoder: NativeTextDecoder;
   stderrDecoder: NativeTextDecoder;
   pendingWrites: number;
-  writeQueue: string[];
+  writeQueue: Array<{ data: string; bytes: number }>;
   writeQueueBytes: number;
   writePumpActive: boolean;
   writeBackpressureNotified: boolean;
@@ -340,12 +341,12 @@ class NativeSessionTransport implements SessionTransport {
     record.writePumpActive = true;
     try {
       while (!record.closed && record.writeQueue.length > 0) {
-        const data = record.writeQueue.shift();
-        if (data === undefined) break;
-        record.writeQueueBytes -= data.length;
+        const queued = record.writeQueue.shift();
+        if (queued === undefined) break;
+        record.writeQueueBytes -= queued.bytes;
         record.pendingWrites += 1;
         try {
-          await this.port.invoke('sessions.write', { sessionId: record.id, data });
+          await this.port.invoke('sessions.write', { sessionId: record.id, data: queued.data });
         } catch {
           this.reportWriteFailure(record);
         } finally {
@@ -384,12 +385,13 @@ class NativeSessionTransport implements SessionTransport {
       hostId: record.hostId,
       write: (data) => {
         if (record.closed || data.length === 0) return;
-        if (data.length > NATIVE_TRANSFER_CHUNK_BYTES || record.pendingWrites + record.writeQueue.length >= NATIVE_MAX_PENDING_WRITES || record.writeQueueBytes + data.length > NATIVE_MAX_PENDING_WRITE_BYTES) {
+        const bytes = utf8ByteLength(data);
+        if (bytes > NATIVE_TRANSFER_CHUNK_BYTES || record.pendingWrites + record.writeQueue.length >= NATIVE_MAX_PENDING_WRITES || record.writeQueueBytes + bytes > NATIVE_MAX_PENDING_WRITE_BYTES) {
           this.reportWriteBackpressure(record);
           return;
         }
-        record.writeQueue.push(data);
-        record.writeQueueBytes += data.length;
+        record.writeQueue.push({ data, bytes });
+        record.writeQueueBytes += bytes;
         record.writeBackpressureNotified = false;
         void this.drainWrites(record);
       },

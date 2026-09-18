@@ -104,4 +104,28 @@ describe('native terminal socket adapter', () => {
     await vi.waitFor(() => expect(writes).toHaveLength(8));
     socket.close();
   });
+
+  it('counts multibyte JSON input by UTF-8 bytes', async () => {
+    let opened = false;
+    const onerror = vi.fn();
+    const port: NativeOperationPort = {
+      invoke: vi.fn(async <T,>(operation: string): Promise<T> => {
+        if (operation === 'sessions.openShell') {
+          opened = true;
+          return { sessionId: 'session-1', hostId: 'host-1' } as T;
+        }
+        return undefined as T;
+      }),
+      subscribe() { return () => undefined; }
+    };
+    const socket = createNativeTerminalSocket(port, 'native://terminal');
+    socket.onerror = onerror;
+    socket.onopen = () => socket.send(JSON.stringify({ type: 'open', hostId: 'host-1', cols: 80, rows: 24, requestId: 'terminal-1' }));
+    await vi.waitFor(() => expect(opened).toBe(true));
+
+    socket.send(JSON.stringify({ type: 'input', data: '界'.repeat(11_000) }));
+
+    expect(onerror).toHaveBeenCalledWith(expect.objectContaining({ code: 'SSH_CONNECTION_FAILED' }));
+    socket.close();
+  });
 });

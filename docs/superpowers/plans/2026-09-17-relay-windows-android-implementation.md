@@ -64,6 +64,7 @@
 - 原生恢复与输入缓冲增量（2026-09-18，`1142f0d`、`3c37281`、`4a47600`）：Windows/Android 不再持久化不可跨进程复用的 SSH descriptor；原生工作区重载后统一显示 `needs-reopen`，用户明确操作后才创建新 Shell，浏览器端仍先尝试服务端 reattach。原生 session 在生命周期关闭后不再进入自动重连循环，重开前释放旧 socket；Android Executor 与 JSch session 之间复用一次 UTF-8 输入缓冲并在完成后清零。对应 Web/native 定向测试通过，Android JVM 测试以单 worker、`-Xmx768m` 通过；真实后台/进程回收仍需设备验证。
 - Android 返回键增量（2026-09-18，`4185685`）：MainActivity 将系统返回键转成可取消的 `relay:back` 事件，shared App 按最上层对话框、工作区和 Console 视图顺序关闭，根页面无可关闭内容时交回系统退出；未复制 Android 专用弹层状态。App DOM 17/17、native TypeScript 检查和受影响 ESLint 通过，Android Java/Kotlin 编译通过；真机软键盘、系统返回栈和旋转仍需设备走查。
 - 原生能力声明修正（2026-09-18）：移除桌面原生核心错误暴露的 `session.reattach`；跨进程恢复不再作为原生能力，原生工作区必须由用户明确重新打开。native core 与 adapter contract 定向测试 9/9、受影响 ESLint 和 TypeScript 检查通过。
+- 原生输入内存边界增量（2026-09-18）：终端输入队列改按 UTF-8 字节计量，不再以 JS 字符数放大 32 KiB 单次输入和 64 KiB 队列预算；shared runtime 与 WebView/native socket 共用无临时编码缓冲的字节长度计算。相关定向测试 12/12、受影响 ESLint 和 native TypeScript 检查通过。
 
 验证记录（2026-09-18）：
 
