@@ -59,6 +59,9 @@ export class NativeTerminalSocket implements TerminalSocketLike {
   private requestId: string | null = null;
   private closedByUser = false;
   private needsReopen = false;
+  private nativeSessionReady = false;
+  private shellReady = false;
+  private pendingResize: { cols: number; rows: number } | null = null;
   private readonly inputQueue: QueuedInput[] = [];
   private inputQueueBytes = 0;
   private inputInFlightBytes = 0;
@@ -92,7 +95,7 @@ export class NativeTerminalSocket implements TerminalSocketLike {
     this.readyState = SOCKET_CLOSING;
     this.clearInputQueue();
     const sessionId = this.sessionId;
-    if (sessionId) void this.port.invoke('sessions.close', { sessionId }).catch(() => undefined);
+    if (sessionId && this.nativeSessionReady) void this.port.invoke('sessions.close', { sessionId }).catch(() => undefined);
     this.finishClose(code, reason);
   }
 
@@ -123,7 +126,7 @@ export class NativeTerminalSocket implements TerminalSocketLike {
     if (this.inputPumpActive) return;
     this.inputPumpActive = true;
     try {
-      while (this.readyState === SOCKET_OPEN && this.sessionId !== null && this.inputQueue.length > 0) {
+      while (this.readyState === SOCKET_OPEN && this.shellReady && this.sessionId !== null && this.inputQueue.length > 0) {
         const queued = this.inputQueue.shift();
         if (queued === undefined) break;
         this.inputQueueBytes -= queued.bytes;
@@ -157,9 +160,16 @@ export class NativeTerminalSocket implements TerminalSocketLike {
           this.sessionId = message.requestId;
           const result = await this.port.invoke<{ sessionId?: string }>('sessions.openShell', { request: message });
           if (typeof result.sessionId === 'string') this.sessionId = result.sessionId;
+          if (this.closedByUser || this.readyState !== SOCKET_OPEN) {
+            if (this.sessionId) await this.port.invoke('sessions.close', { sessionId: this.sessionId }).catch(() => undefined);
+            return;
+          }
+          this.nativeSessionReady = true;
           return;
         }
         case 'resize':
+          this.pendingResize = { cols: message.cols, rows: message.rows };
+          if (!this.shellReady) return;
           await this.invokeSession('sessions.resize', { cols: message.cols, rows: message.rows });
           return;
         case 'input':
@@ -207,7 +217,11 @@ export class NativeTerminalSocket implements TerminalSocketLike {
         const state = asText(payload?.state);
         if (!state || !terminalStatuses.includes(state as TerminalStatus)) return;
         if (state === 'needs-reopen') this.needsReopen = true;
-        if (state === 'connected') this.needsReopen = false;
+        if (state === 'connected') {
+          this.needsReopen = false;
+          this.shellReady = true;
+          void this.flushShellReadyQueue();
+        }
         this.emitServerEvent({ type: 'status', state: state as TerminalStatus, serviceInstanceId: asText(payload?.serviceInstanceId) ?? 'native-local' });
         return;
       }
@@ -251,9 +265,26 @@ export class NativeTerminalSocket implements TerminalSocketLike {
   private finishClose(code: number, reason: string): void {
     if (this.readyState === SOCKET_CLOSED) return;
     this.clearInputQueue();
+    this.nativeSessionReady = false;
+    this.shellReady = false;
+    this.pendingResize = null;
     this.readyState = SOCKET_CLOSED;
     this.stopEvents();
     this.onclose?.({ code, reason, wasClean: code === 1000 && this.closedByUser });
+  }
+
+  private async flushShellReadyQueue(): Promise<void> {
+    const pendingResize = this.pendingResize;
+    this.pendingResize = null;
+    try {
+      if (pendingResize && this.sessionId) {
+        await this.port.invoke('sessions.resize', { sessionId: this.sessionId, ...pendingResize });
+      }
+      await this.drainInputQueue();
+    } catch (error) {
+      const details = errorDetails(error);
+      this.emitError(details.code, details.message);
+    }
   }
 }
 

@@ -429,10 +429,11 @@ export const startInProcessE2eSshFixture = async (): Promise<E2eSshFixture> => {
     clients.add(client);
     client.on('authentication', (context) => {
       if (context.method === 'password' && context.username === FIXTURE_USERNAME && context.password === FIXTURE_PASSWORD) context.accept();
-      else context.reject();
+      else context.reject(['password']);
     });
     client.on('ready', () => startClientSession(client, remoteDirectory, localDirectory));
     client.on('close', () => clients.delete(client));
+    client.on('error', () => clients.delete(client));
   });
 
   await new Promise<void>((resolve, reject) => {

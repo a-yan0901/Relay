@@ -1425,7 +1425,7 @@ internal class AndroidLocalExecutor(
     private fun reconnect(sessionId: String): JSONObject {
         requireUnlocked()
         AndroidNativeValidation.requireSafeId(sessionId)
-        val existing = sessions[sessionId]
+        val existing = synchronized(sessionLock) { sessions[sessionId] }
         if (existing != null && !existing.isClosed()) return JSONObject().put("sessionId", sessionId)
         val request = sessionRequests[sessionId] ?: failNative("SESSION_NEEDS_REOPEN")
         return openShell(request)
@@ -1439,7 +1439,7 @@ internal class AndroidLocalExecutor(
         val bytes = data.toByteArray(StandardCharsets.UTF_8)
         try {
             if (bytes.size > MAX_OUTPUT_CHUNK) failNative("FILE_TOO_LARGE")
-            val session = sessions[id] ?: failNative("SESSION_INVALID")
+            val session = sessionById(id)
             session.write(bytes)
         } finally {
             bytes.fill(0)
@@ -1450,14 +1450,14 @@ internal class AndroidLocalExecutor(
     private fun sessionResize(payload: JSONObject): JSONObject {
         requireUnlocked()
         val id = AndroidNativeValidation.requireSafeId(payload.optString("sessionId", ""))
-        val session = sessions[id] ?: failNative("SESSION_INVALID")
+        val session = sessionById(id)
         session.resize(payload.optInt("cols", 0), payload.optInt("rows", 0))
         return JSONObject()
     }
 
     private fun hostKeyDecision(payload: JSONObject): JSONObject {
         val id = AndroidNativeValidation.requireSafeId(payload.optString("sessionId", ""))
-        val session = sessions[id] ?: failNative("SESSION_INVALID")
+        val session = sessionById(id)
         val fingerprint = requiredText(payload, "fingerprint", 255)
         val decision = payload.optString("decision", "reject")
         val accepted = session.decideHostKey(fingerprint, decision == "trust")
@@ -1467,9 +1467,14 @@ internal class AndroidLocalExecutor(
 
     private fun sessionClose(id: String): JSONObject {
         requireUnlocked()
-        sessions.remove(id)?.close(true)
+        val session = synchronized(sessionLock) { sessions.remove(id) }
+        session?.close(true)
         return JSONObject()
     }
+
+    private fun sessionById(id: String): AndroidSshSession = synchronized(sessionLock) {
+        sessions[id]
+    } ?: failNative("SESSION_INVALID")
 
     private fun closeAllSessions(clean: Boolean = true) {
         synchronized(sessionLock) {

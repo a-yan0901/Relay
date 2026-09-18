@@ -25,7 +25,7 @@ describe('Android native bridge', () => {
     const remove = vi.fn();
     const plugin: AndroidNativePlugin = {
       invoke: vi.fn(async (frame) => ({ version: 1 as const, requestId: frame.requestId, ok: true as const, result: undefined })),
-      addListener: vi.fn(async (_name, listener) => { emit = listener; return { remove }; })
+      addListener: vi.fn((_name, listener) => { emit = listener; return { remove }; })
     };
     const bridge = createAndroidNativeBridge(plugin, { maxSubscribers: 1 });
     const first = vi.fn();

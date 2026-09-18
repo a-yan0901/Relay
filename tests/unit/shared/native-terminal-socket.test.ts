@@ -28,12 +28,48 @@ describe('native terminal socket adapter', () => {
     socket.send(JSON.stringify({ type: 'resize', cols: 100, rows: 30 }));
     socket.send(JSON.stringify({ type: 'host-key-decision', decision: 'trust', fingerprint: 'SHA256:abc' }));
     socket.send(JSON.stringify({ type: 'credential', hostId: 'host-1', credential: { type: 'password', password: 'secret' } }));
-    emit?.({ version: 1, generation: 1, sequence: 1, kind: 'terminal.output', sessionId: 'session-1', payload: { stream: 'stdout', data: 'b2s' } });
+    emit?.({ version: 1, generation: 1, sequence: 1, kind: 'terminal.status', sessionId: 'session-1', payload: { state: 'connected', serviceInstanceId: 'android-local' } });
+    emit?.({ version: 1, generation: 1, sequence: 2, kind: 'terminal.output', sessionId: 'session-1', payload: { stream: 'stdout', data: 'b2s' } });
 
     await vi.waitFor(() => expect(output).toHaveBeenCalledWith(new Uint8Array([0x6f, 0x6b])));
     expect(calls.map(({ operation }) => operation)).toEqual(expect.arrayContaining([
       'sessions.write', 'sessions.resize', 'sessions.hostKeyDecision', 'sessions.credential'
     ]));
+  });
+
+  it('queues resize and input until the native shell is connected', async () => {
+    const calls: string[] = [];
+    let emit: ((event: NativeEventFrame) => void) | undefined;
+    let openResolved = false;
+    let resolveOpen!: () => void;
+    const openReady = new Promise<void>((resolve) => { resolveOpen = resolve; });
+    const port: NativeOperationPort = {
+      invoke: vi.fn(async <T,>(operation: string): Promise<T> => {
+        calls.push(operation);
+        if (operation === 'sessions.openShell') {
+          await openReady;
+          openResolved = true;
+          return { sessionId: 'session-1', hostId: 'host-1' } as T;
+        }
+        return undefined as T;
+      }),
+      subscribe(listener) { emit = listener; return () => { emit = undefined; }; }
+    };
+    const socket = createNativeTerminalSocket(port, 'native://terminal');
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ type: 'open', hostId: 'host-1', cols: 80, rows: 24, requestId: 'terminal-1' }));
+    };
+
+    await vi.waitFor(() => expect(calls).toContain('sessions.openShell'));
+    socket.send(JSON.stringify({ type: 'resize', cols: 100, rows: 30 }));
+    expect(calls).not.toContain('sessions.resize');
+
+    resolveOpen();
+    await vi.waitFor(() => expect(openResolved).toBe(true));
+    expect(calls).not.toContain('sessions.resize');
+    emit?.({ version: 1, generation: 1, sequence: 1, kind: 'terminal.status', sessionId: 'session-1', payload: { state: 'connected', serviceInstanceId: 'android-local' } });
+    await vi.waitFor(() => expect(calls).toContain('sessions.resize'));
+    socket.close();
   });
 
   it('converts an unexpected native close into a reconnectable socket close', async () => {
@@ -71,6 +107,7 @@ describe('native terminal socket adapter', () => {
   it('bounds rapid native input and reports an explicit backpressure error', async () => {
     const pendingWrites: Array<() => void> = [];
     const writes: string[] = [];
+    let emit: ((event: NativeEventFrame) => void) | undefined;
     let opened = false;
     const onerror = vi.fn();
     const port: NativeOperationPort = {
@@ -85,12 +122,13 @@ describe('native terminal socket adapter', () => {
         }
         return undefined as T;
       }),
-      subscribe() { return () => undefined; }
+      subscribe(listener) { emit = listener; return () => { emit = undefined; }; }
     };
     const socket = createNativeTerminalSocket(port, 'native://terminal');
     socket.onerror = onerror;
     socket.onopen = () => socket.send(JSON.stringify({ type: 'open', hostId: 'host-1', cols: 80, rows: 24, requestId: 'terminal-1' }));
     await vi.waitFor(() => expect(opened).toBe(true));
+    emit?.({ version: 1, generation: 1, sequence: 1, kind: 'terminal.status', sessionId: 'session-1', payload: { state: 'connected', serviceInstanceId: 'android-local' } });
 
     for (let index = 0; index < 8; index += 1) socket.send(new TextEncoder().encode(`input-${index}`));
     await vi.waitFor(() => expect(writes).toHaveLength(1));

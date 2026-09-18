@@ -82,11 +82,6 @@ internal class AndroidHostKeyRepository(
         }
 
         val reason = if (knownAlgorithm.isNullOrEmpty() || knownFingerprint.isNullOrEmpty()) "first-seen" else "changed"
-        if (!allowPrompt) {
-            failureCode = if (reason == "changed") "HOST_KEY_MISMATCH" else "HOST_KEY_REQUIRED"
-            return HostKeyRepository.CHANGED
-        }
-
         val challenge = AndroidHostKeyChallenge(
             algorithm = algorithm,
             fingerprint = fingerprint,
@@ -98,6 +93,11 @@ internal class AndroidHostKeyRepository(
             previousFingerprint = knownFingerprint
         )
         lastChallenge = challenge
+        if (!allowPrompt) {
+            failureCode = if (reason == "changed") "HOST_KEY_MISMATCH" else "HOST_KEY_REQUIRED"
+            return HostKeyRepository.CHANGED
+        }
+
         val next = Pending(challenge)
         pending.getAndSet(next)?.let { previous ->
             previous.accepted = false

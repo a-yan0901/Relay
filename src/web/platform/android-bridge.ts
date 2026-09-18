@@ -17,7 +17,7 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 export interface AndroidNativePlugin {
   invoke(frame: NativeOperationFrame): Promise<unknown>;
-  addListener(eventName: 'event', listener: (value: unknown) => void): Promise<{ remove(): void }>;
+  addListener(eventName: 'event', listener: (value: unknown) => void): { remove(): void | Promise<void> } | PromiseLike<{ remove(): void | Promise<void> }>;
 }
 
 export interface AndroidNativeBridgeOptions {
@@ -93,13 +93,13 @@ class AndroidNativeBridge implements NativeOperationPort {
 
   private ensureEventListener(): Promise<{ remove(): void }> {
     if (this.eventReady) return this.eventReady;
-    this.eventReady = this.plugin.addListener('event', (raw) => {
+    this.eventReady = Promise.resolve().then(() => this.plugin.addListener('event', (raw) => {
       let event: NativeEventFrame;
       try { event = parseNativeEvent(eventValue(raw)); } catch { return; }
       const result = this.gate.accept(event);
       if (result !== 'applied' && result !== 'generation-changed') return;
       for (const listener of this.listeners) listener(event);
-    }).then((registration) => {
+    })).then((registration) => {
       this.registration = registration;
       return registration;
     }).catch(() => {

@@ -40,18 +40,38 @@ internal class AndroidVault(private val store: AndroidLocalStore) {
     @Synchronized
     fun setup(masterPassword: String) {
         validatePassword(masterPassword)
-        if (store.getMeta(SALT_KEY) != null) fail("SETUP_ALREADY_COMPLETE")
+        val existingSalt = store.getMeta(SALT_KEY)
+        val existingWrappedKey = store.getMeta(WRAPPED_KEY_KEY)
+        if (existingSalt != null && existingWrappedKey == null) {
+            // A previous setup may have failed after generating the Android
+            // Keystore key but before committing the metadata. Remove only
+            // this incomplete state so retrying cannot retain a key with an
+            // incompatible caller-nonce policy.
+            store.transaction {
+                store.deleteMeta(SALT_KEY)
+                store.deleteMeta(VERIFIER_KEY)
+            }
+            deleteKeystoreKey()
+        } else if (existingSalt != null || existingWrappedKey != null) {
+            fail("SETUP_ALREADY_COMPLETE")
+        }
         val salt = randomBytes(16)
         val derived = derive(masterPassword, salt)
         val vaultKey = randomBytes(KEY_BYTES)
+        var committed = false
         try {
-            store.putMeta(SALT_KEY, encode(salt))
-            store.putMeta(VERIFIER_KEY, encode(sha256(derived)))
-            store.putMeta(WRAPPED_KEY_KEY, keystoreEncrypt(passwordWrap(derived, vaultKey.copyOf())))
+            val wrapped = keystoreEncrypt(passwordWrap(derived, vaultKey.copyOf()))
+            store.transaction {
+                store.putMeta(SALT_KEY, encode(salt))
+                store.putMeta(VERIFIER_KEY, encode(sha256(derived)))
+                store.putMeta(WRAPPED_KEY_KEY, wrapped)
+            }
             unlockedKey = vaultKey
+            committed = true
         } finally {
             derived.fill(0)
             salt.fill(0)
+            if (!committed) vaultKey.fill(0)
         }
     }
 
@@ -138,9 +158,20 @@ internal class AndroidVault(private val store: AndroidLocalStore) {
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
+                // aesEncrypt() stores its own cryptographically-random nonce
+                // alongside the ciphertext. AndroidKeyStore otherwise rejects
+                // the explicit GCMParameterSpec with CALLER_NONCE_PROHIBITED.
+                .setRandomizedEncryptionRequired(false)
                 .build()
         )
         return generator.generateKey()
+    }
+
+    private fun deleteKeystoreKey() {
+        KeyStore.getInstance("AndroidKeyStore").apply {
+            load(null)
+            if (containsAlias(KEY_ALIAS)) deleteEntry(KEY_ALIAS)
+        }
     }
 
     private fun keystoreEncrypt(value: String): String = aesEncrypt(keystoreKey(), value.toByteArray(StandardCharsets.UTF_8), "relay-keystore:v1".toByteArray(StandardCharsets.UTF_8))

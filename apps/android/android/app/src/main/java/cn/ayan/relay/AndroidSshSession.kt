@@ -28,6 +28,7 @@ internal class AndroidSshSession(
 
     private val closed = AtomicBoolean(false)
     private val finished = AtomicBoolean(false)
+    private val connecting = AtomicBoolean(false)
     private val endedReaders = AtomicInteger(0)
     private val resourceLock = Any()
     @Volatile
@@ -43,7 +44,9 @@ internal class AndroidSshSession(
 
     fun start(request: JSONObject) {
         emitStatus("connecting")
+        if (!connecting.compareAndSet(false, true)) return
         try {
+            if (closed.get()) return
             val cols = request.optInt("cols", 80)
             val rows = request.optInt("rows", 24)
             AndroidNativeValidation.requireDimensions(cols, rows)
@@ -53,12 +56,18 @@ internal class AndroidSshSession(
                 store = store,
                 vault = vault,
                 allowHostKeyPrompt = true,
-                onStatus = ::emitStatus,
-                onChallenge = ::emitHostKeyChallenge,
-                onRepository = { repository = it },
+                onStatus = { state ->
+                    if (!closed.get()) emitStatus(state)
+                },
+                onChallenge = { challenge ->
+                    if (closed.get()) repository?.cancelPending() else emitHostKeyChallenge(challenge)
+                },
+                onRepository = {
+                    repository = it
+                    if (closed.get()) it.cancelPending()
+                },
                 onSession = { nextSession ->
                     session = nextSession
-                    if (closed.get()) nextSession.disconnect()
                 }
             )
             val sshSession = connection.session
@@ -94,6 +103,9 @@ internal class AndroidSshSession(
             readerExecutor.execute { readLoop(stderr, "stderr") }
         } catch (error: Throwable) {
             if (!closed.get()) failConnection(mapConnectionError(error))
+        } finally {
+            connecting.set(false)
+            if (closed.get()) disconnectResources()
         }
     }
 
@@ -204,7 +216,9 @@ internal class AndroidSshSession(
     }
 
     private fun disconnectResources() {
+        if (connecting.get()) return
         synchronized(resourceLock) {
+            if (connecting.get()) return
             try { channel?.disconnect() } catch (_: Exception) { }
             val connection = sshConnection
             if (connection != null) {
