@@ -8,6 +8,16 @@ import {
   saveTerminalDescriptors,
   type TerminalDescriptor
 } from '../../../src/web/state/app-state';
+import type { StoragePort } from '../../../src/shared/core/ports';
+
+const createStorage = (): StoragePort => {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value); },
+    removeItem: (key) => { values.delete(key); }
+  };
+};
 
 describe('terminal workspace descriptors', () => {
   afterEach(() => {
@@ -45,6 +55,18 @@ describe('terminal workspace descriptors', () => {
 
     expect(loadTerminalDescriptors()).toEqual([{ terminalId: 'terminal-1', hostId: 'host-1' }]);
     clearTerminalDescriptors();
+    expect(window.sessionStorage.getItem('relay.terminal.descriptors.v1')).toBeNull();
+  });
+
+  it('uses an injected session store for browser recovery intent', () => {
+    const storage = createStorage();
+    const descriptors: TerminalDescriptor[] = [{ terminalId: 'terminal-1', hostId: 'host-1' }];
+
+    saveTerminalDescriptors(descriptors, storage);
+
+    expect(loadTerminalDescriptors(storage)).toEqual(descriptors);
+    clearTerminalDescriptors(storage);
+    expect(loadTerminalDescriptors(storage)).toEqual([]);
     expect(window.sessionStorage.getItem('relay.terminal.descriptors.v1')).toBeNull();
   });
 });

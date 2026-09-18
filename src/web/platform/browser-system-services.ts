@@ -10,7 +10,8 @@ import type {
   NotificationPermission as RelayNotificationPermission,
   NotificationPort,
   NotificationRequest,
-  PlatformServices
+  PlatformServices,
+  StoragePort
 } from '../../shared/core/ports';
 
 export interface BrowserClipboardHost {
@@ -34,6 +35,8 @@ export interface BrowserNotificationHost {
 
 export interface BrowserSystemHosts {
   secureContext: boolean;
+  preferences?: StoragePort;
+  session?: StoragePort;
   clipboard?: BrowserClipboardHost;
   confirm?: (message: string) => boolean | Promise<boolean>;
   openExternal?: (url: string) => void | Promise<void>;
@@ -69,6 +72,12 @@ const defaultBrowserSystemHosts = (): BrowserSystemHosts => {
   const browserDocument = typeof globalThis.document === 'undefined' ? undefined : globalThis.document;
   const browserUrl = typeof globalThis.URL === 'undefined' ? undefined : globalThis.URL;
   const browserBlob = typeof globalThis.Blob === 'function' ? globalThis.Blob : undefined;
+  const browserPreferences = (() => {
+    try { return globalThis.localStorage as StoragePort; } catch { return undefined; }
+  })();
+  const browserSession = (() => {
+    try { return globalThis.sessionStorage as StoragePort; } catch { return undefined; }
+  })();
   const browserFilePicker = (globalThis as typeof globalThis & {
     showSaveFilePicker?: (options?: { suggestedName?: string; types?: Array<{ accept: Record<string, string[]> }> }) => Promise<{
       createWritable(): Promise<{
@@ -114,6 +123,8 @@ const defaultBrowserSystemHosts = (): BrowserSystemHosts => {
     : undefined;
   return {
     secureContext: globalThis.isSecureContext !== false,
+    preferences: browserPreferences,
+    session: browserSession,
     clipboard: browserNavigator?.clipboard ? {
       readText: () => browserNavigator.clipboard.readText(),
       writeText: (text: string) => browserNavigator.clipboard.writeText(text)
@@ -316,6 +327,8 @@ export const createBrowserSystemServices = (
   const capabilities = detectBrowserSystemCapabilities(hosts);
   return {
     capabilities,
+    preferences: hosts.preferences,
+    session: hosts.session,
     clipboard: createClipboardPort(hosts, capabilities),
     dialogs: createDialogPort(hosts, capabilities),
     externalLinks: createExternalLinkPort(hosts, capabilities),

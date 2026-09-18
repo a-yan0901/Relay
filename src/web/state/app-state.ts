@@ -1,6 +1,7 @@
 import type { HostMetadata } from '@shared/validation';
 import type { TerminalStatus } from '@shared/protocol';
 import type { WorkspaceState } from '@shared/core/models';
+import type { StoragePort } from '../../shared/core/ports';
 
 export type HostMetadataState = HostMetadata;
 
@@ -44,7 +45,7 @@ export interface WorkspaceRestoreResult {
 
 export const TERMINAL_DESCRIPTORS_STORAGE_KEY = 'relay.terminal.descriptors.v1';
 
-const sessionStorageOrNull = (): Storage | null => {
+const defaultSessionStorage = (): StoragePort | null => {
   try {
     return globalThis.sessionStorage ?? null;
   } catch {
@@ -56,8 +57,7 @@ const isSafeWorkspaceTabId = (value: unknown): value is string => (
   typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)
 );
 
-export const loadTerminalDescriptors = (): TerminalDescriptor[] => {
-  const storage = sessionStorageOrNull();
+export const loadTerminalDescriptors = (storage: StoragePort | null | undefined = defaultSessionStorage()): TerminalDescriptor[] => {
   if (!storage) return [];
   try {
     const parsed: unknown = JSON.parse(storage.getItem(TERMINAL_DESCRIPTORS_STORAGE_KEY) ?? 'null');
@@ -79,8 +79,7 @@ export const loadTerminalDescriptors = (): TerminalDescriptor[] => {
   }
 };
 
-export const saveTerminalDescriptors = (descriptors: readonly TerminalDescriptor[]): void => {
-  const storage = sessionStorageOrNull();
+export const saveTerminalDescriptors = (descriptors: readonly TerminalDescriptor[], storage: StoragePort | null | undefined = defaultSessionStorage()): void => {
   if (!storage) return;
   try {
     const seen = new Set<string>();
@@ -99,8 +98,7 @@ export const saveTerminalDescriptors = (descriptors: readonly TerminalDescriptor
   }
 };
 
-export const clearTerminalDescriptors = (): void => {
-  const storage = sessionStorageOrNull();
+export const clearTerminalDescriptors = (storage: StoragePort | null | undefined = defaultSessionStorage()): void => {
   if (!storage) return;
   try {
     storage.removeItem(TERMINAL_DESCRIPTORS_STORAGE_KEY);

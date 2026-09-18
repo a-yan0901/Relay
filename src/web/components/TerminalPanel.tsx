@@ -282,9 +282,11 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
         setClipboardFeedback('剪贴板中没有可粘贴的文本');
         return;
       }
-      const confirmed = dialogs
-        ? await dialogs.confirm(`将粘贴 ${text.length} 个字符到终端，是否继续？`)
-        : typeof globalThis.confirm === 'function' && globalThis.confirm(`将粘贴 ${text.length} 个字符到终端，是否继续？`);
+      if (!dialogs) {
+        setClipboardFeedback('当前平台不支持安全粘贴确认');
+        return;
+      }
+      const confirmed = await dialogs.confirm(`将粘贴 ${text.length} 个字符到终端，是否继续？`);
       if (!confirmed) return;
       session.sendInput(text);
       setClipboardFeedback(`已粘贴 ${text.length} 个字符`);

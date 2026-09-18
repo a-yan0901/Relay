@@ -1,4 +1,4 @@
-import type { ClipboardPort, DialogPort, ExternalLinkPort, FileSavePort, FileWriter, FileWriterPort, PlatformServices } from '../../shared/core/ports.js';
+import type { ClipboardPort, DialogPort, ExternalLinkPort, FileSavePort, FileWriter, FileWriterPort, PlatformServices, StoragePort } from '../../shared/core/ports.js';
 import { AppError } from '../../shared/errors.js';
 import { NATIVE_TRANSFER_CHUNK_BYTES, type NativeOperationPort } from '../../shared/native/core-runtime.js';
 
@@ -6,6 +6,20 @@ const MAX_CLIPBOARD_TEXT = 64 * 1024;
 const MAX_DIALOG_TEXT = 4 * 1024;
 
 const SAFE_WRITER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+
+const webViewStorage = (name: 'localStorage' | 'sessionStorage'): StoragePort | undefined => {
+  try {
+    const storage = globalThis[name];
+    if (!storage) return undefined;
+    return {
+      getItem: (key) => storage.getItem(key),
+      setItem: (key, value) => storage.setItem(key, value),
+      removeItem: (key) => storage.removeItem(key)
+    };
+  } catch {
+    return undefined;
+  }
+};
 
 const toBase64Url = (value: Uint8Array): string => {
   if (typeof globalThis.btoa !== 'function') throw new AppError('CAPABILITY_UNAVAILABLE');
@@ -103,5 +117,5 @@ export const createNativePlatformServices = (port: NativeOperationPort): Platfor
       }
     }
   };
-  return { clipboard, dialogs, externalLinks, fileSave, fileWriter };
+  return { preferences: webViewStorage('localStorage'), session: webViewStorage('sessionStorage'), clipboard, dialogs, externalLinks, fileSave, fileWriter };
 };

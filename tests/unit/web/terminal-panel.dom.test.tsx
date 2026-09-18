@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { OperationDiagnostic } from '../../../src/shared/core/models';
-import type { ClipboardPort } from '../../../src/shared/core/ports';
+import type { ClipboardPort, DialogPort } from '../../../src/shared/core/ports';
 import type { HostMetadataState } from '../../../src/web/state/app-state';
 import { TerminalPanel } from '../../../src/web/components/TerminalPanel';
 
@@ -314,16 +314,30 @@ describe('TerminalPanel mobile selection', () => {
       writeText: vi.fn(async () => undefined)
     };
     const onToolbarChange = vi.fn();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} onToolbarChange={onToolbarChange} />);
+    const dialogs: DialogPort = { confirm: vi.fn(async () => true) };
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} dialogs={dialogs} onToolbarChange={onToolbarChange} />);
     const toolbar = onToolbarChange.mock.calls[0]?.[1] as { onPaste?: () => Promise<void> };
 
     await toolbar.onPaste?.();
 
     expect(clipboard.readText).toHaveBeenCalledTimes(1);
-    expect(confirm).toHaveBeenCalledWith('将粘贴 19 个字符到终端，是否继续？');
+    expect(dialogs.confirm).toHaveBeenCalledWith('将粘贴 19 个字符到终端，是否继续？');
     expect(testState.sendInput).toHaveBeenCalledWith('echo from clipboard');
-    confirm.mockRestore();
+  });
+
+  it('does not paste when the platform has no confirmation port', async () => {
+    const clipboard: ClipboardPort = {
+      readText: vi.fn(async () => 'echo from clipboard'),
+      writeText: vi.fn(async () => undefined)
+    };
+    const onToolbarChange = vi.fn();
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} onToolbarChange={onToolbarChange} />);
+    const toolbar = onToolbarChange.mock.calls[0]?.[1] as { onPaste?: () => Promise<void> };
+
+    await toolbar.onPaste?.();
+
+    expect(testState.sendInput).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('当前平台不支持安全粘贴确认'));
   });
 
   it('shows context actions for terminal selection and workspace shortcuts', async () => {
@@ -335,8 +349,8 @@ describe('TerminalPanel mobile selection', () => {
     };
     const onOpenSftp = vi.fn();
     const onNewTerminal = vi.fn();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} onOpenSftp={onOpenSftp} onNewTerminal={onNewTerminal} />);
+    const dialogs: DialogPort = { confirm: vi.fn(async () => true) };
+    render(<TerminalPanel terminalId="terminal-1" host={host} active onClose={() => {}} clipboard={clipboard} dialogs={dialogs} onOpenSftp={onOpenSftp} onNewTerminal={onNewTerminal} />);
 
     fireEvent.contextMenu(document.querySelector('.terminal-canvas')!, { clientX: 160, clientY: 120 });
     expect(screen.getByRole('menuitem', { name: /^复制/ })).not.toHaveAttribute('aria-disabled', 'true');
@@ -349,7 +363,7 @@ describe('TerminalPanel mobile selection', () => {
 
     fireEvent.contextMenu(document.querySelector('.terminal-canvas')!, { clientX: 160, clientY: 120 });
     await user.click(screen.getByRole('menuitem', { name: /^粘贴/ }));
-    expect(confirm).toHaveBeenCalledWith('将粘贴 22 个字符到终端，是否继续？');
+    expect(dialogs.confirm).toHaveBeenCalledWith('将粘贴 22 个字符到终端，是否继续？');
     expect(testState.sendInput).toHaveBeenCalledWith('echo from context menu');
 
     fireEvent.contextMenu(document.querySelector('.terminal-canvas')!, { clientX: 160, clientY: 120 });
@@ -358,7 +372,6 @@ describe('TerminalPanel mobile selection', () => {
     await user.click(screen.getByRole('menuitem', { name: '新建 Console' }));
     expect(onOpenSftp).toHaveBeenCalledOnce();
     expect(onNewTerminal).toHaveBeenCalledOnce();
-    confirm.mockRestore();
   });
 
   it('copies selected text with Ctrl+C but preserves remote interrupt without a selection', async () => {

@@ -11,8 +11,18 @@ import {
   themeOptions,
   type UiPreferences
 } from '../../../src/web/theme';
+import type { StoragePort } from '../../../src/shared/core/ports';
 
 const preferences: UiPreferences = { theme: 'termius-light', fontSize: 16, serverViewMode: 'grid' };
+
+const createStorage = (): StoragePort => {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value); },
+    removeItem: (key) => { values.delete(key); }
+  };
+};
 
 describe('UI preferences', () => {
   afterEach(() => {
@@ -101,5 +111,13 @@ describe('UI preferences', () => {
     window.localStorage.setItem('relay.ui.preferences.v1', JSON.stringify({ theme: 'tokyo-day', fontSize: 14, serverViewMode: 'invalid' }));
 
     expect(loadPreferences()).toEqual({ theme: 'tokyo-day', fontSize: 14, serverViewMode: 'list' });
+  });
+
+  it('uses an injected preference store instead of browser origin storage', () => {
+    const storage = createStorage();
+    savePreferences(preferences, storage);
+
+    expect(loadPreferences(storage)).toEqual(preferences);
+    expect(window.localStorage.getItem('relay.ui.preferences.v1')).toBeNull();
   });
 });

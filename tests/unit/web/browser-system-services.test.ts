@@ -168,6 +168,15 @@ describe('browser system services', () => {
     await expect(services.externalLinks?.open('file:///etc/passwd')).rejects.toEqual(expect.objectContaining({ code: 'CAPABILITY_UNAVAILABLE' }));
   });
 
+  it('exposes injected preference and session stores as platform services', () => {
+    const preferences = { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() };
+    const session = { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() };
+    const services = createBrowserSystemServices(createHosts({ preferences, session }));
+
+    expect(services.preferences).toBe(preferences);
+    expect(services.session).toBe(session);
+  });
+
   it('passes an already-redacted notification request through unchanged', async () => {
     const hosts = createHosts({ notifications: {
       permission: 'granted',

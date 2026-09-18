@@ -15,8 +15,8 @@ if (!root) {
   throw new Error('Root element is missing');
 }
 
-bootstrapPreferences();
 const runtime = createPlatformRuntime();
+bootstrapPreferences(runtime.platformServices?.preferences ?? null);
 if (runtime === webAdapters) void registerPwaServiceWorker();
 
 createRoot(root).render(

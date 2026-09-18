@@ -212,6 +212,8 @@ export interface AppProps {
 }
 
 export const App = ({ runtime }: AppProps) => {
+  const preferenceStorage = runtime.platformServices?.preferences;
+  const sessionStorage = runtime.platformServices?.session;
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const [hostFormOpen, setHostFormOpen] = useState(false);
   const [editingHost, setEditingHost] = useState<HostMetadataState | null>(null);
@@ -228,7 +230,7 @@ export const App = ({ runtime }: AppProps) => {
   const [sftpOpenRequest, setSftpOpenRequest] = useState<SftpOpenRequest | null>(null);
   const [networkOnline, setNetworkOnline] = useState(() => globalThis.navigator?.onLine !== false);
   const [networkRecoveryVisible, setNetworkRecoveryVisible] = useState(false);
-  const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences());
+  const [preferences, setPreferences] = useState<UiPreferences>(() => loadPreferences(preferenceStorage ?? null));
   const [capabilities, setCapabilities] = useState<CapabilitySet>(() => runtime.capabilities);
   const [accountSession, setAccountSession] = useState<AccountSession | null>(null);
   const [syncState, setSyncState] = useState<SyncState | null>(null);
@@ -403,11 +405,10 @@ export const App = ({ runtime }: AppProps) => {
     // cache only for the Web gateway, whose server-side sessions support
     // reattach; native durable tabs are restored as explicit needs-reopen tabs.
     if (runtime.platform !== 'web') {
-      clearTerminalDescriptors();
       return;
     }
-    saveTerminalDescriptors(descriptors);
-  }, [runtime.platform]);
+    saveTerminalDescriptors(descriptors, sessionStorage);
+  }, [runtime.platform, sessionStorage]);
 
   const enqueueWorkspaceSave = useCallback((requestWorkspace: WorkspaceState): void => {
     const requestComparable = JSON.stringify({ ...requestWorkspace, version: undefined });
@@ -433,8 +434,8 @@ export const App = ({ runtime }: AppProps) => {
 
   useEffect(() => {
     applyPreferences(preferences);
-    savePreferences(preferences);
-  }, [preferences]);
+    savePreferences(preferences, preferenceStorage ?? null);
+  }, [preferenceStorage, preferences]);
 
   const loadWorkspace = useCallback(async (options: { openTerminalView?: boolean } = {}): Promise<void> => {
     const loadRequest = workspaceLoadRequestRef.current + 1;
@@ -469,7 +470,7 @@ export const App = ({ runtime }: AppProps) => {
         setTransferJobs([]);
       }
       const availableHostIds = new Set(hosts.map((host) => host.id));
-      const savedDescriptors = runtime.platform === 'web' ? loadTerminalDescriptors() : [];
+      const savedDescriptors = runtime.platform === 'web' ? loadTerminalDescriptors(sessionStorage) : [];
       const restoreResults = restoreWorkspace(workspace, availableHostIds, savedDescriptors, () => createTerminalId());
       if (workspaceLoadRequestRef.current !== loadRequest || latestStateRef.current.phase === 'locked') return;
       const terminalIds = Object.fromEntries(restoreResults.map((result) => [result.tabId, result.terminalId]));
@@ -484,7 +485,7 @@ export const App = ({ runtime }: AppProps) => {
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
     }
-  }, [enqueueWorkspaceSave, persistTerminalDescriptors, runtime]);
+  }, [enqueueWorkspaceSave, persistTerminalDescriptors, runtime, sessionStorage]);
 
   useEffect(() => {
     if (!workspaceHydrated || state.phase !== 'ready') return;
@@ -507,7 +508,7 @@ export const App = ({ runtime }: AppProps) => {
         if (status.phase === 'unlocked') {
           void loadWorkspace();
         } else {
-          if (status.phase === 'uninitialized') clearTerminalDescriptors();
+          if (status.phase === 'uninitialized' && runtime.platform === 'web') clearTerminalDescriptors(sessionStorage);
           void runtime.negotiateCapabilities().then((nextCapabilities) => {
             if (!cancelled) setCapabilities(nextCapabilities);
           }).catch(() => undefined);
@@ -520,7 +521,7 @@ export const App = ({ runtime }: AppProps) => {
     return () => {
       cancelled = true;
     };
-  }, [bootAttempt, loadWorkspace]);
+  }, [bootAttempt, loadWorkspace, runtime.platform, sessionStorage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1292,7 +1293,7 @@ export const App = ({ runtime }: AppProps) => {
   const handleCloseTerminal = (terminalId: string): void => {
     dispatch({ type: 'terminalClosed', terminalId });
     persistTerminalDescriptors(runtime.platform === 'web'
-      ? loadTerminalDescriptors().filter((descriptor) => descriptor.terminalId !== terminalId)
+      ? loadTerminalDescriptors(sessionStorage).filter((descriptor) => descriptor.terminalId !== terminalId)
       : []);
     if (state.terminals.length <= 1) setTerminalView(false);
   };
@@ -1388,7 +1389,7 @@ export const App = ({ runtime }: AppProps) => {
       workspaceLoadRequestRef.current += 1;
       lockedFromCurrentAppRef.current = true;
       dispatch({ type: 'lock' });
-      clearTerminalDescriptors();
+      if (runtime.platform === 'web') clearTerminalDescriptors(sessionStorage);
       setTerminalView(false);
       closeHostForm();
       setActivityOpen(false);

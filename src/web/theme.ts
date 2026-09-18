@@ -1,3 +1,5 @@
+import type { StoragePort } from '../shared/core/ports.js';
+
 export type ThemeName = 'termius' | 'termius-light' | 'everforest-dark' | 'tokyo-day' | 'monokai';
 export type TerminalFontSize = 12 | 13 | 14 | 16;
 export type ServerViewMode = 'list' | 'grid';
@@ -158,9 +160,17 @@ const isFontSize = (value: unknown): value is TerminalFontSize => value === 12 |
 
 const isServerViewMode = (value: unknown): value is ServerViewMode => value === 'list' || value === 'grid';
 
-export const loadPreferences = (): UiPreferences => {
+const defaultPreferenceStorage = (): StoragePort | null => {
   try {
-    const raw = globalThis.localStorage?.getItem(UI_PREFERENCES_STORAGE_KEY);
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const loadPreferences = (storage: StoragePort | null | undefined = defaultPreferenceStorage()): UiPreferences => {
+  try {
+    const raw = storage?.getItem(UI_PREFERENCES_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_PREFERENCES };
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed) || !isThemeName(parsed.theme) || !isFontSize(parsed.fontSize)) {
@@ -172,9 +182,9 @@ export const loadPreferences = (): UiPreferences => {
   }
 };
 
-export const savePreferences = (preferences: UiPreferences): void => {
+export const savePreferences = (preferences: UiPreferences, storage: StoragePort | null | undefined = defaultPreferenceStorage()): void => {
   try {
-    globalThis.localStorage?.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({ ...preferences, serverViewMode: preferences.serverViewMode ?? 'list' }));
+    storage?.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({ ...preferences, serverViewMode: preferences.serverViewMode ?? 'list' }));
   } catch {
     // Browser storage can be disabled; the current session still uses the in-memory value.
   }
@@ -217,8 +227,8 @@ export const applyPreferences = (preferences: UiPreferences): void => {
   document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', definition.themeColor);
 };
 
-export const bootstrapPreferences = (): UiPreferences => {
-  const preferences = loadPreferences();
+export const bootstrapPreferences = (storage?: StoragePort | null): UiPreferences => {
+  const preferences = loadPreferences(storage);
   applyPreferences(preferences);
   return preferences;
 };

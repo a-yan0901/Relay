@@ -75,6 +75,13 @@ export interface NotificationRequest {
   tag?: string;
 }
 
+/** Synchronous, non-secret storage owned by the current platform shell. */
+export interface StoragePort {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
 export interface NotificationPort {
   permission(): Promise<NotificationPermission>;
   requestPermission(): Promise<NotificationPermission>;
@@ -123,6 +130,10 @@ export interface FileWriterPort {
 
 /** Optional system capabilities supplied by a platform shell. */
 export interface PlatformServices {
+  /** UI preferences are local-only and must not be treated as cloud state. */
+  preferences?: StoragePort;
+  /** Browser session recovery intent; native shells may intentionally omit it. */
+  session?: StoragePort;
   clipboard?: ClipboardPort;
   dialogs?: DialogPort;
   externalLinks?: ExternalLinkPort;
