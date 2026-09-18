@@ -425,7 +425,7 @@ export class TerminalSessionController {
           const currentSocket = this.socket;
           this.detachSocket(currentSocket);
           this.socket = null;
-          currentSocket?.close(1011, 'remote connection interrupted');
+          currentSocket?.close(1000, 'remote connection interrupted');
           this.scheduleNextReconnect();
         }
         return;
@@ -474,7 +474,7 @@ export class TerminalSessionController {
           const currentSocket = this.socket;
           this.detachSocket(currentSocket);
           this.socket = null;
-          currentSocket?.close(1011, 'remote connection interrupted');
+          currentSocket?.close(1000, 'remote connection interrupted');
           if (this.networkOffline || globalThis.navigator?.onLine === false) {
             this.networkOffline = true;
             this.updateSnapshot({

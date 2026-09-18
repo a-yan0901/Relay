@@ -34,10 +34,14 @@ export const ContextMenu = ({ state, items, onClose, ariaLabel = '上下文菜�
     const menu = menuRef.current;
     if (!menu) return;
     const rect = menu.getBoundingClientRect();
-    setPosition(boundedPosition(state.position, rect.width, rect.height));
+    const nextPosition = boundedPosition(state.position, rect.width, rect.height);
+    if (nextPosition.x !== position.x || nextPosition.y !== position.y) {
+      setPosition(nextPosition);
+      return;
+    }
     const firstEnabled = enabledItemIndices(items)[0];
-    if (firstEnabled !== undefined) itemRefs.current[firstEnabled]?.focus();
-  }, [items, state.position]);
+    if (firstEnabled !== undefined) itemRefs.current[firstEnabled]?.focus({ preventScroll: true });
+  }, [items, position, state.position]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     const enabled = enabledItemIndices(items);

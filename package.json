@@ -10,8 +10,8 @@
   "scripts": {
     "dev": "node --env-file-if-exists=.env.local node_modules/concurrently/dist/bin/index.js -k \"vite --host 0.0.0.0\" \"tsx src/server/index.ts\"",
     "build:web": "vite build --outDir dist/web",
-    "build:server": "tsup src/server/index.ts --format esm --target node22 --out-dir dist/server --sourcemap --clean",
-    "build:cloud": "tsup src/cloud/index.ts --format esm --target node22 --out-dir dist/cloud --sourcemap --clean",
+    "build:server": "tsup src/server/index.ts --format esm --target node22 --out-dir dist/server --sourcemap --clean --external ws",
+    "build:cloud": "tsup src/cloud/index.ts --format esm --target node22 --out-dir dist/cloud --sourcemap --clean --external ws",
     "build:windows:main": "tsup --config apps/windows/tsup-main.config.ts",
     "build:windows:preload": "tsup --config apps/windows/tsup-preload.config.ts",
     "build:windows": "npm run build:web && npm run build:windows:main && npm run build:windows:preload",

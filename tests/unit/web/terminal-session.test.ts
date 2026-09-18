@@ -17,6 +17,7 @@ class FakeSocket implements TerminalSocketLike {
   onerror: (() => void) | null = null;
   onclose: ((event?: unknown) => void) | null = null;
   closeCalls = 0;
+  closeCodes: number[] = [];
 
   constructor(readonly url: string) {
     FakeSocket.instances.push(this);
@@ -28,6 +29,7 @@ class FakeSocket implements TerminalSocketLike {
 
   close(code?: number): void {
     this.closeCalls += 1;
+    this.closeCodes.push(code ?? 1000);
     this.readyState = 3;
     this.onclose?.({ code: code ?? 1000 });
   }
@@ -251,6 +253,7 @@ describe('TerminalSessionController', () => {
 
       expect(controller.snapshot.state).toBe('reconnecting');
       expect(first.closeCalls).toBe(1);
+      expect(first.closeCodes).toEqual([1000]);
       vi.advanceTimersByTime(249);
       expect(FakeSocket.instances).toHaveLength(1);
       vi.advanceTimersByTime(1);

@@ -195,7 +195,7 @@ test.describe('host to terminal journey', () => {
     expect(narrowCardRight).toBeLessThanOrEqual(320);
 
     await page.setViewportSize({ width: 1024, height: 720 });
-    await narrowCard.click({ button: 'right' });
+    await narrowCard.locator('.host-card-main').click({ button: 'right' });
     await expect(page.getByRole('menuitem', { name: '复制地址' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: '复制 SSH 命令' })).toBeVisible();
     await page.keyboard.press('Escape');
@@ -208,19 +208,17 @@ test.describe('host to terminal journey', () => {
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '偏好设置' }).click();
     await expect(page.getByRole('region', { name: '快捷键' })).toBeVisible();
-    await page.getByRole('combobox', { name: '色彩主题' }).selectOption('contrast');
-    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'contrast');
-    await page.getByRole('combobox', { name: '色彩主题' }).selectOption('nord');
-    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'nord');
-    await page.getByRole('button', { name: '预览主题：OLED 纯黑' }).click();
-    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'oled');
-    await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
+    await page.getByRole('button', { name: '预览主题：Monokai' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'monokai');
+    await page.getByRole('button', { name: '预览主题：Tokyo Day' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'tokyo-day');
+    await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
     await page.getByRole('button', { name: '关闭偏好设置' }).click();
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'oled');
+    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'tokyo-day');
     await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
-    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'oled');
+    await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'tokyo-day');
 
     if (await page.getByRole('button', { name: '← Server 列表' }).count()) await page.getByRole('button', { name: '← Server 列表' }).click();
     await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible();

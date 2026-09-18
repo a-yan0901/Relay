@@ -87,8 +87,10 @@ describe('HostCard', () => {
 
     fireEvent.contextMenu(screen.getByRole('article'), { clientX: 80, clientY: 80 });
     fireEvent.contextMenu(screen.getByRole('button', { name: '筛选标签 prod' }), { clientX: 100, clientY: 100 });
+    fireEvent.contextMenu(screen.getByRole('button', { name: '收藏 Production API' }), { clientX: 120, clientY: 120 });
 
-    expect(onContextMenu).toHaveBeenCalledWith(expect.anything(), host);
+    expect(onContextMenu).toHaveBeenCalledTimes(2);
+    expect(onContextMenu).toHaveBeenLastCalledWith(expect.anything(), host);
     expect(onTagContextMenu).toHaveBeenCalledWith(expect.anything(), 'prod', host);
   });
 });

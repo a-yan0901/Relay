@@ -91,6 +91,7 @@
 - 平台系统能力抽离增量（2026-09-18）：`StoragePort` 注入 Web/Windows/Android UI 的本地偏好与 Web 会话恢复意图；`TerminalPanel` 粘贴确认只调用 `DialogPort`，无平台确认能力时不发送剪贴板内容；浏览器直链下载 fallback 收敛到 `DownloadPort` 与 `WebFileTransport`，UI 不再直接创建下载锚点或拼接传输 URL，原生端不会误走 Web 下载路径。相关 Web/DOM 测试、受影响 ESLint 和根 TypeScript 检查随本增量验证。
 - 移动 Console 工具条增量（2026-09-18）：重新接通已有 `TerminalPanel` toolbar 状态，在窄屏底部提供复制、粘贴、搜索、清屏、全屏、重连和关闭等快捷操作；桌面顶部栏保持紧凑，打开 SFTP 时工具条隐藏；工具条状态映射按终端 ID 有界清理，避免已关闭 Console 残留。相关 Web/DOM 测试 31/31、受影响 ESLint、根 TypeScript 和 Web 构建通过；真实 Android 软键盘/安全区仍需设备走查。
 - 大目录 SFTP 分页与写入器安全增量（2026-09-18，本轮提交）：新增共享 `SftpListPage`/游标协议和 `/list-page` Web 路由；服务端 ssh2 适配器使用 `opendir/readdir` 按页读取，Windows 复用同一服务，Android 原生按游标和名称过滤返回最多 256 项；Web SFTP 面板在分页模式只保留当前页，并限制返回游标历史为 32 条，避免把整个远端目录放入 UI 内存。达到 Android 文件写入器上限时改为取消临时文件，避免误提交导出文件。受影响测试 7 个文件、55/55 通过，根/native TypeScript、受影响 ESLint、Web/Windows/Server 构建通过；Android Kotlin 编译和此前 JVM 单元测试也通过。真实设备和 Windows 实机分页走查仍待完成。
+- 交互与构建稳定性增量（2026-09-18）：Host 卡片右键改为捕获阶段处理，避免点到卡片内动作按钮时丢失 Server 菜单，同时保留标签专属右键菜单；上下文菜单首次定位/聚焦不再被布局滚动立即关闭。Playwright 主题回归同步到当前主题预览卡交互，主流程 E2E 4/4 通过。浏览器端远端异常重连不再主动调用规范禁止的 WebSocket `1011` 关闭码，改用合法的 `1000` 并保留自动重连语义；相关单测通过。Server/Cloud 构建脚本将 `ws` 标为 external，产物可直接被 Node ESM 加载，避免生产构建后启动崩溃。
 
 验证记录（2026-09-18）：
 
@@ -106,5 +107,6 @@
 - 本次原生恢复与输入缓冲增量的 Android 验证使用 `ANDROID_HOME=/usr/lib/android-sdk ANDROID_SDK_ROOT=/usr/lib/android-sdk ./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain`，53 actionable tasks、5 executed、48 up-to-date，`BUILD SUCCESSFUL`。首次未设置 SDK 路径的运行只停在 Gradle 配置阶段，不作为代码失败证据。
 - `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 159 个测试文件、695 个测试，695 个全部通过。期间修正了 bundle 导出仍回退到旧内置主题 ID 的实现缺陷，并将 shared core 边界测试收敛到真正的 `src/shared/core` 目录，避免把 cloud WebSocket 适配器误判为 core 依赖。
 - 最新跨端回归（2026-09-18）：`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 161 个测试文件、720 个测试，全部通过；`npm run typecheck`、`npm run lint`、`npm run build`（Web/Server/Cloud）和 `npm run build:windows` 全部通过。Android Debug APK 已通过单 worker Gradle 构建、APK ZIP 完整性检查；Windows x64 portable 预览包已通过 PE 格式检查和 Linux Electron 启动烟测。为避免原生构建产物被误当源码，ESLint 明确忽略 Capacitor 的 `app/build` 与 `app/src/main/assets` 生成目录。当前仍缺 Windows 实机 ABI/升级验证、NSIS（本机构建缺 Wine）和 Android 真机 SSH/SFTP/Keystore/生命周期验证，不能据此将任务 14 标记完成。
+- 本轮增量回归（2026-09-18）：`npm run test:e2e -- --workers=1` 通过 4/4；HostCard、ContextMenu、ServerContextMenu、TerminalSession 定向测试通过 4 个文件、27 个测试；`npm run typecheck`、`npm run lint`、`npm run build`、Server/Cloud 产物 Node ESM 加载和 `npm run build:windows` 全部通过。最新 Windows x64 portable 预览包已生成并通过 PE 检查，SHA256 为 `9085f3cd90b2aa6903b17125f21248006e652c3d501dc9ad0b47d172f44db69b`。本轮 APK 重新构建只完成了 Web 资源同步，Gradle 因当前环境未设置 `ANDROID_HOME` 且未发现 Android SDK 而停止；已有 APK 是此前成功构建的可安装 Debug 包，但未包含本轮最后的 Web 细节修复，需在恢复 SDK 后重新生成。真实 Windows/Android 设备证据仍缺失。
 
 当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及 Android 真机上的 SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。

@@ -16,6 +16,12 @@ export interface HostCardProps {
   onTagContextMenu?: (event: ReactMouseEvent<HTMLButtonElement>, tag: string, host: HostMetadataState) => void;
 }
 
+const openHostContextMenu = (event: ReactMouseEvent<HTMLElement>, host: HostMetadataState, onContextMenu?: HostCardProps['onContextMenu']): void => {
+  const target = event.target;
+  if (target instanceof HTMLElement && target.closest('.tag-button')) return;
+  onContextMenu?.(event, host);
+};
+
 const formatLastConnected = (value: string | null): string => {
   if (!value) return '尚未连接';
   const timestamp = new Date(value);
@@ -24,7 +30,7 @@ const formatLastConnected = (value: string | null): string => {
 };
 
 export const HostCard = ({ host, onConnect, onFavoriteToggle, onEdit, onDelete, onTestConnection, onClearHostKey, groupName, onTagSelected, onContextMenu, onTagContextMenu }: HostCardProps) => (
-  <article className="host-card" onContextMenu={(event) => onContextMenu?.(event, host)}>
+  <article className="host-card" onContextMenuCapture={(event) => openHostContextMenu(event, host, onContextMenu)}>
     <div className="host-card-main">
       <div className="card-title-line">
         <h2>{host.name}</h2>
