@@ -247,8 +247,10 @@ export class TerminalSessionController {
     this.reconnectExhausted = false;
     this.reconnectAttempt = 0;
     this.clearReconnectTimer();
-    this.detachSocket(this.socket);
+    const currentSocket = this.socket;
+    this.detachSocket(currentSocket);
     this.socket = null;
+    currentSocket?.close(1000, 'opening a new shell');
     if (this.networkOffline || globalThis.navigator?.onLine === false) {
       this.networkOffline = true;
       this.updateSnapshot({
@@ -414,6 +416,11 @@ export class TerminalSessionController {
           this.reconnectExhausted = false;
           this.updateSnapshot({ reconnectDelayMs: 0, error: null, credential: null });
         }
+        if (event.state === 'needs-reopen') {
+          this.clearReconnectTimer();
+          this.retryBlocked = true;
+          this.updateSnapshot({ reconnectDelayMs: 0, error: null, credential: null });
+        }
         if (event.state === 'interrupted' && !this.retryBlocked && !this.reconnectExhausted) {
           const currentSocket = this.socket;
           this.detachSocket(currentSocket);
@@ -511,6 +518,10 @@ export class TerminalSessionController {
     }
     if (this.stopped) {
       this.updateSnapshot({ state: 'closed', credential: null, reconnectDelayMs: 0, networkOffline: false });
+      return;
+    }
+    if (this.snapshotValue.state === 'needs-reopen') {
+      this.updateSnapshot({ state: 'closed', credential: null, reconnectDelayMs: 0, networkOffline: false, error: null });
       return;
     }
     if (isRecord(event) && event.code === 1008) {

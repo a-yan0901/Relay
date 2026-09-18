@@ -272,6 +272,33 @@ describe('TerminalSessionController', () => {
     }
   });
 
+  it('does not retry a native session after lifecycle shutdown requests an explicit reopen', () => {
+    vi.useFakeTimers();
+    try {
+      FakeSocket.instances = [];
+      const controller = new TerminalSessionController({
+        hostId: 'host-1',
+        terminalId: 'terminal-lifecycle',
+        webSocketFactory: (url) => new FakeSocket(url),
+        reconnectBaseMs: 100
+      });
+
+      controller.connect();
+      const socket = lastSocket();
+      socket.open();
+      socket.message(JSON.stringify({ type: 'status', state: 'needs-reopen', serviceInstanceId: 'android-local' }));
+      expect(controller.snapshot.state).toBe('needs-reopen');
+
+      socket.close(1011);
+
+      expect(controller.snapshot.state).toBe('closed');
+      vi.advanceTimersByTime(10_000);
+      expect(FakeSocket.instances).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('resumes a retryable Console after the network returns even when attempts were exhausted', () => {
     vi.useFakeTimers();
     try {

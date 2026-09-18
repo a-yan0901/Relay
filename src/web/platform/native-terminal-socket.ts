@@ -52,6 +52,7 @@ export class NativeTerminalSocket implements TerminalSocketLike {
   private sessionId: string | null = null;
   private requestId: string | null = null;
   private closedByUser = false;
+  private needsReopen = false;
   private readonly inputQueue: string[] = [];
   private inputQueueBytes = 0;
   private inputInFlightBytes = 0;
@@ -198,6 +199,8 @@ export class NativeTerminalSocket implements TerminalSocketLike {
       case 'terminal.status': {
         const state = asText(payload?.state);
         if (!state || !terminalStatuses.includes(state as TerminalStatus)) return;
+        if (state === 'needs-reopen') this.needsReopen = true;
+        if (state === 'connected') this.needsReopen = false;
         this.emitServerEvent({ type: 'status', state: state as TerminalStatus, serviceInstanceId: asText(payload?.serviceInstanceId) ?? 'native-local' });
         return;
       }
@@ -220,7 +223,7 @@ export class NativeTerminalSocket implements TerminalSocketLike {
         if (payload?.clean === true) {
           this.emitServerEvent({ type: 'status', state: 'closed', serviceInstanceId: 'native-local' });
         } else {
-          this.finishClose(1011, 'remote connection interrupted');
+          this.finishClose(this.needsReopen ? 1000 : 1011, this.needsReopen ? 'native session needs reopen' : 'remote connection interrupted');
         }
         return;
       default:
