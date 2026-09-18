@@ -61,6 +61,7 @@ internal class AndroidLocalExecutor(
     private val store = AndroidLocalStore(appContext)
     private val vault = AndroidVault(store)
     private val bundleService = AndroidBundleService(store, vault)
+    private val commandRunner = AndroidCommandRunner(store, vault, ::emitEvent)
     private val operationExecutor = boundedExecutor("relay-android-op", 2, MAX_OPERATION_QUEUE)
     private val connectionExecutor = boundedExecutor("relay-android-ssh", MAX_SESSIONS, MAX_CONNECTION_QUEUE)
     private val readerExecutor = boundedExecutor("relay-android-read", MAX_SESSIONS, MAX_SESSIONS * 2)
@@ -74,6 +75,29 @@ internal class AndroidLocalExecutor(
     private val sequence = AtomicLong(0)
     private val generation = AtomicLong(1)
     private val closed = AtomicBoolean(false)
+
+    init {
+        store.markActiveCommandRunsInterrupted("SERVICE_RESTARTED", Instant.now().toString())
+        store.listTransfers().forEach { record ->
+            val restoredStatus = if (record.status == "running") "interrupted" else record.status
+            val transfer = AndroidTransfer(
+                id = record.id,
+                kind = record.kind,
+                hostId = record.hostId,
+                sourcePath = record.sourcePath,
+                targetPath = record.targetPath,
+                totalBytes = record.totalBytes,
+                createdAt = record.createdAt,
+                updatedAt = record.updatedAt,
+                status = restoredStatus,
+                completedBytes = record.completedBytes,
+                checksum = record.checksum,
+                errorCode = if (record.status == "running") "SERVICE_RESTARTED" else record.errorCode
+            )
+            transfers[transfer.id] = transfer
+            if (restoredStatus != record.status || transfer.errorCode != record.errorCode) persistTransfer(transfer)
+        }
+    }
 
     override fun invoke(request: JSObject, complete: (JSObject) -> Unit) {
         if (closed.get()) {
@@ -117,6 +141,14 @@ internal class AndroidLocalExecutor(
         }
         synchronized(transfers) {
             transfers.values.forEach { it.closeDownload() }
+            transfers.values.forEach {
+                if (it.status == "running") {
+                    it.status = "interrupted"
+                    it.errorCode = "SERVICE_RESTARTED"
+                    it.updatedAt = Instant.now().toString()
+                    persistTransfer(it)
+                }
+            }
             transfers.clear()
         }
         synchronized(fileWriters) {
@@ -124,6 +156,7 @@ internal class AndroidLocalExecutor(
             fileWriters.clear()
         }
         bundleService.close()
+        commandRunner.close()
         vault.close()
         operationExecutor.shutdownNow()
         connectionExecutor.shutdownNow()
@@ -149,14 +182,17 @@ internal class AndroidLocalExecutor(
         "vault.status" -> JSONObject().put("phase", vault.phase())
         "vault.setup" -> {
             vault.setup(requiredText(payload, "masterPassword", 4096))
+            commandRunner.restore()
             JSONObject().put("phase", "unlocked")
         }
         "vault.unlock" -> {
             vault.unlock(requiredText(payload, "masterPassword", 4096))
+            commandRunner.restore()
             JSONObject().put("phase", "unlocked")
         }
         "vault.lock" -> {
             closeAllSessions()
+            commandRunner.interruptForLock()
             bundleService.clearPreviews()
             vault.lock()
             JSONObject.NULL
@@ -223,9 +259,24 @@ internal class AndroidLocalExecutor(
         "files.pauseTransfer" -> pauseTransfer(requiredText(payload, "transferId", 128))
         "files.cancelTransfer" -> cancelTransfer(requiredText(payload, "transferId", 128))
         "files.retryTransfer" -> retryTransfer(requiredText(payload, "transferId", 128))
-        "commands.start", "commands.get", "commands.cancel" -> failNative("CAPABILITY_UNAVAILABLE")
-        "snippets.list" -> JSONArray()
-        "snippets.get", "snippets.create", "snippets.update", "snippets.delete" -> failNative("CAPABILITY_UNAVAILABLE")
+        "commands.start" -> {
+            requireUnlocked()
+            commandRunner.start(payload.optJSONObject("request") ?: failNative("COMMAND_RUN_VALIDATION_FAILED"))
+        }
+        "commands.get" -> {
+            requireUnlocked()
+            commandRunner.get(requiredText(payload, "runId", 128)) ?: JSONObject.NULL
+        }
+        "commands.cancel" -> {
+            requireUnlocked()
+            commandRunner.cancel(requiredText(payload, "runId", 128))
+            JSONObject.NULL
+        }
+        "snippets.list" -> snippetsList()
+        "snippets.get" -> snippetGet(requiredText(payload, "id", 128))
+        "snippets.create" -> snippetCreate(payload.optJSONObject("input") ?: failNative("COMMAND_RUN_VALIDATION_FAILED"))
+        "snippets.update" -> snippetUpdate(requiredText(payload, "id", 128), payload.optJSONObject("input") ?: failNative("COMMAND_RUN_VALIDATION_FAILED"))
+        "snippets.delete" -> snippetDelete(requiredText(payload, "id", 128))
         "activity.list" -> JSONObject().put("items", JSONArray()).put("hasMore", false)
         "imports.exportVaultBundle" -> {
             requireUnlocked()
@@ -701,6 +752,148 @@ internal class AndroidLocalExecutor(
         .put("layout", JSONObject().put("mode", "single").put("ratio", 0.5))
         .put("filters", JSONObject().put("query", "").put("groupId", JSONObject.NULL).put("favoriteOnly", false))
 
+    private data class SnippetContent(val command: String, val variables: List<String>)
+
+    private fun snippetsList(): JSONArray {
+        requireUnlocked()
+        return JSONArray().also { output -> store.listSnippets().forEach { output.put(snippetMetadata(it)) } }
+    }
+
+    private fun snippetGet(id: String): JSONObject {
+        requireUnlocked()
+        val snippet = store.getSnippet(AndroidNativeValidation.requireSafeId(id)) ?: failNative("SNIPPET_NOT_FOUND")
+        val content = decryptSnippet(snippet)
+        return snippetMetadata(snippet)
+            .put("command", content.command)
+            .put("variables", JSONArray(content.variables))
+    }
+
+    private fun snippetCreate(input: JSONObject): JSONObject {
+        requireUnlocked()
+        val draft = snippetDraft(input, null)
+        val now = Instant.now().toString()
+        val id = UUID.randomUUID().toString()
+        val snippet = AndroidSnippet(
+            id = id,
+            name = draft.name,
+            description = draft.description,
+            tagsJson = JSONArray(draft.tags).toString(),
+            commandCiphertext = vault.encryptSecret(snippetPayload(draft).toString(), "snippet:$id:payload:v1"),
+            variablesJson = JSONArray(draft.variables).toString(),
+            createdAt = now,
+            updatedAt = now
+        )
+        if (!store.putSnippet(snippet)) failNative("COMMAND_RUN_VALIDATION_FAILED")
+        return snippetMetadata(snippet).put("command", draft.command).put("variables", JSONArray(draft.variables))
+    }
+
+    private fun snippetUpdate(id: String, input: JSONObject): JSONObject {
+        requireUnlocked()
+        val safeId = AndroidNativeValidation.requireSafeId(id)
+        val current = store.getSnippet(safeId) ?: failNative("SNIPPET_NOT_FOUND")
+        val draft = snippetDraft(input, current)
+        val updated = current.copy(
+            name = draft.name,
+            description = draft.description,
+            tagsJson = JSONArray(draft.tags).toString(),
+            commandCiphertext = vault.encryptSecret(snippetPayload(draft).toString(), "snippet:$safeId:payload:v1"),
+            variablesJson = JSONArray(draft.variables).toString(),
+            updatedAt = Instant.now().toString()
+        )
+        if (!store.putSnippet(updated)) failNative("COMMAND_RUN_VALIDATION_FAILED")
+        return snippetMetadata(updated).put("command", draft.command).put("variables", JSONArray(draft.variables))
+    }
+
+    private fun snippetDelete(id: String): JSONObject {
+        requireUnlocked()
+        if (!store.deleteSnippet(AndroidNativeValidation.requireSafeId(id))) failNative("SNIPPET_NOT_FOUND")
+        return JSONObject()
+    }
+
+    private fun snippetDraft(input: JSONObject, current: AndroidSnippet?): AndroidAutomationValidation.SnippetDraft {
+        val existing = current?.let(::decryptSnippet)
+        val name = if (input.has("name")) snippetText(input, "name", 120) else current?.name ?: failNative("COMMAND_RUN_VALIDATION_FAILED")
+        val description = if (input.has("description")) nullableSnippetText(input, "description", 500) else current?.description
+        val tags = if (input.has("tags")) snippetTags(input.optJSONArray("tags")) else current?.let { decodeList(it.tagsJson) } ?: emptyList()
+        val command = if (input.has("command")) snippetCommand(input, "command", 48 * 1024) else existing?.command ?: failNative("COMMAND_RUN_VALIDATION_FAILED")
+        val variables = if (input.has("variables")) snippetVariables(input.optJSONArray("variables")) else existing?.variables ?: emptyList()
+        return try {
+            AndroidAutomationValidation.validateSnippet(name, description, tags, command, variables)
+        } catch (error: NativeVaultFailure) {
+            throw error
+        } catch (_: Exception) {
+            failNative("COMMAND_RUN_VALIDATION_FAILED")
+        }
+    }
+
+    private fun snippetPayload(draft: AndroidAutomationValidation.SnippetDraft): JSONObject = JSONObject()
+        .put("command", draft.command)
+        .put("variables", JSONArray(draft.variables))
+
+    private fun decryptSnippet(snippet: AndroidSnippet): SnippetContent = try {
+        val payload = JSONObject(vault.decryptSecret(snippet.commandCiphertext, "snippet:${snippet.id}:payload:v1"))
+        val command = snippetCommand(payload, "command", 48 * 1024)
+        val variables = snippetVariables(payload.optJSONArray("variables"))
+        AndroidAutomationValidation.validateVariables(command, variables)
+        SnippetContent(command, variables)
+    } catch (error: NativeVaultFailure) {
+        throw error
+    } catch (_: Exception) {
+        failNative("VAULT_CRYPTO_FAILED")
+    }
+
+    private fun snippetMetadata(snippet: AndroidSnippet): JSONObject = JSONObject()
+        .put("id", snippet.id)
+        .put("name", snippet.name)
+        .put("description", snippet.description ?: JSONObject.NULL)
+        .put("tags", JSONArray(decodeList(snippet.tagsJson)))
+        .put("createdAt", snippet.createdAt)
+        .put("updatedAt", snippet.updatedAt)
+
+    private fun snippetText(value: JSONObject, key: String, maxLength: Int): String {
+        val candidate = if (value.has(key) && !value.isNull(key)) value.optString(key, "") else ""
+        if (candidate.isEmpty() || candidate.length > maxLength || candidate.any { it.code <= 0x1f || it.code == 0x7f }) failNative("COMMAND_RUN_VALIDATION_FAILED")
+        return candidate
+    }
+
+    private fun snippetCommand(value: JSONObject, key: String, maxLength: Int): String {
+        val candidate = if (value.has(key) && !value.isNull(key)) value.optString(key, "") else ""
+        if (candidate.isEmpty() || candidate.length > maxLength || candidate.trim().isEmpty() || candidate.any { it.code == 0 || it.code == 0x7f }) failNative("COMMAND_RUN_VALIDATION_FAILED")
+        return candidate
+    }
+
+    private fun nullableSnippetText(value: JSONObject, key: String, maxLength: Int): String? {
+        if (!value.has(key) || value.isNull(key)) return null
+        val candidate = value.optString(key, "")
+        if (candidate.length > maxLength || candidate.any { it.code <= 0x1f || it.code == 0x7f }) failNative("COMMAND_RUN_VALIDATION_FAILED")
+        return candidate
+    }
+
+    private fun snippetTags(value: JSONArray?): List<String> {
+        if (value == null) failNative("COMMAND_RUN_VALIDATION_FAILED")
+        if (value.length() > 20) failNative("COMMAND_RUN_VALIDATION_FAILED")
+        val tags = LinkedHashSet<String>()
+        for (index in 0 until value.length()) {
+            val tag = value.optString(index, "").trim()
+            if (tag.isEmpty() || tag.length > 64 || tag.any { it.code <= 0x1f || it.code == 0x7f }) failNative("COMMAND_RUN_VALIDATION_FAILED")
+            tags += tag
+        }
+        return tags.toList()
+    }
+
+    private fun snippetVariables(value: JSONArray?): List<String> {
+        if (value == null) failNative("COMMAND_RUN_VALIDATION_FAILED")
+        if (value.length() > 64) failNative("COMMAND_RUN_VALIDATION_FAILED")
+        return buildList(value.length()) {
+            for (index in 0 until value.length()) {
+                val variable = value.optString(index, "")
+                AndroidAutomationValidation.validateVariableName(variable)
+                if (contains(variable)) failNative("COMMAND_RUN_VALIDATION_FAILED")
+                add(variable)
+            }
+        }
+    }
+
     private fun openShell(request: JSONObject): JSONObject {
         requireUnlocked()
         val sessionId = AndroidNativeValidation.requireSafeId(request.optString("requestId", ""))
@@ -987,6 +1180,7 @@ internal class AndroidLocalExecutor(
             updatedAt = now
         )
         transfers[transfer.id] = transfer
+        persistTransfer(transfer)
         return transferJson(transfer)
     }
 
@@ -1038,6 +1232,7 @@ internal class AndroidLocalExecutor(
         transfer.checksum = nextChecksum.lowercase(Locale.ROOT)
         transfer.updatedAt = Instant.now().toString()
         if (final) transfer.status = "completed"
+        persistTransfer(transfer)
         val result = transferJson(transfer)
         emitTransferProgress(transfer)
         return result
@@ -1063,6 +1258,7 @@ internal class AndroidLocalExecutor(
                 transfer.closeDownload()
                 transfer.status = "completed"
                 transfer.updatedAt = Instant.now().toString()
+                persistTransfer(transfer)
                 emitTransferProgress(transfer)
                 JSONObject().put("data", "").put("done", true)
             } else if (count == 0) {
@@ -1071,6 +1267,7 @@ internal class AndroidLocalExecutor(
                 transfer.status = "running"
                 transfer.completedBytes += count.toLong()
                 transfer.updatedAt = Instant.now().toString()
+                persistTransfer(transfer)
                 val encoded = Base64.encodeToString(buffer, 0, count, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
                 emitTransferProgress(transfer)
                 JSONObject().put("data", encoded).put("done", false)
@@ -1110,6 +1307,7 @@ internal class AndroidLocalExecutor(
             transfer.status = "paused"
             transfer.updatedAt = Instant.now().toString()
             transfer.closeDownload()
+            persistTransfer(transfer)
             transferJson(transfer)
         }
     }
@@ -1121,6 +1319,7 @@ internal class AndroidLocalExecutor(
             transfer.status = "cancelled"
             transfer.updatedAt = Instant.now().toString()
             transfer.closeDownload()
+            persistTransfer(transfer)
             transferJson(transfer)
         }
     }
@@ -1134,6 +1333,7 @@ internal class AndroidLocalExecutor(
             transfer.errorCode = null
             transfer.updatedAt = Instant.now().toString()
             transfer.closeDownload()
+            persistTransfer(transfer)
             transferJson(transfer)
         }
     }
@@ -1160,6 +1360,25 @@ internal class AndroidLocalExecutor(
             .put("totalBytes", transfer.totalBytes ?: JSONObject.NULL)
             .put("checksum", transfer.checksum ?: JSONObject.NULL))
         .also { if (transfer.errorCode != null) it.put("errorCode", transfer.errorCode) } }
+
+    private fun persistTransfer(transfer: AndroidTransfer) {
+        store.putTransfer(
+            AndroidTransferRecord(
+                id = transfer.id,
+                kind = transfer.kind,
+                hostId = transfer.hostId,
+                sourcePath = transfer.sourcePath,
+                targetPath = transfer.targetPath,
+                status = transfer.status,
+                completedBytes = transfer.completedBytes,
+                totalBytes = transfer.totalBytes,
+                checksum = transfer.checksum,
+                errorCode = transfer.errorCode,
+                createdAt = transfer.createdAt,
+                updatedAt = transfer.updatedAt
+            )
+        )
+    }
 
     private fun emitTransferProgress(transfer: AndroidTransfer) {
         val event = JSObject()

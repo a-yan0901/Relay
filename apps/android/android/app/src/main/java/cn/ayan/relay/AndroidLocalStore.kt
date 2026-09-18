@@ -70,25 +70,82 @@ internal data class AndroidTerminalProfile(
     val updatedAt: String
 )
 
+internal data class AndroidSnippet(
+    val id: String,
+    val name: String,
+    val description: String?,
+    val tagsJson: String,
+    val commandCiphertext: String,
+    val variablesJson: String,
+    val createdAt: String,
+    val updatedAt: String
+)
+
+internal data class AndroidTransferRecord(
+    val id: String,
+    val kind: String,
+    val hostId: String,
+    val sourcePath: String,
+    val targetPath: String,
+    val status: String,
+    val completedBytes: Long,
+    val totalBytes: Long?,
+    val checksum: String?,
+    val errorCode: String?,
+    val createdAt: String,
+    val updatedAt: String
+)
+
+internal data class AndroidCommandRunRecord(
+    val id: String,
+    val commandCiphertext: String,
+    val hostIdsJson: String,
+    val status: String,
+    val persistOutput: Boolean,
+    val createdAt: String,
+    val finishedAt: String?
+)
+
+internal data class AndroidCommandTargetRecord(
+    val runId: String,
+    val hostId: String,
+    val status: String,
+    val exitCode: Int?,
+    val outputCiphertext: String?,
+    val outputBytes: Int,
+    val outputTruncated: Boolean,
+    val errorCode: String?,
+    val startedAt: String?,
+    val finishedAt: String?
+)
+
 internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
     context.applicationContext,
     DATABASE_NAME,
     null,
-    DATABASE_VERSION
+        DATABASE_VERSION
 ) {
     companion object {
         private const val DATABASE_NAME = "relay-local.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 5
         private const val MAX_HOSTS = 256
         private const val MAX_IDENTITIES = 128
         private const val MAX_GROUPS = 256
         private const val MAX_TERMINAL_PROFILES = 100
+        private const val MAX_SNIPPETS = 256
+        private const val MAX_TRANSFERS = 32
+        private const val MAX_COMMAND_RUNS = 32
+        private const val MAX_COMMAND_TARGETS = 256
         private const val MAX_LIST_RESULTS = 128
         private const val META_TABLE = "relay_meta"
         private const val HOST_TABLE = "relay_hosts"
         private const val IDENTITY_TABLE = "relay_identities"
         private const val GROUP_TABLE = "relay_groups"
         private const val TERMINAL_PROFILE_TABLE = "relay_terminal_profiles"
+        private const val SNIPPET_TABLE = "relay_snippets"
+        private const val TRANSFER_TABLE = "relay_transfers"
+        private const val COMMAND_RUN_TABLE = "relay_command_runs"
+        private const val COMMAND_TARGET_TABLE = "relay_command_targets"
     }
 
     override fun onCreate(database: SQLiteDatabase) {
@@ -137,12 +194,14 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
     }
 
     override fun onUpgrade(database: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion == 1 && newVersion == 2) {
+        if (oldVersion < 2) {
             database.execSQL("ALTER TABLE $HOST_TABLE ADD COLUMN credential_source TEXT NOT NULL DEFAULT 'inline'")
             database.execSQL("ALTER TABLE $HOST_TABLE ADD COLUMN identity_id TEXT")
-            createAuxiliaryTables(database)
-            return
         }
+        if (oldVersion < 3) createSnippetTable(database)
+        if (oldVersion < 4) createTransferTable(database)
+        if (oldVersion < 5) createCommandTables(database)
+        createAuxiliaryTables(database)
         // A release build must never silently discard local connection data.
         if (oldVersion != newVersion) error("unsupported local database upgrade")
     }
@@ -192,6 +251,84 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         database.execSQL("CREATE INDEX IF NOT EXISTS relay_identities_name_idx ON $IDENTITY_TABLE(name COLLATE NOCASE)")
         database.execSQL("CREATE INDEX IF NOT EXISTS relay_profiles_name_idx ON $TERMINAL_PROFILE_TABLE(name COLLATE NOCASE)")
         database.execSQL("CREATE INDEX IF NOT EXISTS relay_hosts_identity_idx ON $HOST_TABLE(identity_id)")
+        createSnippetTable(database)
+        createTransferTable(database)
+        createCommandTables(database)
+    }
+
+    private fun createSnippetTable(database: SQLiteDatabase) {
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $SNIPPET_TABLE (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                tags_json TEXT NOT NULL,
+                command_ciphertext TEXT NOT NULL,
+                variables_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        database.execSQL("CREATE INDEX IF NOT EXISTS relay_snippets_name_idx ON $SNIPPET_TABLE(name COLLATE NOCASE)")
+    }
+
+    private fun createTransferTable(database: SQLiteDatabase) {
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TRANSFER_TABLE (
+                id TEXT PRIMARY KEY NOT NULL,
+                kind TEXT NOT NULL,
+                host_id TEXT NOT NULL,
+                source_path TEXT NOT NULL,
+                target_path TEXT NOT NULL,
+                status TEXT NOT NULL,
+                completed_bytes INTEGER NOT NULL DEFAULT 0,
+                total_bytes INTEGER,
+                checksum TEXT,
+                error_code TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        database.execSQL("CREATE INDEX IF NOT EXISTS relay_transfers_updated_idx ON $TRANSFER_TABLE(updated_at DESC)")
+    }
+
+    private fun createCommandTables(database: SQLiteDatabase) {
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $COMMAND_RUN_TABLE (
+                id TEXT PRIMARY KEY NOT NULL,
+                command_ciphertext TEXT NOT NULL,
+                host_ids_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                persist_output INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                finished_at TEXT
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $COMMAND_TARGET_TABLE (
+                run_id TEXT NOT NULL,
+                host_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                exit_code INTEGER,
+                output_ciphertext TEXT,
+                output_bytes INTEGER NOT NULL DEFAULT 0,
+                output_truncated INTEGER NOT NULL DEFAULT 0,
+                error_code TEXT,
+                started_at TEXT,
+                finished_at TEXT,
+                PRIMARY KEY (run_id, host_id)
+            )
+            """.trimIndent()
+        )
+        database.execSQL("CREATE INDEX IF NOT EXISTS relay_command_runs_created_idx ON $COMMAND_RUN_TABLE(created_at DESC)")
+        database.execSQL("CREATE INDEX IF NOT EXISTS relay_command_targets_run_idx ON $COMMAND_TARGET_TABLE(run_id)")
     }
 
     fun getMeta(key: String): String? {
@@ -560,6 +697,268 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
 
     fun setDefaultTerminalProfileId(id: String) { putMeta("terminal.default-profile.v1", id) }
 
+    fun getSnippet(id: String): AndroidSnippet? {
+        readableDatabase.query(
+            SNIPPET_TABLE,
+            SNIPPET_COLUMNS,
+            "id = ?",
+            arrayOf(id),
+            null,
+            null,
+            null,
+            "1"
+        ).use { cursor -> return if (cursor.moveToFirst()) readSnippet(cursor) else null }
+    }
+
+    fun listSnippets(): List<AndroidSnippet> {
+        val result = ArrayList<AndroidSnippet>(minOf(MAX_LIST_RESULTS, MAX_SNIPPETS))
+        readableDatabase.query(
+            SNIPPET_TABLE,
+            SNIPPET_COLUMNS,
+            null,
+            null,
+            null,
+            null,
+            "name COLLATE NOCASE ASC",
+            MAX_LIST_RESULTS.toString()
+        ).use { cursor -> while (cursor.moveToNext() && result.size < MAX_LIST_RESULTS) result += readSnippet(cursor) }
+        return result
+    }
+
+    fun countSnippets(): Int = countRows(SNIPPET_TABLE)
+
+    fun putSnippet(snippet: AndroidSnippet): Boolean {
+        require(countSnippets() < MAX_SNIPPETS || getSnippet(snippet.id) != null) { "local snippet limit reached" }
+        val values = ContentValues().apply {
+            put("id", snippet.id)
+            put("name", snippet.name)
+            if (snippet.description == null) putNull("description") else put("description", snippet.description)
+            put("tags_json", snippet.tagsJson)
+            put("command_ciphertext", snippet.commandCiphertext)
+            put("variables_json", snippet.variablesJson)
+            put("created_at", snippet.createdAt)
+            put("updated_at", snippet.updatedAt)
+        }
+        val existing = getSnippet(snippet.id)
+        return if (existing == null) {
+            try {
+                writableDatabase.insertWithOnConflict(SNIPPET_TABLE, null, values, SQLiteDatabase.CONFLICT_ABORT) != -1L
+            } catch (_: SQLiteConstraintException) {
+                false
+            }
+        } else {
+            writableDatabase.update(SNIPPET_TABLE, values, "id = ?", arrayOf(snippet.id)) > 0
+        }
+    }
+
+    fun deleteSnippet(id: String): Boolean = writableDatabase.delete(SNIPPET_TABLE, "id = ?", arrayOf(id)) > 0
+
+    fun getTransfer(id: String): AndroidTransferRecord? {
+        readableDatabase.query(
+            TRANSFER_TABLE,
+            TRANSFER_COLUMNS,
+            "id = ?",
+            arrayOf(id),
+            null,
+            null,
+            null,
+            "1"
+        ).use { cursor -> return if (cursor.moveToFirst()) readTransfer(cursor) else null }
+    }
+
+    fun listTransfers(): List<AndroidTransferRecord> {
+        val result = ArrayList<AndroidTransferRecord>(MAX_TRANSFERS)
+        readableDatabase.query(
+            TRANSFER_TABLE,
+            TRANSFER_COLUMNS,
+            null,
+            null,
+            null,
+            null,
+            "updated_at DESC",
+            MAX_TRANSFERS.toString()
+        ).use { cursor -> while (cursor.moveToNext() && result.size < MAX_TRANSFERS) result += readTransfer(cursor) }
+        return result
+    }
+
+    fun countTransfers(): Int = countRows(TRANSFER_TABLE)
+
+    fun putTransfer(transfer: AndroidTransferRecord) {
+        require(countTransfers() < MAX_TRANSFERS || getTransfer(transfer.id) != null) { "local transfer limit reached" }
+        val values = ContentValues().apply {
+            put("id", transfer.id)
+            put("kind", transfer.kind)
+            put("host_id", transfer.hostId)
+            put("source_path", transfer.sourcePath)
+            put("target_path", transfer.targetPath)
+            put("status", transfer.status)
+            put("completed_bytes", transfer.completedBytes)
+            if (transfer.totalBytes == null) putNull("total_bytes") else put("total_bytes", transfer.totalBytes)
+            if (transfer.checksum == null) putNull("checksum") else put("checksum", transfer.checksum)
+            if (transfer.errorCode == null) putNull("error_code") else put("error_code", transfer.errorCode)
+            put("created_at", transfer.createdAt)
+            put("updated_at", transfer.updatedAt)
+        }
+        writableDatabase.insertWithOnConflict(TRANSFER_TABLE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun deleteTransfer(id: String): Boolean = writableDatabase.delete(TRANSFER_TABLE, "id = ?", arrayOf(id)) > 0
+
+    fun getCommandRun(id: String): AndroidCommandRunRecord? {
+        readableDatabase.query(
+            COMMAND_RUN_TABLE,
+            COMMAND_RUN_COLUMNS,
+            "id = ?",
+            arrayOf(id),
+            null,
+            null,
+            null,
+            "1"
+        ).use { cursor -> return if (cursor.moveToFirst()) readCommandRun(cursor) else null }
+    }
+
+    fun listCommandRuns(): List<AndroidCommandRunRecord> {
+        val result = ArrayList<AndroidCommandRunRecord>(MAX_COMMAND_RUNS)
+        readableDatabase.query(
+            COMMAND_RUN_TABLE,
+            COMMAND_RUN_COLUMNS,
+            null,
+            null,
+            null,
+            null,
+            "created_at DESC",
+            MAX_COMMAND_RUNS.toString()
+        ).use { cursor -> while (cursor.moveToNext() && result.size < MAX_COMMAND_RUNS) result += readCommandRun(cursor) }
+        return result
+    }
+
+    fun countCommandRuns(): Int = countRows(COMMAND_RUN_TABLE)
+
+    fun putCommandRun(run: AndroidCommandRunRecord) {
+        require(countCommandRuns() < MAX_COMMAND_RUNS || getCommandRun(run.id) != null) { "local command run limit reached" }
+        val values = ContentValues().apply {
+            put("id", run.id)
+            put("command_ciphertext", run.commandCiphertext)
+            put("host_ids_json", run.hostIdsJson)
+            put("status", run.status)
+            put("persist_output", if (run.persistOutput) 1 else 0)
+            put("created_at", run.createdAt)
+            if (run.finishedAt == null) putNull("finished_at") else put("finished_at", run.finishedAt)
+        }
+        val existing = getCommandRun(run.id)
+        if (existing == null) {
+            writableDatabase.insertWithOnConflict(COMMAND_RUN_TABLE, null, values, SQLiteDatabase.CONFLICT_ABORT)
+        } else {
+            writableDatabase.update(COMMAND_RUN_TABLE, values, "id = ?", arrayOf(run.id))
+        }
+    }
+
+    fun getCommandTarget(runId: String, hostId: String): AndroidCommandTargetRecord? {
+        readableDatabase.query(
+            COMMAND_TARGET_TABLE,
+            COMMAND_TARGET_COLUMNS,
+            "run_id = ? AND host_id = ?",
+            arrayOf(runId, hostId),
+            null,
+            null,
+            null,
+            "1"
+        ).use { cursor -> return if (cursor.moveToFirst()) readCommandTarget(cursor) else null }
+    }
+
+    fun listCommandTargets(runId: String): List<AndroidCommandTargetRecord> {
+        val result = ArrayList<AndroidCommandTargetRecord>(MAX_COMMAND_TARGETS)
+        readableDatabase.query(
+            COMMAND_TARGET_TABLE,
+            COMMAND_TARGET_COLUMNS,
+            "run_id = ?",
+            arrayOf(runId),
+            null,
+            null,
+            "rowid ASC",
+            MAX_COMMAND_TARGETS.toString()
+        ).use { cursor -> while (cursor.moveToNext() && result.size < MAX_COMMAND_TARGETS) result += readCommandTarget(cursor) }
+        return result
+    }
+
+    fun countCommandTargets(runId: String): Int = readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM $COMMAND_TARGET_TABLE WHERE run_id = ?",
+        arrayOf(runId)
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
+
+    fun putCommandTarget(target: AndroidCommandTargetRecord) {
+        require(countCommandTargets(target.runId) < MAX_COMMAND_TARGETS || getCommandTarget(target.runId, target.hostId) != null) { "local command target limit reached" }
+        val values = ContentValues().apply {
+            put("run_id", target.runId)
+            put("host_id", target.hostId)
+            put("status", target.status)
+            if (target.exitCode == null) putNull("exit_code") else put("exit_code", target.exitCode)
+            if (target.outputCiphertext == null) putNull("output_ciphertext") else put("output_ciphertext", target.outputCiphertext)
+            put("output_bytes", target.outputBytes)
+            put("output_truncated", if (target.outputTruncated) 1 else 0)
+            if (target.errorCode == null) putNull("error_code") else put("error_code", target.errorCode)
+            if (target.startedAt == null) putNull("started_at") else put("started_at", target.startedAt)
+            if (target.finishedAt == null) putNull("finished_at") else put("finished_at", target.finishedAt)
+        }
+        writableDatabase.insertWithOnConflict(COMMAND_TARGET_TABLE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun deleteCommandRun(id: String): Boolean = transaction {
+        writableDatabase.delete(COMMAND_TARGET_TABLE, "run_id = ?", arrayOf(id))
+        writableDatabase.delete(COMMAND_RUN_TABLE, "id = ?", arrayOf(id)) > 0
+    }
+
+    fun trimCommandRuns(maxRuns: Int) {
+        require(maxRuns >= 0) { "invalid command run retention" }
+        transaction {
+            val count = writableDatabase.rawQuery("SELECT COUNT(*) FROM $COMMAND_RUN_TABLE", null).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getInt(0) else 0
+            }
+            val removeCount = count - maxRuns
+            if (removeCount <= 0) return@transaction
+            writableDatabase.query(
+                COMMAND_RUN_TABLE,
+                arrayOf("id"),
+                "status NOT IN (?, ?)",
+                arrayOf("queued", "running"),
+                null,
+                null,
+                "COALESCE(finished_at, created_at) ASC",
+                removeCount.toString()
+            ).use { cursor ->
+                val ids = ArrayList<String>(removeCount)
+                while (cursor.moveToNext()) ids += cursor.getString(0)
+                ids.forEach {
+                    writableDatabase.delete(COMMAND_TARGET_TABLE, "run_id = ?", arrayOf(it))
+                    writableDatabase.delete(COMMAND_RUN_TABLE, "id = ?", arrayOf(it))
+                }
+            }
+        }
+    }
+
+    fun markActiveCommandRunsInterrupted(errorCode: String, finishedAt: String): Int = transaction {
+        val runCount = writableDatabase.update(
+            COMMAND_RUN_TABLE,
+            ContentValues().apply {
+                put("status", "interrupted")
+                put("finished_at", finishedAt)
+            },
+            "status IN (?, ?)",
+            arrayOf("queued", "running")
+        )
+        writableDatabase.update(
+            COMMAND_TARGET_TABLE,
+            ContentValues().apply {
+                put("status", "interrupted")
+                put("error_code", errorCode)
+                put("finished_at", finishedAt)
+            },
+            "status IN (?, ?)",
+            arrayOf("queued", "running")
+        )
+        runCount
+    }
+
     fun <T> transaction(block: () -> T): T {
         val database = writableDatabase
         database.beginTransaction()
@@ -658,6 +1057,55 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         updatedAt = cursor.getString(4)
     )
 
+    private fun readSnippet(cursor: android.database.Cursor): AndroidSnippet = AndroidSnippet(
+        id = cursor.getString(0),
+        name = cursor.getString(1),
+        description = cursor.getStringOrNull(2),
+        tagsJson = cursor.getString(3),
+        commandCiphertext = cursor.getString(4),
+        variablesJson = cursor.getString(5),
+        createdAt = cursor.getString(6),
+        updatedAt = cursor.getString(7)
+    )
+
+    private fun readTransfer(cursor: android.database.Cursor): AndroidTransferRecord = AndroidTransferRecord(
+        id = cursor.getString(0),
+        kind = cursor.getString(1),
+        hostId = cursor.getString(2),
+        sourcePath = cursor.getString(3),
+        targetPath = cursor.getString(4),
+        status = cursor.getString(5),
+        completedBytes = cursor.getLong(6),
+        totalBytes = cursor.getLongOrNull(7),
+        checksum = cursor.getStringOrNull(8),
+        errorCode = cursor.getStringOrNull(9),
+        createdAt = cursor.getString(10),
+        updatedAt = cursor.getString(11)
+    )
+
+    private fun readCommandRun(cursor: android.database.Cursor): AndroidCommandRunRecord = AndroidCommandRunRecord(
+        id = cursor.getString(0),
+        commandCiphertext = cursor.getString(1),
+        hostIdsJson = cursor.getString(2),
+        status = cursor.getString(3),
+        persistOutput = cursor.getInt(4) != 0,
+        createdAt = cursor.getString(5),
+        finishedAt = cursor.getStringOrNull(6)
+    )
+
+    private fun readCommandTarget(cursor: android.database.Cursor): AndroidCommandTargetRecord = AndroidCommandTargetRecord(
+        runId = cursor.getString(0),
+        hostId = cursor.getString(1),
+        status = cursor.getString(2),
+        exitCode = cursor.getIntOrNull(3),
+        outputCiphertext = cursor.getStringOrNull(4),
+        outputBytes = cursor.getInt(5),
+        outputTruncated = cursor.getInt(6) != 0,
+        errorCode = cursor.getStringOrNull(7),
+        startedAt = cursor.getStringOrNull(8),
+        finishedAt = cursor.getStringOrNull(9)
+    )
+
     private fun countRows(table: String): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM $table", null).use { cursor ->
         if (cursor.moveToFirst()) cursor.getInt(0) else 0
     }
@@ -677,6 +1125,10 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
 
     private fun android.database.Cursor.getStringOrNull(index: Int): String? = if (isNull(index)) null else getString(index)
 
+    private fun android.database.Cursor.getLongOrNull(index: Int): Long? = if (isNull(index)) null else getLong(index)
+
+    private fun android.database.Cursor.getIntOrNull(index: Int): Int? = if (isNull(index)) null else getInt(index)
+
     private fun nowIso(): String = java.time.Instant.now().toString()
 
     private val HOST_COLUMNS = arrayOf(
@@ -690,4 +1142,8 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
     private val IDENTITY_COLUMNS = arrayOf("id", "name", "type", "username", "key_fingerprint", "credential_ciphertext", "created_at", "updated_at")
     private val GROUP_COLUMNS = arrayOf("id", "name", "parent_id", "sort_order", "default_identity_id", "connection_profile_json", "created_at", "updated_at")
     private val TERMINAL_PROFILE_COLUMNS = arrayOf("id", "name", "appearance_json", "created_at", "updated_at")
+    private val SNIPPET_COLUMNS = arrayOf("id", "name", "description", "tags_json", "command_ciphertext", "variables_json", "created_at", "updated_at")
+    private val TRANSFER_COLUMNS = arrayOf("id", "kind", "host_id", "source_path", "target_path", "status", "completed_bytes", "total_bytes", "checksum", "error_code", "created_at", "updated_at")
+    private val COMMAND_RUN_COLUMNS = arrayOf("id", "command_ciphertext", "host_ids_json", "status", "persist_output", "created_at", "finished_at")
+    private val COMMAND_TARGET_COLUMNS = arrayOf("run_id", "host_id", "status", "exit_code", "output_ciphertext", "output_bytes", "output_truncated", "error_code", "started_at", "finished_at")
 }

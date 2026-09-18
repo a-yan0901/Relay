@@ -60,8 +60,8 @@ const NATIVE_CAPABILITIES: readonly Capability[] = [
 
 /**
  * Android only advertises the operations backed by the current native slice.
- * Keeping this list explicit prevents the UI from exposing snippets, templates
- * or other unsupported automation while their native ports are not present.
+ * Keeping this list explicit prevents the UI from exposing templates, audit
+ * history or other automation that still has no bounded native implementation.
  */
 export const ANDROID_LOCAL_CAPABILITIES: readonly Capability[] = [
   'workspace.persistence',
@@ -75,6 +75,10 @@ export const ANDROID_LOCAL_CAPABILITIES: readonly Capability[] = [
   'sftp.entry-mutations',
   'vault.bundle',
   'vault.identities',
+  'automation.snippets',
+  'automation.snippet-manager',
+  'automation.batch-exec',
+  'automation.target-picker',
   'session.lifecycle-status'
 ];
 
