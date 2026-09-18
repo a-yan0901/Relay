@@ -8,4 +8,18 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(RelayNativePlugin.class);
         super.onCreate(savedInstanceState);
     }
+
+    @Override
+    public void onBackPressed() {
+        if (getBridge() == null || getBridge().getWebView() == null) {
+            super.onBackPressed();
+            return;
+        }
+        getBridge().getWebView().evaluateJavascript(
+            "(function(){var event=new Event('relay:back',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented;})()",
+            handled -> {
+                if (!"true".equals(handled)) MainActivity.super.onBackPressed();
+            }
+        );
+    }
 }

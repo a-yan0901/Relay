@@ -311,6 +311,45 @@ export const App = ({ runtime }: AppProps) => {
     };
   }, []);
 
+  useEffect(() => {
+    const handleNativeBack = (event: Event): void => {
+      // Android forwards its system back key as a cancelable event. Close the
+      // top-most Relay surface first; leave the event unhandled so Android can
+      // exit the activity when the user is already at the root screen.
+      if (commandDialogOpen) {
+        setCommandDialogOpen(false);
+      } else if (broadcastPreviewOpen) {
+        setBroadcastPreviewOpen(false);
+      } else if (syncCenterOpen) {
+        setSyncCenterOpen(false);
+      } else if (activityOpen) {
+        setActivityOpen(false);
+      } else if (workspaceSwitcherOpen) {
+        setWorkspaceSwitcherOpen(false);
+      } else if (quickSwitcherOpen) {
+        setQuickSwitcherOpen(false);
+      } else if (snippetPaletteOpen) {
+        setSnippetPaletteOpen(false);
+      } else if (snippetManagerOpen) {
+        setSnippetManagerOpen(false);
+      } else if (identityOpen) {
+        setIdentityOpen(false);
+      } else if (preferencesOpen) {
+        setPreferencesOpen(false);
+      } else if (hostFormOpen) {
+        setEditingHost(null);
+        setHostFormOpen(false);
+      } else if (terminalView) {
+        setTerminalView(false);
+      } else {
+        return;
+      }
+      event.preventDefault();
+    };
+    window.addEventListener('relay:back', handleNativeBack);
+    return () => window.removeEventListener('relay:back', handleNativeBack);
+  }, [activityOpen, broadcastPreviewOpen, commandDialogOpen, hostFormOpen, identityOpen, preferencesOpen, quickSwitcherOpen, snippetManagerOpen, snippetPaletteOpen, syncCenterOpen, terminalView, workspaceSwitcherOpen]);
+
   const notifications = runtime.platformServices?.notifications;
   const dialogs = runtime.platformServices?.dialogs;
 

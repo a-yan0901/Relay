@@ -309,6 +309,11 @@ describe('App boot recovery', () => {
     const quickSwitcher = screen.getByRole('button', { name: '快速切换' });
     await user.click(quickSwitcher);
     expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: '快速搜索' }));
+    const nativeBack = new Event('relay:back', { cancelable: true });
+    expect(window.dispatchEvent(nativeBack)).toBe(false);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '快速切换' })).not.toBeInTheDocument());
+
+    await user.click(quickSwitcher);
     await user.keyboard('{Escape}');
     expect(document.activeElement).toBe(quickSwitcher);
 
