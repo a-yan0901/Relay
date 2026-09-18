@@ -41,7 +41,6 @@ const NATIVE_CAPABILITIES: readonly Capability[] = [
   'terminal.broadcast',
   'transfer.resume',
   'sftp.local-files',
-  'session.reattach',
   'vault.bundle',
   'vault.identities',
   'ssh.shell',

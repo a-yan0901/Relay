@@ -28,6 +28,7 @@ describe('native core runtime adapter', () => {
     };
     const runtime = createNativeCoreRuntime({ platform: 'desktop', port });
 
+    expect(runtime.capabilities.supports('session.reattach')).toBe(false);
     await expect(runtime.vault.status()).resolves.toEqual({ phase: 'unlocked' });
     await runtime.hosts.list({ query: 'prod' });
     const session = await runtime.sessions.openShell({
