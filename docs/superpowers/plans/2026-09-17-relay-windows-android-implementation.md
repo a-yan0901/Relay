@@ -26,7 +26,7 @@
 
 | 任务 | 当前状态 | 已有证据 | 剩余门禁 |
 | --- | --- | --- | --- |
-| 1 共享 contract | 🟡 主要 contract、capability 和 UI 增量已落地 | shared/native contract、Web/DOM 定向测试 | 三端任务矩阵和最终视口走查 |
+| 1 共享 contract | 🟡 主要 contract、capability 和 UI 增量已落地 | shared/native contract、Web/DOM 定向测试、[三端验收矩阵](../verification/2026-09-18-relay-cross-platform-acceptance-matrix.md) | 三端最终视口走查 |
 | 2 浏览器调用抽离 | 🟡 平台 ports、系统能力和下载边界已抽离 | Web/native TypeScript、定向 ESLint/DOM 测试 | 完整跨端路径审计 |
 | 3 手机布局与输入 | 🟡 返回键、移动工具条、SFTP 布局和过滤已实现 | DOM 测试、Web 构建 | 真机软键盘、安全区、最后一行和滚动走查 |
 | 4 Android SSH 可行性 | 🟡 JSch 候选和执行器已接入 | Kotlin 编译、Android JVM 测试 | 真机认证、PTY、Host Key、ProxyJump、SFTP 资源释放 |
@@ -107,6 +107,6 @@
 - 本次原生恢复与输入缓冲增量的 Android 验证使用 `ANDROID_HOME=/usr/lib/android-sdk ANDROID_SDK_ROOT=/usr/lib/android-sdk ./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain`，53 actionable tasks、5 executed、48 up-to-date，`BUILD SUCCESSFUL`。首次未设置 SDK 路径的运行只停在 Gradle 配置阶段，不作为代码失败证据。
 - `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 159 个测试文件、695 个测试，695 个全部通过。期间修正了 bundle 导出仍回退到旧内置主题 ID 的实现缺陷，并将 shared core 边界测试收敛到真正的 `src/shared/core` 目录，避免把 cloud WebSocket 适配器误判为 core 依赖。
 - 最新跨端回归（2026-09-18）：`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 161 个测试文件、720 个测试，全部通过；`npm run typecheck`、`npm run lint`、`npm run build`（Web/Server/Cloud）和 `npm run build:windows` 全部通过。Android Debug APK 已通过单 worker Gradle 构建、APK ZIP 完整性检查；Windows x64 portable 预览包已通过 PE 格式检查和 Linux Electron 启动烟测。为避免原生构建产物被误当源码，ESLint 明确忽略 Capacitor 的 `app/build` 与 `app/src/main/assets` 生成目录。当前仍缺 Windows 实机 ABI/升级验证、NSIS（本机构建缺 Wine）和 Android 真机 SSH/SFTP/Keystore/生命周期验证，不能据此将任务 14 标记完成。
-- 本轮增量回归（2026-09-18）：`npm run test:e2e -- --workers=1` 通过 4/4；HostCard、ContextMenu、ServerContextMenu、TerminalSession 定向测试通过 4 个文件、27 个测试；`npm run typecheck`、`npm run lint`、`npm run build`、Server/Cloud 产物 Node ESM 加载和 `npm run build:windows` 全部通过。最新 Windows x64 portable 预览包已生成并通过 PE 检查，SHA256 为 `9085f3cd90b2aa6903b17125f21248006e652c3d501dc9ad0b47d172f44db69b`。修正 Android `build:debug` 脚本后，使用 `ANDROID_HOME=/usr/lib/android-sdk ANDROID_SDK_ROOT=/usr/lib/android-sdk npm run build:android:debug` 通过真实 `:app:assembleDebug` 构建（73 actionable tasks，单 worker、无 daemon），最新 Debug APK 已通过 ZIP 完整性检查，SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`。真实 Windows/Android 设备证据仍缺失。
+- 本轮增量回归（2026-09-18）：`npm run test:e2e -- --workers=1` 通过 4/4；HostCard、ContextMenu、ServerContextMenu、TerminalSession 定向测试通过 4 个文件、27 个测试；`npm run typecheck`、`npm run lint`、`npm run build`、Server/Cloud 产物 Node ESM 加载和 `npm run build:windows` 全部通过。`npm run package:windows:portable` 已验证可复现 Windows x64 portable 预览包，PE 检查通过，最新 SHA256 为 `91af49081e8a477a99fe5993ace1777797115f0b32355249cd31ebf4bb435478`。修正 Android `build:debug` 脚本后，使用 `ANDROID_HOME=/usr/lib/android-sdk ANDROID_SDK_ROOT=/usr/lib/android-sdk npm run build:android:debug` 通过真实 `:app:assembleDebug` 构建（73 actionable tasks，单 worker、无 daemon），最新 Debug APK 已通过 ZIP 完整性检查，SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`；`testDebugUnitTest` 通过 7 个 suite、25 个测试。真实 Windows/Android 设备证据仍缺失。
 
 当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及 Android 真机上的 SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。

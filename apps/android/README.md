@@ -5,9 +5,14 @@
 本地命令：
 
 ```bash
+# 按本机实际 SDK 路径设置；不要把该路径提交到仓库
+export ANDROID_HOME=/usr/lib/android-sdk
+export ANDROID_SDK_ROOT=/usr/lib/android-sdk
 npm run build:android:debug
 npm run build:android:release
 ```
+
+`build:android:debug` 使用单 worker、无 Gradle daemon 的 `assembleDebug`，适合低内存开发机；Debug APK 输出在 `android/app/build/outputs/apk/debug/app-debug.apk`。Release AAB 仍由 `build:android:release` 负责，签名和发布 ABI 需在发布机完成。
 
 当前环境已准备 JDK 21、Gradle wrapper、Android API 36 和 Build Tools 35.0.0；JSch 2.27.7 依赖可离线复用。Kotlin 编译和 Android 单元测试已通过，但仍没有 Android 真机/模拟器，因此 Keystore 实机行为、SSH/SFTP 真实连接、后台生命周期和安装任务不能宣称完成；不能用 Web Relay 服务代替 Android 独立客户端验证。
 
