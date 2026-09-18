@@ -22,8 +22,8 @@
 ## 当前可复现证据
 
 - Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 和 `npm run test:e2e -- --project=chromium`；默认 E2E 4/4 通过，Playwright 共享数据目录固定单 worker。
-- Windows：`npm run build:windows` 和 `npm run package:windows:portable`；本机生成 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `F4181F7095B9453FCB0720BC436F54E22A0DCCC4F4E16C5F0FE71C5A0EF1A663`，大小 457,281,531 bytes。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
-- Android：设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT` 后，以 JDK 21 + Gradle 9.3.1、单 worker、离线依赖执行 `:app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug`；Debug APK SHA-256 为 `4F84641808A110142B068F33A28F39D1251C37F14A33DC96318F75A72E19D5CA`，大小 8,284,171 bytes。本轮已安装到 `emulator-5554`（API 35/x86_64）并启动 `cn.ayan.relay/.MainActivity`；这只证明安装/启动 smoke，真 SSH/SFTP、Keystore、网络切换、锁屏/进程回收和 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
+- Windows：源码 commit `75cc630` 上执行 `npm run build:windows` 和 `npm run package:windows:portable`；本机生成 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`，大小 457,281,531 bytes，签名状态为 `NotSigned`。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
+- Android：源码 commit `75cc630` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker、离线依赖执行 `:app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug`；Debug APK SHA-256 为 `4F84641808A110142B068F33A28F39D1251C37F14A33DC96318F75A72E19D5CA`，大小 8,284,171 bytes。本轮已安装到 `emulator-5554`（API 35/x86_64）并启动 `cn.ayan.relay/.MainActivity`；这只证明安装/启动 smoke，真 SSH/SFTP、Keystore、网络切换、锁屏/进程回收和 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
 
 ## 任务状态与门禁边界
 

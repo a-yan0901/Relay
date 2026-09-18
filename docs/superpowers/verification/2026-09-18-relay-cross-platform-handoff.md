@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-18
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**APK/Windows 包构建源码基线：** 本轮产物由当前 Windows checkout 的工作树构建；代码/测试/文档提交完成后，必须把最终 `git rev-parse HEAD` 回填为制品清单的源码基线，不能把旧文档 commit 自动视为产物构建 commit。
-**验收机器应检出：** 与制品清单匹配的最终源码 commit；若重新构建，应以新构建 commit、构建时间、工具链和制品哈希为准。
+**APK/Windows 包构建源码基线：** `75cc630`；本轮 APK 与 Windows portable 包均在该提交上重新构建并复核 hash。后续重新构建必须以新的源码 commit、构建时间、工具链和制品哈希为准。
+**验收机器应检出：** `75cc630`，或与重新构建制品清单匹配的新源码 commit。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -13,7 +13,7 @@
 
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
-| Web | ✅ 自动化基线可复现 | 161 个测试文件/720 个测试通过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
+| Web | ✅ 自动化基线可复现 | 160 个测试文件通过、1 个跳过；718 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
 | Windows | 🟡 可构建技术预览 | Electron shell、IPC/native contract、Windows x64 portable 包生成；SHA-256 已记录 | Windows native ABI、安装/升级迁移、退出/重开、SSH/SFTP 任务链 |
 | Android | 🟡 APK 已安装启动 smoke，不代表设备完成 | Kotlin 编译、JVM 单元测试、Debug APK 构建；已安装到 API 35/x86_64 `emulator-5554` 并启动 Activity | SSH/SFTP、Keystore、URI、返回键、软键盘、锁屏/进程回收、网络切换和 A-01～A-17 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
@@ -25,31 +25,37 @@
 
 ## 2. 产物位置、溯源和工具链
 
-仓库不包含以下生成物；它们应由独立构建机或制品存储提供，不会随 `git clone`、`git checkout` 或本次文档 commit 交付。当前 Windows checkout 未发现这些文件：
+仓库不包含以下生成物；它们当前位于 Windows checkout 的 gitignored 生成目录，不会随 `git clone`、`git checkout` 或本次文档 commit 交付。交接执行人应从受控制品来源取得同 hash 文件：
 
 ### Android Debug APK
 
 - 文件：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`
 - 应用 ID：`cn.ayan.relay`
+- 构建时间（文件时间，Asia/Shanghai）：`2026-09-18 18:15:19`
 - 大小：`8,284,171` bytes
 - SHA-256：`4F84641808A110142B068F33A28F39D1251C37F14A33DC96318F75A72E19D5CA`
 - 构建命令：
 
-  ```bash
+  ```powershell
+  $env:JAVA_HOME = 'C:\path\to\jdk-21'
+  $env:ANDROID_HOME = 'C:\path\to\Android\Sdk'
+  $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
   npm --prefix apps/android run sync
-  # JDK 21 + Gradle 9.3.1，单 worker、离线依赖
-  # 本轮 wrapper 声明 8.14.3 的发行版下载不可用，实际使用已缓存的 Gradle 9.3.1；交接机须记录实际版本。
-  gradle :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug \
-    --offline --no-daemon --max-workers=1 --console=plain
+  Push-Location apps/android/android
+  & 'C:\path\to\gradle-9.3.1\bin\gradle.bat' :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug --offline --no-daemon --max-workers=1 --console=plain
+  Pop-Location
   ```
+
+  本轮 wrapper 声明 `8.14.3` 的发行版下载不可用，实际使用已缓存的 Gradle `9.3.1`；交接机须记录实际版本。
 
 ### Windows portable 预览包
 
 - 文件：`dist/releases-portable-preview/Relay-0.1.0-x64.exe`
+- 构建时间（文件时间，Asia/Shanghai）：`2026-09-18 19:19:34`
 - 大小：`457,281,531` bytes
-- SHA-256：`F4181F7095B9453FCB0720BC436F54E22A0DCCC4F4E16C5F0FE71C5A0EF1A663`
-- 构建命令：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run package:windows:portable`
-- 说明：该文件已在 Windows checkout 生成并完成 SHA-256 校验；打包使用 `npmRebuild=false`，不能替代 Windows native ABI、安装/升级、退出/重开和完整 SSH/SFTP 任务链验收。
+- SHA-256：`1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`
+- 构建命令（PowerShell）：`$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'; $env:npm_config_electron_mirror=$env:ELECTRON_MIRROR; npm run package:windows:portable`
+- 说明：该文件已在 Windows checkout 生成并完成 SHA-256 校验，签名状态为 `NotSigned`；打包使用 `npmRebuild=false`，不能替代 Windows native ABI、安装/升级、退出/重开和完整 SSH/SFTP 任务链验收。
 
 上述文件当前只存在于本机 gitignored 生成目录，不会随仓库 clone/checkout 交付。本仓库未配置可追溯的 GitHub Release 附件、制品服务器或跨机器共享目录；交接执行人应通过受控的 `scp`、SFTP 或共享目录复制，并在目标机再次运行 `sha256sum` 比对上述 hash。最终签收前必须补一条持久制品来源（URL、Release 附件或共享目录路径）和最终源码 commit；若没有该来源，状态只能保持 🟡。
 
