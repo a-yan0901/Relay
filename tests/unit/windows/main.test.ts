@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { DesktopIpcRouter } from '../../../apps/windows/ipc-contract.js';
 import { createDesktopMainController, DESKTOP_IPC_CHANNEL, DESKTOP_RENDERER_POLICY, registerDesktopIpc } from '../../../apps/windows/main.js';
@@ -30,13 +32,14 @@ describe('Windows desktop main shell', () => {
     const handle = vi.fn();
     const ipcMain = { handle, removeHandler: vi.fn() };
     const navigation = vi.fn();
+    const rendererFile = resolve('dist', 'web', 'index.html');
     const window = {
       id: 42,
       loadFile: vi.fn(async () => undefined),
       on: vi.fn(),
       webContents: { send: vi.fn(), on: navigation }
     };
-    await createDesktopMainController(ipcMain, { create: vi.fn(() => window) }, '/opt/relay/dist/index.html', (router) => {
+    await createDesktopMainController(ipcMain, { create: vi.fn(() => window) }, rendererFile, (router) => {
       router.register('vault.status', async () => ({ phase: 'locked' }));
     });
 
@@ -46,7 +49,7 @@ describe('Windows desktop main shell', () => {
     expect(blocked.preventDefault).toHaveBeenCalledOnce();
 
     const allowed = { preventDefault: vi.fn() };
-    listener(allowed, 'file:///opt/relay/dist/index.html');
+    listener(allowed, pathToFileURL(rendererFile).href);
     expect(allowed.preventDefault).not.toHaveBeenCalled();
   });
 

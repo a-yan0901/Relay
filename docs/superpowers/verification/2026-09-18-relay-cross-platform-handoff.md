@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-18
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**APK/Windows 包构建源码基线：** 未可靠锁定；当前 Git checkout 不包含生成物，哈希本身也不嵌入源码 commit。不能把 `1d6244d` 或任意文档 commit 自动视为产物构建 commit。
-**验收机器应检出：** 与制品清单匹配的源码 commit；若最终重新构建，应以新构建 commit 和制品清单为准，并把 `git rev-parse HEAD` 回填到结果记录。
+**APK/Windows 包构建源码基线：** 本轮产物由当前 Windows checkout 的工作树构建；代码/测试/文档提交完成后，必须把最终 `git rev-parse HEAD` 回填为制品清单的源码基线，不能把旧文档 commit 自动视为产物构建 commit。
+**验收机器应检出：** 与制品清单匹配的最终源码 commit；若重新构建，应以新构建 commit、构建时间、工具链和制品哈希为准。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -14,12 +14,14 @@
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
 | Web | ✅ 自动化基线可复现 | 161 个测试文件/720 个测试通过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
-| Windows | 🟡 可构建技术预览 | Electron shell、IPC/native contract、portable 包和 Linux 启动烟测 | Windows 主机安装、ABI、升级迁移、退出/重开、SSH/SFTP 任务链 |
-| Android | 🟡 APK 可交接，不代表设备完成 | Kotlin 编译、JVM 单元测试、Debug APK 构建和 ZIP 完整性通过 | 真机安装、SSH/SFTP、Keystore、URI、返回键、软键盘、锁屏/进程回收、网络切换 |
+| Windows | 🟡 可构建技术预览 | Electron shell、IPC/native contract、Windows x64 portable 包生成；SHA-256 已记录 | Windows native ABI、安装/升级迁移、退出/重开、SSH/SFTP 任务链 |
+| Android | 🟡 APK 已安装启动 smoke，不代表设备完成 | Kotlin 编译、JVM 单元测试、Debug APK 构建；已安装到 API 35/x86_64 `emulator-5554` 并启动 Activity | SSH/SFTP、Keystore、URI、返回键、软键盘、锁屏/进程回收、网络切换和 A-01～A-17 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
-本机内存不足，Android 软件模拟器没有形成有效设备连接：缺少 `/dev/kvm`，设备曾处于 `adb offline` 后退出。因此本机不再启动模拟器；Android 设备验收转移到内存充足且有真机或可用模拟器的机器。
+本机历史上有一次 AOSP 软件模拟器因缺少 `/dev/kvm` 处于 `adb offline` 后退出；本轮现有 `emulator-5554` 已恢复为 `device`（API 35、Android 15、x86_64），仅形成 APK 安装/Activity 启动 smoke。该 smoke 不替代 Android SSH/SFTP、Keystore、生命周期和低内存验收。
+
+本轮已执行的设备 smoke：`adb devices` 返回 `emulator-5554 device`；`adb install -r -d app-debug.apk` 返回 `Success`；`adb shell am start -n cn.ayan.relay/.MainActivity` 后 `dumpsys activity` 显示当前焦点为 `cn.ayan.relay/.MainActivity`；最近一段 Relay 相关 logcat 未出现 `FATAL EXCEPTION`。没有使用真实 SSH 凭据，也没有把该 smoke 记入 A-01～A-17 的“通过”。
 
 ## 2. 产物位置、溯源和工具链
 
@@ -29,30 +31,35 @@
 
 - 文件：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`
 - 应用 ID：`cn.ayan.relay`
-- SHA-256：`8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`
+- 大小：`8,284,171` bytes
+- SHA-256：`4F84641808A110142B068F33A28F39D1251C37F14A33DC96318F75A72E19D5CA`
 - 构建命令：
 
   ```bash
-  ANDROID_HOME=/usr/lib/android-sdk \
-  ANDROID_SDK_ROOT=/usr/lib/android-sdk \
-  npm run build:android:debug
+  npm --prefix apps/android run sync
+  # JDK 21 + Gradle 9.3.1，单 worker、离线依赖
+  # 本轮 wrapper 声明 8.14.3 的发行版下载不可用，实际使用已缓存的 Gradle 9.3.1；交接机须记录实际版本。
+  gradle :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug \
+    --offline --no-daemon --max-workers=1 --console=plain
   ```
 
 ### Windows portable 预览包
 
 - 文件：`dist/releases-portable-preview/Relay-0.1.0-x64.exe`
-- SHA-256：`91af49081e8a477a99fe5993ace1777797115f0b32355249cd31ebf4bb435478`
-- 说明：该文件已在 Linux 上完成 PE 格式检查和 Electron 启动烟测，不能替代 Windows 主机安装和原生 ABI 验收。
+- 大小：`457,281,531` bytes
+- SHA-256：`F4181F7095B9453FCB0720BC436F54E22A0DCCC4F4E16C5F0FE71C5A0EF1A663`
+- 构建命令：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run package:windows:portable`
+- 说明：该文件已在 Windows checkout 生成并完成 SHA-256 校验；打包使用 `npmRebuild=false`，不能替代 Windows native ABI、安装/升级、退出/重开和完整 SSH/SFTP 任务链验收。
 
-本仓库未配置可追溯的 GitHub Release 附件、制品服务器或跨机器共享目录。因此交接机器不能从仓库直接取得上述文件；交接执行人应通过受控的 `scp`、SFTP 或共享目录复制，并在目标机再次运行 `sha256sum` 比对上述 hash。最终签收前必须补一条持久制品来源（URL、Release 附件或共享目录路径）和构建清单；若没有该来源，状态只能保持 🟡。
+上述文件当前只存在于本机 gitignored 生成目录，不会随仓库 clone/checkout 交付。本仓库未配置可追溯的 GitHub Release 附件、制品服务器或跨机器共享目录；交接执行人应通过受控的 `scp`、SFTP 或共享目录复制，并在目标机再次运行 `sha256sum` 比对上述 hash。最终签收前必须补一条持久制品来源（URL、Release 附件或共享目录路径）和最终源码 commit；若没有该来源，状态只能保持 🟡。
 
 以下是上一轮 Linux 构建记录中的工具链信息，不代表当前 Windows checkout 已具备同样环境，也不等同于已经锁定的产物源码 commit：
 
 | 项目 | 版本/配置 |
 | --- | --- |
-| Node / npm | `v22.22.0` / `11.18.0` |
+| Node / npm | `v22.22.3` / `10.9.8` |
 | JDK | OpenJDK `21.0.12` |
-| Gradle | `8.14.3` |
+| Gradle | `9.3.1`（本轮使用已缓存发行版；wrapper 仍声明 `8.14.3`） |
 | Kotlin | `2.0.21` |
 | Android min/compile/target SDK | `24` / `36` / `36` |
 | Android SDK Platform | `platforms;android-36` |
@@ -102,23 +109,23 @@
 
 | 编号 | 验收任务 | 预期结果 | 结果/证据 |
 | --- | --- | --- | --- |
-| A-01 | 首次打开、创建 Host、保存凭据 | 不需要 Relay URL 或 cookie；Host 重启后仍存在 | ☐ |
-| A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | ☐ |
-| A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | ☐ |
-| A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | ☐ |
-| A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | ☐ |
-| A-06 | 断网后恢复 | 网络切换/短暂断开显示真实 `reconnecting` 或 `interrupted`；恢复后按交互约定重连，不伪造 connected | ☐ |
-| A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | ☐ |
-| A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | ☐ |
-| A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | ☐ |
-| A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | ☐ |
-| A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | ☐ |
-| A-12 | Vault 锁定和重开 | 锁定后秘密不可读取；正确解锁恢复；错误密码/损坏 bundle 不覆盖旧数据 | ☐ |
-| A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | ☐ |
-| A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | ☐ |
-| A-15 | 低内存行为 | 大目录/大文件操作不明显失控；取消/退出后资源释放；无持续增长的输出/文件缓冲 | ☐ |
-| A-16 | 秘密和网络边界 | 普通 logcat、WebView 持久化和系统备份中不出现密码/私钥/Vault 明文；客户端不要求本地 HTTP 监听 | ☐ |
-| A-17 | Vault bundle v1 跨端固定向量 | Web/Windows 导出 → Android 预览/应用 → Android 导出 → Web/Windows 导入；字段、计数、错误密码/篡改和原数据不变性均符合固定向量 | ☐ |
+| A-01 | 首次打开、创建 Host、保存凭据 | 不需要 Relay URL 或 cookie；Host 重启后仍存在 | 待执行 |
+| A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 待执行 |
+| A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | 待执行 |
+| A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行 |
+| A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行 |
+| A-06 | 断网后恢复 | 网络切换/短暂断开显示真实 `reconnecting` 或 `interrupted`；恢复后按交互约定重连，不伪造 connected | 待执行 |
+| A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行 |
+| A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | 待执行 |
+| A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | 待执行 |
+| A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行 |
+| A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 待执行 |
+| A-12 | Vault 锁定和重开 | 锁定后秘密不可读取；正确解锁恢复；错误密码/损坏 bundle 不覆盖旧数据 | 待执行 |
+| A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行 |
+| A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | 待执行 |
+| A-15 | 低内存行为 | 大目录/大文件操作不明显失控；取消/退出后资源释放；无持续增长的输出/文件缓冲 | 待执行 |
+| A-16 | 秘密和网络边界 | 普通 logcat、WebView 持久化和系统备份中不出现密码/私钥/Vault 明文；客户端不要求本地 HTTP 监听 | 待执行 |
+| A-17 | Vault bundle v1 跨端固定向量 | Web/Windows 导出 → Android 预览/应用 → Android 导出 → Web/Windows 导入；字段、计数、错误密码/篡改和原数据不变性均符合固定向量 | 待执行 |
 
 ## 6. 客观操作与判定标准
 

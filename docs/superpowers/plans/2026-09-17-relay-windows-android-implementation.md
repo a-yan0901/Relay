@@ -94,8 +94,13 @@
 - 移动 Console 工具条增量（2026-09-18）：重新接通已有 `TerminalPanel` toolbar 状态，在窄屏底部提供复制、粘贴、搜索、清屏、全屏、重连和关闭等快捷操作；桌面顶部栏保持紧凑，打开 SFTP 时工具条隐藏；工具条状态映射按终端 ID 有界清理，避免已关闭 Console 残留。相关 Web/DOM 测试 31/31、受影响 ESLint、根 TypeScript 和 Web 构建通过；真实 Android 软键盘/安全区仍需设备走查。
 - 大目录 SFTP 分页与写入器安全增量（2026-09-18，本轮提交）：新增共享 `SftpListPage`/游标协议和 `/list-page` Web 路由；服务端 ssh2 适配器使用 `opendir/readdir` 按页读取，Windows 复用同一服务，Android 原生按游标和名称过滤返回最多 256 项；Web SFTP 面板在分页模式只保留当前页，并限制返回游标历史为 32 条，避免把整个远端目录放入 UI 内存。达到 Android 文件写入器上限时改为取消临时文件，避免误提交导出文件。受影响测试 7 个文件、55/55 通过，根/native TypeScript、受影响 ESLint、Web/Windows/Server 构建通过；Android Kotlin 编译和此前 JVM 单元测试也通过。真实设备和 Windows 实机分页走查仍待完成。
 - 交互与构建稳定性增量（2026-09-18）：Host 卡片右键改为捕获阶段处理，避免点到卡片内动作按钮时丢失 Server 菜单，同时保留标签专属右键菜单；上下文菜单首次定位/聚焦不再被布局滚动立即关闭。Playwright 主题回归同步到当前主题预览卡交互，主流程 E2E 4/4 通过。浏览器端远端异常重连不再主动调用规范禁止的 WebSocket `1011` 关闭码，改用合法的 `1000` 并保留自动重连语义；相关单测通过。Server/Cloud 构建脚本将 `ws` 标为 external，产物可直接被 Node ESM 加载，避免生产构建后启动崩溃。
+- 跨平台回归增量（2026-09-18，本轮 Windows checkout）：Windows Playwright 配置改为使用 `webServer.env`，并加入可在非 Linux/root 环境运行的 in-process `ssh2` E2E fixture；共享 `.tmp-e2e-data` 的 E2E worker 固定为 1，避免多个 spec 并行初始化 Vault。默认 E2E 4/4 通过，覆盖 Vault、Host Key、终端、多标签、SFTP、批量命令、离线窄屏和旧 Shell 恢复为 `needs-reopen`。全量 Vitest 为 160 个文件通过、1 个跳过，718 个测试通过、2 个跳过；`npm run typecheck`、`npm run lint`、`npm run build` 和 `npm run build:windows` 通过。
+- 原生制品回归增量（2026-09-18）：Android 使用 JDK 21、Gradle 9.3.1、单 worker 离线构建，`compileDebugKotlin`、`testDebugUnitTest` 和 `assembleDebug` 均通过；Debug APK 为 8,284,171 bytes，SHA-256 `4F84641808A110142B068F33A28F39D1251C37F14A33DC96318F75A72E19D5CA`，已安装到 `emulator-5554`（API 35/x86_64）并启动 `cn.ayan.relay/.MainActivity`，未见 Relay `FATAL EXCEPTION`。该设备证据仅证明安装/启动 smoke，不替代 A-01～A-17。
+- Windows x64 portable 包已在本机生成（`npm run package:windows:portable`，`npmRebuild=false`），文件 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，大小 457,281,531 bytes，SHA-256 `F4181F7095B9453FCB0720BC436F54E22A0DCCC4F4E16C5F0FE71C5A0EF1A663`；Electron 44.4.1 已通过镜像下载。该包仍未证明 better-sqlite3/argon2 的 Windows Electron native ABI、升级迁移、安装/退出/重开和完整 SSH/SFTP 任务链。
 
 验证记录（2026-09-18）：
+
+> 追溯说明：以下带有 Linux 路径、旧制品 hash 或“没有 Android 真机/模拟器”描述的条目是早期构建记录，仅保留用于追溯；当前交接以本节后面的“跨平台回归增量（本轮 Windows checkout）”、“原生制品回归增量”和“当前设备交接状态”为准。
 
 - `npm exec vitest -- run` 针对 8 个受影响测试文件，以 `--no-file-parallelism --maxWorkers=1` 执行：8 files、45 tests 通过。
 - `npm exec tsc -- -p tsconfig.native.json --noEmit` 通过；改动的 Windows/native/Web TS/TSX 文件 ESLint 在 `--max-warnings 0` 下通过。
@@ -108,14 +113,14 @@
 - 本次 Android Activity 与外部配置导入增量通过 `:app:testDebugUnitTest --offline --no-daemon --max-workers=1`；外部解析器覆盖 OpenSSH、CSV、MobaXterm、Xshell、SecureCRT，输入总量受 48 KiB 上限约束。另修正本地 SQLite 增量升级保护条件，并在插件销毁时将活动 Shell 标记为 `needs-reopen`；真实生命周期行为仍需设备验证。
 - 本次原生恢复与输入缓冲增量的 Android 验证使用 `ANDROID_HOME=/usr/lib/android-sdk ANDROID_SDK_ROOT=/usr/lib/android-sdk ./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain`，53 actionable tasks、5 executed、48 up-to-date，`BUILD SUCCESSFUL`。首次未设置 SDK 路径的运行只停在 Gradle 配置阶段，不作为代码失败证据。
 - `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 159 个测试文件、695 个测试，695 个全部通过。期间修正了 bundle 导出仍回退到旧内置主题 ID 的实现缺陷，并将 shared core 边界测试收敛到真正的 `src/shared/core` 目录，避免把 cloud WebSocket 适配器误判为 core 依赖。
-- 最新跨端回归（2026-09-18）：`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 161 个测试文件、720 个测试，全部通过；`npm run typecheck`、`npm run lint`、`npm run build`（Web/Server/Cloud）和 `npm run build:windows` 全部通过。Android Debug APK 已通过单 worker Gradle 构建、APK ZIP 完整性检查；Windows x64 portable 预览包已通过 PE 格式检查和 Linux Electron 启动烟测。为避免原生构建产物被误当源码，ESLint 明确忽略 Capacitor 的 `app/build` 与 `app/src/main/assets` 生成目录。当前仍缺 Windows 实机 ABI/升级验证、NSIS（本机构建缺 Wine）和 Android 真机 SSH/SFTP/Keystore/生命周期验证，不能据此将任务 14 标记完成。
-- 本轮增量回归（2026-09-18）：`npm run test:e2e -- --workers=1` 通过 4/4；HostCard、ContextMenu、ServerContextMenu、TerminalSession 定向测试通过 4 个文件、27 个测试；`npm run typecheck`、`npm run lint`、`npm run build`、Server/Cloud 产物 Node ESM 加载和 `npm run build:windows` 全部通过。`npm run package:windows:portable` 已验证可复现 Windows x64 portable 预览包，PE 检查通过，最新 SHA256 为 `91af49081e8a477a99fe5993ace1777797115f0b32355249cd31ebf4bb435478`。修正 Android `build:debug` 脚本后，使用 `ANDROID_HOME=/usr/lib/android-sdk ANDROID_SDK_ROOT=/usr/lib/android-sdk npm run build:android:debug` 通过真实 `:app:assembleDebug` 构建（73 actionable tasks，单 worker、无 daemon），最新 Debug APK 已通过 ZIP 完整性检查，SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`；`testDebugUnitTest` 通过 7 个 suite、25 个测试。真实 Windows/Android 设备证据仍缺失。
+- 历史跨端回归（Linux 旧工作树，已被本轮 Windows checkout 记录取代）：`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 161 个测试文件、720 个测试，全部通过；`npm run typecheck`、`npm run lint`、`npm run build`（Web/Server/Cloud）和 `npm run build:windows` 全部通过。Android Debug APK 已通过单 worker Gradle 构建、APK ZIP 完整性检查；Windows x64 portable 预览包已通过 PE 格式检查和 Linux Electron 启动烟测。该条不作为当前 Windows/Android 设备证据。
+- 历史增量回归（Linux 旧工作树，已被本轮 Windows checkout 记录取代）：`npm run test:e2e -- --workers=1` 通过 4/4；`npm run package:windows:portable` 的旧包 SHA256 为 `91af49081e8a477a99fe5993ace1777797115f0b32355249cd31ebf4bb435478`，旧 Debug APK SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`。该条只保留历史溯源，不代表当前制品或设备结果。
 ## 当前设备交接状态（2026-09-18）
 
-- Android 代码、Kotlin 编译、JVM 单元测试、Debug APK 构建已完成；当前开发机内存不足，停止继续启动 Android 模拟器。
-- 本机尝试过 AOSP x86_64 软件模拟器，但没有 `/dev/kvm`，设备长期处于 `adb offline` 后退出；该过程没有形成安装、SSH/SFTP 或生命周期验收证据，也不再作为后续验证路径。
-- Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由内存充足且有 Android 真机/可用模拟器的机器执行。任务 4–14 仍保持未完成；任务 15 只是未来同步兼容性预留，不属于本期客户端发布门禁。必须把设备结果和日志/截图回填后才能勾选。
-- Windows 仍等待 Windows 主机上的安装、原生 ABI、升级迁移和本地任务链验证；Linux portable 包仅是交接预览，不替代 Windows 验收。
-- 当前 Windows checkout 未包含 APK 和 portable 包；生成物不会随 `git clone` 或 `git checkout` 出现，且当前没有可追溯的 Release 附件、制品服务器或共享目录作为持久来源。最终签收前必须重新生成或登记可访问的制品来源，并记录源码 commit、工具链版本和 SHA-256；交接任务书中的路径只表示预期输出位置，不表示本机当前存在文件。
+- Android 代码、Kotlin 编译、JVM 单元测试、Debug APK 构建已完成；本机 `emulator-5554` 当前为 `device`（API 35、x86_64），APK 已安装并启动 Activity，但尚未执行真实 SSH/SFTP、Keystore、网络切换、锁屏/进程回收和 A-01～A-17。
+- 之前的 AOSP 软件模拟器 `/dev/kvm` 阻塞记录仍保留为历史环境证据；本轮可用设备只形成安装/启动 smoke，不应把它扩大解释为完整 Android 设备验收。
+- Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由目标设备执行人继续回填。任务 4–14 仍保持未完成；任务 15 只是未来同步兼容性预留，不属于本期客户端发布门禁。
+- Windows x64 portable 包已在本机生成，但仍等待 Windows native ABI、升级迁移、安装/退出/重开和本地 SSH/SFTP 任务链验证；`npmRebuild=false` 的打包结果不能替代 native ABI 验收。
+- APK 和 portable 包当前只存在于本机 gitignored 生成目录，不会随 `git clone` 或 `git checkout` 出现；当前没有可追溯的 Release 附件、制品服务器或共享目录作为持久来源。最终签收前必须登记可访问的制品来源，并记录源码 commit、工具链版本和 SHA-256。
 
 当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及交接机器上的 Android SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。

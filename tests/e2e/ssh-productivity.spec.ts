@@ -29,8 +29,10 @@ const waitForReady = async (page: Page): Promise<void> => {
     await page.getByLabel('主密码', { exact: true }).fill(MASTER_PASSWORD);
     await unlockButton.click();
   }
-  if (await terminalToolbar.isVisible()) return;
-  await expect(serverHeading).toBeVisible({ timeout: 15_000 });
+  await expect.poll(
+    async () => (await serverHeading.isVisible()) || (await terminalToolbar.isVisible()),
+    { timeout: 15_000 }
+  ).toBe(true);
 };
 
 const addHost = async (page: Page, name: string, fixture: E2eSshFixture): Promise<void> => {
@@ -241,7 +243,7 @@ test.describe('SSH productivity boundaries', () => {
     await expect(activity).not.toContainText('e2e-ok');
   });
 
-  test('restores a durable layout and reports a closed socket as reconnecting', async ({ page }) => {
+  test('restores a durable layout and reports a closed socket as needs-reopen', async ({ page }) => {
     test.setTimeout(60_000);
     await installSocketCapture(page);
     await waitForReady(page);
@@ -252,7 +254,8 @@ test.describe('SSH productivity boundaries', () => {
       const sockets = (window as Window & { __relaySockets?: WebSocket[] }).__relaySockets ?? [];
       for (const socket of sockets.filter((candidate) => candidate.url.includes('/ws/terminal'))) socket.close();
     });
-    await expect(page.locator('.terminal-tab.is-active .status-dot-blue, .terminal-tab.is-active .status-dot-red, .terminal-tab.is-active .status-dot-amber')).toHaveCount(1, { timeout: 1_000 });
+    await expect(page.locator('.terminal-panel.is-active .terminal-recovery')).toHaveCount(2, { timeout: 5_000 });
+    await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '新建终端' })).toBeVisible();
   });
 });

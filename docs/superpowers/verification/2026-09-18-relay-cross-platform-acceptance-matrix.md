@@ -21,12 +21,12 @@
 
 ## 当前可复现证据
 
-- Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm run test:e2e -- --workers=1`。
-- Windows：`npm run build:windows`；预览包使用 `npm run package:windows:portable`，真实安装器和 native ABI 仍需 Windows 主机。
-- Android：设置 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 后执行 `npm run build:android:debug`；JVM 回归使用 `./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain`。已记录的 Debug APK SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`，但当前 Windows checkout 不包含该 gitignored 生成物；开发机因内存不足不再启动模拟器，AOSP 软件模拟器曾处于 `adb offline` 后退出，真机/可用模拟器验收已交接到[交接任务书](./2026-09-18-relay-cross-platform-handoff.md)。构建工具链和制品溯源要求也记录在交接任务书中。
+- Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 和 `npm run test:e2e -- --project=chromium`；默认 E2E 4/4 通过，Playwright 共享数据目录固定单 worker。
+- Windows：`npm run build:windows` 和 `npm run package:windows:portable`；本机生成 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `F4181F7095B9453FCB0720BC436F54E22A0DCCC4F4E16C5F0FE71C5A0EF1A663`，大小 457,281,531 bytes。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
+- Android：设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT` 后，以 JDK 21 + Gradle 9.3.1、单 worker、离线依赖执行 `:app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug`；Debug APK SHA-256 为 `4F84641808A110142B068F33A28F39D1251C37F14A33DC96318F75A72E19D5CA`，大小 8,284,171 bytes。本轮已安装到 `emulator-5554`（API 35/x86_64）并启动 `cn.ayan.relay/.MainActivity`；这只证明安装/启动 smoke，真 SSH/SFTP、Keystore、网络切换、锁屏/进程回收和 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
 
 ## 任务状态与门禁边界
 
 - 当前仍未完成：任务 4–14；其中任务 5 的完整跨端 bundle v1 固定向量由[交接任务书 A-17](./2026-09-18-relay-cross-platform-handoff.md)执行，未通过前不能勾选任务 5、10 或 14。
 - 任务 15 仍是 🟡 的未来同步兼容性预留，但不属于本期 Windows/Android 客户端发布门禁；本期只要求云服务缺席时本地功能不受影响。
-- 矩阵不把 Web 浏览器验证、Linux Electron 烟测或 APK 构建视为 Windows/Android 真机验收；Android 交接机器应按任务书逐项回填结果，不以“能安装 APK”替代 SSH、SFTP、Vault、生命周期和低内存边界验证。
+- 矩阵不把 Web 浏览器验证、portable 生成或 APK 安装/启动 smoke 视为 Windows/Android 完整验收；Android 交接机器应按任务书逐项回填结果，不以“能安装 APK”替代 SSH、SFTP、Vault、生命周期和低内存边界验证。

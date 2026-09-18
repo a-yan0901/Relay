@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 
+import { startInProcessE2eSshFixture } from './in-process-ssh-fixture.js';
+
 const execFile = promisify(execFileCallback);
 const SSHD_PATH = '/usr/sbin/sshd';
 const FIXTURE_PASSWORD = 'webssh-e2e-password';
@@ -62,9 +64,11 @@ const waitForSshd = async (child: ChildProcess, port: number): Promise<void> => 
 };
 
 export const startE2eSshFixture = async (): Promise<E2eSshFixture> => {
-  if (process.platform !== 'linux' || process.getuid?.() !== 0) {
-    throw new Error('the local e2e SSH fixture requires Linux root privileges');
-  }
+  if (process.platform !== 'linux' || process.getuid?.() !== 0) return startInProcessE2eSshFixture();
+  return startLinuxE2eSshFixture();
+};
+
+const startLinuxE2eSshFixture = async (): Promise<E2eSshFixture> => {
   const fixtureUser = `webssh_e2e_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
   const root = await mkdtemp(join(tmpdir(), 'webssh-e2e-ssh-'));
   await chmod(root, 0o755);
