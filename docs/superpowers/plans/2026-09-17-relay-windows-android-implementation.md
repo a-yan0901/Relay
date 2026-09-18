@@ -61,6 +61,7 @@
 - 内存预算：原生文件与终端传输使用 32 KiB 单块；终端输入使用每会话最多 8 条、总量 64 KiB 的有界队列，超限显式报错；Windows 默认最多 4 个 SSH 会话、每会话 64 KiB 脱离缓冲、最多 4 个下载流、最多 32 个可重连请求；IPC/事件订阅和 payload 也有上限。验证默认关闭文件并行并限制 worker，避免在无 Swap 主机上同时启动多份 Node/Vite。
 - 共享导入/导出边界：`WorkspaceSettings` 顺序读取文件，外部配置总量限制 48 KiB，Vault bundle 限制 8 MiB，最多 4 个文件；原生 `FileWriter` 路径按 32 KiB 写入，避免导出时先构造整份 `Uint8Array`。对应提交 `132d12a`，WorkspaceSettings DOM 测试 7/7 通过。
 - 低内存与桌面安全增量（2026-09-18）：Windows Vault 导入改为最多 8 MiB 的有界二进制块收集，避免逐块字符串和 `join` 的额外峰值；native Vault 导出在存在原生文件句柄时按 32 KiB 流式写入 renderer，保留完整字符串导出作为 Web/兼容回退。Android WebView 事件队列固定 8 条，输出/进度可丢弃、控制事件优先；Electron 导航仅允许当前 renderer 文件。对应定向验证：Windows/native/Web 23 个测试通过、native TypeScript 类型检查与 ESLint 通过、`npm run build:windows` 通过；Android JVM 测试通过。
+- 原生恢复与输入缓冲增量（2026-09-18，`1142f0d`、`3c37281`、`4a47600`）：Windows/Android 不再持久化不可跨进程复用的 SSH descriptor；原生工作区重载后统一显示 `needs-reopen`，用户明确操作后才创建新 Shell，浏览器端仍先尝试服务端 reattach。原生 session 在生命周期关闭后不再进入自动重连循环，重开前释放旧 socket；Android Executor 与 JSch session 之间复用一次 UTF-8 输入缓冲并在完成后清零。对应 Web/native 定向测试通过，Android JVM 测试以单 worker、`-Xmx768m` 通过；真实后台/进程回收仍需设备验证。
 
 验证记录（2026-09-18）：
 
@@ -73,6 +74,7 @@
 - Workspace 模板增量（`b9ac4f2`）通过同一低内存 Gradle 命令复验：22 个 Android JVM 单测通过，80 actionable tasks，8 executed、72 up-to-date，`BUILD SUCCESSFUL`；共享 native core、adapter、Android bridge 定向测试 11/11，TypeScript 类型检查和 `core-runtime.ts` ESLint 通过。
 - 本次 Android 自动化/任务持久化增量另行通过 `:app:compileDebugKotlin`、`:app:testDebugUnitTest`（单 worker、离线）以及共享 native core、adapter、Android bridge 受影响测试 11/11；`src/shared/native/core-runtime.ts` ESLint 与 `git diff --check` 通过。
 - 本次 Android Activity 与外部配置导入增量通过 `:app:testDebugUnitTest --offline --no-daemon --max-workers=1`；外部解析器覆盖 OpenSSH、CSV、MobaXterm、Xshell、SecureCRT，输入总量受 48 KiB 上限约束。另修正本地 SQLite 增量升级保护条件，并在插件销毁时将活动 Shell 标记为 `needs-reopen`；真实生命周期行为仍需设备验证。
+- 本次原生恢复与输入缓冲增量的 Android 验证使用 `ANDROID_HOME=/usr/lib/android-sdk ANDROID_SDK_ROOT=/usr/lib/android-sdk ./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain`，53 actionable tasks、5 executed、48 up-to-date，`BUILD SUCCESSFUL`。首次未设置 SDK 路径的运行只停在 Gradle 配置阶段，不作为代码失败证据。
 - `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 完成 159 个测试文件、695 个测试，695 个全部通过。期间修正了 bundle 导出仍回退到旧内置主题 ID 的实现缺陷，并将 shared core 边界测试收敛到真正的 `src/shared/core` 目录，避免把 cloud WebSocket 适配器误判为 core 依赖。
 
 当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及 Android 真机上的 SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。
