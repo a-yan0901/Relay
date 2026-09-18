@@ -116,6 +116,6 @@
 - 本机尝试过 AOSP x86_64 软件模拟器，但没有 `/dev/kvm`，设备长期处于 `adb offline` 后退出；该过程没有形成安装、SSH/SFTP 或生命周期验收证据，也不再作为后续验证路径。
 - Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由内存充足且有 Android 真机/可用模拟器的机器执行。任务 4–14 仍保持未完成；任务 15 只是未来同步兼容性预留，不属于本期客户端发布门禁。必须把设备结果和日志/截图回填后才能勾选。
 - Windows 仍等待 Windows 主机上的安装、原生 ABI、升级迁移和本地任务链验证；Linux portable 包仅是交接预览，不替代 Windows 验收。
-- 当前工作区确实保留了 APK 和 portable 包，但两个路径都被 `.gitignore` 忽略，产物不会随 `git clone` 或 `git checkout` 出现；没有 Release 附件、制品服务器或共享目录作为持久来源。最终签收前必须重新生成或登记可访问的制品来源，并记录源码 commit、工具链版本和 SHA-256；交接任务书中的当前路径只表示本机缓存位置。
+- 当前 Windows checkout 未包含 APK 和 portable 包；生成物不会随 `git clone` 或 `git checkout` 出现，且当前没有可追溯的 Release 附件、制品服务器或共享目录作为持久来源。最终签收前必须重新生成或登记可访问的制品来源，并记录源码 commit、工具链版本和 SHA-256；交接任务书中的路径只表示预期输出位置，不表示本机当前存在文件。
 
 当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及交接机器上的 Android SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。

@@ -23,7 +23,7 @@
 
 - Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm run test:e2e -- --workers=1`。
 - Windows：`npm run build:windows`；预览包使用 `npm run package:windows:portable`，真实安装器和 native ABI 仍需 Windows 主机。
-- Android：设置 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 后执行 `npm run build:android:debug`；JVM 回归使用 `./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain`。当前 Debug APK SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`，仅存在当前开发机的 gitignored 生成目录；开发机因内存不足不再启动模拟器，AOSP 软件模拟器曾处于 `adb offline` 后退出，真机/可用模拟器验收已交接到[交接任务书](./2026-09-18-relay-cross-platform-handoff.md)。构建工具链和制品溯源要求也记录在交接任务书中。
+- Android：设置 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 后执行 `npm run build:android:debug`；JVM 回归使用 `./gradlew :app:testDebugUnitTest --offline --no-daemon --max-workers=1 --console=plain`。已记录的 Debug APK SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`，但当前 Windows checkout 不包含该 gitignored 生成物；开发机因内存不足不再启动模拟器，AOSP 软件模拟器曾处于 `adb offline` 后退出，真机/可用模拟器验收已交接到[交接任务书](./2026-09-18-relay-cross-platform-handoff.md)。构建工具链和制品溯源要求也记录在交接任务书中。
 
 ## 任务状态与门禁边界
 

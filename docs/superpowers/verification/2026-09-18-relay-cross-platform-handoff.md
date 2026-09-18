@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-18
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**APK/Windows 包构建源码基线：** 未可靠锁定；当前产物没有嵌入源码 commit，且文件时间早于 `1d6244d`。不能把 `1d6244d` 自动视为产物构建 commit。
-**验收机器应检出：** `30c9b5b`（用于读取本交接文档和代码）；若最终重新构建，应以新构建 commit 和制品清单为准。
+**APK/Windows 包构建源码基线：** 未可靠锁定；当前 Git checkout 不包含生成物，哈希本身也不嵌入源码 commit。不能把 `1d6244d` 或任意文档 commit 自动视为产物构建 commit。
+**验收机器应检出：** 与制品清单匹配的源码 commit；若最终重新构建，应以新构建 commit 和制品清单为准，并把 `git rev-parse HEAD` 回填到结果记录。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -23,14 +23,13 @@
 
 ## 2. 产物位置、溯源和工具链
 
-当前工作区存在以下生成物，但它们都被 `.gitignore` 忽略，不会随 `git clone`、`git checkout` 或本次文档 commit 交付：
+仓库不包含以下生成物；它们应由独立构建机或制品存储提供，不会随 `git clone`、`git checkout` 或本次文档 commit 交付。当前 Windows checkout 未发现这些文件：
 
 ### Android Debug APK
 
 - 文件：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`
 - 应用 ID：`cn.ayan.relay`
 - SHA-256：`8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`
-- 当前实际存放位置：`/root/code/ssh-tools/apps/android/android/app/build/outputs/apk/debug/app-debug.apk`（开发机本地缓存）
 - 构建命令：
 
   ```bash
@@ -43,12 +42,11 @@
 
 - 文件：`dist/releases-portable-preview/Relay-0.1.0-x64.exe`
 - SHA-256：`91af49081e8a477a99fe5993ace1777797115f0b32355249cd31ebf4bb435478`
-- 当前实际存放位置：`/root/code/ssh-tools/dist/releases-portable-preview/Relay-0.1.0-x64.exe`（开发机本地缓存）
 - 说明：该文件已在 Linux 上完成 PE 格式检查和 Electron 启动烟测，不能替代 Windows 主机安装和原生 ABI 验收。
 
-当前没有配置 GitHub Release 附件、制品服务器或跨机器共享目录。因此交接机器不能从仓库直接下载上述文件；交接执行人应通过受控的 `scp`、SFTP 或共享目录复制，并在目标机再次运行 `sha256sum` 比对上述 hash。最终签收前必须补一条持久制品来源（URL、Release 附件或共享目录路径）和构建清单；若没有该来源，状态只能保持 🟡。
+本仓库未配置可追溯的 GitHub Release 附件、制品服务器或跨机器共享目录。因此交接机器不能从仓库直接取得上述文件；交接执行人应通过受控的 `scp`、SFTP 或共享目录复制，并在目标机再次运行 `sha256sum` 比对上述 hash。最终签收前必须补一条持久制品来源（URL、Release 附件或共享目录路径）和构建清单；若没有该来源，状态只能保持 🟡。
 
-本机构建环境记录如下；它描述的是当前构建机，不等同于已经锁定的产物源码 commit：
+以下是上一轮 Linux 构建记录中的工具链信息，不代表当前 Windows checkout 已具备同样环境，也不等同于已经锁定的产物源码 commit：
 
 | 项目 | 版本/配置 |
 | --- | --- |
@@ -95,12 +93,12 @@
    adb shell monkey -p cn.ayan.relay 1
    ```
 
-4. 准备一台可测试的 SSH 主机：至少包含一个密码或私钥认证账号；如要验证 SFTP，准备一个有足够文件数量的目录、可读写目录和一个较大文件。不要在截图、日志或测试文件中使用真实生产密钥。
+4. 准备一台可测试的 SSH 主机和可回滚测试数据：至少包含密码与私钥认证账号各一套；准备不少于 300 项的目录、可读写目录和至少 32 MiB 的测试文件，并准备可安全变更/恢复 Host Key 的一次性主机。不要在截图、日志或测试文件中使用真实生产密钥。
 5. 本期 Local 模式不需要 Relay URL、Web cookie、账号或云服务；不要为了测试 Android 客户端启动 Web server 或配置云端地址。
 
 ## 5. 必须逐项执行的 Android 验收
 
-结果状态只允许使用 `通过`、`失败`、`阻塞`；每个“通过”都要附版本、操作结果和截图/日志路径。
+结果状态只允许使用 `待执行`、`通过`、`失败`、`阻塞`；空白单元格不算结果。每个“通过”都要附版本、操作结果和截图/日志路径；“阻塞”必须写明阻塞原因、责任人和下一步。
 
 | 编号 | 验收任务 | 预期结果 | 结果/证据 |
 | --- | --- | --- | --- |
@@ -187,7 +185,7 @@
 
 - 设备型号、Android 版本、ABI、应用版本和 APK SHA-256。
 - `adb devices`、安装结果和出现问题时的相关 `logcat` 片段；日志必须脱敏。
-- A-01 至 A-17 的通过/失败/阻塞结果；失败项写明复现步骤、期望、实际结果。
+- A-01 至 A-17 的待执行/通过/失败/阻塞结果；失败项写明复现步骤、期望、实际结果，阻塞项写明责任人和下一步。
 - SSH/SFTP 测试主机类型和功能范围，不记录密码、私钥、真实 Host Key 私密材料。
 - 对 UI 问题附竖屏/横屏截图；对生命周期问题附操作时间线。
 - 结果提交后，由开发者把证据同步到实施计划和验收矩阵；没有设备证据的项目继续保持 🟡/⏳，不能直接勾选计划任务。
