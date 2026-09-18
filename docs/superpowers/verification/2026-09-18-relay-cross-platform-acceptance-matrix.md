@@ -9,9 +9,9 @@
 | Host 搜索、收藏、grid/list、标签过滤 | ✅ | 🟡 | 🟡 | Web DOM/E2E；native runtime 复用 HostStore | Windows 窗口和 Android 触控走查 |
 | 创建/编辑/删除 Host 与本地 Vault | ✅ | 🟡 | 🟡 | Web E2E；Windows IPC/native contract；Android JVM/编译 | 两端安装后持久化和锁定走查 |
 | 首次 Host Key 确认、变更拒绝 | ✅ | 🟡 | 🟡 | Server/Windows/Android 状态机和定向测试；两台 Android 16 真机已在用户提供的 `106.14.61.92:22` 上完成同一真实指纹的 native trust 和建 Shell | Windows 实机连接、Android Host Key 变更拒绝 |
-| SSH 输入、复制/粘贴、断连重连 | ✅ | 🟡 | 🟡 | Web E2E、TerminalSession/Native socket 测试；两台 Android 16 真机在真实主机上连续 3 轮关闭/重开，均收到 raw `terminal.status=connected`，`whoami` 返回 `t2` 且 Console 可输入 | Windows 原生 ABI、Android 真机网络切换、复制/粘贴和完整 UI 走查 |
+| SSH 输入、复制/粘贴、断连重连 | ✅ | 🟡 | 🟡 | Web E2E、TerminalSession/Native socket 测试；两台 Android 16 真机在真实主机上连续 3 轮关闭/重开，均收到 raw `terminal.status=connected`，`whoami` 返回 `t2` 且 Console 可输入；本轮又分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到真实远端回显 | Windows 原生 ABI、Android 真机网络切换、复制/粘贴和完整 UI 走查 |
 | 多标签、分屏与移动单 pane | ✅ | 🟡 | 🟡 | Web 320/390px E2E；共享 runtime capability | Windows/Android UI 和生命周期走查 |
-| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；两台 Android 16 真机已通过真实主机读取 `/tmp`，每台返回 19 项 | 两端真实 UI SFTP、上传/下载/取消和部分失败 |
+| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；Android 真实主机证据包括两台设备 `/tmp` 各 19 项，以及本轮 `25091RP04C` 的 `/` 36 项、`/tmp` 25 项；上传自动化未形成传输任务，未记为通过 | 两端真实 UI SFTP、上传/下载/取消和部分失败 |
 | SFTP 单层滚动、终端最后一行可见 | ✅ | 🟡 | 🟡 | Web 窄视口几何断言 | Windows 窗口和 Android 软键盘/安全区 |
 | Vault 锁定、重开、任务恢复状态 | ✅ | 🟡 | 🟡 | Web/Windows/Android 本地实现与 JVM/DOM 测试 | 崩溃、重启、锁屏/进程回收 |
 | 主题、字号、grid/list 偏好持久化 | ✅ | 🟡 | 🟡 | Web E2E 主题持久化与第三方 `data-theme` 隔离 | 两端重启后视觉走查 |
@@ -21,9 +21,9 @@
 
 ## 当前可复现证据
 
-- Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 和 `npm run test:e2e -- --project=chromium`；默认 E2E 4/4 通过，Playwright 共享数据目录固定单 worker。
+- Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 和 `npm run test:e2e -- --project=chromium`；标准全量回归为 161 个测试文件通过、1 个跳过，727 个测试通过、2 个跳过；E2E 4/4 通过，Playwright 共享数据目录固定单 worker。
 - Windows（历史预览记录，非本轮新产物）：源码 commit `75cc630` 上曾执行 `npm run build:windows` 和 `npm run package:windows:portable`；本机残留 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`，大小 457,281,531 bytes，签名状态为 `NotSigned`。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
-- Android：源码 commit `d3c4c62` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker 执行 `:app:testDebugUnitTest` 和 `:app:assembleDebug`；两项均返回 `BUILD SUCCESSFUL`，APK 大小 8,633,367 bytes，SHA-256 为 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。该 APK 已重新安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`；两台真机对用户提供的 `106.14.61.92:22` 密码主机完成 Host Key trust、`/tmp` SFTP 列举（19 项/台）、终端 resize/写入/关闭，并连续 3 轮关闭/重开后输入 `whoami` 返回 `t2`。SFTP 上传下载取消、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
+- Android：源码 commit `d3c4c62` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker 执行 `:app:testDebugUnitTest :app:assembleDebug`，并执行 `:app:connectedDebugAndroidTest`；三项均返回 `BUILD SUCCESSFUL`，connected test 在 `2407FRK8EC` 完成 2/2。APK 大小 8,633,367 bytes，SHA-256 为 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。该 APK 曾安装到两台 Android 16 真机；续验结束时 `25091RP04C` 仍安装，`2407FRK8EC` 因测试 runner 清理后受到 `INSTALL_FAILED_USER_RESTRICTED` 阻塞。两台真机对用户提供的 `106.14.61.92:22` 密码主机完成 Host Key trust、`/tmp` SFTP 列举（19 项/台）、终端 resize/写入/关闭，并连续 3 轮关闭/重开后输入 `whoami` 返回 `t2`；本轮还在真实 UI 中完成两台 Console 命令回显和 `25091RP04C` 的 `/`/`/tmp` 浏览。SFTP 上传下载取消、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
 
 - 说明：本地 in-process SSH fixture 只用于可重复的自动化回归；上述 Android 真机结论使用的是用户提供的 `106.14.61.92:22`，账号为 `t2`，密码未写入仓库。
 
@@ -45,3 +45,10 @@
 
 - 上述是 root Electron 开发运行时的真实服务器 UI smoke，不是签名安装包验收。`package:windows` 因缺少 Visual Studio/MSVC 的 `node-gyp` native rebuild 阻塞；portable 重试还受到外部 builder 下载超时影响。旧的 gitignored portable 文件不得当作本轮新产物或 ABI 证据。
 - Windows 安装/升级/退出重开、native ABI、SFTP UI、低内存和完整任务链仍保持 `🟡`；Android 的 A-01～A-17 仍按交接任务书逐项维护，不因 Windows smoke 自动变更状态。
+
+## 2026-09-19 续验增量：Android 真实 UI 与安全边界
+
+- 两台 Android 16 真机均使用用户提供的 `106.14.61.92:22`/`t2`，从 Console 的“需要重新打开”状态执行重新打开；`2407FRK8EC` 输入 `echo REAL_SERVER_2407`、`25091RP04C` 输入 `echo REAL_SERVER_25091` 均得到远端回显和 `t2` 提示符。该证据专门覆盖“状态点变绿但命令不可输入”的风险，不把绿色状态单独视为通过。
+- `25091RP04C` 真实 SFTP UI 浏览 `/` 得到 36 项，跳转 `/tmp` 得到 25 项；文件选择器自动化没有形成上传任务，因此上传/下载/取消/重试/部分失败和 SAF URI 仍是待补平台证据。
+- `25091RP04C` 的部分安全检查无秘密标记、无 app-private 标记、无 Relay/常用开发端口监听；APK manifest 的 `android:allowBackup` 为 `0`。这不能替代使用专用无敏感标记密码完成的完整 A-16 过程。
+- `2407FRK8EC` 的 connected instrumentation 2/2 已通过，但 runner 清理 APK 后设备拒绝 `adb install -r`（`INSTALL_FAILED_USER_RESTRICTED`）；需设备侧确认安装权限后才能恢复该设备的当前 APK 状态。该阻塞不改变已取得的 connected test 结果，也不应通过静默修改厂商安全设置规避。

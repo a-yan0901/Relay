@@ -13,9 +13,9 @@
 
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
-| Web | ✅ 自动化基线可复现 | 160 个测试文件通过、1 个跳过；719 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
-| Windows | 🟡 可构建技术预览 | Electron shell、IPC/native contract、Windows x64 portable 包生成；SHA-256 已记录 | Windows native ABI、安装/升级迁移、退出/重开、SSH/SFTP 任务链 |
-| Android | 🟡 已完成有限设备 SSH 证据，不代表平台完成 | Kotlin 编译、JVM 单元测试、Debug APK 构建；源码 `d3c4c62` 的 APK 已重新安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`；真机已使用用户提供的 `106.14.61.92:22` 完成首次 Host Key 信任、SSH 连接、SFTP `/tmp` 列举、终端基础 native smoke，以及 3 轮关闭/重开后 `whoami → t2` 输入回归 | SFTP 上传/下载/取消、私钥、Host Key 变更、URI、返回键、软键盘、锁屏/进程回收、网络切换、低内存和 A-01～A-17 其余项目 |
+| Web | ✅ 自动化基线可复现 | 标准全量回归 161 个测试文件通过、1 个跳过；727 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
+| Windows | 🟡 root Electron 技术预览 | root Electron 真实服务器 UI smoke、IPC/native contract、`build:windows`；历史 portable SHA-256 已记录，但本轮没有新的可交接包 | Windows native ABI、安装/升级迁移、退出/重开、SSH/SFTP 任务链 |
+| Android | 🟡 已完成有限设备 SSH/UI 证据，不代表平台完成 | Kotlin 编译、JVM 单元测试、connected instrumentation 2/2、Debug APK 构建；源码 `d3c4c62` 的 APK 曾安装到两台 Android 16 真机，真实主机 UI 重开后两台均可输入命令；`25091RP04C` 已浏览真实 `/` 和 `/tmp` | SFTP 上传/下载/取消、私钥、Host Key 变更、URI、返回键、软键盘、锁屏/进程回收、网络切换、低内存和 A-01～A-17 其余项目；`2407FRK8EC` 当前安装恢复受设备侧限制 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
@@ -25,11 +25,12 @@
 
 ### 真实 Android 设备补充证据（2026-09-19）
 
-- 设备：Xiaomi `2407FRK8EC`、Xiaomi `25091RP04C`，均为 Android 16/API 36、arm64-v8a；两台均重新安装同一 Debug APK（应用 ID `cn.ayan.relay`），安装返回 `Success`，并成功启动 `MainActivity`。
+- 设备：Xiaomi `2407FRK8EC`、Xiaomi `25091RP04C`，均为 Android 16/API 36、arm64-v8a；本轮开始时两台均重新安装同一 Debug APK（应用 ID `cn.ayan.relay`），安装返回 `Success`，并成功启动 `MainActivity`。connected instrumentation 结束后 runner 清理了 `2407FRK8EC` 的 APK，当前 `25091RP04C` 仍安装，`2407FRK8EC` 恢复安装返回 `INSTALL_FAILED_USER_RESTRICTED`。
 - 制品：源码 `d3c4c62`，APK 8,633,367 bytes，SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。
 - 测试主机：明确使用用户提供的 `106.14.61.92:22`、账号 `t2` 和用户提供的密码；密码不写入仓库。两台设备均返回同一 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`，确认后连接成功。
 - UI 重开与输入回归：每台设备连续 3 轮执行关闭当前 Shell、重新打开 Host、等待 raw native `terminal.status=connected`、聚焦 Console 并输入 `whoami`；6/6 轮均成功返回 `t2`，Console 输入框均可聚焦，活动终端标签均显示 `status-dot-green`。
 - native bridge smoke：两台设备均通过真实 JSch 连接读取 `/tmp`（每台返回 19 项），并完成终端 `resize`、写入测试命令和关闭会话；该证据证明真实设备到 SSH/SFTP 的原生通路可用。
+- 续验 UI smoke：两台设备从“需要重新打开”的 Console 状态重新打开 Host；`2407FRK8EC` 输入 `echo REAL_SERVER_2407`、`25091RP04C` 输入 `echo REAL_SERVER_25091` 均得到真实远端回显和 `t2` 提示符。`25091RP04C` 真实 SFTP UI 浏览 `/` 返回 36 项，跳转 `/tmp` 返回 25 项。
 - 边界：本次没有把上述结果扩大为完整平台验收；Host Key 变更拒绝、私钥认证、SFTP 上传/下载/取消/重试、网络切换、返回键/软键盘、锁屏/进程回收、低内存和 A-17 仍保持待执行。
 - 口径：本地 in-process SSH fixture 仅用于可重复自动化回归，不作为本次真机结论的测试服务器。
 
@@ -132,18 +133,18 @@
 | A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 通过（真实主机密码路径）：两台 Android 16 真机在 `106.14.61.92:22` 展示 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`；点击“信任并连接”后均成功建立 Shell。旧模拟器 fixture 结果仅保留为历史回归证据。 |
 | A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | 待执行 |
 | A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行 |
-| A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行；已补充真实主机证据：两台真机连续 3 轮关闭/重开后输入 `whoami`，6/6 返回 `t2`；复制、粘贴确认、中文/长输入和底部布局仍待完整走查。 |
+| A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行；两台真机连续 3 轮关闭/重开后输入 `whoami`，6/6 返回 `t2`；本轮再分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到远端回显。复制、粘贴确认、中文/长输入和底部布局仍待完整走查。 |
 | A-06 | 断网后恢复 | 网络切换/短暂断开显示真实 `reconnecting` 或 `interrupted`；恢复后按交互约定重连，不伪造 connected | 待执行 |
 | A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行 |
 | A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | 待执行 |
-| A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | 待执行 |
+| A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | 待执行；`25091RP04C` 已在真实主机 UI 浏览 `/`（36 项）和 `/tmp`（25 项），过滤、分页、滚动和安全区仍待完整走查。 |
 | A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行 |
 | A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 待执行 |
 | A-12 | Vault 锁定和重开 | 锁定后秘密不可读取；正确解锁恢复；错误密码/损坏 bundle 不覆盖旧数据 | 待执行 |
 | A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行 |
 | A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | 待执行 |
 | A-15 | 低内存行为 | 大目录/大文件操作不明显失控；取消/退出后资源释放；无持续增长的输出/文件缓冲 | 待执行 |
-| A-16 | 秘密和网络边界 | 普通 logcat、WebView 持久化和系统备份中不出现密码/私钥/Vault 明文；客户端不要求本地 HTTP 监听 | 待执行 |
+| A-16 | 秘密和网络边界 | 普通 logcat、WebView 持久化和系统备份中不出现密码/私钥/Vault 明文；客户端不要求本地 HTTP 监听 | 待执行；`25091RP04C` 部分检查未发现 logcat/app-private 测试标记、Relay/5173/3000/4173 监听，APK manifest `allowBackup=0`；完整专用标记密码、WebView、备份和设备日志流程仍待执行。 |
 | A-17 | Vault bundle v1 跨端固定向量 | Web/Windows 导出 → Android 预览/应用 → Android 导出 → Web/Windows 导入；字段、计数、错误密码/篡改和原数据不变性均符合固定向量 | 待执行 |
 
 ## 6. 客观操作与判定标准
@@ -243,3 +244,11 @@
 1. 在具备 Visual Studio/MSVC 的 Windows 机器上完成 native rebuild、package、安装/升级/退出重开和 ABI 证据。
 2. 在同一台 Windows 机器上补 SFTP UI、Vault lock/reopen、文件/剪贴板能力和低内存边界。
 3. Android 继续按 A-01～A-17 回填；当前两台真机的真实 SSH/SFTP smoke 不替代剩余 UI、Host Key 变更、私钥、生命周期、网络切换和低内存验收。
+
+## 10. 2026-09-19 Android/Web/Server 续验记录
+
+- 真实测试主机再次明确为用户提供的 `106.14.61.92:22`、账号 `t2`；本地 in-process SSH fixture 没有用于本轮真机结论。两台真机从“需要重新打开”的 Console 状态重新打开 Host 后，分别输入 `echo REAL_SERVER_2407` 和 `echo REAL_SERVER_25091`，均得到远端回显和 `t2` 提示符；这证明命令实际可输入，不以绿色状态点单独判定通过。
+- `25091RP04C` 已在真实 SFTP UI 浏览远端 `/`（36 项）并跳转 `/tmp`（25 项）。通过 HTML 文件选择器的自动化上传没有形成传输任务，故 A-10/A-11 的上传、下载、取消、重试、部分失败和 SAF URI 不得回填为通过。
+- Android 验证使用 JDK 21、已缓存 Gradle 9.3.1、单 worker、离线模式；`:app:testDebugUnitTest :app:assembleDebug` 成功，`:app:connectedDebugAndroidTest` 在 `2407FRK8EC` 完成 2/2。connected test 结束后 runner 清理了目标 APK；该设备随后两次安装尝试均返回 `INSTALL_FAILED_USER_RESTRICTED`，当前需在设备端确认安装提示/厂商安装权限，不能静默改动设备安全设置。`25091RP04C` 当前仍安装 APK。
+- `25091RP04C` 部分 A-16 检查结果：普通 logcat 无 `relay-device-test-2026` 标记，`run-as` app-private 数据无该标记，`ss -lntp` 未发现 Relay app 或 5173/3000/4173 监听；`aapt dump xmltree` 显示 APK `android:allowBackup` 为 `0`。因未按 A-16 要求使用专用无敏感标记密码完成全流程，这些记录只算部分证据。
+- Web/Server 标准全量回归复跑通过：161 个测试文件通过、1 个跳过；727 个测试通过、2 个跳过；E2E 4/4。此前一次全量运行的 `sync-routes` 5 秒超时经针对文件 13/13 通过后复跑通过，未修改测试超时或把 `--isolate=false` 结果当作验收依据。
