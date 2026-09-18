@@ -33,6 +33,8 @@ internal class AndroidSshSession(
     @Volatile
     private var session: Session? = null
     @Volatile
+    private var sshConnection: AndroidJschConnection? = null
+    @Volatile
     private var channel: ChannelShell? = null
     @Volatile
     private var output: OutputStream? = null
@@ -64,6 +66,13 @@ internal class AndroidSshSession(
                 connection.close()
                 return
             }
+            synchronized(resourceLock) {
+                if (closed.get()) {
+                    connection.close()
+                    return
+                }
+                sshConnection = connection
+            }
 
             val shell = sshSession.openChannel("shell") as? ChannelShell ?: fail("SSH_CONNECTION_FAILED")
             shell.setPty(true)
@@ -73,8 +82,7 @@ internal class AndroidSshSession(
             shell.connect(CONNECT_TIMEOUT_MS)
             synchronized(resourceLock) {
                 if (closed.get()) {
-                    try { shell.disconnect() } catch (_: Exception) { }
-                    try { sshSession.disconnect() } catch (_: Exception) { }
+                    connection.close()
                     return
                 }
                 channel = shell
@@ -203,10 +211,16 @@ internal class AndroidSshSession(
     private fun disconnectResources() {
         synchronized(resourceLock) {
             try { channel?.disconnect() } catch (_: Exception) { }
-            try { session?.disconnect() } catch (_: Exception) { }
+            val connection = sshConnection
+            if (connection != null) {
+                connection.close()
+            } else {
+                try { session?.disconnect() } catch (_: Exception) { }
+            }
             channel = null
             output = null
             session = null
+            sshConnection = null
         }
     }
 
