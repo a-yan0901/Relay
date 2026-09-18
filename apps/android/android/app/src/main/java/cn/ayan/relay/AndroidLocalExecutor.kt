@@ -1435,9 +1435,14 @@ internal class AndroidLocalExecutor(
         val id = AndroidNativeValidation.requireSafeId(payload.optString("sessionId", ""))
         val data = payload.optString("data", "")
         if (data.isEmpty()) return JSONObject()
-        if (data.toByteArray(StandardCharsets.UTF_8).size > MAX_OUTPUT_CHUNK) failNative("FILE_TOO_LARGE")
-        val session = sessions[id] ?: failNative("SESSION_INVALID")
-        session.write(data)
+        val bytes = data.toByteArray(StandardCharsets.UTF_8)
+        try {
+            if (bytes.size > MAX_OUTPUT_CHUNK) failNative("FILE_TOO_LARGE")
+            val session = sessions[id] ?: failNative("SESSION_INVALID")
+            session.write(bytes)
+        } finally {
+            bytes.fill(0)
+        }
         return JSONObject()
     }
 

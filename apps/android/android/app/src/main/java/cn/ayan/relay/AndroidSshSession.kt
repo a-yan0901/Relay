@@ -97,19 +97,14 @@ internal class AndroidSshSession(
         }
     }
 
-    fun write(data: String) {
+    fun write(data: ByteArray) {
         if (data.isEmpty()) return
-        if (data.toByteArray(StandardCharsets.UTF_8).size > OUTPUT_CHUNK_BYTES) fail("FILE_TOO_LARGE")
+        if (data.size > OUTPUT_CHUNK_BYTES) fail("FILE_TOO_LARGE")
         try {
-            val bytes = data.toByteArray(StandardCharsets.UTF_8)
-            try {
-                synchronized(resourceLock) {
-                    val stream = output ?: fail("SESSION_INVALID")
-                    stream.write(bytes)
-                    stream.flush()
-                }
-            } finally {
-                bytes.fill(0)
+            synchronized(resourceLock) {
+                val stream = output ?: fail("SESSION_INVALID")
+                stream.write(data)
+                stream.flush()
             }
         } catch (error: Throwable) {
             if (!closed.get()) failConnection(mapConnectionError(error))
