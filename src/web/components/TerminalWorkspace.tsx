@@ -82,6 +82,8 @@ export interface TerminalWorkspaceProps {
   terminalProfiles?: readonly TerminalProfile[];
   defaultTerminalProfile?: TerminalProfile;
   onBackToHosts?: () => void;
+  /** Registers the workspace's highest-priority mobile back action. */
+  onBackRequest?: (handler: (() => boolean) | null) => void;
   visible?: boolean;
   workspaceHeader?: ReactNode;
   workspaceLayout?: WorkspaceLayout;
@@ -162,6 +164,7 @@ export const TerminalWorkspace = ({
   terminalProfiles = [],
   defaultTerminalProfile,
   onBackToHosts,
+  onBackRequest,
   visible: workspaceVisible = true,
   workspaceHeader,
   workspaceLayout,
@@ -189,6 +192,27 @@ export const TerminalWorkspace = ({
   const layoutRef = useRef<HTMLDivElement>(null);
   const pendingPaneRef = useRef<PaneKey | null>(null);
   const previousTerminalIdsRef = useRef(new Set(terminals.map((terminal) => terminal.terminalId)));
+
+  const handleBackRequest = useCallback((): boolean => {
+    if (terminalContextMenu.state) {
+      terminalContextMenu.close();
+      return true;
+    }
+    if (filePanelOpen) {
+      setFilePanelOpen(false);
+      return true;
+    }
+    if (hostPickerOpen) {
+      setHostPickerOpen(false);
+      return true;
+    }
+    return false;
+  }, [filePanelOpen, hostPickerOpen, terminalContextMenu]);
+
+  useEffect(() => {
+    onBackRequest?.(handleBackRequest);
+    return () => onBackRequest?.(null);
+  }, [handleBackRequest, onBackRequest]);
 
   useEffect(() => {
     if (!allowMultiPane || paneLimit <= 1) {

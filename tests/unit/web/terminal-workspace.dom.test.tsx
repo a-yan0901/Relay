@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -233,6 +233,7 @@ describe('TerminalWorkspace', () => {
 
   it('keeps the active Host file context in a dual-pane workspace and returns to the terminal', async () => {
     const user = userEvent.setup();
+    let backHandler: (() => boolean) | null = null;
     const fileTransport: Pick<FileTransport, 'list' | 'createDirectory' | 'rename' | 'remove'> = {
       list: vi.fn(async () => [{ name: '.env', path: '/.env', type: 'file' as const, size: 2, mode: 0o600, modifiedAt: null }]),
       createDirectory: vi.fn(async () => {}),
@@ -246,6 +247,7 @@ describe('TerminalWorkspace', () => {
         activeTerminalId="tab-1"
         onActivate={vi.fn()}
         onClose={vi.fn()}
+        onBackRequest={(handler) => { backHandler = handler; }}
         fileTransport={fileTransport}
         transferJobs={[]}
         onUploadSftp={vi.fn(async () => {})}
@@ -265,7 +267,9 @@ describe('TerminalWorkspace', () => {
     expect(terminalActions?.style.display).toBe('none');
     expect(screen.getByRole('heading', { name: '本地文件' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '传输中心' })).toHaveTextContent('暂无文件传输');
-    await user.click(screen.getByRole('button', { name: '返回终端' }));
+    await act(async () => {
+      expect(backHandler?.()).toBe(true);
+    });
     expect(screen.queryByRole('region', { name: 'SFTP 工作区' })).not.toBeInTheDocument();
     const restoredTerminalWorkspace = screen.getByRole('region', { name: '终端标签工作区' });
     expect(restoredTerminalWorkspace.parentElement).not.toHaveClass('is-sftp-fullscreen');

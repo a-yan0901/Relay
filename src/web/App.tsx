@@ -266,6 +266,7 @@ export const App = ({ runtime }: AppProps) => {
   const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
   const transferFilesRef = useRef(new Map<string, File>());
   const downloadWritersRef = useRef(new Map<string, DownloadWriter>());
+  const terminalBackHandlerRef = useRef<(() => boolean) | null>(null);
   const refreshedHostForTerminalRef = useRef(new Set<string>());
   const lockedFromCurrentAppRef = useRef(false);
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null);
@@ -340,6 +341,16 @@ export const App = ({ runtime }: AppProps) => {
         setEditingHost(null);
         setHostFormOpen(false);
       } else if (terminalView) {
+        if (terminalBackHandlerRef.current?.()) {
+          event.preventDefault();
+          return;
+        }
+        if (remoteWorkspaceSession) {
+          const session = remoteWorkspaceSession;
+          setRemoteWorkspaceSession(null);
+          setRemoteWorkspaceCard(null);
+          void session.close();
+        }
         setTerminalView(false);
       } else {
         return;
@@ -1555,6 +1566,7 @@ export const App = ({ runtime }: AppProps) => {
             dialogs={dialogs}
             externalLinks={runtime.platformServices?.externalLinks}
             onOpenSnippetPalette={capabilities.supports('automation.snippets') ? handleOpenSnippetPalette : undefined}
+            onBackRequest={(handler) => { terminalBackHandlerRef.current = handler; }}
             onListSftp={capabilities.supports('sftp.browse') ? (hostId, path) => runtime.files.list(hostId, path) : undefined}
             onCreateDirectorySftp={capabilities.supports('sftp.entry-mutations') ? (hostId, path) => runtime.files.createDirectory(hostId, path) : undefined}
             onRenameSftp={capabilities.supports('sftp.entry-mutations') ? (hostId, from, to) => runtime.files.rename(hostId, from, to) : undefined}
