@@ -136,7 +136,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
 ) {
     companion object {
         private const val DATABASE_NAME = "relay-local.db"
-        private const val DATABASE_VERSION = 6
+        private const val DATABASE_VERSION = 7
         private const val MAX_HOSTS = 256
         private const val MAX_IDENTITIES = 128
         private const val MAX_GROUPS = 256
@@ -146,6 +146,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         private const val MAX_COMMAND_RUNS = 32
         private const val MAX_COMMAND_TARGETS = 256
         private const val MAX_ACTIVITY_EVENTS = 512
+        private const val MAX_WORKSPACE_TEMPLATES = 64
         private const val MAX_LIST_RESULTS = 128
         private const val META_TABLE = "relay_meta"
         private const val HOST_TABLE = "relay_hosts"
@@ -157,6 +158,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         private const val COMMAND_RUN_TABLE = "relay_command_runs"
         private const val COMMAND_TARGET_TABLE = "relay_command_targets"
         private const val ACTIVITY_TABLE = "relay_activity_events"
+        private const val WORKSPACE_TEMPLATE_TABLE = "relay_workspace_templates"
     }
 
     override fun onCreate(database: SQLiteDatabase) {
@@ -213,6 +215,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         if (oldVersion < 4) createTransferTable(database)
         if (oldVersion < 5) createCommandTables(database)
         if (oldVersion < 6) createActivityTable(database)
+        if (oldVersion < 7) createWorkspaceTemplateTable(database)
         createAuxiliaryTables(database)
         // SQLiteOpenHelper only calls this method for an upgrade. Each step
         // above is additive and preserves existing local connection data;
@@ -268,6 +271,7 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         createTransferTable(database)
         createCommandTables(database)
         createActivityTable(database)
+        createWorkspaceTemplateTable(database)
     }
 
     private fun createSnippetTable(database: SQLiteDatabase) {
@@ -360,6 +364,21 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         )
         database.execSQL("CREATE INDEX IF NOT EXISTS relay_activity_created_idx ON $ACTIVITY_TABLE(created_at DESC)")
         database.execSQL("CREATE INDEX IF NOT EXISTS relay_activity_request_idx ON $ACTIVITY_TABLE(request_id)")
+    }
+
+    private fun createWorkspaceTemplateTable(database: SQLiteDatabase) {
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $WORKSPACE_TEMPLATE_TABLE (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL UNIQUE,
+                state_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """.trimIndent()
+        )
+        database.execSQL("CREATE INDEX IF NOT EXISTS relay_workspace_templates_updated_idx ON $WORKSPACE_TEMPLATE_TABLE(updated_at DESC)")
     }
 
     fun getMeta(key: String): String? {
@@ -1037,6 +1056,41 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
 
     fun countActivities(): Int = countRows(ACTIVITY_TABLE)
 
+    fun listWorkspaceTemplates(): List<AndroidWorkspaceTemplate> {
+        val result = ArrayList<AndroidWorkspaceTemplate>(MAX_WORKSPACE_TEMPLATES)
+        readableDatabase.query(
+            WORKSPACE_TEMPLATE_TABLE,
+            WORKSPACE_TEMPLATE_COLUMNS,
+            null,
+            null,
+            null,
+            null,
+            "updated_at DESC, name COLLATE NOCASE ASC",
+            MAX_WORKSPACE_TEMPLATES.toString()
+        ).use { cursor -> while (cursor.moveToNext() && result.size < MAX_WORKSPACE_TEMPLATES) result += readWorkspaceTemplate(cursor) }
+        return result
+    }
+
+    fun countWorkspaceTemplates(): Int = countRows(WORKSPACE_TEMPLATE_TABLE)
+
+    fun putWorkspaceTemplate(template: AndroidWorkspaceTemplate): Boolean {
+        require(countWorkspaceTemplates() < MAX_WORKSPACE_TEMPLATES) { "local workspace template limit reached" }
+        val values = ContentValues().apply {
+            put("id", template.id)
+            put("name", template.name)
+            put("state_json", template.stateJson)
+            put("created_at", template.createdAt)
+            put("updated_at", template.updatedAt)
+        }
+        return try {
+            writableDatabase.insertWithOnConflict(WORKSPACE_TEMPLATE_TABLE, null, values, SQLiteDatabase.CONFLICT_ABORT) != -1L
+        } catch (_: SQLiteConstraintException) {
+            false
+        }
+    }
+
+    fun deleteWorkspaceTemplate(id: String): Boolean = writableDatabase.delete(WORKSPACE_TEMPLATE_TABLE, "id = ?", arrayOf(id)) > 0
+
     fun <T> transaction(block: () -> T): T {
         val database = writableDatabase
         database.beginTransaction()
@@ -1193,6 +1247,14 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         createdAt = cursor.getString(5)
     )
 
+    private fun readWorkspaceTemplate(cursor: android.database.Cursor): AndroidWorkspaceTemplate = AndroidWorkspaceTemplate(
+        id = cursor.getString(0),
+        name = cursor.getString(1),
+        stateJson = cursor.getString(2),
+        createdAt = cursor.getString(3),
+        updatedAt = cursor.getString(4)
+    )
+
     private fun countRows(table: String): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM $table", null).use { cursor ->
         if (cursor.moveToFirst()) cursor.getInt(0) else 0
     }
@@ -1234,4 +1296,5 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
     private val COMMAND_RUN_COLUMNS = arrayOf("id", "command_ciphertext", "host_ids_json", "status", "persist_output", "created_at", "finished_at")
     private val COMMAND_TARGET_COLUMNS = arrayOf("run_id", "host_id", "status", "exit_code", "output_ciphertext", "output_bytes", "output_truncated", "error_code", "started_at", "finished_at")
     private val ACTIVITY_COLUMNS = arrayOf("id", "event_type", "host_id", "request_id", "metadata_json", "created_at")
+    private val WORKSPACE_TEMPLATE_COLUMNS = arrayOf("id", "name", "state_json", "created_at", "updated_at")
 }

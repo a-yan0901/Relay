@@ -257,8 +257,9 @@ internal class AndroidLocalExecutor(
         "identities.delete" -> deleteIdentity(requiredText(payload, "id", 128))
         "workspace.load" -> workspaceLoad()
         "workspace.save" -> workspaceSave(payload)
-        "workspace.listTemplates" -> JSONArray()
-        "workspace.createTemplate", "workspace.deleteTemplate" -> failNative("CAPABILITY_UNAVAILABLE")
+        "workspace.listTemplates" -> workspaceTemplatesList()
+        "workspace.createTemplate" -> workspaceTemplateCreate(payload.optJSONObject("input") ?: failNative("WORKSPACE_INVALID"))
+        "workspace.deleteTemplate" -> workspaceTemplateDelete(requiredText(payload, "id", 128))
         "terminalProfiles.list" -> terminalProfilesList()
         "terminalProfiles.getDefault" -> terminalProfileDefault()
         "terminalProfiles.create" -> createTerminalProfile(payload.optJSONObject("input") ?: failNative("HOST_VALIDATION_FAILED"))
@@ -759,12 +760,8 @@ internal class AndroidLocalExecutor(
 
     private fun workspaceLoad(): JSONObject {
         requireUnlocked()
-        val value = store.getMeta("workspace.v1") ?: defaultWorkspace().toString()
-        return try {
-            JSONObject(value)
-        } catch (_: Exception) {
-            defaultWorkspace()
-        }
+        val value = store.getMeta("workspace.v1")
+        return if (value == null) AndroidWorkspaceCodec.defaultState() else AndroidWorkspaceCodec.parseStored(value)
     }
 
     private fun workspaceSave(payload: JSONObject): JSONObject {
@@ -773,19 +770,50 @@ internal class AndroidLocalExecutor(
         if (expectedVersion < 0) failNative("WORKSPACE_INVALID")
         val current = workspaceLoad()
         if (current.optInt("version", 0) != expectedVersion) failNative("WORKSPACE_VERSION_CONFLICT")
-        val state = payload.optJSONObject("state") ?: failNative("WORKSPACE_INVALID")
-        val normalized = JSONObject(state.toString()).put("version", expectedVersion + 1)
-        if (normalized.toString().toByteArray(StandardCharsets.UTF_8).size > MAX_FRAME_BYTES / 2) failNative("FILE_TOO_LARGE")
+        val state = AndroidWorkspaceCodec.parse(payload.optJSONObject("state") ?: failNative("WORKSPACE_INVALID"))
+        val normalized = state.put("version", expectedVersion + 1)
+        AndroidWorkspaceCodec.ensureSize(normalized)
         store.putMeta("workspace.v1", normalized.toString())
         return normalized
     }
 
-    private fun defaultWorkspace(): JSONObject = JSONObject()
-        .put("version", 0)
-        .put("tabs", JSONArray())
-        .put("activeTabId", JSONObject.NULL)
-        .put("layout", JSONObject().put("mode", "single").put("ratio", 0.5))
-        .put("filters", JSONObject().put("query", "").put("groupId", JSONObject.NULL).put("favoriteOnly", false))
+    private fun workspaceTemplatesList(): JSONArray {
+        requireUnlocked()
+        return JSONArray().also { output ->
+            store.listWorkspaceTemplates().forEach { template ->
+                output.put(workspaceTemplateJson(template, AndroidWorkspaceCodec.parseStored(template.stateJson)))
+            }
+        }
+    }
+
+    private fun workspaceTemplateCreate(input: JSONObject): JSONObject {
+        requireUnlocked()
+        val name = AndroidWorkspaceCodec.templateName(requiredText(input, "name", 120))
+        val state = AndroidWorkspaceCodec.parse(input.optJSONObject("state") ?: failNative("WORKSPACE_INVALID"))
+        val id = UUID.randomUUID().toString()
+        val now = Instant.now().toString()
+        val template = AndroidWorkspaceTemplate(id, name, state.toString(), now, now)
+        try {
+            if (!store.putWorkspaceTemplate(template)) failNative("WORKSPACE_INVALID")
+        } catch (_: IllegalArgumentException) {
+            failNative("FILE_TOO_LARGE")
+        }
+        return workspaceTemplateJson(template, state)
+    }
+
+    private fun workspaceTemplateDelete(id: String): Any? {
+        requireUnlocked()
+        AndroidNativeValidation.requireSafeId(id)
+        if (!store.deleteWorkspaceTemplate(id)) failNative("NOT_FOUND")
+        return JSONObject.NULL
+    }
+
+    private fun workspaceTemplateJson(template: AndroidWorkspaceTemplate, state: JSONObject): JSONObject = JSONObject()
+        .put("id", template.id)
+        .put("name", template.name)
+        .put("state", state)
+        .put("createdAt", template.createdAt)
+        .put("updatedAt", template.updatedAt)
 
     private data class SnippetContent(val command: String, val variables: List<String>)
 
