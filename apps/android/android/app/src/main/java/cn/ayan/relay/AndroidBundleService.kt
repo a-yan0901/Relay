@@ -155,13 +155,9 @@ internal class AndroidBundleService(
             pruneImportsLocked()
             imports.remove(importId)
         } ?: failNative("VAULT_BUNDLE_PREVIEW_EXPIRED")
-        val bundle = pending.content.toString()
-        pending.content.setLength(0)
         return try {
-            preview(pending.exportPassword, bundle)
+            preview(pending.exportPassword, pending.content)
         } finally {
-            // The immutable String is released as soon as this method returns;
-            // the preview retains only the parsed, validated payload.
             pending.content.setLength(0)
         }
     }
@@ -171,7 +167,7 @@ internal class AndroidBundleService(
         synchronized(imports) { imports.remove(importId)?.content?.setLength(0) }
     }
 
-    fun preview(exportPassword: String, bundle: String): JSONObject {
+    fun preview(exportPassword: String, bundle: CharSequence): JSONObject {
         val plaintext = AndroidBundleCrypto.decryptEnvelope(exportPassword, bundle)
         val payload = try {
             AndroidBundlePayloadCodec.parse(plaintext)

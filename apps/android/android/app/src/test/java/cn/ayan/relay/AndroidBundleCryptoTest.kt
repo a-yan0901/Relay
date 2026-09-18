@@ -35,7 +35,7 @@ class AndroidBundleCryptoTest {
     fun serializesAndDecryptsTheV1Envelope() {
         val payload = "{\"hosts\":[]}".toByteArray()
         val serialized = AndroidBundleCrypto.createEnvelope("bundle-password", payload.copyOf())
-        val restored = AndroidBundleCrypto.decryptEnvelope("bundle-password", serialized)
+        val restored = AndroidBundleCrypto.decryptEnvelope("bundle-password", StringBuilder(serialized))
 
         assertArrayEquals(payload, restored)
         restored.fill(0)

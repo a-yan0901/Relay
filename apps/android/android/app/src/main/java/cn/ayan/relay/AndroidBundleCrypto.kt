@@ -168,8 +168,8 @@ internal object AndroidBundleCrypto {
         }
     }
 
-    fun decryptEnvelope(exportPassword: String, serialized: String): ByteArray {
-        if (serialized.toByteArray(StandardCharsets.UTF_8).size > MAX_BUNDLE_BYTES) failBundle()
+    fun decryptEnvelope(exportPassword: String, serialized: CharSequence): ByteArray {
+        if (utf8ByteLength(serialized) > MAX_BUNDLE_BYTES) failBundle()
         val root = try { BundleJsonParser(serialized).parse() } catch (error: NativeVaultFailure) {
             throw error
         } catch (_: Exception) {
@@ -257,6 +257,26 @@ internal object AndroidBundleCrypto {
         if (decoded.size > MAX_BUNDLE_BYTES) failBundle()
         return decoded
     }
+
+    private fun utf8ByteLength(value: CharSequence): Int {
+        var bytes = 0L
+        var index = 0
+        while (index < value.length) {
+            val character = value[index]
+            bytes += when {
+                character.code <= 0x7f -> 1
+                character.code <= 0x7ff -> 2
+                Character.isHighSurrogate(character) && index + 1 < value.length && Character.isLowSurrogate(value[index + 1]) -> {
+                    index += 1
+                    4
+                }
+                else -> 3
+            }
+            if (bytes > MAX_BUNDLE_BYTES) return MAX_BUNDLE_BYTES + 1
+            index += 1
+        }
+        return bytes.toInt()
+    }
 }
 
 private fun failBundle(): Nothing = throw NativeVaultFailure("VAULT_BUNDLE_INVALID")
@@ -270,7 +290,7 @@ private data class BundleJsonObject(private val fields: Map<String, Any>) {
 private data class BundleJsonNumber(val value: String)
 
 /** Small bounded parser for the fixed envelope shape; payload JSON is parsed by the executor. */
-private class BundleJsonParser(private val input: String) {
+private class BundleJsonParser(private val input: CharSequence) {
     private var position = 0
 
     fun parse(): BundleJsonObject {
@@ -343,7 +363,7 @@ private class BundleJsonParser(private val input: String) {
 
     private fun parseUnicode(): Char {
         if (position + 4 > input.length) failBundle()
-        val value = input.substring(position, position + 4).toIntOrNull(16) ?: failBundle()
+        val value = input.subSequence(position, position + 4).toString().toIntOrNull(16) ?: failBundle()
         position += 4
         return value.toChar()
     }
@@ -364,7 +384,7 @@ private class BundleJsonParser(private val input: String) {
             if (position >= input.length || !input[position].isDigit()) failBundle()
             while (position < input.length && input[position].isDigit()) position += 1
         }
-        return input.substring(start, position)
+        return input.subSequence(start, position).toString()
     }
 
     private fun peekNumber(): Boolean = position < input.length && (input[position] == '-' || input[position].isDigit())
