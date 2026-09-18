@@ -5,7 +5,15 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['dist/**', 'coverage/**', 'playwright-report/**', 'test-results/**', 'node_modules/**']
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      'playwright-report/**',
+      'test-results/**',
+      'node_modules/**',
+      'apps/android/android/app/build/**',
+      'apps/android/android/app/src/main/assets/**'
+    ]
   },
   js.configs.recommended,
   {
