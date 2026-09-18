@@ -51,6 +51,9 @@ internal class AndroidLocalExecutor(
         private const val MAX_TRANSFERS = 32
         private const val MAX_DOWNLOADS = 4
         private const val MAX_FILE_WRITERS = 4
+        private const val MAX_EXTERNAL_PREVIEWS = 4
+        private const val EXTERNAL_PREVIEW_TTL_MS = 10 * 60 * 1000L
+        private const val MAX_EXTERNAL_IMPORT_BYTES = 48 * 1024
         private const val MAX_SFTP_ENTRIES = 256
         private const val MAX_OUTPUT_CHUNK = 32 * 1024
         private const val MAX_FRAME_BYTES = 64 * 1024
@@ -78,10 +81,22 @@ internal class AndroidLocalExecutor(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, JSONObject>?): Boolean = size > MAX_RETAINED_REQUESTS
     })
     private val transfers = Collections.synchronizedMap(LinkedHashMap<String, AndroidTransfer>())
+    private val externalPreviews = Collections.synchronizedMap(object : LinkedHashMap<String, PendingExternalPreview>(MAX_EXTERNAL_PREVIEWS, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PendingExternalPreview>?): Boolean = size > MAX_EXTERNAL_PREVIEWS
+    })
     private val fileWriters = Collections.synchronizedMap(mutableMapOf<String, AndroidFileWriter>())
     private val sequence = AtomicLong(0)
     private val generation = AtomicLong(1)
     private val closed = AtomicBoolean(false)
+
+    private data class PendingExternalPreview(
+        val expiresAt: Long,
+        val connections: List<AndroidExternalImportParser.Connection>,
+        val groups: List<List<String>>,
+        val source: JSONObject,
+        val sources: JSONArray,
+        val warnings: List<String>
+    )
 
     init {
         store.markActiveCommandRunsInterrupted("SERVICE_RESTARTED", Instant.now().toString())
@@ -143,7 +158,7 @@ internal class AndroidLocalExecutor(
         if (!closed.compareAndSet(false, true)) return
         generation.incrementAndGet()
         synchronized(sessionLock) {
-            sessions.values.toList().forEach { session -> session.close(true) }
+            sessions.values.toList().forEach { session -> session.close(false) }
             sessions.clear()
         }
         synchronized(transfers) {
@@ -163,6 +178,7 @@ internal class AndroidLocalExecutor(
             fileWriters.clear()
         }
         bundleService.close()
+        externalPreviews.clear()
         commandRunner.close()
         vault.close()
         operationExecutor.shutdownNow()
@@ -201,6 +217,7 @@ internal class AndroidLocalExecutor(
             closeAllSessions()
             commandRunner.interruptForLock()
             bundleService.clearPreviews()
+            externalPreviews.clear()
             vault.lock()
             JSONObject.NULL
         }
@@ -327,7 +344,15 @@ internal class AndroidLocalExecutor(
             requireUnlocked()
             bundleService.apply(requiredText(payload, "previewId", 128), payload.optJSONObject("resolution") ?: failNative("VAULT_BUNDLE_INVALID"))
         }
-        "imports.previewExternalImport", "imports.applyExternalImport", "imports.exportOpenSshConfig", "imports.exportCsv" -> failNative("CAPABILITY_UNAVAILABLE")
+        "imports.previewExternalImport" -> {
+            requireUnlocked()
+            previewExternalImport(payload)
+        }
+        "imports.applyExternalImport" -> {
+            requireUnlocked()
+            applyExternalImport(payload)
+        }
+        "imports.exportOpenSshConfig", "imports.exportCsv" -> failNative("CAPABILITY_UNAVAILABLE")
         else -> failNative("CAPABILITY_UNAVAILABLE")
     }
 
@@ -1033,6 +1058,315 @@ internal class AndroidLocalExecutor(
     private fun isAfterActivityCursor(event: AndroidActivityRecord, cursor: ActivityCursor): Boolean =
         event.createdAt < cursor.createdAt || (event.createdAt == cursor.createdAt && event.id < cursor.id)
 
+    private fun previewExternalImport(payload: JSONObject): JSONObject {
+        pruneExternalPreviews()
+        val documents = parseExternalDocuments(payload)
+        val namespaced = ArrayList<AndroidExternalImportParser.Connection>()
+        val sourceList = JSONArray()
+        val warnings = ArrayList<String>()
+        documents.forEachIndexed { index, document ->
+            val prefix = "$index:${document.filename}:"
+            val ids = document.connections.associate { it.sourceId to "$prefix${it.sourceId}" }
+            document.connections.forEach { connection ->
+                namespaced += connection.copy(
+                    sourceId = ids[connection.sourceId] ?: "$prefix${connection.sourceId}",
+                    jumpHostSourceIds = connection.jumpHostSourceIds.map { ids[it] ?: "$prefix$it" }
+                )
+            }
+            sourceList.put(JSONObject().put("filename", document.filename).put("format", document.format))
+            warnings += document.warnings
+        }
+        if (namespaced.isEmpty()) failNative("IMPORT_RECORD_INVALID")
+        val resolvedConnections = namespaced.map { connection ->
+            connection.copy(
+                jumpHostSourceIds = connection.jumpHostSourceIds
+                    .map { reference -> resolveExternalJumpReference(reference, connection, namespaced) }
+                    .distinct()
+            )
+        }
+        val existing = store.listHosts(null, null, null, emptySet())
+        val existingByKey = existing.associateBy(::externalImportKey)
+        val bySource = resolvedConnections.associateBy { it.sourceId }
+        val seen = HashSet<String>()
+        val conflicts = JSONArray()
+        val previewConnections = JSONArray()
+        val uniqueConnections = ArrayList<AndroidExternalImportParser.Connection>()
+        resolvedConnections.forEach { connection ->
+            val key = externalImportKey(connection)
+            if (!seen.add(key)) {
+                warnings += "${connection.name} 与同批次其它记录指向同一主机，已跳过重复项"
+                return@forEach
+            }
+            val connectionConflicts = JSONArray()
+            val existingHost = existingByKey[key]
+            if (existingHost != null) {
+                val conflict = JSONObject()
+                    .put("kind", "existing-host")
+                    .put("sourceIds", JSONArray().put(connection.sourceId).put(existingHost.id))
+                    .put("message", "已存在同地址、端口和用户的服务器 ${existingHost.name}")
+                connectionConflicts.put(conflict)
+                conflicts.put(conflict)
+            }
+            connection.jumpHostSourceIds.forEach { reference ->
+                if (!bySource.containsKey(reference)) {
+                    val conflict = JSONObject()
+                        .put("kind", "unresolved-jump")
+                        .put("sourceIds", JSONArray().put(connection.sourceId).put(reference))
+                        .put("message", "找不到跳板机 $reference")
+                    connectionConflicts.put(conflict)
+                    conflicts.put(conflict)
+                }
+            }
+            uniqueConnections += connection
+            previewConnections.put(externalPreviewConnection(connection, connectionConflicts))
+        }
+        val groups = uniqueConnections.map { it.groupPath }.filter { it.isNotEmpty() }.distinctBy { it.joinToString("\u001f") }
+        val expiresAt = System.currentTimeMillis() + EXTERNAL_PREVIEW_TTL_MS
+        val previewId = UUID.randomUUID().toString()
+        val source = sourceList.optJSONObject(0) ?: JSONObject().put("filename", "import").put("format", "ssh-csv")
+        externalPreviews[previewId] = PendingExternalPreview(expiresAt, uniqueConnections, groups, source, sourceList, warnings.take(64))
+        return JSONObject()
+            .put("previewId", previewId)
+            .put("source", source)
+            .put("sources", sourceList)
+            .put("connectionCount", uniqueConnections.size)
+            .put("groupCount", groups.size)
+            .put("connections", previewConnections)
+            .put("conflicts", conflicts)
+            .put("warnings", JSONArray(warnings.distinct().take(64)))
+            .put("expiresAt", Instant.ofEpochMilli(expiresAt).toString())
+    }
+
+    private fun applyExternalImport(payload: JSONObject): JSONObject {
+        pruneExternalPreviews()
+        val previewId = AndroidNativeValidation.requireSafeId(requiredText(payload, "previewId", 128))
+        val pending = externalPreviews[previewId] ?: failNative("IMPORT_PREVIEW_EXPIRED")
+        val policy = requiredText(payload, "conflictPolicy", 16)
+        if (policy !in setOf("skip", "create", "replace")) failNative("IMPORT_APPLY_INVALID")
+        val selectedIds = payload.optJSONArray("selectedSourceIds") ?: failNative("IMPORT_APPLY_INVALID")
+        val selectedValues = parseStringList(selectedIds, 64, 128)
+        if (selectedValues.size != selectedIds.length()) failNative("IMPORT_APPLY_INVALID")
+        val selected = selectedValues.toSet()
+        if (selected.any { id -> pending.connections.none { it.sourceId == id } }) failNative("IMPORT_APPLY_INVALID")
+        val supplied = externalCredentialMap(payload.optJSONArray("credentials"))
+        val existing = store.listHosts(null, null, null, emptySet())
+        val existingByKey = existing.associateBy(::externalImportKey)
+        val sourceToHostId = LinkedHashMap<String, String>()
+        pending.connections.forEach { connection ->
+            val current = existingByKey[externalImportKey(connection)]
+            if (current != null && policy != "create") sourceToHostId[connection.sourceId] = current.id
+        }
+        pending.connections.filter { it.sourceId in selected }.forEach { connection ->
+            val current = existingByKey[externalImportKey(connection)]
+            if (current == null || policy == "create") sourceToHostId[connection.sourceId] = UUID.randomUUID().toString()
+        }
+
+        val groupRows = store.listGroups()
+        val groupsByName = groupRows.associateBy { it.name.lowercase(Locale.ROOT) }.toMutableMap()
+        val newGroups = LinkedHashMap<String, AndroidGroup>()
+        val reusedGroups = HashSet<String>()
+        val plans = ArrayList<ExternalHostPlan>()
+        var skippedHosts = 0
+        val warnings = ArrayList(pending.warnings)
+        pending.connections.filter { it.sourceId in selected }.forEach { connection ->
+            val current = existingByKey[externalImportKey(connection)]
+            if (current != null && policy == "skip") {
+                skippedHosts += 1
+                return@forEach
+            }
+            val jumpHostIds = connection.jumpHostSourceIds.map { reference -> sourceToHostId[reference] ?: failNative("IMPORT_RECORD_INVALID") }
+            val credential = supplied[connection.sourceId] ?: connection.credential
+            val hostId = sourceToHostId[connection.sourceId] ?: failNative("IMPORT_RECORD_INVALID")
+            if (credential == null && current == null) {
+                skippedHosts += 1
+                warnings += "${connection.name} 没有可用凭据，已跳过；可在应用请求中补充 credentials"
+                return@forEach
+            }
+            val groupId = if (connection.groupPath.isEmpty()) null else {
+                val name = connection.groupPath.joinToString(" / ").trim()
+                if (name.isEmpty() || name.length > 120) failNative("IMPORT_RECORD_INVALID")
+                val key = name.lowercase(Locale.ROOT)
+                groupsByName[key]?.let {
+                    reusedGroups += key
+                    it.id
+                } ?: newGroups.getOrPut(key) {
+                    AndroidGroup(UUID.randomUUID().toString(), name, null, groupRows.size + newGroups.size, null, null, Instant.now().toString(), Instant.now().toString())
+                }.id
+            }
+            val input = JSONObject()
+                .put("name", connection.name)
+                .put("address", connection.address)
+                .put("port", connection.port)
+                .put("username", connection.username)
+                .put("jumpHostIds", JSONArray(jumpHostIds))
+                .put("tags", JSONArray(connection.tags))
+                .put("isFavorite", false)
+            if (groupId != null) input.put("groupId", groupId)
+            if (credential != null) input.put("auth", externalCredentialJson(credential))
+            val host = hostFromInput(hostId, input, if (current?.id == hostId) current else null)
+            plans += ExternalHostPlan(host)
+        }
+        val result = store.transaction {
+            var importedGroups = 0
+            newGroups.values.forEach { group ->
+                if (!store.putGroup(group)) failNative("GROUP_ALREADY_EXISTS")
+                importedGroups += 1
+            }
+            var importedHosts = 0
+            plans.forEach {
+                store.putHost(it.host)
+                importedHosts += 1
+            }
+            JSONObject()
+                .put("importedHosts", importedHosts)
+                .put("skippedHosts", skippedHosts)
+                .put("importedGroups", importedGroups)
+                .put("skippedGroups", reusedGroups.size)
+                .put("warnings", JSONArray(warnings.distinct().take(64)))
+        }
+        externalPreviews.remove(previewId)
+        recordActivity("import_succeeded", null, previewId, JSONObject().put("action", "external").put("status", "succeeded"))
+        return result
+    }
+
+    private data class ExternalHostPlan(val host: AndroidHost)
+
+    private fun externalPreviewConnection(connection: AndroidExternalImportParser.Connection, conflicts: JSONArray): JSONObject = JSONObject()
+        .put("sourceId", connection.sourceId)
+        .put("name", connection.name)
+        .put("address", connection.address)
+        .put("port", connection.port)
+        .put("username", connection.username)
+        .put("authType", connection.authType)
+        .put("credentialState", connection.credentialState)
+        .put("credentialSource", connection.credentialSource ?: JSONObject.NULL)
+        .put("groupPath", JSONArray(connection.groupPath))
+        .put("tags", JSONArray(connection.tags))
+        .put("jumpHostSourceIds", JSONArray(connection.jumpHostSourceIds))
+        .put("notes", JSONArray(connection.notes))
+        .put("sourceFields", JSONObject(connection.sourceFields))
+        .put("applicable", connection.credentialState == "ready" && conflicts.length() == 0)
+        .put("conflicts", conflicts)
+
+    private fun externalImportKey(connection: AndroidExternalImportParser.Connection): String =
+        "${connection.address.trim().trim('[', ']').lowercase(Locale.ROOT)}|${connection.port}|${connection.username.trim().lowercase(Locale.ROOT)}"
+
+    private fun externalImportKey(host: AndroidHost): String =
+        "${host.address.trim().trim('[', ']').lowercase(Locale.ROOT)}|${host.port}|${host.username.trim().lowercase(Locale.ROOT)}"
+
+    private fun resolveExternalJumpReference(
+        reference: String,
+        source: AndroidExternalImportParser.Connection,
+        candidates: List<AndroidExternalImportParser.Connection>
+    ): String {
+        candidates.firstOrNull { it.sourceId == reference && it.sourceId != source.sourceId }?.let { return it.sourceId }
+        val normalized = reference.substringAfterLast(':').trim().lowercase(Locale.ROOT)
+        candidates.firstOrNull { it.sourceId != source.sourceId && it.name.trim().lowercase(Locale.ROOT) == normalized }?.let { return it.sourceId }
+        val gateway = Regex("(?:^|:)gateway:([^:]+):(\\d+):(.*)$", RegexOption.IGNORE_CASE).find(reference)
+        if (gateway != null) {
+            val key = "${gateway.groupValues[1].trim().lowercase(Locale.ROOT)}|${externalImportPort(gateway.groupValues[2])}|${gateway.groupValues[3].trim().lowercase(Locale.ROOT)}"
+            candidates.firstOrNull { it.sourceId != source.sourceId && externalImportKey(it) == key }?.let { return it.sourceId }
+        }
+        val endpoint = Regex("^([^@]+)@(?:\\[([^]]+)]|([^:]+))(?::(\\d+))?$").find(reference)
+        if (endpoint != null) {
+            val key = "${(endpoint.groupValues[2].ifEmpty { endpoint.groupValues[3] }).trim().lowercase(Locale.ROOT)}|${externalImportPort(endpoint.groupValues[4])}|${endpoint.groupValues[1].trim().lowercase(Locale.ROOT)}"
+            candidates.firstOrNull { it.sourceId != source.sourceId && externalImportKey(it) == key }?.let { return it.sourceId }
+        }
+        return reference
+    }
+
+    private fun externalCredentialMap(value: JSONArray?): Map<String, AndroidExternalImportParser.Credential> {
+        if (value == null) return emptyMap()
+        if (value.length() > 64) failNative("IMPORT_APPLY_INVALID")
+        val output = LinkedHashMap<String, AndroidExternalImportParser.Credential>()
+        for (index in 0 until value.length()) {
+            val item = value.optJSONObject(index) ?: failNative("IMPORT_APPLY_INVALID")
+            val sourceId = AndroidNativeValidation.requireSafeId(requiredText(item, "sourceId", 256))
+            val credential = item.optJSONObject("credential") ?: failNative("IMPORT_APPLY_INVALID")
+            val normalized = validateAuth(credential)
+            val type = normalized.optString("type")
+            val secret = if (type == "password") normalized.optString("password") else normalized.optString("privateKey")
+            output[sourceId] = AndroidExternalImportParser.Credential(
+                type,
+                secret,
+                normalized.optString("passphrase", "").takeIf { it.isNotEmpty() },
+                normalized.optString("identityFile", "").takeIf { it.isNotEmpty() }
+            )
+        }
+        return output
+    }
+
+    private fun externalCredentialJson(credential: AndroidExternalImportParser.Credential): JSONObject = JSONObject()
+        .put("type", credential.type)
+        .also { output ->
+            if (credential.type == "password") output.put("password", credential.secret)
+            else output.put("privateKey", credential.secret)
+            if (credential.passphrase != null) output.put("passphrase", credential.passphrase)
+            if (credential.identityFile != null) output.put("identityFile", credential.identityFile)
+        }
+
+    private fun parseExternalDocuments(payload: JSONObject): List<AndroidExternalImportParser.Document> {
+        val files = payload.optJSONArray("files") ?: failNative("IMPORT_RECORD_INVALID")
+        if (files.length() == 0 || files.length() > 4) failNative("IMPORT_RECORD_INVALID")
+        val formatHint = nullableText(payload, "formatHint", 32)
+        var totalBytes = 0
+        val documents = ArrayList<AndroidExternalImportParser.Document>(files.length())
+        for (index in 0 until files.length()) {
+            val file = files.optJSONObject(index) ?: failNative("IMPORT_RECORD_INVALID")
+            val filename = requiredText(file, "filename", 255)
+            val encoded = file.optString("content", "")
+            if (encoded.isEmpty() || encoded.length > 64 * 1024) failNative("FILE_TOO_LARGE")
+            val bytes = try {
+                if (file.optString("encoding", "text") == "base64") Base64.decode(encoded, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+                else encoded.toByteArray(StandardCharsets.UTF_8)
+            } catch (_: IllegalArgumentException) {
+                failNative("IMPORT_RECORD_INVALID")
+            }
+            totalBytes += bytes.size
+            if (totalBytes > MAX_EXTERNAL_IMPORT_BYTES) {
+                bytes.fill(0)
+                failNative("FILE_TOO_LARGE")
+            }
+            val content = String(bytes, StandardCharsets.UTF_8)
+            bytes.fill(0)
+            val format = externalImportFormat(filename, formatHint, content)
+            documents += when (format) {
+                "ssh-csv" -> AndroidExternalImportParser.parseCsv(content, filename)
+                "openssh-config" -> AndroidExternalImportParser.parseOpenSsh(content, filename)
+                "mobaxterm" -> AndroidExternalImportParser.parseMobaXterm(content, filename)
+                "xshell" -> AndroidExternalImportParser.parseXshell(content, filename)
+                "securecrt" -> AndroidExternalImportParser.parseSecureCrt(content, filename)
+                else -> failNative("CAPABILITY_UNAVAILABLE")
+            }
+        }
+        return documents
+    }
+
+    private fun externalImportFormat(filename: String, hint: String?, content: String): String {
+        if (hint != null) {
+            if (hint in setOf("ssh-csv", "openssh-config", "mobaxterm", "xshell", "securecrt")) return hint
+            failNative("CAPABILITY_UNAVAILABLE")
+        }
+        return when (filename.substringAfterLast('.', "").lowercase(Locale.ROOT)) {
+            "csv" -> "ssh-csv"
+            "config", "conf", "ssh_config" -> "openssh-config"
+            "mxtsessions", "mobaconf" -> "mobaxterm"
+            "xsh" -> "xshell"
+            "xml" -> "securecrt"
+            "ini" -> if (Regex("^\\s*\\[Bookmarks", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)).containsMatchIn(content)) "mobaxterm" else "securecrt"
+            else -> failNative("CAPABILITY_UNAVAILABLE")
+        }
+    }
+
+    private fun externalImportPort(value: String): Int = value.toIntOrNull()?.takeIf { it in 1..65_535 } ?: 22
+
+    private fun pruneExternalPreviews() {
+        val now = System.currentTimeMillis()
+        synchronized(externalPreviews) {
+            externalPreviews.entries.removeIf { it.value.expiresAt <= now }
+        }
+    }
+
     private fun openShell(request: JSONObject): JSONObject {
         requireUnlocked()
         val sessionId = AndroidNativeValidation.requireSafeId(request.optString("requestId", ""))
@@ -1103,9 +1437,9 @@ internal class AndroidLocalExecutor(
         return JSONObject()
     }
 
-    private fun closeAllSessions() {
+    private fun closeAllSessions(clean: Boolean = true) {
         synchronized(sessionLock) {
-            sessions.values.toList().forEach { it.close(true) }
+            sessions.values.toList().forEach { it.close(clean) }
             sessions.clear()
         }
     }

@@ -214,8 +214,9 @@ internal class AndroidLocalStore(context: Context) : SQLiteOpenHelper(
         if (oldVersion < 5) createCommandTables(database)
         if (oldVersion < 6) createActivityTable(database)
         createAuxiliaryTables(database)
-        // A release build must never silently discard local connection data.
-        if (oldVersion != newVersion) error("unsupported local database upgrade")
+        // SQLiteOpenHelper only calls this method for an upgrade. Each step
+        // above is additive and preserves existing local connection data;
+        // downgrades remain rejected by the helper's default implementation.
     }
 
     private fun createAuxiliaryTables(database: SQLiteDatabase) {

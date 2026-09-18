@@ -124,6 +124,7 @@ internal class AndroidSshSession(
     fun close(clean: Boolean) {
         if (!closed.compareAndSet(false, true)) return
         repository?.cancelPending()
+        if (!clean) emitStatus("needs-reopen")
         disconnectResources()
         if (clean) finishClose(true) else finishClose(false)
     }

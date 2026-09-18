@@ -60,8 +60,8 @@ const NATIVE_CAPABILITIES: readonly Capability[] = [
 
 /**
  * Android only advertises the operations backed by the current native slice.
- * Keeping this list explicit prevents the UI from exposing templates, audit
- * history or other automation that still has no bounded native implementation.
+ * Keeping this list explicit prevents the UI from exposing workspace templates
+ * or other operations that still have no bounded native implementation.
  */
 export const ANDROID_LOCAL_CAPABILITIES: readonly Capability[] = [
   'workspace.persistence',
