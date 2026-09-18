@@ -5,7 +5,7 @@
   "scripts": {
     "web:build": "cd ../.. && npm run build:web",
     "sync": "npm run web:build && npx cap sync android",
-    "build:debug": "npm run sync && npx cap build android --androidreleasetype APK",
+    "build:debug": "npm run sync && cd android && ./gradlew :app:assembleDebug --no-daemon --max-workers=1 --console=plain",
     "build:release": "npm run sync && npx cap build android --androidreleasetype AAB"
   }
 }
