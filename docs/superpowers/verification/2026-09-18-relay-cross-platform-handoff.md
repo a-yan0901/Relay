@@ -491,3 +491,8 @@
 - Web/Server 全量 Vitest：`162` 个测试文件通过、`1` 个跳过；`744` 个测试通过、`2` 个跳过（共 `746` 个测试）。该计数包含 Windows 旧库启动迁移和跨 runtime 分块 bundle 往返回归。
 - Android 设备路径复核：本机 `adb devices -l` 为空；用户测试主机的 `t2` 会话没有可调用的 `adb`，USB 设备只有 QEMU Tablet，没有 Android 真机；远端已有 ADB server 仅监听 `127.0.0.1:5037`。当前不能从本机部署两台设备，因此不执行安装、不卸载、不清理数据。
 - 交接结论：Web/Server 自动化和 Windows local-runtime 代码级证据继续有效；Android A-01～A-17、Windows 安装包升级/签名/持久制品来源仍需目标环境证据，不因全量 Vitest 通过提前关闭。
+
+## 32. 2026-09-20 Windows 制品来源工作流
+
+- 新增 `.github/workflows/windows-package.yml`，支持 `workflow_dispatch` 和 `v*` 标签；Windows runner 会执行 `npm ci`、typecheck、lint、`npm run package:windows`，生成 NSIS/Portable 和 `release-manifest.json`（大小、SHA-256、Authenticode 状态），并上传 90 天受控制品。
+- 当前只完成工作流定义和静态条款检查，尚未产生 GitHub Actions run、Release 附件或签名文件；因此 Windows 持久制品来源、签名和真实升级门禁仍保持未完成。

@@ -328,3 +328,8 @@
 
 - Web/Server 全量 Vitest：`162` 个测试文件通过、`1` 个跳过；`744` 个测试通过、`2` 个跳过（共 `746` 个测试）。本轮新增的 Windows 旧库迁移与 bundle 往返测试包含在该计数中；此前已通过的 `typecheck`、`lint` 和 Android 本地入口结果不变。
 - 本机 `adb devices -l` 仍为空。用户提供的测试主机只读复核显示：`t2` 会话没有可调用的 `adb` 命令，USB 设备只有 QEMU Tablet，没有 Android 真机；已有 ADB server 仅监听远端 `127.0.0.1:5037`，不能作为本机设备桥接。Android 真机 A-01～A-17 仍待设备路径恢复后统一部署验收。
+
+## 2026-09-20 Windows 制品来源工作流
+
+- 新增 `.github/workflows/windows-package.yml`：在 Windows runner 上执行 `npm ci`、typecheck、lint、`npm run package:windows`，生成 NSIS/Portable 后计算 SHA-256 和 Authenticode 状态，生成 `dist/releases/release-manifest.json` 并上传 90 天受控制品。
+- 工作流支持手动触发和 `v*` 标签触发；当前未在 GitHub Actions 上实际运行，因而只完成“可追溯制品流程”代码准备，不能替代真实 CI 产物、签名和安装包升级验收。

@@ -14,6 +14,8 @@ npm run package:windows:portable
 
 `package:windows:portable` 是 Linux/macOS 预览用的单文件 portable 构建，跳过本机 native dependency rebuild，并输出到 `dist/releases-portable-preview/`；它不能替代 Windows 主机上的 ABI、安装器和升级验证。
 
+仓库中的 `.github/workflows/windows-package.yml` 可通过 `workflow_dispatch` 或 `v*` 标签触发 Windows CI 打包。工作流在 Windows runner 上执行 typecheck、lint、NSIS/Portable 打包，并生成包含大小、SHA-256 和 Authenticode 状态的 `release-manifest.json`，再上传 90 天受控制品。`NotSigned` 只会如实记录，不能替代配置证书后的签名发布门禁。
+
 renderer 不得通过 preload 获取任意 Node API；所有新增 native 能力必须先进入 `apps/windows/ipc-contract.ts` 的 allowlist，并保持单次 IPC frame 不超过 64 KiB。
 
 Vault 导入按 32 KiB IPC 块写入有界二进制收集器，最多保留 8 MiB，完成时只做一次 UTF-8 组装；原生 Vault 导出在有文件写入句柄时按块直接落盘，避免 renderer 同时持有完整 bundle 和 `Uint8Array`。窗口导航只允许当前打包的 renderer 文件，任意其它 `file://` 或外部 URL 均被拦截。

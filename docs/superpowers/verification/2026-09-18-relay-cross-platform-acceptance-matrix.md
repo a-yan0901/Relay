@@ -254,3 +254,10 @@
 | 用户测试主机 Android 设备路径 | 阻塞 | `t2` 会话没有可调用的 `adb` 命令；USB 只有 QEMU Tablet，没有 Android 真机；已有 ADB server 仅监听远端 `127.0.0.1:5037`，没有可供本机使用的设备桥接。 |
 
 该复核证明的是设备路径缺失，不是 Android 产品测试失败；在设备恢复前不执行安装、卸载或数据清理。
+
+## 2026-09-20 Windows 制品来源工作流
+
+| 项目 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Windows CI 打包流程 | 已实现，未执行 | 新增 `.github/workflows/windows-package.yml`，支持手动/`v*` 标签触发，在 Windows runner 上完成 `npm ci`、typecheck、lint、NSIS/Portable 打包，并上传带 SHA-256/Authenticode 状态的 manifest 和制品。 |
+| Windows 持久制品来源 | 未闭环 | 当前仅完成仓库内工作流定义和静态结构检查；尚无 GitHub Actions run、Release URL 或实际签名制品，仍不能勾选持久制品/签名发布门禁。 |

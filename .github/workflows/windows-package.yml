@@ -1,0 +1,80 @@
+name: Windows desktop package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    env:
+      npm_config_audit: 'false'
+      npm_config_fund: 'false'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify source
+        run: |
+          npm run typecheck
+          npm run lint
+
+      - name: Build Windows packages
+        run: npm run package:windows
+
+      - name: Create artifact manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repositoryRoot = (Resolve-Path '.').Path
+
+          function Get-ReleaseArtifact([string]$directory) {
+            $files = @(Get-ChildItem -LiteralPath $directory -Filter '*.exe' -File)
+            if ($files.Count -ne 1) {
+              throw "Expected exactly one executable in $directory, found $($files.Count)"
+            }
+            return $files[0]
+          }
+
+          $artifacts = @(
+            (Get-ReleaseArtifact 'dist/releases/nsis'),
+            (Get-ReleaseArtifact 'dist/releases/portable')
+          )
+          $manifest = foreach ($artifact in $artifacts) {
+            $relativePath = $artifact.FullName.Substring($repositoryRoot.Length + 1).Replace('\', '/')
+            $signature = Get-AuthenticodeSignature -LiteralPath $artifact.FullName
+            [ordered]@{
+              path = $relativePath
+              bytes = $artifact.Length
+              sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash
+              signatureStatus = $signature.Status.ToString()
+              signer = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { $null }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 'dist/releases/release-manifest.json'
+          Get-Content -Raw 'dist/releases/release-manifest.json'
+
+      - name: Upload Windows packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: Relay-Windows-${{ github.ref_name }}-${{ github.sha }}
+          path: |
+            dist/releases/nsis/*.exe
+            dist/releases/portable/*.exe
+            dist/releases/release-manifest.json
+          if-no-files-found: error
+          retention-days: 90
