@@ -301,15 +301,21 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       const restoreByTabId = new Map((action.restoreResults ?? []).map((result) => [result.tabId, result]));
       const restoredTerminals = workspace.tabs.flatMap((tab) => {
         const terminalId = action.terminalIds[tab.id];
+        const restoreStatus = restoreByTabId.get(tab.id)?.status;
         return terminalId ? [{
           terminalId,
           hostId: tab.hostId,
-          state: restoreByTabId.get(tab.id)?.status === 'needs-reopen' || restoreByTabId.get(tab.id)?.status === 'missing-host'
+          // A native SSH handle cannot survive a process restart. Keep the
+          // recovery marker internal and let the panel immediately create a
+          // fresh shell; exposing needs-reopen here makes the tab briefly look
+          // user-actionable even though no action is required.
+          state: restoreStatus === 'missing-host'
             ? 'needs-reopen' as const
             : 'closed' as const,
           reconnectDelayMs: 0,
-          errorMessage: restoreByTabId.get(tab.id)?.status === 'missing-host' ? '这个工作区标签关联的 Server 已不存在。' : null,
-          ...(restoreByTabId.get(tab.id) === undefined ? {} : { recoveryStatus: restoreByTabId.get(tab.id)?.status }),
+          errorMessage: restoreStatus === 'missing-host' ? '这个工作区标签关联的 Server 已不存在。' : null,
+          ...(restoreStatus === 'needs-reopen' ? { state: 'connecting' as const } : {}),
+          ...(restoreStatus === undefined ? {} : { recoveryStatus: restoreStatus }),
           ...(tab.title === undefined ? {} : { label: tab.title })
         }] : [];
       });

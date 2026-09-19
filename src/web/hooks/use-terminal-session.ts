@@ -404,6 +404,23 @@ export class TerminalSessionController {
           }
           this.serviceInstanceId = event.serviceInstanceId;
         }
+        if (event.state === 'needs-reopen') {
+          // Native shells are process-local. Recover them without publishing
+          // the internal marker to the UI or app reducer.
+          this.clearReconnectTimer();
+          this.serviceInstanceId = null;
+          this.reattachOnly = false;
+          this.retryBlocked = false;
+          this.reconnectExhausted = false;
+          this.reconnectAttempt = 0;
+          const currentSocket = this.socket;
+          this.detachSocket(currentSocket);
+          this.socket = null;
+          this.updateSnapshot({ state: 'reconnecting', reconnectDelayMs: 0, error: null, credential: null, hostKey: null });
+          currentSocket?.close(1008, 'session expired; creating a new shell');
+          this.scheduleReconnect(0);
+          return;
+        }
         this.updateSnapshot({
           state: event.state,
           networkOffline: false,
@@ -415,23 +432,6 @@ export class TerminalSessionController {
           this.reconnectAttempt = 0;
           this.reconnectExhausted = false;
           this.updateSnapshot({ reconnectDelayMs: 0, error: null, credential: null });
-        }
-        if (event.state === 'needs-reopen') {
-          // A native renderer restart invalidates the old process-local shell.
-          // Recover it by creating a new shell immediately; this is an
-          // implementation detail and must not become a user-facing action.
-          this.clearReconnectTimer();
-          this.serviceInstanceId = null;
-          this.reattachOnly = false;
-          this.retryBlocked = false;
-          this.reconnectExhausted = false;
-          this.reconnectAttempt = 0;
-          const currentSocket = this.socket;
-          this.detachSocket(currentSocket);
-          this.socket = null;
-          this.updateSnapshot({ state: 'reconnecting', reconnectDelayMs: 0, error: null, credential: null });
-          currentSocket?.close(1008, 'session expired; creating a new shell');
-          this.scheduleReconnect(0);
         }
         if (event.state === 'interrupted' && !this.retryBlocked && !this.reconnectExhausted) {
           const currentSocket = this.socket;

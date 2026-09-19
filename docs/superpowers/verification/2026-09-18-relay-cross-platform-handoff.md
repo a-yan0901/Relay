@@ -397,3 +397,9 @@
 - 使用独立临时 `userData` 的 Playwright Electron runner，真实验证当前 NSIS 解压版：首次 Vault 创建、Host 保存、Host Key 信任、真实 SSH 命令 `PACKAGED_CURRENT_BUILD_OK`；关闭再启动后恢复 Console，`.terminal-recovery` 数量为 `0`，绿色状态为 `1`，`PACKAGED_RESTART_AUTO_RECONNECT_OK` 远端回显成功。临时数据已清理。
 - `2407FRK8EC` 解锁后已安装当前 APK，创建/保存 `Provided Acceptance Host`，完成真实 Host Key trust、SSH 登录和 `INITIAL_INPUT_OK_2407` 回显。force-stop/重启阶段 mDNS ADB 通道掉线，重新发现的 `192.168.1.2:35857` 连接超时；因此 A-05 的第二台设备重启恢复仍需重新稳定无线调试后补测。
 - Windows 升级迁移、签名与持久制品来源仍未完成；Android 复制/粘贴、网络切换、软键盘/旋转/安全区、URI 即时释放、长时低内存、双向 bundle 及其余 A-01～A-17 仍按清单逐项回填。
+
+## 2026-09-19 Console 恢复状态隐藏修复
+
+- 复审发现自动恢复虽已创建新 Shell，但恢复初始态和 native `needs-reopen` 事件仍可能把内部状态短暂发布到标签/Quick Switcher。现已将该状态收敛为内部恢复标记：UI 与 app reducer 只接收 `connecting`/`reconnecting`，不再显示“此 Console 需要重新连接”，也不要求用户点击恢复。
+- `tests/unit/web/app-state.test.ts`、`tests/unit/web/terminal-session.test.ts`、TerminalPanel/Workspace 定向套件共 `67/67` 通过；`ssh-productivity.spec.ts` `3/3` 通过；`npm run typecheck` 与 `npm run lint` 通过。
+- 本项只改变恢复状态的可见性，不改变 Host Key、凭据错误、网络断开或自动重试耗尽时的真实错误入口；这些情况仍按原有安全边界显示明确错误。

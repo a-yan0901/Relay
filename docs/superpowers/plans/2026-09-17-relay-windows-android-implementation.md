@@ -273,3 +273,9 @@
 - 使用独立临时 `userData` 的 Playwright Electron runner 启动当前 NSIS 解压版，真实完成 Vault 创建、测试 Host 保存、Host Key 信任、用户测试主机 Shell 建立和 `echo PACKAGED_CURRENT_BUILD_OK` 回显；关闭并重新启动后，解锁 Vault，`recoveryCount=0`、状态点为绿色，`echo PACKAGED_RESTART_AUTO_RECONNECT_OK` 真实回显。临时 userData 已清理，未接触本机现有 Relay 数据。
 - `2407FRK8EC` 已解锁并安装当前 APK 后重新建立 `Provided Acceptance Host`，真实确认用户测试主机指纹，执行 `echo INITIAL_INPUT_OK_2407` 得到远端回显和 `t2` 提示符。随后执行 force-stop/重启时该设备的 mDNS ADB 通道掉线；发现服务转为 `192.168.1.2:35857`，连接尝试超时，因而本轮不能记录 2407 的重启后自动恢复结果。该项是设备无线调试连接阻塞，不把它归因于应用。
 - 当前仍未完成的门禁不变：Android 2407 重启恢复需在 ADB 稳定后补测，A-05 复制/粘贴完整人工路径、A-06 网络切换、A-08 软键盘/旋转/安全区、A-11 URI 即时释放、A-15 长时低内存、A-17 双向 bundle，以及 Windows 升级迁移、签名、持久制品来源仍未通过。
+
+## 2026-09-19 Console 自动恢复可见性复审
+
+- 复查“重启后仍提示需要重新连接”的原因，确认问题不仅是 `autoConnect`，还包括恢复初始态和 native `needs-reopen` 事件向 app/UI 暴露了内部状态。
+- 已把 native 句柄失效恢复改为完全无感：内部标记保留用于诊断，外部状态只显示连接中/重连中；旧 socket/service instance 清理后立即创建新 Shell。只有自动重试耗尽或真实认证/Host Key 错误才显示用户可操作的错误。
+- 通过 Web 定向测试 `67/67`、Playwright 终端恢复 `3/3`、typecheck 和 lint；平台整体未完成门禁仍按验收矩阵维护，不因该修复提前标记 Android/Windows 全部验收通过。

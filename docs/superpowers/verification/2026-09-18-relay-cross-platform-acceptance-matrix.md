@@ -173,3 +173,8 @@
 - 当前 NSIS：`127,632,215` bytes / SHA-256 `92F08B8F99B573EE84306243C97A84A544B88DB0C2223601A49AFE1CECEBA3B3`；portable：`113,554,151` bytes / SHA-256 `6AD0CF9035C8D04C09C67B233B522B6BEACE8EFA1E2BE81ECA986FCC7CE32158`。两者 PE 头均为 `MZ`，Authenticode 均为 `NotSigned`，不能标记为签名发布制品。
 - 通过隔离 `userData` 的 Playwright Electron runner，NSIS 解压版真实完成 Vault/Host/Host Key/SSH 输入；重启同一打包实例后 `recoveryCount=0`、状态点绿色，重启后的远端命令回显成功。该证据将“打包版自动恢复”加入 Windows 证据，但 Windows 升级迁移和签名仍为 🟡。
 - `2407FRK8EC` 已补做首次 Host Key trust、真实 SSH 登录和 `echo INITIAL_INPUT_OK_2407` 回显；在 force-stop/重启动作后 mDNS ADB 从原 serial 掉线，重新发现的 `192.168.1.2:35857` 连接超时，因此不把该设备的重启恢复标为通过。25091 的最终 APK 自动恢复证据仍有效。
+
+## 2026-09-19 Console 恢复状态隐藏修复
+
+- native Shell 失效后的 `needs-reopen` 现在只作为内部恢复标记；恢复初始态直接进入 `connecting`，收到 native 失效事件直接进入 `reconnecting` 并创建新 Shell，标签和 Quick Switcher 不再显示“此 Console 需要重新连接”。
+- Web 定向单测 `67/67`、Playwright `ssh-productivity.spec.ts` `3/3`、typecheck、lint 均通过。该项加强 A-05/A-13 的“重启后自动恢复且命令可输入”边界，但不替代 Android 第二台设备、网络切换和进程回收实测。

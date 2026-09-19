@@ -86,6 +86,28 @@ describe('appReducer', () => {
     expect(hydrated.query).toBe('prod');
   });
 
+  it('keeps native shell recovery out of the user-facing needs-reopen state', () => {
+    const workspace: WorkspaceState = {
+      version: 4,
+      tabs: [{ id: 'tab-reopen', hostId: 'host-1', title: 'Reopen' }],
+      activeTabId: 'tab-reopen',
+      layout: { mode: 'single', ratio: 0.5 },
+      filters: { query: '', groupId: null, favoriteOnly: false }
+    };
+
+    const hydrated = appReducer(initialAppState, {
+      type: 'workspaceLoaded',
+      workspace,
+      terminalIds: { 'tab-reopen': 'terminal-reopen' },
+      restoreResults: [{ tabId: 'tab-reopen', hostId: 'host-1', status: 'needs-reopen', terminalId: 'terminal-reopen' }]
+    });
+
+    expect(hydrated.terminals[0]).toEqual(expect.objectContaining({
+      state: 'connecting',
+      recoveryStatus: 'needs-reopen'
+    }));
+  });
+
   it('keeps durable workspace data free of live terminal state', () => {
     let state = appReducer(initialAppState, { type: 'terminalOpened', terminalId: 'live-terminal', hostId: 'host-1' });
     state = appReducer(state, { type: 'workspaceSynced', workspace: {

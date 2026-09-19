@@ -279,11 +279,13 @@ describe('TerminalSessionController', () => {
     vi.useFakeTimers();
     try {
       FakeSocket.instances = [];
+      const snapshots: string[] = [];
       const controller = new TerminalSessionController({
         hostId: 'host-1',
         terminalId: 'terminal-lifecycle',
         webSocketFactory: (url) => new FakeSocket(url),
-        reconnectBaseMs: 100
+        reconnectBaseMs: 100,
+        onSnapshot: (snapshot) => snapshots.push(snapshot.state)
       });
 
       controller.connect();
@@ -291,6 +293,7 @@ describe('TerminalSessionController', () => {
       socket.open();
       socket.message(JSON.stringify({ type: 'status', state: 'needs-reopen', serviceInstanceId: 'android-local' }));
       expect(controller.snapshot.state).toBe('reconnecting');
+      expect(snapshots).not.toContain('needs-reopen');
       expect(socket.closeCodes).toContain(1008);
 
       vi.advanceTimersByTime(0);
