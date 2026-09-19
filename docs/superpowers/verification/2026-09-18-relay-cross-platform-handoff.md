@@ -131,7 +131,7 @@
 | A-01 | 首次打开、创建 Host、保存凭据 | 不需要 Relay URL 或 cookie；Host 重启后仍存在 | 待执行 |
 | A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 通过（真实主机密码路径）：两台 Android 16 真机在 `106.14.61.92:22` 展示 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`；点击“信任并连接”后均成功建立 Shell。旧模拟器 fixture 结果仅保留为历史回归证据。 |
 | A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | 通过：`25091RP04C` 真机连接局域网 SSH fixture，Host Key 更换后真实 UI 显示 `HOST KEY CHANGED`；拒绝后返回指纹不一致且再次连接仍显示变化，只有显式替换才建立新 Shell。脱敏证据：[Android Host Key/私钥 CDP 证据](./evidence/2026-09-19-android-host-key-private-key-cdp.md)。 |
-| A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行；已补齐私钥正向链路和错误私钥/口令失败增量：`25091RP04C` 真实 UI/native 事件返回 `SSH_AUTH_FAILED` 并显示“远程服务器认证失败”；完整 logcat、WebView 持久化和系统备份秘密扫描仍待执行。证据：[私钥正向](./evidence/2026-09-19-android-host-key-private-key-cdp.md)、[私钥失败](./evidence/2026-09-19-android-private-key-failure-cdp.md)。 |
+| A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 部分证据；已补齐私钥正向链路、错误私钥/口令及 malformed Base64 私钥失败映射：`25091RP04C` 真实 UI/native 事件返回 `SSH_AUTH_FAILED` 并显示“远程服务器认证失败”。关闭 Capacitor verbose bridge 日志后，专用合成哨兵未出现在 logcat/WebView 存储；系统备份和完整密码/私钥失败矩阵仍待执行。证据：[私钥正向](./evidence/2026-09-19-android-host-key-private-key-cdp.md)、[私钥失败](./evidence/2026-09-19-android-private-key-failure-cdp.md)、[日志边界](./evidence/2026-09-19-android-secret-log-boundary.md)。 |
 | A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行；两台真机连续 3 轮关闭/重开后输入 `whoami`，6/6 返回 `t2`；本轮分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到远端回显，`2407FRK8EC` 重装后又输入 `echo REAL_SERVER_2407_REINSTALLED` 得到真实回显。复制、粘贴确认、中文/长输入和底部布局仍待完整走查。 |
 | A-06 | 断网后恢复 | 网络切换/短暂断开显示真实 `reconnecting` 或 `interrupted`；恢复后按交互约定重连，不伪造 connected | 待执行 |
 | A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行；`25091RP04C` 从 Console 发送系统返回键后回到 Server 列表，完整弹层/根页面退出顺序仍待走查。 |
@@ -143,7 +143,7 @@
 | A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行；`25091RP04C` force-stop/重启后 Host 与 Vault 数据仍在，旧 Console 显示“需要重新连接”，重新打开后建立新 Shell；锁屏、旋转和完整进程回收证据仍待执行。 |
 | A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | 待执行 |
 | A-15 | 低内存行为 | 大目录/大文件操作不明显失控；取消/退出后资源释放；无持续增长的输出/文件缓冲 | 待执行；`25091RP04C` 大目录分页期间采样 PSS `270,324 KB`，返回 Server 后 30 秒采样降至 `251,874 KB`，未观察到 OOM/ANR；当前还缺少按任务书要求的 2 分钟基线、同时进行 32 MiB 传输的每 5 秒采样和完整 `dumpsys meminfo` 摘要，因此不回填为通过。 |
-| A-16 | 秘密和网络边界 | 普通 logcat、WebView 持久化和系统备份中不出现密码/私钥/Vault 明文；客户端不要求本地 HTTP 监听 | 待执行；`25091RP04C` 部分检查未发现 logcat/app-private 测试标记、Relay/5173/3000/4173 监听，APK manifest `allowBackup=0`；完整专用标记密码、WebView、备份和设备日志流程仍待执行。 |
+| A-16 | 秘密和网络边界 | 普通 logcat、WebView 持久化和系统备份中不出现密码/私钥/Vault 明文；客户端不要求本地 HTTP 监听 | 部分证据；`25091RP04C` 使用合成哨兵复核时，关闭 Capacitor verbose bridge 日志后 logcat、`localStorage`、`sessionStorage`、IndexedDB 均无匹配；app manifest `allowBackup=0`，且未发现 Relay/5173/3000/4173 监听。系统备份导出/恢复、长时间日志审计仍待执行。证据：[Android 私密字段日志边界](./evidence/2026-09-19-android-secret-log-boundary.md)。 |
 | A-17 | Vault bundle v1 跨端固定向量 | Web/Windows 导出 → Android 预览/应用 → Android 导出 → Web/Windows 导入；字段、计数、错误密码/篡改和原数据不变性均符合固定向量 | 待执行 |
 
 ## 6. 客观操作与判定标准
@@ -365,3 +365,11 @@
 - `25091RP04C` 新 APK 真实 native 事件为 `connecting` → `SSH_AUTH_FAILED` → `failed` → `terminal.close`；真实 UI 显示“远程服务器认证失败”和“编辑 Server 凭据”，不再进入重连循环。
 - 当前 APK `8,633,755` bytes，SHA-256 `5017F5ADBCCFA724D2601CD61AA9AED0893D229AA6B42966BB233FFC8A3FFDAE`；两台真机 `:app:connectedDebugAndroidTest` 各 `7/7` 通过，随后均重新安装该 APK 返回 `Success`。
 - 脱敏证据：[Android 私钥失败路径 CDP 证据](./evidence/2026-09-19-android-private-key-failure-cdp.md)。A-04 仍不整体标记通过，待补秘密扫描和完整密码/私钥失败矩阵。
+
+## 25. 2026-09-19 双真机重试与 Android 日志边界复核
+
+- 最新 Debug APK 为 `8,633,755` bytes，SHA-256 `B66C9A27786A9996CE9658CBEC3A6AA8A8ACEEC7C0032C0D9FACD9ECD74AD058`；构建使用 JDK 21、缓存 Gradle 9.3.1、offline、单 worker。新增 Android 单元回归覆盖 `fromBase64: invalid base64 data`，将 malformed 私钥继续映射为 `SSH_AUTH_FAILED`。
+- `:app:connectedDebugAndroidTest` 在 `25091RP04C` 和 `2407FRK8EC` 均完成 `7/7`，Gradle 返回 `BUILD SUCCESSFUL`。runner 结束后首次再次安装曾返回 `INSTALL_FAILED_USER_RESTRICTED`；随后重新触发安装，`adb`/`pm` 安装均成功，两台设备的 `cn.ayan.relay` package path 均已复核存在。
+- Android 配置新增 `android.loggingBehavior: 'none'`，用于关闭 Capacitor verbose bridge 的插件 payload 日志。使用一次性合成哨兵进行真实设备复核时，logcat、WebView `localStorage`/`sessionStorage`/IndexedDB 未发现哨兵；临时 Host 已删除。该证据不包含任何真实凭据或哨兵值。
+- APK manifest 的 `android:allowBackup` 仍为 `false`；系统备份导出/恢复、长时间进程日志审计和完整 A-16 失败矩阵仍未完成，因此 A-04/A-16 不回填为整体通过。
+- 脱敏证据：[Android 私密字段日志边界](./evidence/2026-09-19-android-secret-log-boundary.md)。

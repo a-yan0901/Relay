@@ -145,3 +145,10 @@
 - 新 APK 在 `25091RP04C` 上对故意不可用的私钥/口令返回 `SSH_AUTH_FAILED`，真实 UI 显示“远程服务器认证失败”；根因修复前的 `invalid privatekey` 映射已有单元测试红灯，修复后转绿。
 - 两台 Android 16 真机各完成 `7/7` connected instrumentation，随后重新安装当前 APK 均返回 `Success`；当前 APK SHA-256 为 `5017F5ADBCCFA724D2601CD61AA9AED0893D229AA6B42966BB233FFC8A3FFDAE`。
 - 该增量不把 A-04 整体标为通过；logcat、WebView 持久化、系统备份秘密扫描和完整密码/私钥失败矩阵仍待完成。证据：[Android 私钥失败路径 CDP 证据](./evidence/2026-09-19-android-private-key-failure-cdp.md)。
+
+## 2026-09-19 双真机重试与 Android 日志边界复核
+
+- 最新 Debug APK `8,633,755` bytes，SHA-256 `B66C9A27786A9996CE9658CBEC3A6AA8A8ACEEC7C0032C0D9FACD9ECD74AD058`；两台 Android 16 真机的 `:app:connectedDebugAndroidTest` 均完成 `7/7`，Gradle 返回 `BUILD SUCCESSFUL`。
+- connected runner 清理应用后，首次重新安装曾在两台设备分别返回 `INSTALL_FAILED_USER_RESTRICTED`；再次触发安装后，两台设备均成功安装并通过 `pm path cn.ayan.relay` 复核。这只更新当前安装/原生测试状态，不把完整 Android 平台验收标为通过。
+- `android.loggingBehavior: 'none'` 修复了 Capacitor verbose bridge 可能记录插件 payload 的边界。`25091RP04C` 的合成哨兵复核中，logcat、WebView `localStorage`、`sessionStorage`、IndexedDB 均无匹配，manifest `allowBackup=false`；系统备份导出/恢复和长时间日志审计仍待执行，A-16 保持 `🟡`。
+- 相关脱敏证据：[Android 私密字段日志边界](./evidence/2026-09-19-android-secret-log-boundary.md)。A-04/A-06～A-17 未覆盖的人工边界以及 Windows 发布门禁继续保持原状态。

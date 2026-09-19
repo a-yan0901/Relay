@@ -9,4 +9,9 @@ class AndroidJschConnectionTest {
     fun mapsPrivateKeyParsingFailuresToAuthenticationFailure() {
         assertEquals("SSH_AUTH_FAILED", mapJschError(JSchException("invalid privatekey")))
     }
+
+    @Test
+    fun mapsMalformedPrivateKeyBase64FailuresToAuthenticationFailure() {
+        assertEquals("SSH_AUTH_FAILED", mapJschError(JSchException("fromBase64: invalid base64 data")))
+    }
 }

@@ -243,7 +243,8 @@ internal fun mapJschError(error: Throwable): String {
         message.contains("publickey") ||
         message.contains("privatekey") ||
         message.contains("private key") ||
-        message.contains("passphrase")
+        message.contains("passphrase") ||
+        message.contains("invalid base64")
     ) "SSH_AUTH_FAILED" else "SSH_CONNECTION_FAILED"
 }
 

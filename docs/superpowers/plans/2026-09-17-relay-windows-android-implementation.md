@@ -240,3 +240,10 @@
 - `AndroidJschConnectionTest` 先复现旧实现将 JSch `invalid privatekey` 映射为 `SSH_CONNECTION_FAILED` 的失败，再将私钥解析/口令错误映射为 `SSH_AUTH_FAILED`；新 APK 的真实 native 事件和 UI 均显示可解释的认证失败，不再反复重连后退化为“需要重新连接”。
 - 当前 APK `8,633,755` bytes / SHA-256 `5017F5ADBCCFA724D2601CD61AA9AED0893D229AA6B42966BB233FFC8A3FFDAE`；两台 Android 16 真机各完成 `7/7` connected instrumentation，随后重新安装当前 APK 均返回 `Success`。
 - A-04 只新增错误私钥/口令增量，logcat、WebView 持久化、系统备份秘密扫描和完整失败矩阵仍未完成。证据：[Android 私钥失败路径 CDP 证据](../verification/evidence/2026-09-19-android-private-key-failure-cdp.md)。
+
+## 2026-09-19 双真机重试与 Android 日志边界复核
+
+- 最新 Debug APK `8,633,755` bytes，SHA-256 `B66C9A27786A9996CE9658CBEC3A6AA8A8ACEEC7C0032C0D9FACD9ECD74AD058`；新增 malformed private-key Base64 单元回归，JSch 解析错误统一映射为 `SSH_AUTH_FAILED`。
+- `25091RP04C` 与 `2407FRK8EC` 的 `:app:connectedDebugAndroidTest` 均完成 `7/7`，Gradle 返回 `BUILD SUCCESSFUL`。connected runner 清理应用后首次再次安装曾返回 `INSTALL_FAILED_USER_RESTRICTED`；重新触发安装后两台设备均成功安装，package path 已复核存在。
+- `apps/android/capacitor.config.ts` 新增 `android.loggingBehavior: 'none'`。在 `25091RP04C` 用一次性合成哨兵复核后，logcat、WebView `localStorage`/`sessionStorage`/IndexedDB 未发现哨兵；临时 Host 已清理，APK manifest 继续保持 `android:allowBackup=false`。
+- 该复核只收紧 Android 私密字段日志边界，不改变任务门禁口径：系统备份导出/恢复、长时间日志审计、完整 A-04 失败矩阵以及 A-06～A-08、A-10～A-17 的真实人工验收仍未完成。证据：[Android 私密字段日志边界](../verification/evidence/2026-09-19-android-secret-log-boundary.md)。

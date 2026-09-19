@@ -5,7 +5,8 @@ const config: CapacitorConfig = {
   appName: 'Relay',
   webDir: '../../dist/web',
   android: {
-    allowMixedContent: false
+    allowMixedContent: false,
+    loggingBehavior: 'none'
   }
 };
 
