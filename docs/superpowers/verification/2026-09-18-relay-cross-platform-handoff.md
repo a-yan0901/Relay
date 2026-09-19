@@ -597,3 +597,10 @@
 - 为验证 Web 修复已同步进入 Android WebView 资源，使用 session-only JDK 21/Android SDK 执行 `npm run build:android:debug`，`BUILD SUCCESSFUL`（36s；73 tasks，21 executed，52 up-to-date）。
 - Debug APK：`8,655,609` bytes，SHA-256 `FA9986C4EE05D14FF7C1ADAAB49D9FD96E7E916209F5F6E33555F853470F6F44`。
 - 该 APK 仅构建未安装；恢复真机连接后按统一批次用数据保留方式部署，不执行卸载、`pm clear`、`-g` 或重复授权。
+
+## 43. 2026-09-20 A-11 SAF grant 失败分支清理
+
+- 发现边界：SAF 已返回 URI 但原生 executor 不可用、调用抛异常或处理返回失败时，插件原先没有在 Activity 回调边界立即撤销 grant。
+- 已修复 open/save 两条回调：成功响应继续交给 source/file writer 负责后续释放；失败响应、executor 缺失和异常路径立即走统一的 Activity/application context best-effort revoke。
+- TDD/验证：新增 `AndroidUriGrantGuardTest`，`2/2` 通过；`npm run test:android:local` 构建成功；TypeScript 全量 `162` 文件、`746` tests 通过、`2` skipped，typecheck/lint 通过。
+- 最新 Debug APK：`8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`，仅构建未安装。本条仍不能把 A-11 标成真机通过，任务结束立即释放、权限拒绝和分享需设备证据。

@@ -387,3 +387,13 @@
 | Web 修复进入 Android 包 | 通过 | `npm run build:android:debug` 使用 session-only JDK 21/Android SDK，`BUILD SUCCESSFUL`，36s；73 tasks 中 21 executed、52 up-to-date |
 | Debug APK | 已生成，未部署 | `8,655,609` bytes，SHA-256 `FA9986C4EE05D14FF7C1ADAAB49D9FD96E7E916209F5F6E33555F853470F6F44` |
 | 设备数据保护 | 通过 | 本轮无 ADB install/uninstall、`pm clear`、`-g` 或新增授权；真机验证留到统一部署批次 |
+
+### A-11 SAF grant 失败分支清理增量
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 原生文件选择/保存失败时立即撤销 grant | 代码与 JVM 回归通过 | executor 缺失、调用异常、失败响应均进入统一撤销；`AndroidUriGrantGuardTest` `2/2` 通过 |
+| Android 构建与全量回归 | 通过 | `npm run test:android:local` `BUILD SUCCESSFUL`；TypeScript `162` 文件、`746` tests 通过、`2` skipped；typecheck/lint 通过 |
+| A-11 真机闭环 | 未完成 | 仍需在真机确认任务结束立即释放、拒绝权限提示和分享路径；本轮 APK 未安装，未改变设备数据 |
+
+最新未部署 Debug APK：`8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`。

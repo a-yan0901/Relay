@@ -14,6 +14,13 @@ import androidx.activity.result.ActivityResult
 import androidx.appcompat.app.AlertDialog
 import java.util.concurrent.atomic.AtomicBoolean
 
+internal fun releaseUriGrantIfOperationFailed(
+    operationSucceeded: Boolean,
+    release: () -> Unit
+) {
+    if (!operationSucceeded) release()
+}
+
 /**
  * Capacitor-facing boundary. Only this class can turn a user-approved Android
  * activity result into a native file writer; ordinary WebView payloads never
@@ -70,10 +77,7 @@ class RelayNativePlugin : Plugin() {
 
     override fun load() {
         super.load()
-        attachExecutor(AndroidLocalExecutor(getContext(), ::emitNativeEvent) { uri, flags ->
-            getActivity()?.revokeUriPermission(uri, flags)
-            getContext().revokeUriPermission(uri, flags)
-        })
+        attachExecutor(AndroidLocalExecutor(getContext(), ::emitNativeEvent, ::revokeUriGrant))
     }
 
     override fun handleOnDestroy() {
@@ -246,16 +250,22 @@ class RelayNativePlugin : Plugin() {
             return
         }
         val activeExecutor = executor
+        val modeFlags = (result.data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        val grantFlags = if (modeFlags == 0) Intent.FLAG_GRANT_READ_URI_PERMISSION else modeFlags
         if (activeExecutor == null) {
+            revokeUriGrant(uri, grantFlags)
             call.resolve(failureResponse(request, "SERVICE_RESTARTED"))
             return
         }
         try {
-            val modeFlags = (result.data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            activeExecutor.invokeFileOpenSelection(request, uri.toString(), if (modeFlags == 0) Intent.FLAG_GRANT_READ_URI_PERMISSION else modeFlags) { response ->
-                mainHandler.post { call.resolve(response) }
+            activeExecutor.invokeFileOpenSelection(request, uri.toString(), grantFlags) { response ->
+                mainHandler.post {
+                    releaseUriGrantIfOperationFailed(response.optBoolean("ok", false)) { revokeUriGrant(uri, grantFlags) }
+                    call.resolve(response)
+                }
             }
         } catch (_: Exception) {
+            revokeUriGrant(uri, grantFlags)
             call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE"))
         }
     }
@@ -270,18 +280,29 @@ class RelayNativePlugin : Plugin() {
             return
         }
         val activeExecutor = executor
+        val modeFlags = (result.data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        val grantFlags = if (modeFlags == 0) Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION else modeFlags
         if (activeExecutor == null) {
+            revokeUriGrant(uri, grantFlags)
             call.resolve(failureResponse(request, "SERVICE_RESTARTED"))
             return
         }
         try {
-            val modeFlags = (result.data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            activeExecutor.invokeFileSaveSelection(request, uri.toString(), if (modeFlags == 0) Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION else modeFlags) { response ->
-                mainHandler.post { call.resolve(response) }
+            activeExecutor.invokeFileSaveSelection(request, uri.toString(), grantFlags) { response ->
+                mainHandler.post {
+                    releaseUriGrantIfOperationFailed(response.optBoolean("ok", false)) { revokeUriGrant(uri, grantFlags) }
+                    call.resolve(response)
+                }
             }
         } catch (_: Exception) {
+            revokeUriGrant(uri, grantFlags)
             call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE"))
         }
+    }
+
+    private fun revokeUriGrant(uri: android.net.Uri, flags: Int) {
+        try { getActivity()?.revokeUriPermission(uri, flags) } catch (_: Exception) { }
+        try { getContext().revokeUriPermission(uri, flags) } catch (_: Exception) { }
     }
 
     private fun successResponse(request: JSObject, result: JSObject): JSObject = JSObject()

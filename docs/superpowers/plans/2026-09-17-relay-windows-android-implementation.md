@@ -424,3 +424,10 @@
 
 - 为确认该 Web 样式能进入 Android WebView 资源包，使用 session-only JDK 21 与 Android SDK 环境执行 `npm run build:android:debug`，返回 `BUILD SUCCESSFUL`（36s；73 tasks，21 executed，52 up-to-date）。
 - 新生成但未安装的 Debug APK 为 `8,655,609` bytes，SHA-256 `FA9986C4EE05D14FF7C1ADAAB49D9FD96E7E916209F5F6E33555F853470F6F44`；本轮没有 ADB 安装、卸载、`pm clear`、`-g` 或新增授权。
+
+## 2026-09-20 A-11 失败分支的 Android URI grant 清理
+
+- 根因：SAF 返回 URI 后，如果原生 executor 已销毁、选择处理抛异常或返回失败，`RelayNativePlugin` 原先只把失败返回给 Web，未在该边界立即撤销 Activity grant；成功路径仍由 upload source/file writer 在 `finally`、close/cancel 或显式 release 时释放。
+- 修复：open/save 两条 Activity 回调统一使用 `releaseUriGrantIfOperationFailed`；executor 缺失、调用异常和失败响应立即撤销，Activity 与 application context 两条撤销路径均做 best-effort 防护。
+- TDD/验证：缺少 helper 时先红；新增 Android JVM `AndroidUriGrantGuardTest` 后 `2/2` 通过；`npm run test:android:local` 返回 `BUILD SUCCESSFUL`（93 tasks，23 executed，70 up-to-date）；TypeScript 全量 `162` 文件通过、`746` tests 通过、`2` skipped，`typecheck`、`lint` 通过。
+- 新 Debug APK 仅构建未部署：`8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`。这补强失败分支代码证据，但不替代真机 A-11 的即时 grant、拒绝权限和分享验证。
