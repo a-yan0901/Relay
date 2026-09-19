@@ -70,7 +70,10 @@ class RelayNativePlugin : Plugin() {
 
     override fun load() {
         super.load()
-        attachExecutor(AndroidLocalExecutor(getContext(), ::emitNativeEvent))
+        attachExecutor(AndroidLocalExecutor(getContext(), ::emitNativeEvent) { uri, flags ->
+            getActivity()?.revokeUriPermission(uri, flags)
+            getContext().revokeUriPermission(uri, flags)
+        })
     }
 
     override fun handleOnDestroy() {

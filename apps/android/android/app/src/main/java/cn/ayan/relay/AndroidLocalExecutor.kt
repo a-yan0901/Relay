@@ -55,7 +55,8 @@ internal fun androidOperationExecutor(operation: String): AndroidOperationExecut
  */
 internal class AndroidLocalExecutor(
     context: Context,
-    private val emitToWeb: (JSObject) -> Unit
+    private val emitToWeb: (JSObject) -> Unit,
+    private val revokeUriPermission: ((Uri, Int) -> Unit)? = null
 ) : RelayNativePlugin.Executor, AutoCloseable {
     companion object {
         private const val MAX_OPERATION_QUEUE = 16
@@ -1935,7 +1936,10 @@ internal class AndroidLocalExecutor(
             }
             try { sftp?.disconnect() } catch (_: Exception) { }
             try { connection?.close() } catch (_: Exception) { }
-            try { appContext.revokeUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+            try {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                (revokeUriPermission ?: { target, grantFlags -> appContext.revokeUriPermission(target, grantFlags) })(uri, flags)
+            } catch (_: Exception) { }
         }
     }
 
