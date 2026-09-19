@@ -166,3 +166,10 @@
 - 当前 APK `8,633,649` bytes，SHA-256 `D4A1C69F5549109A91BE9428FFCBBDC2580EB2C18D321864A6869034416DAB90`；两台 Android 16 真机安装均返回 `Success`。Web/Session 定向回归 `33/33`，typecheck、lint、Web build、Android JVM/build 均通过。
 - `25091RP04C` force-stop/重启并解锁后，`Provided Acceptance Host` 和 Console 保留，恢复条数量为 `0`、状态点为绿色；真实远端执行 `echo FINAL_RESTART_INPUT_OK_25091` 并收到回显，证明自动恢复后的 Shell 可输入。该证据更新 A-05 的“断连重连”部分，但 A-05 的复制/粘贴完整人工路径仍为 🟡。
 - `2407FRK8EC` 本轮处于 Android 系统锁屏（`isKeyguardShowing=true`），只能确认安装成功，不能确认恢复 UI；不把 25091 结果扩展到 2407。A-06、A-08、A-15、A-17 及 Windows 未完成边界保持原状态。
+
+## 2026-09-19 Windows 当前制品与 Android 2407 续验
+
+- 当前源码 `9150f85` 的 `npm run build`、`npm run build:windows`、`npm run package:windows` 均通过；全量 Vitest `161` 个文件通过、`1` 个跳过，`738` 个测试通过、`2` 个跳过。
+- 当前 NSIS：`127,632,215` bytes / SHA-256 `92F08B8F99B573EE84306243C97A84A544B88DB0C2223601A49AFE1CECEBA3B3`；portable：`113,554,151` bytes / SHA-256 `6AD0CF9035C8D04C09C67B233B522B6BEACE8EFA1E2BE81ECA986FCC7CE32158`。两者 PE 头均为 `MZ`，Authenticode 均为 `NotSigned`，不能标记为签名发布制品。
+- 通过隔离 `userData` 的 Playwright Electron runner，NSIS 解压版真实完成 Vault/Host/Host Key/SSH 输入；重启同一打包实例后 `recoveryCount=0`、状态点绿色，重启后的远端命令回显成功。该证据将“打包版自动恢复”加入 Windows 证据，但 Windows 升级迁移和签名仍为 🟡。
+- `2407FRK8EC` 已补做首次 Host Key trust、真实 SSH 登录和 `echo INITIAL_INPUT_OK_2407` 回显；在 force-stop/重启动作后 mDNS ADB 从原 serial 掉线，重新发现的 `192.168.1.2:35857` 连接超时，因此不把该设备的重启恢复标为通过。25091 的最终 APK 自动恢复证据仍有效。

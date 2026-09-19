@@ -265,3 +265,11 @@
 - `25091RP04C` 强制停止 `cn.ayan.relay` 后重新启动，使用预置测试 Vault 主密码（未记录）解锁；`Provided Acceptance Host` 和 Console 标签均保留，DOM 中无 `.terminal-recovery`，状态点为绿色，并在用户提供的 `106.14.61.92:22`/`t2` 主机真实执行 `echo FINAL_RESTART_INPUT_OK_25091`，收到同名远端回显和 `t2` 提示符。该证据覆盖“重启后自动恢复且命令可输入”，不把绿色状态单独当作通过。
 - `2407FRK8EC` 安装同一 APK 成功，但本轮重启后处于 Android 系统锁屏，`isKeyguardShowing=true`、当前焦点为 `NotificationShade`，无法读取 Relay UI 或恢复 Console；因此本轮不把 25091 的自动恢复结果扩展到 2407，待设备解锁后补测。
 - 本轮不改变平台整体门禁：A-05 的复制/粘贴完整真机路径、A-06 网络切换、A-08 软键盘/旋转/安全区、A-15 长时低内存、A-17 双向 bundle，以及 Windows 升级/签名/持久制品来源和打包后完整任务链仍未完成。
+
+## 2026-09-19 Windows 当前打包制品与 Android 第二台设备续验
+
+- 当前源码 `9150f85` 的 `npm run build`、`npm run build:windows`、`npm run package:windows` 均成功；全量 Vitest 为 `161` 个文件通过、`1` 个跳过，`738` 个测试通过、`2` 个跳过。构建输出中的 Vite 大 chunk、Electron-builder 缺少 author/description 和 duplicate dependency 均为既有警告，不是失败。
+- 当前 NSIS 制品 `dist/releases/nsis/Relay-0.1.0-x64.exe`：`127,632,215` bytes，SHA-256 `92F08B8F99B573EE84306243C97A84A544B88DB0C2223601A49AFE1CECEBA3B3`；portable 制品 `dist/releases/portable/Relay-0.1.0-x64.exe`：`113,554,151` bytes，SHA-256 `6AD0CF9035C8D04C09C67B233B522B6BEACE8EFA1E2BE81ECA986FCC7CE32158`。两者 PE 头为 `MZ`，`Get-AuthenticodeSignature` 为 `NotSigned`，签名仍是发布阻塞项。
+- 使用独立临时 `userData` 的 Playwright Electron runner 启动当前 NSIS 解压版，真实完成 Vault 创建、测试 Host 保存、Host Key 信任、用户测试主机 Shell 建立和 `echo PACKAGED_CURRENT_BUILD_OK` 回显；关闭并重新启动后，解锁 Vault，`recoveryCount=0`、状态点为绿色，`echo PACKAGED_RESTART_AUTO_RECONNECT_OK` 真实回显。临时 userData 已清理，未接触本机现有 Relay 数据。
+- `2407FRK8EC` 已解锁并安装当前 APK 后重新建立 `Provided Acceptance Host`，真实确认用户测试主机指纹，执行 `echo INITIAL_INPUT_OK_2407` 得到远端回显和 `t2` 提示符。随后执行 force-stop/重启时该设备的 mDNS ADB 通道掉线；发现服务转为 `192.168.1.2:35857`，连接尝试超时，因而本轮不能记录 2407 的重启后自动恢复结果。该项是设备无线调试连接阻塞，不把它归因于应用。
+- 当前仍未完成的门禁不变：Android 2407 重启恢复需在 ADB 稳定后补测，A-05 复制/粘贴完整人工路径、A-06 网络切换、A-08 软键盘/旋转/安全区、A-11 URI 即时释放、A-15 长时低内存、A-17 双向 bundle，以及 Windows 升级迁移、签名、持久制品来源仍未通过。

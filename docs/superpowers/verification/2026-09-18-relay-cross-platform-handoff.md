@@ -389,3 +389,11 @@
 - 安装交接：`25091RP04C`（`192.168.1.3:46545`）与 `2407FRK8EC`（mDNS serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp`）均执行 `adb install -r -g --no-streaming` 并返回 `Success`。安装命令仍为：`adb -s <serial> install -r -g --no-streaming app-debug.apk`。
 - `25091RP04C` 实机复测：force-stop/重启、Vault 解锁后，`Provided Acceptance Host`/Console 自动恢复，未出现 `.terminal-recovery` 或“此 Console 需要重新连接”，状态点绿色；真实测试主机执行 `echo FINAL_RESTART_INPUT_OK_25091` 并回显成功。
 - `2407FRK8EC` 本轮设备处于系统锁屏（`isKeyguardShowing=true`），未能进入 Relay UI；因此只记录安装成功，不记录该设备的自动恢复通过。设备解锁后需重新执行 A-05 重启恢复及命令回显，并继续完成复制/粘贴、网络切换、生命周期和其余 A-01～A-17 清单。
+
+## 28. 2026-09-19 当前 Windows 制品与 Android 2407 续验
+
+- 当前源码 `9150f85`：`npm run build`、`npm run build:windows`、`npm run package:windows` 均成功；全量 Vitest `161` 个文件通过、`1` 个跳过，`738` 个测试通过、`2` 个跳过。
+- NSIS：`dist/releases/nsis/Relay-0.1.0-x64.exe`，`127,632,215` bytes，SHA-256 `92F08B8F99B573EE84306243C97A84A544B88DB0C2223601A49AFE1CECEBA3B3`；portable：`dist/releases/portable/Relay-0.1.0-x64.exe`，`113,554,151` bytes，SHA-256 `6AD0CF9035C8D04C09C67B233B522B6BEACE8EFA1E2BE81ECA986FCC7CE32158`。两者 `MZ` PE 校验通过，`Get-AuthenticodeSignature=NotSigned`。
+- 使用独立临时 `userData` 的 Playwright Electron runner，真实验证当前 NSIS 解压版：首次 Vault 创建、Host 保存、Host Key 信任、真实 SSH 命令 `PACKAGED_CURRENT_BUILD_OK`；关闭再启动后恢复 Console，`.terminal-recovery` 数量为 `0`，绿色状态为 `1`，`PACKAGED_RESTART_AUTO_RECONNECT_OK` 远端回显成功。临时数据已清理。
+- `2407FRK8EC` 解锁后已安装当前 APK，创建/保存 `Provided Acceptance Host`，完成真实 Host Key trust、SSH 登录和 `INITIAL_INPUT_OK_2407` 回显。force-stop/重启阶段 mDNS ADB 通道掉线，重新发现的 `192.168.1.2:35857` 连接超时；因此 A-05 的第二台设备重启恢复仍需重新稳定无线调试后补测。
+- Windows 升级迁移、签名与持久制品来源仍未完成；Android 复制/粘贴、网络切换、软键盘/旋转/安全区、URI 即时释放、长时低内存、双向 bundle 及其余 A-01～A-17 仍按清单逐项回填。
