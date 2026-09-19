@@ -4,7 +4,7 @@
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
 **当前实现源码基线：** `b094ee9`（包含 Android URI revoke best-effort 修正；Windows 制品所对应的 Windows 源码内容与 `bde17c4` 相同）。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `b094ee9`；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
+**验收机器应检出：** `59cb7e4`；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -314,3 +314,8 @@
 - URI 结论：传输后 Activity 内仍显示本轮临时 grant；`force-stop cn.ayan.relay` 后再检查已无该 URI grant，说明没有留下持久化 grant，但尚不能宣称 Activity-owned 临时 grant 在任务终态即时消失。A-11 仍待执行；拒绝权限和分享也未覆盖。
 - 设备边界：本轮 `2407FRK8EC` 不在线，`adb connect 192.168.1.2:40019` 超时，重试安装返回 `device not found`；因此本节所有新增在线真机证据仅适用于 `25091RP04C`。
 - 本轮再次触发 `25091RP04C` 安装时，Gradle 与设备侧 ADB fallback 都返回 `INSTALL_FAILED_USER_RESTRICTED`；connected instrumentation 因安装失败为 0 tests。已确认设备 `USB安装` 与 `USB调试（安全设置）` 为开启，但仍需在设备侧解除 MIUI 安装策略后才能重新安装。
+
+## 17. 2026-09-19 Windows 打包版启动与定向回归
+
+- 从 `dist/releases/nsis/win-unpacked/Relay.exe` 启动打包版，真实渲染页标题为 `Relay SSH Workspace`，桌面 preload IPC 可用；调用 `vault.status` 返回 `locked`。本次只读取锁定页和状态，没有解锁或写入现有桌面 Vault。
+- Windows `local-runtime`、main/preload 与 Server 固定 bundle 定向测试共 4 个文件、20 个测试通过；这补充了 Windows 启动/IPC/本地 runtime 的自动化证据，但不替代打包后完整 SSH/SFTP/Vault 任务链、升级迁移、签名和持久制品来源验收。

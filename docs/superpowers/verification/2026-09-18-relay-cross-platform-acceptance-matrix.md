@@ -96,3 +96,8 @@
 - 传输完成后 Activity 内仍能观察到当前临时 URI grant；`force-stop` 并重启 Relay 后该 grant 清空，未证明有持久化 grant，但也未证明 Activity-owned 临时 grant 可在任务结束瞬间消失。A-11 仍为 `🟡/待执行`，权限拒绝提示和分享未覆盖。
 - 2407 本轮处于不可达状态（`adb connect 192.168.1.2:40019` 超时，安装重试返回 `device not found`），本条不把 25091 的证据扩展到 2407。
 - 安装重试边界：`25091RP04C` 的 Gradle 自动安装和设备侧 `pm install -r --user 0` 均被 MIUI 以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝，connected 本次为 0 tests；本轮不把最新 APK 标记为已安装。
+
+## 2026-09-19 Windows 打包版启动与定向回归
+
+- `dist/releases/nsis/win-unpacked/Relay.exe` 可启动真实打包渲染页 `Relay SSH Workspace`，preload IPC 可调用，`vault.status` 返回 `locked`；本轮未解锁或写入现有桌面 Vault。
+- Windows `local-runtime`、main/preload 与 Server 固定 bundle 定向测试共 4 个文件、20 个测试通过。该证据只覆盖启动/IPC/本地 runtime 和固定向量回归，Windows 完整 SSH/SFTP/Vault 任务链、升级迁移、签名及持久制品来源仍保持未完成。

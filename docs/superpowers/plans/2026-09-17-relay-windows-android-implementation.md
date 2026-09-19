@@ -190,3 +190,8 @@
 - 传输完成时 `dumpsys activity permissions` 仍可看到当前 `MainActivity` 持有本轮的 Activity 临时 grant；`force-stop cn.ayan.relay` 后该 URI grant 不再出现，说明未留下持久化授权，但 Android/MIUI 不允许把 Activity-owned 临时 grant 证明为任务结束即时消失。A-11 继续保持待执行，拒绝权限和分享链路也未宣称通过。
 - 本轮复验期间 `2407FRK8EC` 未在线：`adb connect 192.168.1.2:40019` 超时，重试安装返回 `device not found`；因此本条真机新证据只归属于 `25091RP04C`，不扩大为两台设备均已复验。
 - 本轮随后再次触发在线设备 `25091RP04C` 安装：Gradle connected 及设备侧 `adb push` + `pm install -r --user 0` 均返回 `INSTALL_FAILED_USER_RESTRICTED`，connected 实际为 0 tests；因此最新 APK 只完成本地构建，不能记录为本轮真机安装成功。
+
+## 2026-09-19 Windows 打包版启动与定向回归
+
+- 从 `dist/releases/nsis/win-unpacked/Relay.exe` 启动打包版，真实渲染页标题为 `Relay SSH Workspace`，桌面 preload IPC 可用；调用 `vault.status` 返回 `locked`。本次只读取锁定页和状态，没有解锁或写入现有桌面 Vault。
+- Windows `local-runtime`、main/preload 与 Server 固定 bundle 定向测试共 4 个文件、20 个测试通过；这补充了 Windows 启动/IPC/本地 runtime 的自动化证据，但不替代打包后完整 SSH/SFTP/Vault 任务链、升级迁移、签名和持久制品来源验收。
