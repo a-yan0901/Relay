@@ -359,3 +359,10 @@
 - 验证：新增 native runtime 释放句柄回归测试；定向测试 `9/9`，全量 Vitest `162` 个文件通过、`1` 个跳过，`745` 个测试通过、`2` 个跳过；`typecheck`、`lint`、Android `:app:testDebugUnitTest :app:assembleDebugAndroidTest` 和 `:app:assembleDebug` 均通过。
 - 本批次 Debug APK：`8,655,609` bytes，SHA-256 `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。本机 `adb devices -l` 当前为空，未向设备安装，也未卸载、`pm clear` 或改变设备数据。
 - Android 部署约束固定为：统一批次验收时使用 `adb push` + `pm install -r --user 0`，不使用 `-g`，不主动卸载、不清数据、不因单个问题重复安装；设备重新在线后再用同一 APK 一次性覆盖部署。A-11 的 MIUI Activity-owned 临时 grant 即时消失仍需真机证据，不能把本次代码回归标成通过。
+
+## 2026-09-20 当前提交批次复核（`f3be86e`）
+
+- Web/Server/Cloud：全量 Vitest 在本机默认 5 秒测试窗口下出现 1 个同步路由超时；同一失败文件定向运行 `13/13` 通过，随后使用 `--testTimeout=15000 --hookTimeout=15000 --no-file-parallelism --maxWorkers=1` 全量复跑为 `162` 个文件通过、`1` 个跳过，`745` 个测试通过、`2` 个跳过。根因是 163 个隔离测试文件串行启动带来的本机负载，不是同步逻辑失败；后续回归记录必须保留上述超时参数，不能把首轮失败记作通过。
+- `npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows` 和 Chromium E2E `5/5` 通过。当前 Windows NSIS 制品 `127,707,203` bytes / SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`，Portable `113,685,227` bytes / SHA-256 `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06`；两者 `Get-AuthenticodeSignature=NotSigned`，签名发布门禁仍未通过。
+- Android `npm run test:android:local` 与 `npm run build:android:debug` 均 `BUILD SUCCESSFUL`；JDK 21/SDK、offline、单 worker 下本地 JVM/AndroidTest APK 编译完成，Debug APK `8,655,609` bytes / SHA-256 `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。Android bundle instrumentation 源码仍覆盖固定向量、chunked export、错误密码/篡改拒绝和无部分写入，但本批次无真机执行证据。
+- 本机 `adb devices -l` 仍为空；本批次未安装、卸载、`pm clear` 或修改任何 Android 数据。设备恢复后只按统一批次使用 `adb push` + `pm install -r --user 0`，不使用 `-g`、不循环重装，再一次性回填 A-01～A-17。A-05/A-06/A-08/A-11/A-15/A-17 真机证据及 Windows 签名/升级/持久制品来源继续保持未完成。

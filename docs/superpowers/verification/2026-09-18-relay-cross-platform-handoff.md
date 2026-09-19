@@ -520,3 +520,11 @@
 - 当前 Debug APK：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，`8,655,609` bytes，SHA-256 `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。该 APK 已完成本地 Android JVM/AndroidTest APK 编译和 `assembleDebug`，本批次没有下发到设备。
 - 设备恢复后只执行一次按批次部署：`npm run install:android:debug -- <serial> <apk-path>`。脚本使用 `adb push` 后 `adb shell pm install -r --user 0`，不卸载、不 `pm clear`、不使用 `-g`，以保留 Vault/Host/Console 数据；安装被系统拒绝时先处理设备授权/安全策略，不循环重装。
 - Web/Android bridge 新增 `files.releaseUploadSource`，用于创建传输失败、取消未消费源句柄、锁定和重试失败的 best-effort 清理。A-11 仍要求真机确认任务结束后 URI grant 即时释放、权限拒绝提示和分享链路；本地测试不能替代这些步骤。
+
+## 36. 2026-09-20 当前提交批次回归交接（`f3be86e`）
+
+- 全量 Vitest 首轮使用仓库默认 5 秒窗口时，`sync-routes.test.ts` 有 1 个超时；定向该文件 `13/13` 通过。采用 `--testTimeout=15000 --hookTimeout=15000 --no-file-parallelism --maxWorkers=1` 后全量为 `162` 文件通过、`1` 跳过，`745` 测试通过、`2` 跳过。交接时必须记录该参数；首轮超时不计作通过，也不应误报为产品同步故障。
+- 当前 Web/Server/Cloud 构建、typecheck、lint、Windows 主进程/预加载构建通过；Chromium E2E `5/5` 通过。Windows 当前 NSIS/Portable 均成功生成，分别为 `127,707,203` bytes / `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408` 与 `113,685,227` bytes / `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06`，Authenticode 均为 `NotSigned`。
+- Android 本地入口 `npm run test:android:local`、`npm run build:android:debug` 均成功；当前 Debug APK 为 `8,655,609` bytes，SHA-256 `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。固定向量 Android bundle instrumentation 已编译，未在本批次真机运行。
+- 设备状态：本机 `adb devices -l` 无设备，本批次未安装、卸载或清理 Android 数据。设备恢复后按一次统一交接批次运行 `npm run install:android:debug -- <serial> <apk-path>`；该路径使用 `adb push` + `pm install -r --user 0`，不使用 `-g`、不卸载、不 `pm clear`、不自动重试。随后两台设备按 A-01～A-17 全量测试，集中回填问题，不按单个问题反复部署。
+- 交接边界：A-05/A-06/A-08/A-11/A-15/A-17 的真机证据，以及 Windows 签名、升级/回滚、崩溃恢复和持久制品来源仍未闭环；当前不能宣称跨平台验收完成。

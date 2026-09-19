@@ -290,3 +290,16 @@
 - 原生文件选择句柄新增显式 `files.releaseUploadSource` operation；创建传输失败、取消未消费句柄、Vault 锁定和原生重试失败均会 best-effort 回收。该改动只关闭代码层的未消费句柄路径，不替代 MIUI 对当前 Activity 临时 grant 的真机即时释放验收。
 - 本批次回归：native runtime 定向测试 `9/9`；全量 Vitest `162` 个文件通过、`1` 个跳过，`745` 个测试通过、`2` 个跳过；`typecheck`、`lint`、Android JVM/AndroidTest APK 编译和 Debug APK 构建通过。Debug APK SHA-256：`73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。
 - 本批次本机 `adb devices -l` 为空，因此没有安装、卸载、`pm clear` 或修改设备数据。设备恢复后按批次统一使用 `adb push` + `pm install -r --user 0` 覆盖安装，保留应用数据并避免 `-g` 运行时授权；不针对单个问题重复重装。
+
+## 2026-09-20 当前提交批次复核（`f3be86e`）
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Web / Server / Cloud | 通过（带稳定化超时参数） | 首轮默认 5 秒窗口有 1 个同步路由超时；定向该文件 `13/13` 通过。使用 `--testTimeout=15000 --hookTimeout=15000 --no-file-parallelism --maxWorkers=1` 全量为 `162` 文件通过、`1` 跳过，`745/747` 测试通过/跳过；`typecheck`、`lint`、`build`、`build:windows` 通过。该超时现象归因于本机隔离测试启动负载，不计作产品失败。 |
+| Chromium E2E | 通过 | `npm run test:e2e -- --project=chromium --workers=1` 为 `5/5`。 |
+| Windows 当前打包 | 部分通过 | NSIS `127,707,203` bytes / `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`；Portable `113,685,227` bytes / `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06`；均 `NotSigned`，签名、真实升级/回滚和安装环境任务链仍未闭环。 |
+| Android 本地回归/APK | 通过 | `npm run test:android:local` 与 `npm run build:android:debug` 在 JDK 21/SDK、offline、单 worker 下 `BUILD SUCCESSFUL`；APK `8,655,609` bytes / `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。Android bundle full-vector instrumentation 已编译，但本批次未在真机执行。 |
+| Android 真机部署 | 未执行/阻塞 | `adb devices -l` 为空；本批次不安装、不卸载、不 `pm clear`。设备恢复后按批次使用 `adb push` + `pm install -r --user 0`，不使用 `-g`，保留现有数据，再统一回填 A-01～A-17。 |
+| A-17 跨端 bundle | 未闭环 | Node/Windows 自动化与 Android instrumentation 源码证据存在；Android→Web/Windows 真机回传、冲突和旧数据不变性仍缺设备交接证据。 |
+
+本批次没有因单个问题重复打包或重装 Android；全量验收仍以问题分组集中修复后统一部署为准。
