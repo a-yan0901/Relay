@@ -443,3 +443,9 @@
 - 为落实“不要每次卸载 Android 版本重装”，`apps/android/install-debug.mjs` 在部署前只读设备已有包的路径和 SHA-256；哈希一致则直接跳过 `adb push` 与安装。
 - 未安装、不同版本或设备无法安全返回哈希时，才执行原有 `adb push` + `pm install -r --user 0`，不使用 `-g`，也不卸载、不清库、不新增授权。
 - TDD/验证：缺少策略模块时先红，实现后 `android-install-policy.test.ts` `4/4`；`node --check`、策略 smoke、`npm run typecheck`、`npm run lint` 和 `git diff --check` 通过。本轮未触碰设备。
+
+## 2026-09-20 当前提交全量回归与 Windows CI
+
+- 当前提交 `96de623` 的串行全量 Vitest 通过 `163` 个文件、跳过 `1` 个文件；`750` 个测试通过、`2` 个跳过，包含 Android 部署策略测试。
+- GitHub Actions run `35476843161` 成功完成源码校验、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 和 artifact 上传；artifact `Relay-Windows-main-96de6238285c1253c680836d315b595812b94436`，大小 `240,657,718` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35476843161`。
+- 该结果不扩大验收边界：Windows 签名、升级/回滚、崩溃恢复多轮、完整安装包任务链和两台 Android 真机 A-01～A-17 仍待目标环境证据。

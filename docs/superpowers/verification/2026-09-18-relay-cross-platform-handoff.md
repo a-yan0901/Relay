@@ -616,3 +616,10 @@
 - `apps/android/install-debug.mjs` 现在先只读 `pm path` 和设备端 APK SHA-256；与本地 APK 完全一致时直接跳过 `adb push`/`pm install`，避免重复安装和再次触发设备授权。
 - 未安装、哈希不同、哈希读取失败或输出格式异常时，仍使用 `adb push` + `pm install -r --user 0`；不使用 `-g`，不卸载、不 `pm clear`。
 - TDD/验证：策略测试先因模块缺失失败，补实现后 `4/4` 通过；`node --check`、策略 smoke、`typecheck`、`lint`、`git diff --check` 通过。本轮未调用安装脚本、未改变模拟器或真机数据。
+
+## 46. 2026-09-20 当前提交全量回归与 Windows CI
+
+- 当前提交 `96de623` 的串行全量 Vitest 为 `163` 个文件通过、`1` 个跳过；`750` 个测试通过、`2` 个跳过；该结果包含 Android 部署策略测试。
+- GitHub Actions run `35476843161` 已成功完成 checkout、`npm ci`、typecheck/lint、Electron runtime 准备、NSIS/Portable 打包、manifest 生成和 artifact 上传。
+- artifact 为 `Relay-Windows-main-96de6238285c1253c680836d315b595812b94436`，大小 `240,657,718` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35476843161`。
+- 本条只确认当前提交的自动化回归和可追溯 Windows CI 制品；Windows 真签名、旧版本升级/回滚、崩溃恢复多轮和两台 Android 真机 A-01～A-17 仍未闭环。

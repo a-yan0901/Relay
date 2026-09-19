@@ -414,3 +414,12 @@
 | 相同 APK 重复部署 | 已避免 | `install:android:debug` 先只读 `pm path`/设备端 SHA-256；哈希一致时跳过 `push` 和 `pm install` |
 | 新包部署路径 | 保持不变 | 未安装、哈希不同或读取失败时使用 `adb push` + `pm install -r --user 0`，不使用 `-g`、不卸载、不 `pm clear` |
 | 自动化验证 | 通过 | `android-install-policy.test.ts` `4/4`；`node --check`、策略 smoke、typecheck、lint、diff-check 通过；本轮未写设备 |
+
+### 当前提交全量回归与 Windows CI
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 全量 Vitest | 通过 | 当前提交 `96de623` 串行执行：`163` 个文件通过、`1` 个跳过；`750` 个测试通过、`2` 个跳过 |
+| Windows CI | 通过 | run `35476843161` 的依赖安装、源码校验、Electron runtime 准备、NSIS/Portable、manifest、artifact upload 全部成功 |
+| 当前 Windows 制品 | 已上传 | `Relay-Windows-main-96de6238285c1253c680836d315b595812b94436`，`240,657,718` bytes，保留至 `2026-12-18` |
+| 发布门禁 | 未完成 | 真签名、旧版本升级/回滚、崩溃恢复多轮、完整安装包任务链和 Android 真机 A-01～A-17 仍需补证据 |
