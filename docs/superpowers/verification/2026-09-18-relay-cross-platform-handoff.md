@@ -560,3 +560,10 @@
 - 当前 NSIS 解压版 `dist/releases/nsis/win-unpacked/Relay.exe`（NSIS `127,707,203` bytes / SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`）使用临时 `--user-data-dir` 启动。
 - Playwright Electron runner 首次创建 Vault 并保存合成 `Packaged Smoke Host`；关闭进程后再次启动，解锁 Vault 后 Host 成功恢复，输出 `Relay SSH Workspace` / `persistedHost=true`。临时 userData 已清理，未接触本机现有 Relay 数据。
 - 该证据只覆盖当前打包版的 Vault/Host 持久化和一次退出重开；旧版本安装包升级/回滚、签名、崩溃恢复多轮以及真实 SSH/SFTP/UI 完整任务链仍需 Windows 安装环境补验。
+
+## 41. 2026-09-20 Web/Server 回归与 Windows CI artifact 交接
+
+- 服务端定向回归共 `45` 个文件、`203` 个测试，全部通过；`npm run typecheck`、`npm run lint` 通过。Chromium E2E `npm run test:e2e -- --project=chromium --workers=1` 为 `5/5`，用时 `49.2s`。
+- GitHub Actions run `35472655232`（commit `6e3ed06`）全部成功：`npm ci`、typecheck、lint、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 和 artifact 上传均通过。
+- artifact 名称为 `Relay-Windows-main-6e3ed06aaa5e2e1b0297bfefc96c60e134f68f15`，压缩包大小 `240,656,840` bytes，保留至 `2026-12-18`；run 页面：`https://github.com/a-yan0901/Relay/actions/runs/35472655232`。
+- 该条补齐 Windows 持久制品来源交接；artifact 中的 Authenticode 仍为 `NotSigned`，Windows 签名、旧版本升级/回滚、崩溃恢复多轮和完整安装包任务链仍保持未闭环。

@@ -391,3 +391,10 @@
 - 针对当前 `dist/releases/nsis/win-unpacked/Relay.exe`（NSIS 制品 `127,707,203` bytes / SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`），使用 Playwright Electron runner 和仓库内临时 `--user-data-dir` 执行打包版 UI smoke。
 - 首次启动创建 Vault、保存合成 `Packaged Smoke Host`，退出打包进程后再次启动；第二次启动显示解锁页，正确解锁后原 Host 仍可见。runner 输出 `{"title":"Relay SSH Workspace","persistedHost":true}`，临时 userData 已清理。
 - 该结果补强 Windows 打包版 Vault/Host 持久化和退出重开证据，但不关闭旧版本安装包升级迁移、回滚、签名、崩溃多轮恢复及打包后真实 SSH/SFTP/UI 完整任务链门禁。
+
+## 2026-09-20 Web/Server 回归与 Windows 持久制品来源
+
+- 服务端定向回归 `npm test -- tests/unit/server tests/integration/server --no-file-parallelism --maxWorkers=1 --reporter=dot`：`45` 个文件、`203` 个测试全部通过；`npm run typecheck` 和 `npm run lint` 通过。
+- Chromium Web E2E `npm run test:e2e -- --project=chromium --workers=1`：`5/5` 通过，用时 `49.2s`，覆盖 Vault、Host Key、移动锁入口、SFTP/批量任务、布局恢复和 Console 自动重连。
+- GitHub Actions Windows run `35472655232`（commit `6e3ed06`）成功完成 checkout、`npm ci`、typecheck、lint、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 和 artifact 上传。artifact 为 `Relay-Windows-main-6e3ed06aaa5e2e1b0297bfefc96c60e134f68f15`，大小 `240,656,840` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35472655232`。
+- 该 CI 结果补齐 Windows 持久制品来源门禁，但 artifact manifest 仍记录 `NotSigned`；真实签名、旧版本升级/回滚、崩溃恢复多轮和完整安装包任务链仍未完成。

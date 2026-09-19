@@ -342,3 +342,14 @@
 | Windows 发布门禁 | 未整体通过 | 本轮不覆盖旧版本安装包升级/回滚、签名、崩溃多轮恢复或打包后真实 SSH/SFTP/UI 完整任务链；当前制品仍为 `NotSigned`。 |
 
 本条只补充当前打包版的隔离持久化证据，不把代码级迁移或单次 smoke 扩大为 Windows 发布完成。
+
+## 2026-09-20 Web/Server 当前回归与 Windows CI 持久制品
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| 服务端 unit/integration | 通过 | 定向命令为 `45` 个文件、`203` 个测试全部通过；`typecheck`、`lint` 通过。 |
+| Web Chromium E2E | 通过 | `npm run test:e2e -- --project=chromium --workers=1` 为 `5/5`，用时 `49.2s`。 |
+| Windows CI 持久制品来源 | 通过 | run `35472655232` / commit `6e3ed06` 成功完成源码检查、Electron 准备、NSIS/Portable、manifest 和 artifact 上传；artifact `Relay-Windows-main-6e3ed06aaa5e2e1b0297bfefc96c60e134f68f15`，`240,656,840` bytes，保留至 `2026-12-18`。[run](https://github.com/a-yan0901/Relay/actions/runs/35472655232) |
+| Windows 签名/升级发布 | 未整体通过 | manifest 仍为 `NotSigned`；旧版本安装包升级/回滚、签名和完整发布任务链仍需目标 Windows 环境补验。 |
+
+本条关闭的是 Web/Server 当前自动化证据和 Windows CI 可追溯制品来源，不改变 Android 真机和 Windows 签名/升级门禁。
