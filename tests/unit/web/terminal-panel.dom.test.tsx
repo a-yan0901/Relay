@@ -200,11 +200,11 @@ describe('TerminalPanel mobile selection', () => {
     expect(testState.terminalInstances[0]?.constructorOptions.rightClickSelectsWord).toBe(false);
   });
 
-  it('does not auto-open a native session after the saved shell is gone', () => {
+  it('automatically opens a fresh native session after the saved shell is gone', () => {
     render(<TerminalPanel terminalId="terminal-reopen" host={host} active onClose={() => {}} recoveryStatus="needs-reopen" />);
 
-    expect(testState.sessionOptions).toEqual(expect.objectContaining({ autoConnect: false, reattachOnly: false }));
-    expect(screen.getByText('此 Console 需要重新连接')).toBeInTheDocument();
+    expect(testState.sessionOptions).toEqual(expect.objectContaining({ autoConnect: true, reattachOnly: false }));
+    expect(screen.queryByText('此 Console 需要重新连接')).not.toBeInTheDocument();
   });
 
   it('reattaches a browser session restored from the server workspace', () => {

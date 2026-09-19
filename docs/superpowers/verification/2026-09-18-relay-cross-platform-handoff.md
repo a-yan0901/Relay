@@ -381,3 +381,11 @@
 - 当前 APK：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，大小 `8,633,755` bytes，SHA-256 `561351D1B83050CD3F60D358675366E4379BF7AC146D290440C601300314AA9B`。`adb install -r -g --no-streaming` 在 `2407FRK8EC`（mDNS serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp`）和 `25091RP04C`（`192.168.1.3:46545`）均返回 `Success`。
 - 两台设备均完成真实 UI 验证：使用 `dsjb@123` 解锁 Vault，在偏好设置选择 `Everforest Dark`、字号 `16px`；强制停止 `cn.ayan.relay`，重新启动并解锁后，两台设备的 DOM 主题仍为 `everforest-dark`，字号 select 为 `16`，`relay.ui.preferences.v1` 保持 `fontSize=16` 和 `theme=everforest-dark`。`25091RP04C` 的 `Provided Acceptance Host` 仍保留，旧 Console 明确显示需重新打开；本轮未覆盖 grid/list、旋转、软键盘和完整视觉走查。
 - 结论：修复了 A-14 的 Android 主题复位缺陷，A-14 仍按任务书保持“待执行（部分证据）”；不扩大为 Android 平台整体通过。脱敏操作记录：[Android 偏好重启 CDP 证据](./evidence/2026-09-19-android-preferences-restart-cdp.md)。
+
+## 27. 2026-09-19 Android Console 自动恢复修复与复测
+
+- 发现并修复恢复流程缺陷：`needs-reopen` 原先关闭了 `autoConnect`，并把 native 进程重启后的旧 Shell 失效暴露成“此 Console 需要重新连接”。现在恢复标签自动创建新 Shell；native 状态收到 `needs-reopen` 时自动清理旧 socket、放弃旧 service instance 并立即重连。只有自动重试耗尽才进入普通失败操作入口。
+- 回归证据：TerminalPanel/TerminalSession 定向测试 `33/33`；`npm run typecheck`、`npm run lint`、`npm run build:web`、Android `:app:testDebugUnitTest :app:assembleDebug` 通过。APK `8,633,649` bytes，SHA-256 `D4A1C69F5549109A91BE9428FFCBBDC2580EB2C18D321864A6869034416DAB90`。
+- 安装交接：`25091RP04C`（`192.168.1.3:46545`）与 `2407FRK8EC`（mDNS serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp`）均执行 `adb install -r -g --no-streaming` 并返回 `Success`。安装命令仍为：`adb -s <serial> install -r -g --no-streaming app-debug.apk`。
+- `25091RP04C` 实机复测：force-stop/重启、Vault 解锁后，`Provided Acceptance Host`/Console 自动恢复，未出现 `.terminal-recovery` 或“此 Console 需要重新连接”，状态点绿色；真实测试主机执行 `echo FINAL_RESTART_INPUT_OK_25091` 并回显成功。
+- `2407FRK8EC` 本轮设备处于系统锁屏（`isKeyguardShowing=true`），未能进入 Relay UI；因此只记录安装成功，不记录该设备的自动恢复通过。设备解锁后需重新执行 A-05 重启恢复及命令回显，并继续完成复制/粘贴、网络切换、生命周期和其余 A-01～A-17 清单。

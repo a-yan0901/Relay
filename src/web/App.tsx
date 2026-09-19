@@ -396,7 +396,8 @@ export const App = ({ runtime }: AppProps) => {
     // Electron/Android SSH handles belong to the native process and cannot be
     // safely revived after a renderer or process restart. Keep the descriptor
     // cache only for the Web gateway, whose server-side sessions support
-    // reattach; native durable tabs are restored as explicit needs-reopen tabs.
+    // reattach; native durable tabs are restored with an internal recovery
+    // marker so the panel can create a fresh shell automatically.
     if (runtime.platform !== 'web') {
       return;
     }

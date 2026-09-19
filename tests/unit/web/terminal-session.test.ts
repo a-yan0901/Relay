@@ -275,7 +275,7 @@ describe('TerminalSessionController', () => {
     }
   });
 
-  it('does not retry a native session after lifecycle shutdown requests an explicit reopen', () => {
+  it('automatically creates a new native shell after lifecycle shutdown', () => {
     vi.useFakeTimers();
     try {
       FakeSocket.instances = [];
@@ -290,13 +290,13 @@ describe('TerminalSessionController', () => {
       const socket = lastSocket();
       socket.open();
       socket.message(JSON.stringify({ type: 'status', state: 'needs-reopen', serviceInstanceId: 'android-local' }));
-      expect(controller.snapshot.state).toBe('needs-reopen');
+      expect(controller.snapshot.state).toBe('reconnecting');
+      expect(socket.closeCodes).toContain(1008);
 
-      socket.close(1011);
-
-      expect(controller.snapshot.state).toBe('closed');
-      vi.advanceTimersByTime(10_000);
-      expect(FakeSocket.instances).toHaveLength(1);
+      vi.advanceTimersByTime(0);
+      expect(FakeSocket.instances).toHaveLength(2);
+      lastSocket().open();
+      expect(JSON.parse(lastSocket().sent[0] as string)).not.toHaveProperty('knownServiceInstanceId');
     } finally {
       vi.useRealTimers();
     }

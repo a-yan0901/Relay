@@ -159,3 +159,10 @@
 - `AndroidBuiltinTerminalProfilesTest` 先红后绿；目标单测 2/2 通过，随后 `:app:testDebugUnitTest :app:assembleDebug` 返回 `BUILD SUCCESSFUL`。当前 APK `8,633,755` bytes，SHA-256 `561351D1B83050CD3F60D358675366E4379BF7AC146D290440C601300314AA9B`。
 - `2407FRK8EC`（mDNS ADB）与 `25091RP04C`（`192.168.1.3:46545`）均安装该 APK 成功。两台设备选择 `Everforest Dark` 和 `16px`，强制停止/重启/解锁后 DOM 仍为 `everforest-dark`、字号仍为 `16`，`relay.ui.preferences.v1` 仍保存相同主题和字号。
 - 该条将 Android 主题/字号持久化从“仅有 Web 证据”更新为“两台真机部分证据”；grid/list、旋转、软键盘、安全区和完整视觉走查仍保持 🟡。证据：[Android 偏好重启 CDP 证据](./evidence/2026-09-19-android-preferences-restart-cdp.md)。
+
+## 2026-09-19 Android Console 自动恢复复测
+
+- 根因：恢复标签的 `recoveryStatus="needs-reopen"` 曾让 `TerminalPanel` 设置 `autoConnect: false`，并直接显示“此 Console 需要重新连接”。现已改为自动创建新 Shell；native `needs-reopen` 事件也会清理旧句柄后立即重连，用户不需要点击恢复。
+- 当前 APK `8,633,649` bytes，SHA-256 `D4A1C69F5549109A91BE9428FFCBBDC2580EB2C18D321864A6869034416DAB90`；两台 Android 16 真机安装均返回 `Success`。Web/Session 定向回归 `33/33`，typecheck、lint、Web build、Android JVM/build 均通过。
+- `25091RP04C` force-stop/重启并解锁后，`Provided Acceptance Host` 和 Console 保留，恢复条数量为 `0`、状态点为绿色；真实远端执行 `echo FINAL_RESTART_INPUT_OK_25091` 并收到回显，证明自动恢复后的 Shell 可输入。该证据更新 A-05 的“断连重连”部分，但 A-05 的复制/粘贴完整人工路径仍为 🟡。
+- `2407FRK8EC` 本轮处于 Android 系统锁屏（`isKeyguardShowing=true`），只能确认安装成功，不能确认恢复 UI；不把 25091 结果扩展到 2407。A-06、A-08、A-15、A-17 及 Windows 未完成边界保持原状态。

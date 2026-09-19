@@ -68,7 +68,7 @@ export const TerminalToolbar = ({
     <div className="terminal-toolbar-actions">
       {onSearch && <button className={`toolbar-button ${searchActive ? 'is-active' : ''}`} type="button" aria-label="搜索" onClick={onSearch}>⌕<span>搜索</span></button>}
       <button className="toolbar-button" type="button" aria-label="清屏" onClick={onClear}>⌫<span>清屏</span></button>
-      {onCopy && <button className="toolbar-button" type="button" aria-label="复制选择" onClick={() => void onCopy()}>⧉<span>复制</span></button>}
+      {onCopy && <button className="toolbar-button" type="button" aria-label="复制选择" onMouseDown={(event) => event.preventDefault()} onClick={() => void onCopy()}>⧉<span>复制</span></button>}
       {onPaste && <button className="toolbar-button" type="button" aria-label="粘贴" onClick={() => void onPaste()}>↳<span>粘贴</span></button>}
       {onFullscreen && <button className="toolbar-button" type="button" aria-label="全屏" title="全屏" onClick={onFullscreen}>⛶</button>}
       <button className="toolbar-button toolbar-button-reconnect" type="button" aria-label="重新连接" onClick={onReconnect}>↻<span>重连</span></button>

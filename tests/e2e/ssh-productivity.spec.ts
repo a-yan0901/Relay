@@ -243,7 +243,7 @@ test.describe('SSH productivity boundaries', () => {
     await expect(activity).not.toContainText('e2e-ok');
   });
 
-  test('restores a durable layout and reports a closed socket as needs-reopen', async ({ page }) => {
+  test('restores a durable layout and reconnects closed sockets automatically', async ({ page }) => {
     test.setTimeout(60_000);
     await installSocketCapture(page);
     await waitForReady(page);
@@ -254,8 +254,8 @@ test.describe('SSH productivity boundaries', () => {
       const sockets = (window as Window & { __relaySockets?: WebSocket[] }).__relaySockets ?? [];
       for (const socket of sockets.filter((candidate) => candidate.url.includes('/ws/terminal'))) socket.close();
     });
-    await expect(page.locator('.terminal-panel.is-active .terminal-recovery')).toHaveCount(2, { timeout: 5_000 });
-    await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(0);
+    await expect(page.locator('.terminal-panel.is-active .terminal-recovery')).toHaveCount(0, { timeout: 5_000 });
+    await expect(page.locator('.terminal-tab.is-active .status-dot-green')).toHaveCount(1, { timeout: 15_000 });
     await expect(page.getByRole('button', { name: '新建终端' })).toBeVisible();
   });
 });

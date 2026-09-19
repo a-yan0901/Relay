@@ -417,9 +417,21 @@ export class TerminalSessionController {
           this.updateSnapshot({ reconnectDelayMs: 0, error: null, credential: null });
         }
         if (event.state === 'needs-reopen') {
+          // A native renderer restart invalidates the old process-local shell.
+          // Recover it by creating a new shell immediately; this is an
+          // implementation detail and must not become a user-facing action.
           this.clearReconnectTimer();
-          this.retryBlocked = true;
-          this.updateSnapshot({ reconnectDelayMs: 0, error: null, credential: null });
+          this.serviceInstanceId = null;
+          this.reattachOnly = false;
+          this.retryBlocked = false;
+          this.reconnectExhausted = false;
+          this.reconnectAttempt = 0;
+          const currentSocket = this.socket;
+          this.detachSocket(currentSocket);
+          this.socket = null;
+          this.updateSnapshot({ state: 'reconnecting', reconnectDelayMs: 0, error: null, credential: null });
+          currentSocket?.close(1008, 'session expired; creating a new shell');
+          this.scheduleReconnect(0);
         }
         if (event.state === 'interrupted' && !this.retryBlocked && !this.reconnectExhausted) {
           const currentSocket = this.socket;
@@ -562,7 +574,7 @@ export class TerminalSessionController {
         state: 'failed',
         reconnectDelayMs: 0,
         networkOffline: false,
-        error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '此 Console 需要重新连接：原来的远程 Shell 不再可用，重新打开会创建新的 Shell。' }
+        error: { type: 'error', code: 'SSH_CONNECTION_FAILED', message: '自动重连失败，请检查连接后重试。' }
       });
       return;
     }

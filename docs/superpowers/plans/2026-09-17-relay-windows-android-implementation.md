@@ -256,3 +256,12 @@
 - 模拟器阻塞原因未改变：AOSP 软件模拟器缺少 `/dev/kvm`，曾进入 `adb offline` 后退出；模拟器 fixture 仅用于自动化回归。当前验收以两台 Android 16 真机为准，不再把模拟器失败误写成产品失败，也不把真机有限证据扩大为平台完成。
 - Android 转移验证边界：固定 bundle 已完成 Node → Android 解密/解析；真实设备还完成 32 MiB 上传、取消、暂停/继续和下载哈希校验。Android → Web/Windows 真实导出回传、Windows 导入、完整冲突策略仍未完成；URI 任务结束立即释放、拒绝权限与分享仍是 A-11 阻塞项。
 - 当前发布阻塞仍包括：A-04 完整密码/私钥失败矩阵和系统备份审计，A-06 网络切换，A-08 软键盘/旋转/安全区，A-11 URI 权限，A-15 长时低内存，A-17 双向 bundle；Windows 升级迁移、签名、持久制品来源和打包后完整任务链也未完成。继续执行时必须逐项回填证据，不能以单元测试或状态点变绿替代真实任务结果。
+
+## 2026-09-19 Android Console 自动恢复修复与双设备复测
+
+- 根因已确认：`TerminalPanel` 对恢复标签传入 `recoveryStatus="needs-reopen"` 时显式设置了 `autoConnect: false`，同时把旧 native Shell 失效状态直接渲染为“此 Console 需要重新连接”，把本应由客户端完成的新 Shell 创建交给用户。
+- 修复已落地：恢复标签统一自动连接；收到 native `needs-reopen` 状态时清理旧 socket/service instance，关闭旧句柄并立即创建新 Shell；移除面向用户的“此 Console 需要重新连接”恢复条。只有自动重试耗尽后仍失败，才显示普通错误和重试入口。新增 TerminalPanel/TerminalSession 回归测试，相关定向测试 `33/33` 通过；`npm run typecheck`、`npm run lint`、`npm run build:web` 和 Android `:app:testDebugUnitTest :app:assembleDebug --offline --no-daemon --max-workers=1` 均通过。
+- 当前 Debug APK `apps/android/android/app/build/outputs/apk/debug/app-debug.apk` 大小 `8,633,649` bytes，SHA-256 `D4A1C69F5549109A91BE9428FFCBBDC2580EB2C18D321864A6869034416DAB90`；`adb install -r -g --no-streaming` 在 `25091RP04C`（`192.168.1.3:46545`）和 `2407FRK8EC`（mDNS serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp`）均返回 `Success`。
+- `25091RP04C` 强制停止 `cn.ayan.relay` 后重新启动，使用预置测试 Vault 主密码（未记录）解锁；`Provided Acceptance Host` 和 Console 标签均保留，DOM 中无 `.terminal-recovery`，状态点为绿色，并在用户提供的 `106.14.61.92:22`/`t2` 主机真实执行 `echo FINAL_RESTART_INPUT_OK_25091`，收到同名远端回显和 `t2` 提示符。该证据覆盖“重启后自动恢复且命令可输入”，不把绿色状态单独当作通过。
+- `2407FRK8EC` 安装同一 APK 成功，但本轮重启后处于 Android 系统锁屏，`isKeyguardShowing=true`、当前焦点为 `NotificationShade`，无法读取 Relay UI 或恢复 Console；因此本轮不把 25091 的自动恢复结果扩展到 2407，待设备解锁后补测。
+- 本轮不改变平台整体门禁：A-05 的复制/粘贴完整真机路径、A-06 网络切换、A-08 软键盘/旋转/安全区、A-15 长时低内存、A-17 双向 bundle，以及 Windows 升级/签名/持久制品来源和打包后完整任务链仍未完成。

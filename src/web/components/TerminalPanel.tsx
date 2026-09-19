@@ -109,10 +109,10 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
     reconnectBaseMs: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.baseDelayMs,
     reconnectMaxMs: (host.resolvedConnectionProfile ?? host.connectionProfile)?.reconnect.maxDelayMs,
     networkAware: true,
-    // Native SSH handles are process-local. A restored durable tab must wait
-    // for the user to explicitly create a new shell; browser sessions can
-    // first attempt the server-side reattach path.
-    autoConnect: recoveryStatus !== 'needs-reopen',
+    // Native SSH handles are process-local, so a restored tab creates a fresh
+    // shell automatically. Browser sessions still first attempt server-side
+    // reattach when a durable session is available.
+    autoConnect: true,
     reattachOnly: recoveryStatus === 'restored',
     getSize: () => ({
       cols: terminalRef.current?.cols ?? 80,
@@ -340,9 +340,7 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
 
   const diagnostic = session.state.diagnostics.at(-1) ?? null;
   const errorAction = diagnostic?.nextAction;
-  const displayState: TerminalStatus = recoveryStatus === 'needs-reopen' && session.state.state === 'closed'
-    ? 'needs-reopen'
-    : session.state.state;
+  const displayState: TerminalStatus = session.state.state;
 
   useEffect(() => {
     if (!active) {
@@ -377,7 +375,6 @@ export const TerminalPanel = ({ terminalId, host, active, onClose, onEditHost, o
       <div className="terminal-canvas" ref={mountRef} onContextMenu={openTerminalContextMenu} />
       {terminalContextMenu.state && <ContextMenu state={terminalContextMenu.state} items={terminalContextItems} onClose={terminalContextMenu.close} />}
       {clipboardFeedback && <div className="terminal-clipboard-feedback" role="status" aria-live="polite">{clipboardFeedback}</div>}
-      {recoveryStatus === 'needs-reopen' && session.state.state === 'closed' && <div className="terminal-recovery" role="status"><strong>此 Console 需要重新连接</strong><span>原来的远程 Shell 不再可用，重新打开会创建新的 Shell。</span><button className="button button-ghost button-small" type="button" onClick={session.reconnect}>重新打开</button></div>}
       {session.state.error && <div className="terminal-error" role="alert"><strong>{session.state.error.message}</strong>{errorAction !== 'none' && errorActionButton}</div>}
       {session.state.hostKey && <HostKeyDialog challenge={session.state.hostKey} onDecision={session.decideHostKey} />}
       {session.state.credential && <CredentialDialog terminalId={terminalId} prompt={session.state.credential} onSubmit={session.submitCredential} onCancel={onClose} />}

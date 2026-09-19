@@ -463,6 +463,17 @@ describe('TerminalWorkspace', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('keeps a terminal selection intact while tapping copy', () => {
+    const onCopy = vi.fn(async () => undefined);
+    render(<TerminalToolbar state="connected" onReconnect={vi.fn()} onClose={vi.fn()} onClear={vi.fn()} onCopy={onCopy} />);
+
+    const copyButton = screen.getByRole('button', { name: '复制选择' });
+    const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    copyButton.dispatchEvent(mouseDown);
+
+    expect(mouseDown.defaultPrevented).toBe(true);
+  });
+
   it('keeps a deleted host tab visible with an explicit close action', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();

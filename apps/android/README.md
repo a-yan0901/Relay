@@ -26,7 +26,7 @@ npm run build:android:release
 - 终端输入在 Executor 与 SSH session 之间复用一次 UTF-8 编码结果，并在写入完成后清零，避免短时保留两份相同输入缓冲。
 - Android 系统返回键只转发为可取消的 `relay:back` 事件；React 先关闭最上层弹层或 Console 页面，根页面没有可关闭内容时才退出 Activity。
 - Vault 主密码、私钥、passphrase 只能进入受信原生方法，不写日志、通知、WebView 存储或系统备份。
-- Host Key、远程路径、传输目标和取消逻辑由原生层再次校验；进程恢复时重新读取任务状态，旧 Shell 句柄显示 `needs-reopen`。
+- Host Key、远程路径、传输目标和取消逻辑由原生层再次校验；进程恢复时重新读取任务状态，旧 Shell 句柄以内部 `needs-reopen` 事件触发新 Shell 自动创建，不要求用户手动恢复。
 - 当前 native capability 只广告已接入的本地工作区/模板、身份/分组、终端外观、Vault bundle、Snippet、批量命令、SSH/ProxyJump、SFTP、有限断点传输和脱敏 Activity 审计；Workspace 状态最多 32 KiB，模板最多 64 条。外部 SSH 配置导入已支持 OpenSSH、SSH/Termius CSV、MobaXterm、Xshell 和 SecureCRT 的有界文本解析，单次文件总量不超过 48 KiB，未解密的外部密钥路径/受保护密码仍需用户补录。后台 UI 恢复、真实设备和发布 ABI 验证仍是后续门禁。命令、传输任务和安全摘要会写入 app-private SQLite，进程重启或 Vault 锁定时运行中的任务标记为 `interrupted`，解锁后可读取有限历史结果。批量命令限制为最多 8 台主机、4 个原生 worker、每目标 16 KiB 输出；Vault bundle 通过 32 KiB 分块跨越 64 KiB Capacitor 帧，原生侧最多保留一个带 TTL 的导入/导出/预览缓冲。
 
 低内存构建默认使用 `org.gradle.jvmargs=-Xmx768m`、单 worker、关闭 Gradle 并行；真实 CI/发布机可在测量峰值后单独提高预算。
