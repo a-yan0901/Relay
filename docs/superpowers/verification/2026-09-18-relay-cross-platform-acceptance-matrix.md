@@ -218,7 +218,7 @@
 
 | 范围 | 结果 | 证据与边界 |
 | --- | --- | --- |
-| Web / Server 自动化 | 通过 | 全量 Vitest `162/163` 文件（`162` 通过、`1` 跳过），`741/743` 测试通过；Chromium E2E `5/5`；typecheck、lint、build、build:windows 通过。 |
+| Web / Server 自动化 | 通过 | 全量 Vitest `162/163` 文件（`162` 通过、`1` 跳过），`742/744` 测试通过；Chromium E2E `5/5`；typecheck、lint、build、build:windows 通过。 |
 | 账户同步 | 通过 | `ACCOUNT_SYNC_E2E=true` 的账户同步 E2E `4/4` 通过，覆盖注册、账号 owner Host 创建、Host 列表同步和终端连接；此前重复 `HOST_NOT_FOUND` 已由 owner 上下文修复消除。 |
 | WebSocket 账号隔离 | 通过 | 终端/操作 gateway 集成回归 `10/10` 通过；握手后固定使用认证会话 owner，终端生命周期和操作事件订阅不再回落到默认 owner。 |
 | Android 部署 | 未执行 | 遵循不卸载、不重复安装约束，本批次没有安装新 APK；固定 JDK 21/SDK、offline、单 worker 下 Android JVM 单测 `36/36`，测试 APK 编译成功；设备状态只做只读检查，真机新版本证据不因本地测试自动变绿。 |
