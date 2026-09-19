@@ -501,3 +501,10 @@
 
 - 当前提交重新执行 `npm run test:e2e -- --project=chromium --workers=1`，Playwright `5/5` 通过，耗时 `43.1s`；E2E 配置中的 Web、Server、Cloud 构建服务均完成启动。
 - 本次复验未安装、卸载或清理 Android 应用数据，也未改变 Windows 制品；它只更新 Web/Server 自动化证据，不关闭 Android 真机 A-01～A-17 或 Windows 发布门禁。
+
+## 34. 2026-09-20 Windows CI 首次运行与 Electron runtime 修复
+
+- GitHub Actions run `35465104633`（提交 `3289ced`）已真实运行；checkout、Node、`npm ci`、typecheck、lint 均通过，失败步骤为 `Build Windows packages`。
+- 根因是干净 `npm ci` 后 Electron 包没有自动生成 `node_modules/electron/dist`，而 `package:windows` 显式使用该路径。新增 `apps/windows/ensure-electron.mjs` 与 `prepare:windows-electron`：缺失时调用 Electron 官方 `install.js`，CI 在打包前显式执行，`package:windows` 也自带该准备步骤。
+- 本机在清理依赖后直接执行 `npm run package:windows` 已完成 NSIS/Portable 打包；该结果只证明修复后的本地打包链路，待新 Actions run 成功并上传 manifest 后，才能补齐 Windows 持久制品来源证据。
+- 本批次未触发 Android 安装、卸载或清理数据；Android A-01～A-17、Windows 签名/升级/完整发布任务链边界保持不变。

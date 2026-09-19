@@ -339,3 +339,10 @@
 - 在当前提交上重新执行 `npm run test:e2e -- --project=chromium --workers=1`，Playwright `5/5` 通过，耗时 `43.1s`。
 - 该次运行按仓库 E2E 配置启动并完成 Web、Server、Cloud 构建服务；仅有 Vite chunk size、`NO_COLOR/FORCE_COLOR` 等警告，没有测试失败或服务启动错误。
 - 本次只复验 Web/Server 浏览器链路，未触发 Android 安装、卸载、`pm clear` 或设备数据变更；Android 真机和 Windows 发布门禁边界保持不变。
+
+## 2026-09-20 Windows CI 首次运行与 Electron runtime 修复
+
+- GitHub Actions run `35465104633`（提交 `3289ced`）已真实启动；checkout、Node、`npm ci`、typecheck 和 lint 通过，失败集中在 `Build Windows packages`。
+- Windows runner 的失败原因为 `npm ci` 后 `node_modules/electron/dist` 不存在，而 `package:windows` 强制把 `electron-builder` 的 `electronDist` 指向该目录；这不是业务代码或 native module 编译失败。
+- 新增 `apps/windows/ensure-electron.mjs` 和 `prepare:windows-electron`，在缺失时调用 Electron 官方 `install.js`，并在 CI 打包前显式执行；`package:windows` 自身也包含该准备步骤，保证本地干净环境和 CI 行为一致。
+- 本机执行“清依赖后直接 `npm run package:windows`”已成功生成 NSIS/Portable；因此修复已通过本地真实打包，但 GitHub Actions 修复后的新 run/持久制品仍待本次提交触发后确认。

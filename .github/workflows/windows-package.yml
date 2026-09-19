@@ -35,6 +35,9 @@ jobs:
           npm run typecheck
           npm run lint
 
+      - name: Prepare Electron distribution
+        run: npm run prepare:windows-electron
+
       - name: Build Windows packages
         run: npm run package:windows
 

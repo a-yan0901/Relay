@@ -268,3 +268,11 @@
 | --- | --- | --- |
 | Chromium E2E | 通过 | 当前提交重新执行 `npm run test:e2e -- --project=chromium --workers=1`，Playwright `5/5` 通过，耗时 `43.1s`；运行期间配置的 Web/Server/Cloud 构建服务均正常启动。 |
 | Android / Windows 发布门禁 | 未改变 | 该次只覆盖浏览器端到服务端链路，不替代 Android A-01～A-17 真机证据，也不替代 Windows 签名、持久制品和安装包升级证据。 |
+
+## 2026-09-20 Windows CI 首次运行与 runtime 准备修复
+
+| 项目 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Windows Actions 首次真实运行 | 失败，根因已定位 | run `35465104633` 的 checkout、`npm ci`、typecheck、lint 通过；`Build Windows packages` 因 `node_modules/electron/dist` 缺失失败。 |
+| Electron runtime 准备 | 已修复，待 CI 复跑 | 新增 `apps/windows/ensure-electron.mjs`、`prepare:windows-electron`，CI 和 `package:windows` 均显式调用 Electron 官方安装脚本；本机清依赖后直接 `npm run package:windows` 已成功。 |
+| Windows 持久制品 / 签名 | 未闭环 | 修复后的 GitHub Actions run 尚未完成；即使重新生成制品，`NotSigned`、真实升级迁移和完整发布任务链仍需单独验收。 |

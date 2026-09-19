@@ -10,7 +10,7 @@ npm run dev:windows
 npm run package:windows:portable
 ```
 
-`npm run package:windows` 生成 NSIS 与 portable x64 包，实际安装、升级、退出重开、原生 ABI（`better-sqlite3`、`argon2`、`ssh2`）、签名和无监听端口检查仍应在 Windows CI/开发机完成后，才把 Windows 任务标记为完成。开发机内存有限时保持 Gradle/Node 构建串行，不要并发运行 Web、Electron 打包和测试。
+`npm run package:windows` 会先检查并准备 `node_modules/electron/dist`，再生成 NSIS 与 portable x64 包；这一步覆盖了 `npm ci` 未自动下载 Electron runtime 的干净环境。实际安装、升级、退出重开、原生 ABI（`better-sqlite3`、`argon2`、`ssh2`）、签名和无监听端口检查仍应在 Windows CI/开发机完成后，才把 Windows 任务标记为完成。开发机内存有限时保持 Gradle/Node 构建串行，不要并发运行 Web、Electron 打包和测试。
 
 `package:windows:portable` 是 Linux/macOS 预览用的单文件 portable 构建，跳过本机 native dependency rebuild，并输出到 `dist/releases-portable-preview/`；它不能替代 Windows 主机上的 ABI、安装器和升级验证。
 
