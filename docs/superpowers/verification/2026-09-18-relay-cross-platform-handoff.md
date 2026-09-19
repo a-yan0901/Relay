@@ -465,3 +465,11 @@
 - 25091 的系统安装策略仍阻塞真机 APK/测试 APK 部署；需要设备侧解除安装限制后，再用当前 APK 做一次完整验收。
 - A-05～A-17 中的复制粘贴、断网切换、返回键/旋转/安全区、URI 即时释放、低内存基线和 Android→Web/Windows bundle 回传仍未闭环。
 - Windows 签名、升级迁移、持久制品来源和完整发布任务链仍未通过。上述项目保持“待执行/阻塞”，不因自动化或局部真机 smoke 变绿。
+
+## 2026-09-20 账户同步 WebSocket owner 隔离修复与批量验证
+
+- 根因：账户同步打开后，Host 的持久化 owner 是认证账号，但终端 WebSocket 的异步 message/status/close/error 回调使用了默认 owner；因此真实 `open` 请求返回 `HOST_NOT_FOUND` 并触发重连循环。抓包和 SQLite owner 对照已确认该因果链。
+- 修复：握手阶段从 `SessionStore` 捕获认证会话 owner；终端 gateway 的 SSH 状态和 WebSocket 生命周期在 `runWithOwnerId` 中执行；operation gateway 使用握手会话 owner 订阅事件。新增终端 gateway 账号隔离集成回归。
+- 证据：终端 gateway 集成测试 `9/9`；`ACCOUNT_SYNC_E2E=true npm run test:e2e -- --project=chromium --workers=1 tests/e2e/account-sync.spec.ts` 为 `4/4`；全量 Vitest `162/163` 文件、`741/743` 测试；Chromium E2E `5/5`；typecheck、lint、build、build:windows 均通过。
+- 本批次未安装、卸载或重复安装 Android；遵循“尽量选择不需要授权的安装方式”的约束，当前 Android 仍只保留已有设备状态，服务端回归不替代新 APK 真机验收。
+- 验收边界不变：A-04 完整失败矩阵、A-06 网络切换、A-08 软键盘/旋转/安全区、A-11 URI 即时释放、A-15 长时低内存、A-17 Android→Web/Windows 双向 bundle，以及 Windows 签名/升级/持久制品来源和完整发布任务链仍未闭环。

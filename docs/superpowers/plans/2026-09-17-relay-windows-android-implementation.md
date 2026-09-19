@@ -303,3 +303,11 @@
 - Android 部署策略：不卸载应用；最终 APK 仅各尝试一次 `adb install -r -g --no-streaming`。2407 成功，25091 被系统拒绝；2407 复用已安装 APK 的 WebView CDP 真机 smoke 已通过 Vault/Host Key/SSH/SFTP 主链路。
 - 新增问题：移动终端布局中桌面式 Vault 锁定按钮不可见，锁定/解锁入口需要补充移动端交互；这不是 SSH 或 SFTP 连接失败。
 - 当前阻塞：25091 安装策略、移动端全量 A-01～A-17 人工证据、Android→Web/Windows bundle 回传、Windows 签名/升级/持久制品来源。问题关闭前不标记跨端整体完成。
+
+## 2026-09-20 服务端账号隔离回归与全量验证
+
+- 发现账户同步 E2E 的真实阻塞：账号创建的 Host 已写入账号 owner，但终端 WebSocket 的异步回调回落到默认 owner，`open` 收到重复 `HOST_NOT_FOUND`，UI 随后进入重连循环且不会出现 Host Key 挑战。该问题不是 Host Key 弹窗时序问题。
+- 修复方式：WebSocket 握手阶段固定读取已认证 `SessionStore` 会话的 owner；终端的 message/close/error 生命周期和 SSH status 回调均在 `runWithOwnerId` 中执行；操作事件 WebSocket 也使用握手会话 owner 订阅事件，避免同类账号串租户问题。
+- TDD/回归证据：终端 gateway 账号 owner 集成测试 `9/9` 通过；开启 `ACCOUNT_SYNC_E2E=true` 的账户同步 E2E `4/4` 通过。随后全量 Vitest `162/163` 文件（`162` 通过、`1` 跳过），`741/743` 测试通过；Chromium E2E `5/5`；`typecheck`、`lint`、`build`、`build:windows` 均通过。
+- 同批次补齐 ESLint 对 `apps/android/**/*.mjs` 的 Node 全局声明，避免跨平台 Gradle 启动脚本的 `process` 误报；不改变 Android 业务行为。
+- Android 仍遵循“不卸载、不反复安装”：本批次只做 ADB 只读状态检查，当前未部署新 APK；Android A-04、A-06、A-08、A-11、A-15、A-17 以及 Windows 签名/升级/持久制品来源等门禁继续保持未完成。

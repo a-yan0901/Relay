@@ -68,7 +68,7 @@ const cookieFrom = (response: { headers: Record<string, string | string[] | unde
   return value.split(';', 1)[0];
 };
 
-const makeApp = async (serviceInstanceId = 'service-test') => {
+const makeApp = async (serviceInstanceId = 'service-test', accountSyncEnabled = false) => {
   const database = openDatabase(':memory:');
   migrate(database);
   databases.push(database);
@@ -85,6 +85,7 @@ const makeApp = async (serviceInstanceId = 'service-test') => {
       trustedOrigins: [ORIGIN],
       sessionIdleTimeoutMs: 60_000,
       maxSessions: 4,
+      accountSyncEnabled,
       logLevel: 'silent'
     }
   });
@@ -241,6 +242,40 @@ describe('terminal WebSocket gateway', () => {
     socket.send(JSON.stringify({ type: 'close' }));
     expect((await nextJson<{ type: string; state?: string }>(socket)).state).toBe('closed');
     expect(channel.closeCalls).toBe(1);
+    socket.close();
+  });
+
+  it('keeps the authenticated account owner when opening a terminal WebSocket', async () => {
+    const { app, adapter } = await makeApp('service-account-owner', true);
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', headers: { origin: ORIGIN }, payload: { masterPassword: MASTER_PASSWORD } });
+    const vaultCookie = cookieFrom(setup);
+    const registered = await app.inject({
+      method: 'POST',
+      url: '/api/account/register',
+      headers: { origin: ORIGIN },
+      payload: { email: 'terminal-owner@example.com', password: 'long enough password' }
+    });
+    const accountCookie = cookieFrom(registered);
+    const cookies = `${vaultCookie}; ${accountCookie}`;
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/hosts',
+      headers: { origin: ORIGIN, cookie: cookies },
+      payload: { name: 'Account-owned SSH', address: 'ssh-fixture', username: 'fixture', auth: { type: 'password', password: 'fixture-password' } }
+    });
+    expect(created.statusCode).toBe(201);
+    const hostId = json<{ id: string }>(created).id;
+    const url = await listen(app);
+    const socket = await connectSocket(url, { cookie: cookies, origin: ORIGIN });
+    socket.send(JSON.stringify({ type: 'open', hostId, cols: 120, rows: 36, requestId: 'account-owner-terminal' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'connecting' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'awaiting-host-key' }));
+    expect(await nextJson<{ type: string; fingerprint: string }>(socket)).toEqual(expect.objectContaining({ type: 'host-key', fingerprint: 'SHA256:fixture-key' }));
+    socket.send(JSON.stringify({ type: 'host-key-decision', decision: 'trust', fingerprint: 'SHA256:fixture-key' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'connected' }));
+    expect(adapter.channels).toHaveLength(1);
+    socket.send(JSON.stringify({ type: 'close' }));
+    expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'closed' }));
     socket.close();
   });
 

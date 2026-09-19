@@ -15,6 +15,7 @@ import { resolveConnectionConfiguration } from '../../shared/core/connection-res
 import type { GroupNode } from '../../shared/core/models.js';
 import { getSessionId } from '../auth/session-cookie.js';
 import { SessionStore } from '../auth/session-store.js';
+import { runWithOwnerId } from '../auth/owner-context.js';
 import { AuditRepository, HostRepository } from '../db/repositories.js';
 import type { GroupRepository } from '../db/repositories.js';
 import { VaultService, type EncryptedJson } from '../vault/vault-service.js';
@@ -213,6 +214,12 @@ export const registerTerminalGateway = async (
       socket.close(1008, 'session required');
       return;
     }
+    const authenticatedSession = dependencies.sessionStore.get(authenticatedSessionId);
+    if (!authenticatedSession) {
+      socket.close(1008, 'session required');
+      return;
+    }
+    const runInOwnerContext = <T>(callback: () => T): T => runWithOwnerId(authenticatedSession.ownerId, callback);
 
     let managerSessionId: string | undefined;
     let channel: SshChannel | undefined;
@@ -480,13 +487,15 @@ export const registerTerminalGateway = async (
       };
       const callbacks: SshConnectCallbacks = {
         onStatus: (state) => {
-          if (state === 'connected' && sessionCredentials.size > 0) return;
-          if (state === 'connected') markHostConnected(row.id);
-          if (state === 'closed' && active && !channelExited && !explicitCloseRequested && !channelFailureNotified) {
-            notifyUnexpectedChannelFailure();
-            return;
-          }
-          sendStatus(state);
+          runInOwnerContext(() => {
+            if (state === 'connected' && sessionCredentials.size > 0) return;
+            if (state === 'connected') markHostConnected(row.id);
+            if (state === 'closed' && active && !channelExited && !explicitCloseRequested && !channelFailureNotified) {
+              notifyUnexpectedChannelFailure();
+              return;
+            }
+            sendStatus(state);
+          });
         },
         onDiagnostic: (event) => send({
           type: 'diagnostic',
@@ -584,20 +593,26 @@ export const registerTerminalGateway = async (
     });
 
     socket.on('message', (data, isBinary) => {
-      const raw = asRawBuffer(data);
-      void state.receive(isBinary ? raw : raw.toString('utf8'), isBinary).catch((error: unknown) => {
-        const mapped = safeError(error);
-        send({ type: 'error', code: mapped.code, message: mapped.message });
-        state.closeForProtocol();
+      runInOwnerContext(() => {
+        const raw = asRawBuffer(data);
+        void state.receive(isBinary ? raw : raw.toString('utf8'), isBinary).catch((error: unknown) => {
+          const mapped = safeError(error);
+          send({ type: 'error', code: mapped.code, message: mapped.message });
+          state.closeForProtocol();
+        });
       });
     });
     socket.on('close', () => {
-      active = false;
-      state.socketClosed();
+      runInOwnerContext(() => {
+        active = false;
+        state.socketClosed();
+      });
     });
     socket.on('error', () => {
-      active = false;
-      state.socketClosed();
+      runInOwnerContext(() => {
+        active = false;
+        state.socketClosed();
+      });
     });
 
   });

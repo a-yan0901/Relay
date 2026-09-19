@@ -47,9 +47,15 @@ const handshake = (request: FastifyRequest, dependencies: OperationGatewayDepend
 };
 
 export const registerOperationGateway = async (app: FastifyInstance, dependencies: OperationGatewayDependencies): Promise<void> => {
-  app.get('/ws/operations', { websocket: true, preValidation: async (request) => handshake(request, dependencies) }, (socket: WebSocket) => {
+  app.get('/ws/operations', { websocket: true, preValidation: async (request) => handshake(request, dependencies) }, (socket: WebSocket, request: FastifyRequest) => {
+    const sessionId = getSessionId(request);
+    const session = sessionId ? dependencies.sessionStore.get(sessionId) : null;
+    if (!session) {
+      socket.close(1008, 'session required');
+      return;
+    }
     let active = true;
-    const unsubscribe = dependencies.eventBus.subscribe(dependencies.ownerId, (event) => {
+    const unsubscribe = dependencies.eventBus.subscribe(session.ownerId, (event) => {
       if (active && socket.readyState === 1) socket.send(JSON.stringify(event));
     });
     const close = (): void => {
