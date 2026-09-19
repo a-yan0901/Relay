@@ -7,6 +7,13 @@ on:
       - main
     tags:
       - 'v*'
+    paths-ignore:
+      - 'docs/**'
+      - '.superpowers/**'
+
+concurrency:
+  group: windows-package-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
