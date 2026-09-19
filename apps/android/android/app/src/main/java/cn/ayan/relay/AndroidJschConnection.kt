@@ -237,7 +237,14 @@ private fun parseJumpHostIds(value: String): List<String> {
 
 internal fun mapJschError(error: Throwable): String {
     val message = error.message?.lowercase().orEmpty()
-    return if (message.contains("auth") || message.contains("authentication") || message.contains("publickey")) "SSH_AUTH_FAILED" else "SSH_CONNECTION_FAILED"
+    return if (
+        message.contains("auth") ||
+        message.contains("authentication") ||
+        message.contains("publickey") ||
+        message.contains("privatekey") ||
+        message.contains("private key") ||
+        message.contains("passphrase")
+    ) "SSH_AUTH_FAILED" else "SSH_CONNECTION_FAILED"
 }
 
 private fun failJsch(code: String): Nothing = throw NativeVaultFailure(code)

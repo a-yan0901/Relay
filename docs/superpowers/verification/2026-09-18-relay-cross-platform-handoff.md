@@ -131,7 +131,7 @@
 | A-01 | 首次打开、创建 Host、保存凭据 | 不需要 Relay URL 或 cookie；Host 重启后仍存在 | 待执行 |
 | A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 通过（真实主机密码路径）：两台 Android 16 真机在 `106.14.61.92:22` 展示 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`；点击“信任并连接”后均成功建立 Shell。旧模拟器 fixture 结果仅保留为历史回归证据。 |
 | A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | 通过：`25091RP04C` 真机连接局域网 SSH fixture，Host Key 更换后真实 UI 显示 `HOST KEY CHANGED`；拒绝后返回指纹不一致且再次连接仍显示变化，只有显式替换才建立新 Shell。脱敏证据：[Android Host Key/私钥 CDP 证据](./evidence/2026-09-19-android-host-key-private-key-cdp.md)。 |
-| A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行；增量通过私钥正向链路：`25091RP04C` 使用临时 Ed25519 私钥连接 `106.14.61.92:22`，真实回显 `ANDROID_PRIVATE_KEY_ACCEPTED`；错误私钥/错误口令和日志保密性仍待执行。 |
+| A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行；已补齐私钥正向链路和错误私钥/口令失败增量：`25091RP04C` 真实 UI/native 事件返回 `SSH_AUTH_FAILED` 并显示“远程服务器认证失败”；完整 logcat、WebView 持久化和系统备份秘密扫描仍待执行。证据：[私钥正向](./evidence/2026-09-19-android-host-key-private-key-cdp.md)、[私钥失败](./evidence/2026-09-19-android-private-key-failure-cdp.md)。 |
 | A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行；两台真机连续 3 轮关闭/重开后输入 `whoami`，6/6 返回 `t2`；本轮分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到远端回显，`2407FRK8EC` 重装后又输入 `echo REAL_SERVER_2407_REINSTALLED` 得到真实回显。复制、粘贴确认、中文/长输入和底部布局仍待完整走查。 |
 | A-06 | 断网后恢复 | 网络切换/短暂断开显示真实 `reconnecting` 或 `interrupted`；恢复后按交互约定重连，不伪造 connected | 待执行 |
 | A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行；`25091RP04C` 从 Console 发送系统返回键后回到 Server 列表，完整弹层/根页面退出顺序仍待走查。 |
@@ -357,5 +357,11 @@
 ## 23. 2026-09-19 Android A-03/A-04 真机 UI 增量
 
 - `25091RP04C` 通过真实 WebView UI 连接局域网 SSH fixture；更换 Host Key 后显示 `HOST KEY CHANGED`，拒绝后保留旧信任并再次拒绝，显式替换后才建立新 Shell。A-03 回填为通过。
-- 同一真机使用临时 Ed25519 私钥连接用户提供的 `106.14.61.92:22`/`t2`，收到 `ANDROID_PRIVATE_KEY_ACCEPTED` 远端回显。临时公钥、私钥和 Android 临时 Server 均已清理；A-04 的错误凭据、日志保密性和完整失败矩阵仍待执行。
+- 同一真机使用临时 Ed25519 私钥连接用户提供的 `106.14.61.92:22`/`t2`，收到 `ANDROID_PRIVATE_KEY_ACCEPTED` 远端回显；随后补测错误私钥/口令，UI/native 返回 `SSH_AUTH_FAILED` 和“远程服务器认证失败”。临时公钥、私钥和 Android 临时 Server 均已清理；A-04 的 logcat、WebView 持久化和系统备份秘密扫描仍待执行。
 - 脱敏证据：[Android Host Key/私钥 CDP 证据](./evidence/2026-09-19-android-host-key-private-key-cdp.md)。
+## 24. 2026-09-19 Android 私钥失败路径回归
+
+- JSch `invalid privatekey`/passphrase 类解析失败此前被错误映射为可重试的 `SSH_CONNECTION_FAILED`，导致 UI 最终只显示“此 Console 需要重新连接”。新增 Android 单元回归并将其映射为 `SSH_AUTH_FAILED`。
+- `25091RP04C` 新 APK 真实 native 事件为 `connecting` → `SSH_AUTH_FAILED` → `failed` → `terminal.close`；真实 UI 显示“远程服务器认证失败”和“编辑 Server 凭据”，不再进入重连循环。
+- 当前 APK `8,633,755` bytes，SHA-256 `5017F5ADBCCFA724D2601CD61AA9AED0893D229AA6B42966BB233FFC8A3FFDAE`；两台真机 `:app:connectedDebugAndroidTest` 各 `7/7` 通过，随后均重新安装该 APK 返回 `Success`。
+- 脱敏证据：[Android 私钥失败路径 CDP 证据](./evidence/2026-09-19-android-private-key-failure-cdp.md)。A-04 仍不整体标记通过，待补秘密扫描和完整密码/私钥失败矩阵。

@@ -139,3 +139,9 @@
 - `25091RP04C` 真实 UI 完成 Host Key 变化、拒绝保留旧信任、再次拒绝和显式替换闭环；A-03 已有可追溯脱敏证据。
 - 同一真机使用临时 Ed25519 私钥连接用户测试主机并收到 `ANDROID_PRIVATE_KEY_ACCEPTED` 远端回显；A-04 仍只记录私钥正向增量，错误凭据、日志保密性和完整失败矩阵未通过。
 - 证据文件：[Android Host Key/私钥 CDP 证据](./evidence/2026-09-19-android-host-key-private-key-cdp.md)。
+
+## 2026-09-19 Android 私钥失败路径回归
+
+- 新 APK 在 `25091RP04C` 上对故意不可用的私钥/口令返回 `SSH_AUTH_FAILED`，真实 UI 显示“远程服务器认证失败”；根因修复前的 `invalid privatekey` 映射已有单元测试红灯，修复后转绿。
+- 两台 Android 16 真机各完成 `7/7` connected instrumentation，随后重新安装当前 APK 均返回 `Success`；当前 APK SHA-256 为 `5017F5ADBCCFA724D2601CD61AA9AED0893D229AA6B42966BB233FFC8A3FFDAE`。
+- 该增量不把 A-04 整体标为通过；logcat、WebView 持久化、系统备份秘密扫描和完整密码/私钥失败矩阵仍待完成。证据：[Android 私钥失败路径 CDP 证据](./evidence/2026-09-19-android-private-key-failure-cdp.md)。

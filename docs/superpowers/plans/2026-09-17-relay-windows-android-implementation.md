@@ -234,3 +234,9 @@
 - `25091RP04C` 通过 WebView CDP 驱动真实 Android UI，连接局域网 SSH fixture `192.168.1.5:22222`；Host Key 更换后显示 `HOST KEY CHANGED`，拒绝保留旧信任，再次连接仍拒绝，显式替换后才建立 Shell。A-03 由此回填为通过。
 - 同一真机使用临时 Ed25519 私钥连接用户提供的 `106.14.61.92:22`/`t2`，真实 Console 回显 `ANDROID_PRIVATE_KEY_ACCEPTED`；临时公钥、私钥和 Android 临时 Server 均已清理。A-04 仅回填私钥正向证据，错误凭据和日志保密性仍待执行。
 - 脱敏操作记录：[Android Host Key/私钥 CDP 证据](../verification/evidence/2026-09-19-android-host-key-private-key-cdp.md)。
+
+## 2026-09-19 Android 私钥失败路径回归
+
+- `AndroidJschConnectionTest` 先复现旧实现将 JSch `invalid privatekey` 映射为 `SSH_CONNECTION_FAILED` 的失败，再将私钥解析/口令错误映射为 `SSH_AUTH_FAILED`；新 APK 的真实 native 事件和 UI 均显示可解释的认证失败，不再反复重连后退化为“需要重新连接”。
+- 当前 APK `8,633,755` bytes / SHA-256 `5017F5ADBCCFA724D2601CD61AA9AED0893D229AA6B42966BB233FFC8A3FFDAE`；两台 Android 16 真机各完成 `7/7` connected instrumentation，随后重新安装当前 APK 均返回 `Success`。
+- A-04 只新增错误私钥/口令增量，logcat、WebView 持久化、系统备份秘密扫描和完整失败矩阵仍未完成。证据：[Android 私钥失败路径 CDP 证据](../verification/evidence/2026-09-19-android-private-key-failure-cdp.md)。
