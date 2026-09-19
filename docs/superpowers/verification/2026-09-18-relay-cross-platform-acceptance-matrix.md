@@ -365,3 +365,9 @@
 | A-17 完整验收 | 未完成 | 本轮只覆盖 Android→Windows local-runtime；两台真机、Web/打包 Windows UI、反向 Android 导入仍待执行 |
 
 - Bundle SHA-256：`8a5f8ab17127cfe7c08479f746709e8dc2324524a2c9f698b3cd4a492eba39f4`。该 bundle 只含合成测试数据，导出密码不记录。
+
+### A-17 追加：固定向量→Android bridge 预览
+
+- 使用现有 `emulator-5554`，将固定完整向量分成 `5` 个 `1 KiB` 分块写入并完成预览：`2 Host / 2 Group / 2 Identity`、`conflicts=0`。
+- 错误导出密码和篡改 `authTag` 均拒绝；本轮不调用 `apply`，所以不改变模拟器现有数据库和调试数据。
+- 该证据只把 Web/Windows→Android 的 bridge 预览推进为通过；Android 两台真机实际应用、反向 UI 交接、字段核对和 A-17 总体验收仍未完成。

@@ -579,3 +579,9 @@
 
 - 本轮将 A-17 的“Android 导出→Windows local-runtime 导入、错误输入、冲突和原数据不变性”标记为自动化部分通过。
 - 尚未通过的边界：两台真实 Android 设备上的完整清单、Android→Web 实际导入、Windows 打包 UI 实际导入、Web/Windows→Android 反向导入，以及真实设备上的双向字段核对。因此 A-17 总项仍为“部分完成”，不能据此宣布跨端验收闭环。
+
+## 2026-09-20 保留数据的 Android 固定向量预览
+
+- 在现有 `emulator-5554` 上通过 WebView 原生 bridge 执行固定向量导入：共 `5` 个 `1 KiB` 分块，预览结果为 `2 Host / 2 Group / 2 Identity`、`conflicts=0`。
+- 错误导出密码和篡改 `payload.authTag` 均被拒绝；本轮只预览、未执行 `apply`，因此没有改写当前模拟器 Vault/Host 数据，也没有卸载、清库、重复安装或新增授权。
+- 该条补充 Web/Windows→Android 的真实 bridge 预览证据；两台真机的应用/字段核对、Android→Web 实际导入和 Windows 打包 UI 导入仍是 A-17 未完成边界。

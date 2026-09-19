@@ -406,3 +406,9 @@
 - 在隔离的 Windows `createWindowsLocalRuntime({ dataDir: ':memory:' })` 中完成 Android→Windows 方向预览/应用：预览 `1 Host / 0 Group / 0 Identity`、无冲突；应用导入 `1 Host`。
 - 错误导出密码和篡改 `authTag` 均被拒绝，目标库在拒绝后保持零写入；再次预览同一 bundle 产生 `1` 个 Host 冲突，按 `skip/reuse` 应用后仍保持 `1` 台 Host，证明冲突策略和原数据不变。
 - 本条只补充自动化的 Android→Windows local-runtime 方向证据，不替代 Android 两台真机、打包后 Windows UI、Web 端导入和反向 Android 导入；A-17 仍保持部分完成。
+
+## 2026-09-20 保留数据的 Android 固定向量 bridge 预览
+
+- 在保留现有模拟器 Vault/Host 数据的前提下，通过现有 WebView 原生 bridge 将固定完整向量分成 `5` 个 `1 KiB` 分块写入 Android，并只完成导入预览，不调用 `apply`。
+- 预览结果为 `2 Host / 2 Group / 2 Identity`、`conflicts=0`；错误导出密码和篡改 `authTag` 均被拒绝。该操作没有改写模拟器 SQLite 数据，也没有卸载、清库、重复安装或新增授权。
+- 这补充了 Web/Windows→Android 的真实 bridge 预览证据，但仍不替代两台真机的实际应用、反向导入 UI、字段核对和 A-17 完整双向验收。
