@@ -297,3 +297,11 @@
 
 - `25091RP04C` 在用户提供的真实主机上创建一次性目录 `/tmp/relay-memory-suite` 和 300 个 1-byte 条目；Android SFTP UI 真实读取三页，页大小为 `128`、`128`、`44`，随后通过真实 Shell 删除目录并回显清理确认，未留下测试目录。
 - 同一轮采样中，大目录页完成前 PSS 为 `270,324 KB`；返回 Server 后每 5 秒采样，约 30 秒后稳定在 `251,874 KB`。未观察到 OOM、ANR 或崩溃；但尚未按 A-15 形成合格的 2 分钟基线，也未在 32 MiB 上传/下载同时采样，因此 A-15 仍为待执行。
+
+## 15. 2026-09-19 固定跨端 bundle 回归与拒绝安装重试
+
+- 新增固定、合成的跨端向量 `tests/fixtures/vault-bundle-v1-full-vector.json`，Android instrumentation 使用同一份资产。向量包含 2 个 Host、2 个 Group、2 个 Identity、1 个 Terminal Profile、包含空格和中文的标签、PEM 私钥、Group 部分连接配置和 Group/Inline 凭据来源；不含真实凭据。bundle SHA-256 为 `eb5ac0fcd78ff260b7ca686caf33bc9d8ac4f14b7542503acf0768ed510fccf0`，解密 payload SHA-256 为 `aaaf965d4077c724126daab6bb1603b1619ce3ddf981d1bcad2443cc67ae202f`。
+- Web/Server 固定向量测试 `tests/unit/server/vault-bundle.test.ts`：6/6 通过，覆盖 preview/apply 计数、标签、PEM 私钥、继承的 Group Identity、部分 connection profile、jump host 和 terminal profile。Android instrumentation `AndroidBundlePayloadInstrumentedTest`：`2407FRK8EC` 与 `25091RP04C` 各 5/5 通过，覆盖加密解包和完整 payload 解析；当前 `app-debug.apk` 为 `8,633,755` bytes，SHA-256 `EC1366A3943ED4879E639D1F3D8AA75BE57F3E983E3F66AC82F00CB325E57A18`。
+- 本轮修正四个跨端边界：标签不再错误复用 native safe-id 校验；私钥 PEM 允许 CR/LF；Group 的连接配置按可选 patch 校验；`credentialSource` 统一支持 canonical string，并保留旧 object 形状兼容，同时校验 identity 引用一致性。Android 本地创建/更新私钥也复用多行文本校验。
+- `25091RP04C` 的普通 app APK 安装首次返回 `INSTALL_FAILED_USER_RESTRICTED`；随后使用 `adb push` 后执行 `pm install -r --user 0` 返回 `Success`，测试 APK 也安装成功，固定向量 instrumentation 最终 5/5 通过。该设备当前安装阻塞已解除；安装回退命令不包含任何凭据。
+- 当前结论仍为 A-17 `待执行/部分证据`：Node → Android 的固定向量解密/解析和 Android 两台真机验证已完成，但 Android → Web/Windows 的真实导出回传、完整 UI 冲突处理和 Windows 端实测仍未完成，不能把 A-17 或相关平台发布门禁标为通过。

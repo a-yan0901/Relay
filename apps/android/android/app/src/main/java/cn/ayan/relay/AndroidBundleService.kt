@@ -343,10 +343,11 @@ internal class AndroidBundleService(
 
     private fun hostFromBundle(source: JSONObject, existing: AndroidHost?): AndroidHost {
         val id = requiredId(source, "id")
-        val credentialSource = nullableObject(source, "credentialSource")?.optString("type", "inline") ?: "inline"
+        val credentialSourceValue = credentialSource(source)
+        val credentialSource = credentialSourceValue.type
         val groupId = nullableText(source, "groupId", 128)
         val identityId = if (credentialSource == "identity") {
-            nullableObject(source, "credentialSource")?.let { requiredId(it, "identityId") } ?: failNative("VAULT_BUNDLE_INVALID")
+            credentialSourceValue.identityId ?: nullableText(source, "identityId", 128) ?: failNative("VAULT_BUNDLE_INVALID")
         } else {
             null
         }
@@ -414,6 +415,21 @@ internal class AndroidBundleService(
             )
         }
         return settings
+    }
+
+    private data class CredentialSourceValue(val type: String, val identityId: String?)
+
+    private fun credentialSource(value: JSONObject): CredentialSourceValue {
+        val raw = if (!value.has("credentialSource") || value.isNull("credentialSource")) null else value.opt("credentialSource")
+        val source = when (raw) {
+            null -> CredentialSourceValue("inline", null)
+            is String -> CredentialSourceValue(raw, null)
+            is JSONObject -> CredentialSourceValue(raw.optString("type", ""), raw.optString("identityId", "").takeIf { it.isNotEmpty() })
+            else -> failNative("VAULT_BUNDLE_INVALID")
+        }
+        if (source.type !in setOf("inline", "identity", "group")) failNative("VAULT_BUNDLE_INVALID")
+        if (source.type != "identity" && source.identityId != null) failNative("VAULT_BUNDLE_INVALID")
+        return source
     }
 
     private fun applyDefaultTerminalProfile(payload: AndroidBundlePayload) {

@@ -81,3 +81,10 @@
 
 - 打包版 Windows 入口 `dist/releases/nsis/win-unpacked/Relay.exe` 已连接用户提供的真实 `106.14.61.92:22`/`t2` 主机，实际回显 `echo PACKAGED_WINDOWS_UI`；SFTP UI 读取 `/` 36 项、跳转 `/tmp` 并过滤 `relay-native` 得到 1 项。锁定/解锁后 Host 与信任记录保持；强制终止打包进程树后重启，旧 Console 显示需要重新连接，重新打开后 `echo PACKAGED_WINDOWS_AFTER_CRASH` 得到真实回显。该证据只覆盖一个打包版崩溃恢复场景，升级迁移和完整打包任务链仍保持 🟡。
 - `25091RP04C` 在真实主机创建 300 个一次性 1-byte 条目，Android SFTP UI 分页为 `128 + 128 + 44`，随后删除并确认目录清理；大目录页前后 PSS 采样为 `270,324 KB` 到约 30 秒后的 `251,874 KB`。无 OOM/ANR；A-15 因缺少合格 2 分钟基线和同时 32 MiB 传输采样，仍不能标记为通过。
+
+## 2026-09-19 固定跨端 bundle 回归与安装复核
+
+- 固定合成向量 `tests/fixtures/vault-bundle-v1-full-vector.json` 及 Android 资产副本已同步，覆盖 2 Host、2 Group、2 Identity、1 Terminal Profile、中文/空格标签、PEM 私钥、Group 部分 profile、jump host 和 canonical string `credentialSource`；不含真实凭据。bundle SHA-256：`eb5ac0fcd78ff260b7ca686caf33bc9d8ac4f14b7542503acf0768ed510fccf0`，payload SHA-256：`aaaf965d4077c724126daab6bb1603b1619ce3ddf981d1bcad2443cc67ae202f`。
+- Node 固定向量测试 6/6 通过；两台 Android 16 真机的 `AndroidBundlePayloadInstrumentedTest` 各 5/5 通过。当前 Debug APK `8,633,755` bytes，SHA-256 `EC1366A3943ED4879E639D1F3D8AA75BE57F3E983E3F66AC82F00CB325E57A18`。本轮同时修复标签、PEM 换行、Group 部分 profile 和 `credentialSource` string/object 兼容边界。
+- `25091RP04C` 普通 app 安装曾返回 `INSTALL_FAILED_USER_RESTRICTED`；改用 `adb push` + `pm install -r --user 0` 返回 `Success`，测试 APK 安装并完成 5/5。该设备安装阻塞已解除。
+- 该证据把 bundle 行标记为“已有固定向量部分证据”，仍不等同于 A-17 通过：Android → Web/Windows 的真实导出回传、Windows 实机导入及完整冲突/原数据不变性闭环仍待补齐；因此矩阵中的 Windows/Android 完整发布状态继续保持 `🟡`。

@@ -173,3 +173,11 @@
 
 - 打包版 Windows `Relay.exe` 已在真实 `106.14.61.92:22`/`t2` 主机上完成 Shell 回显、SFTP `/` 浏览、`/tmp` 过滤、Vault 锁定/解锁和一次强制终止后的 Console 重新打开；`PACKAGED_WINDOWS_AFTER_CRASH` 真实远端回显已核对。该证据不替代升级迁移、签名、持久制品来源和完整打包下载链。
 - `25091RP04C` 在真实主机创建并清理 300 个一次性条目，Android UI 分页读取 `128 + 128 + 44`；大目录过程 PSS 从 `270,324 KB` 采样到返回 Server 后约 30 秒的 `251,874 KB`。无 OOM/ANR，但 A-15 仍缺 2 分钟基线和 32 MiB 传输并行采样，保持未完成。
+
+## 2026-09-19 固定跨端 bundle 回归与安装阻塞复核
+
+- 新增合成固定向量 `tests/fixtures/vault-bundle-v1-full-vector.json` 及 Android instrumentation 资产，覆盖 2 Host、2 Group、2 Identity、1 Terminal Profile、空格/中文标签、PEM 私钥、Group 部分连接配置、jump host 与 canonical string `credentialSource`。bundle SHA-256 为 `eb5ac0fcd78ff260b7ca686caf33bc9d8ac4f14b7542503acf0768ed510fccf0`，payload SHA-256 为 `aaaf965d4077c724126daab6bb1603b1619ce3ddf981d1bcad2443cc67ae202f`；仅使用合成数据，不含真实凭据。
+- Node/Server 固定向量测试 6/6 通过；`2407FRK8EC`、`25091RP04C` 两台 Android 16 真机 instrumentation 各 5/5 通过；Android JVM `testDebugUnitTest` 和 AndroidTest APK 构建通过。当前 Debug APK 大小 `8,633,755` bytes，SHA-256 `EC1366A3943ED4879E639D1F3D8AA75BE57F3E983E3F66AC82F00CB325E57A18`。
+- 代码修复了四个跨端兼容缺陷：Web 标签不应使用 native safe-id 规则、PEM 私钥必须允许换行、Group profile 是可选 patch、`credentialSource` 应以 canonical string 表达并兼容旧 object 形状。Android 本地私钥创建/更新也采用多行文本边界校验。
+- `25091RP04C` 普通 APK 安装曾被系统拒绝（`INSTALL_FAILED_USER_RESTRICTED`）；通过 `adb push` 后 `pm install -r --user 0` 成功，测试 APK 安装成功并完成 5/5。该安装阻塞已解除。
+- A-17 仍保持部分证据：Node → Android 固定向量解密/解析已在两台真机完成，但 Android → Web/Windows 真实导出回传、Windows 端导入、完整冲突策略和发布门禁尚未完成；不能把跨端任务书或 Windows/Android 客户端宣称为完整交付。

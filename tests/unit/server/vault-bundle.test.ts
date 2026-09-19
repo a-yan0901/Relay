@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { migrate } from '../../../src/server/db/migrations.js';
 import { GroupRepository, HostRepository } from '../../../src/server/db/repositories.js';
@@ -10,6 +12,13 @@ import type { EncryptedJson } from '../../../src/server/vault/types.js';
 
 const EXPORT_PASSWORD = 'bundle-export-password';
 const HOST_PASSWORD = 'host-password-never-plain-in-bundle';
+const FULL_VECTOR = JSON.parse(readFileSync(new URL('../../fixtures/vault-bundle-v1-full-vector.json', import.meta.url), 'utf8')) as {
+  exportPassword: string;
+  bundle: string;
+  bundleSha256: string;
+  payloadSha256: string;
+  expected: { hosts: number; groups: number; identities: number; terminalProfiles: number; tags: string[]; privateKeyHost: string; groupHost: string };
+};
 
 interface Fixture {
   database: Database.Database;
@@ -126,6 +135,46 @@ describe('VaultBundleService', () => {
     }));
     expect(await target.identityService.get('default', identity.id)).toEqual(expect.objectContaining({ name: 'Operations' }));
     source.database.close();
+    target.database.close();
+  });
+
+  it('imports the fixed full cross-platform vector with tags, PEM keys, profiles, and inheritance', async () => {
+    const target = await createFixture(false);
+    expect(createHash('sha256').update(FULL_VECTOR.bundle, 'utf8').digest('hex')).toBe(FULL_VECTOR.bundleSha256);
+    const preview = await target.service.previewImport(target.sessionKey, FULL_VECTOR.exportPassword, FULL_VECTOR.bundle);
+
+    expect(preview).toEqual(expect.objectContaining({
+      hostCount: FULL_VECTOR.expected.hosts,
+      groupCount: FULL_VECTOR.expected.groups,
+      identityCount: FULL_VECTOR.expected.identities,
+      conflicts: []
+    }));
+    const result = await target.service.applyImport(target.sessionKey, preview.previewId, {
+      hostConflicts: 'skip', groupConflicts: 'reuse', identityConflicts: 'reuse'
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      importedHosts: FULL_VECTOR.expected.hosts,
+      importedGroups: FULL_VECTOR.expected.groups,
+      importedIdentities: FULL_VECTOR.expected.identities
+    }));
+    expect(target.hosts.getForConnection(FULL_VECTOR.expected.groupHost)).toEqual(expect.objectContaining({
+      credentialSource: { type: 'group' },
+      tags: FULL_VECTOR.expected.tags,
+      groupId: 'vector-group-child',
+      terminalProfileId: 'vector-terminal-profile'
+    }));
+    expect(target.hosts.getForConnection(FULL_VECTOR.expected.privateKeyHost)).toEqual(expect.objectContaining({
+      authType: 'private_key',
+      credentialSource: expect.objectContaining({ type: 'inline' }),
+      jumpHostIds: [FULL_VECTOR.expected.groupHost],
+      tags: ['key host']
+    }));
+    expect(target.groups.get('vector-group-root')).toEqual(expect.objectContaining({
+      defaultIdentityId: 'vector-identity-password',
+      connectionProfile: { keepaliveIntervalMs: 4_000 }
+    }));
+    expect(await target.identityService.get('default', 'vector-identity-key')).toEqual(expect.objectContaining({ name: 'Vector Key', type: 'private_key' }));
     target.database.close();
   });
 });

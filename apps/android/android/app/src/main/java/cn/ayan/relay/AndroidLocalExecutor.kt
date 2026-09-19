@@ -2247,7 +2247,7 @@ internal class AndroidLocalExecutor(
             return JSONObject().put("type", type).put("password", password)
         }
         if (type == "private_key") {
-            val privateKey = requiredText(auth, "privateKey", 32 * 1024)
+            val privateKey = multilineText(auth, "privateKey", 32 * 1024)
             val output = JSONObject().put("type", type).put("privateKey", privateKey)
             if (auth.has("passphrase") && !auth.isNull("passphrase")) output.put("passphrase", requiredText(auth, "passphrase", 4096))
             if (auth.has("identityFile") && !auth.isNull("identityFile")) output.put("identityFile", requiredText(auth, "identityFile", 4096))
@@ -2382,6 +2382,12 @@ internal class AndroidLocalExecutor(
     private fun requiredText(value: JSONObject, key: String, maxLength: Int): String {
         val text = if (value.has(key) && !value.isNull(key)) value.optString(key, "") else ""
         if (text.isEmpty() || text.length > maxLength || text.any { it.code <= 0x1f || it.code == 0x7f }) failNative("PROTOCOL_INVALID_MESSAGE")
+        return text
+    }
+
+    private fun multilineText(value: JSONObject, key: String, maxLength: Int): String {
+        val text = if (value.has(key) && !value.isNull(key)) value.optString(key, "") else ""
+        if (text.isEmpty() || text.length > maxLength || text.any { (it.code <= 0x1f && it != '\r' && it != '\n') || it.code == 0x7f }) failNative("PROTOCOL_INVALID_MESSAGE")
         return text
     }
 

@@ -65,9 +65,9 @@ internal object AndroidBundlePayloadCodec {
         store.listHostsForExport().forEach { host ->
             val auth = hostCredential(host, store, vault)
             val source = when (host.credentialSource) {
-                "identity" -> JSONObject().put("type", "identity").put("identityId", host.identityId ?: JSONObject.NULL)
-                "group" -> JSONObject().put("type", "group")
-                else -> JSONObject().put("type", "inline").put("authType", host.authType)
+                "identity" -> "identity"
+                "group" -> "group"
+                else -> "inline"
             }
             hosts.put(JSONObject()
                 .put("id", host.id)
@@ -144,7 +144,7 @@ internal object AndroidBundlePayloadCodec {
             val defaultIdentityId = nullableIdentifier(group, "defaultIdentityId")
             if (defaultIdentityId != null && !identityIds.contains(defaultIdentityId)) failPayload()
             val profile = nullableObject(group, "connectionProfile")
-            if (profile != null) validateProfile(profile, false)
+            if (profile != null) validateProfile(profile, true)
         }
         validateGroupGraph(groups, groupIds)
 
@@ -163,25 +163,24 @@ internal object AndroidBundlePayloadCodec {
             if (authType != "password" && authType != "private_key") failPayload()
             validateAuth(auth, authType)
             nullableIdentifier(host, "groupId")?.let { if (!groupIds.contains(it)) failPayload() }
-            val jumps = arrayOfStrings(host, "jumpHostIds", 4, 128)
+            val jumps = arrayOfStrings(host, "jumpHostIds", 4, 128, requireSafeIds = true)
             if (jumps.contains(id)) failPayload()
             validateProfile(objectField(host, "connectionProfile"), false)
             val overrides = nullableObject(host, "connectionProfileOverrides")
             if (overrides != null) validateProfile(overrides, true)
             nullableIdentifier(host, "terminalProfileId")
-            arrayOfStrings(host, "tags", 20, 64)
+            arrayOfStrings(host, "tags", 20, 64, requireSafeIds = false)
             if (host.opt("isFavorite") !is Boolean) failPayload()
             nullableText(host, "hostKeyAlgorithm", 255)
             nullableText(host, "hostKeyFingerprint", 255)
-            val source = nullableObject(host, "credentialSource")
-            val sourceType = source?.let { text(it, "type", 32) } ?: "inline"
-            if (sourceType !in setOf("inline", "identity", "group")) failPayload()
-            val sourceIdentity = if (sourceType == "identity") source?.let { identifier(it, "identityId") } else null
-            if (sourceIdentity != null && !identityIds.contains(sourceIdentity)) failPayload()
+            val source = credentialSource(host)
+            val sourceType = source.type
             if (sourceType == "group" && host.isNull("groupId")) failPayload()
             val directIdentity = nullableIdentifier(host, "identityId")
-            if (sourceType == "identity" && directIdentity != sourceIdentity) failPayload()
-            if (sourceType != "identity" && directIdentity != null) failPayload()
+            val sourceIdentity = source.identityId ?: directIdentity
+            if (sourceIdentity != null && !identityIds.contains(sourceIdentity)) failPayload()
+            if (sourceType == "identity" && (sourceIdentity == null || (source.identityId != null && directIdentity != null && directIdentity != source.identityId))) failPayload()
+            if (sourceType != "identity" && (source.identityId != null || directIdentity != null)) failPayload()
         }
         validateHostGraph(hosts, hostIds)
 
@@ -205,7 +204,7 @@ internal object AndroidBundlePayloadCodec {
         when (type) {
             "password" -> text(auth, "password", 4096)
             "private_key" -> {
-                text(auth, "privateKey", 32 * 1024)
+                multilineText(auth, "privateKey", 32 * 1024)
                 nullableText(auth, "passphrase", 4096)
                 nullableText(auth, "identityFile", 4096)
             }
@@ -271,7 +270,7 @@ internal object AndroidBundlePayloadCodec {
         for (index in 0 until hosts.length()) {
             val host = objectAt(hosts, index)
             val id = identifier(host, "id")
-            val ids = arrayOfStrings(host, "jumpHostIds", 4, 128)
+            val ids = arrayOfStrings(host, "jumpHostIds", 4, 128, requireSafeIds = true)
             if (ids.any { !hostIds.contains(it) }) failPayload()
             jumps[id] = ids
         }
@@ -296,6 +295,21 @@ internal object AndroidBundlePayloadCodec {
             decryptCredential(vault, identity.credentialCiphertext, "identity:${identity.id}:credentials:v1")
         }
         else -> failPayload()
+    }
+
+    private data class CredentialSourceValue(val type: String, val identityId: String?)
+
+    private fun credentialSource(value: JSONObject): CredentialSourceValue {
+        val raw = if (!value.has("credentialSource") || value.isNull("credentialSource")) null else value.opt("credentialSource")
+        val source = when (raw) {
+            null -> CredentialSourceValue("inline", null)
+            is String -> CredentialSourceValue(raw, null)
+            is JSONObject -> CredentialSourceValue(text(raw, "type", 32), nullableIdentifier(raw, "identityId"))
+            else -> failPayload()
+        }
+        if (source.type !in setOf("inline", "identity", "group")) failPayload()
+        if (source.type != "identity" && source.identityId != null) failPayload()
+        return source
     }
 
     private fun decryptCredential(vault: AndroidVault, ciphertext: String, aad: String): JSONObject = try {
@@ -339,6 +353,12 @@ internal object AndroidBundlePayloadCodec {
         return raw
     }
 
+    private fun multilineText(value: JSONObject, key: String, maxLength: Int): String {
+        val raw = value.opt(key)
+        if (raw !is String || raw.isEmpty() || raw.length > maxLength || raw.any { (it.code <= 0x1f && it != '\r' && it != '\n') || it.code == 0x7f }) failPayload()
+        return raw
+    }
+
     private fun username(value: JSONObject, key: String): String {
         val result = text(value, key, MAX_USERNAME_LENGTH)
         if (result.any { it.isWhitespace() }) failPayload()
@@ -372,14 +392,16 @@ internal object AndroidBundlePayloadCodec {
         return raw.toInt()
     }
 
-    private fun arrayOfStrings(value: JSONObject, key: String, maxItems: Int, maxLength: Int): List<String> {
+    private fun arrayOfStrings(value: JSONObject, key: String, maxItems: Int, maxLength: Int, requireSafeIds: Boolean): List<String> {
         val array = value.optJSONArray(key) ?: failPayload()
         if (array.length() > maxItems) failPayload()
         val result = ArrayList<String>(array.length())
         for (index in 0 until array.length()) {
             val item = array.opt(index)
             if (item !is String || item.isEmpty() || item.length > maxLength || item.any { it.code <= 0x1f || it.code == 0x7f }) failPayload()
-            try { AndroidNativeValidation.requireSafeId(item) } catch (_: Exception) { failPayload() }
+            if (requireSafeIds) {
+                try { AndroidNativeValidation.requireSafeId(item) } catch (_: Exception) { failPayload() }
+            }
             if (result.contains(item)) failPayload()
             result += item
         }
