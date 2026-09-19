@@ -157,3 +157,9 @@
 - 两台 Android 16 真机 `2407FRK8EC`、`25091RP04C` 均安装当前 Debug APK；APK 大小 `8,633,755` bytes，SHA-256 `158F049680DBC0600D571F1A69FB835B84D2617C0CC677E69F5986FD010ED045`。构建使用 JDK 21、已缓存 Gradle 9.3.1、`--offline`、单 worker；`:app:testDebugUnitTest :app:assembleDebug` 成功。
 - Windows 打包脚本已显式使用 `node_modules/electron/dist`，`npm run package:windows` 不再尝试外部 Electron 下载，并分别生成 NSIS 与 portable 输出，避免两个 target 覆盖同一 artifact 名称。NSIS `127,632,075` bytes、SHA-256 `979E3D6CECD611AE99F3DE3CA41D3E6A298A5906196B685B61318A5853FDF20F`；portable `113,552,550` bytes、SHA-256 `82F8D40377037DF2392CFF2B20F7ED0E537C7011D118EEDFC99C01B37C0CAC7D`；两者均为 `NotSigned`。Electron ABI 149 下三个 native module 加载通过，NSIS 静默安装、启动存活 5 秒、静默卸载通过。
 - Web/Server 最终回归：`npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows`、定向 Web/native 测试（4 文件、31 测试）和全量 `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot`（161 文件通过、1 跳过；731 测试通过、2 跳过）均通过。仍未完成的是任务书 A-03～A-09、A-11～A-17 中明确列出的真实设备边界，以及 Windows 升级迁移/崩溃恢复/打包后完整任务链和持久制品来源。
+
+## 2026-09-19 URI 权限复核与大文件下载续验（提交 `b094ee9`）
+
+- Android executor 现在同时尝试 Activity 与 application context 的 `READ|WRITE` URI revoke；构建、JVM 单测和 Debug APK 均通过。当前 APK 大小 `8,633,755` bytes，SHA-256 `42F5C183FB0CB4F6DAAAFA0825E8F3C41408B7CEF39A7F92390016AB85A6F19F`，两台真机均返回 `adb install -r --no-streaming` 的 `Success`。
+- `25091RP04C` 从用户提供的真实主机 `/tmp/relay-native-32m.bin` 下载到 `Download/relay-native-32m.bin`，最终大小 `33,554,432` bytes，设备端 SHA-256 为 `83ee47245398adee79bd9c0a8bc57b821e92aba10f5f9ade8a5d1fae4d8c4302`，与服务器和源文件一致；Transfer Center 显示 `已完成 · 100%`。
+- 传输完成后 `dumpsys activity permissions` 仍显示选择 URI 由当前 `MainActivity` 持有的临时 grant；`force-stop cn.ayan.relay` 后重新启动才清空。该现象属于当前 Android/MIUI 交互边界，A-11 继续保持未完成，不能把 best-effort revoke 误记为立即释放通过。

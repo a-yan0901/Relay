@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-19
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**当前实现源码基线：** `bde17c4`（Android 原生上传代码提交为其父提交 `a241e72`，后续仅增加 Windows 本地 Electron 打包配置）。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `bde17c4`；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
+**当前实现源码基线：** `b094ee9`（包含 Android URI revoke best-effort 修正；Windows 制品所对应的 Windows 源码内容与 `bde17c4` 相同）。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `b094ee9`；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -42,10 +42,10 @@
 
 - 文件：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`
 - 应用 ID：`cn.ayan.relay`
-- 应用代码基线：`a241e72`；Windows 打包配置后续提交为 `bde17c4`
-- 构建时间（文件时间，Asia/Shanghai）：`2026-09-19 13:45:27`
+- 应用代码基线：`b094ee9`
+- 构建时间（文件时间，Asia/Shanghai）：`2026-09-19 15:02:14`
 - 大小：`8,633,755` bytes
-- SHA-256：`158F049680DBC0600D571F1A69FB835B84D2617C0CC677E69F5986FD010ED045`
+- SHA-256：`42F5C183FB0CB4F6DAAAFA0825E8F3C41408B7CEF39A7F92390016AB85A6F19F`
 - 构建命令：
 
   ```powershell
@@ -137,7 +137,7 @@
 | A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行 |
 | A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | 待执行 |
 | A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | 待执行；`25091RP04C` 已在真实主机 UI 浏览 `/`（36 项）和 `/tmp`（25 项），过滤、分页、滚动和安全区仍待完整走查。 |
-| A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行；已有增量证据：`2407FRK8EC` 在真实主机完成 32 MiB 原生 URI 上传，远端大小/SHA-256 与源一致；约 35% 取消后既有完整目标保持不变且无 staging，暂停/继续从约 11 MiB 断点完成。`25091RP04C` 真实 MIUI 文件选择器上传 33,817-byte 文件、DocumentsUI 下载均 `已完成 · 100%`；远端 `/` 无写权限任务 0% 后取消。完整重试、部分失败和全矩阵仍待执行。 |
+| A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行；已有增量证据：`2407FRK8EC` 在真实主机完成 32 MiB 原生 URI 上传，远端大小/SHA-256 与源一致；约 35% 取消后既有完整目标保持不变且无 staging，暂停/继续从约 11 MiB 断点完成。`25091RP04C` 又将 `/tmp/relay-native-32m.bin` 下载到 `Download/relay-native-32m.bin`，大小 `33,554,432` bytes、SHA-256 与远端一致，Transfer Center `已完成 · 100%`；小文件系统选择器上传/下载也已完成，远端 `/` 无写权限任务 0% 后取消。完整重试、部分失败和全矩阵仍待执行。 |
 | A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 待执行；真实系统文件选择与 DocumentsUI 保存已走通；传输完成后 Activity 内仍可观察到临时 URI grant，`force-stop` 后重启 Relay 才清空 `readUriPermissions/writeUriPermissions`。任务结束立即释放、拒绝权限提示和分享仍待执行。 |
 | A-12 | Vault 锁定和重开 | 锁定后秘密不可读取；正确解锁恢复；错误密码/损坏 bundle 不覆盖旧数据 | 待执行 |
 | A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行 |
@@ -273,3 +273,9 @@
 
 - `npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows`、Android `:app:testDebugUnitTest :app:assembleDebug`、定向 Web/native 31 测试均通过；全量 `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 为 161 个文件通过、1 个跳过，731 个测试通过、2 个跳过。
 - 当前交接结论：代码和技术预览制品已可复现，真实服务器已验证 Android 原生大文件上传的成功/取消/暂停续传边界；A-03～A-09、A-11～A-17、Windows 升级/崩溃/打包后完整任务链、签名及持久制品来源仍保持未完成。
+
+## 12. 2026-09-19 URI 权限复核与 32 MiB 下载续验（提交 `b094ee9`）
+
+- 当前 Debug APK：`8,633,755` bytes，SHA-256 `42F5C183FB0CB4F6DAAAFA0825E8F3C41408B7CEF39A7F92390016AB85A6F19F`；`2407FRK8EC`、`25091RP04C` 均重新安装成功。Android JVM 单测与 `assembleDebug` 在 JDK 21 / Gradle 9.3.1 / offline / 单 worker 下成功。
+- `25091RP04C` 在真实主机 `106.14.61.92:22` 上下载 `/tmp/relay-native-32m.bin` 到 `Download/relay-native-32m.bin`，Transfer Center `已完成 · 100%`；最终大小 `33,554,432` bytes，设备端 SHA-256 `83ee47245398adee79bd9c0a8bc57b821e92aba10f5f9ade8a5d1fae4d8c4302`，与远端一致。
+- 新增的 Activity/application 双重 revoke best-effort 已随本 APK 验证，但传输完成后 `dumpsys activity permissions` 仍显示当前 `MainActivity` 持有选择 URI 的临时 grant；`force-stop cn.ayan.relay` 后重启才清空。该结果记录为 Android/MIUI 临时授权边界，A-11 仍为 `待执行`，不宣称立即释放通过。

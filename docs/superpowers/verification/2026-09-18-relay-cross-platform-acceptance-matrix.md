@@ -66,3 +66,8 @@
 - `2407FRK8EC` 在用户提供的 `106.14.61.92:22`、账号 `t2` 上完成 32 MiB 上传，远端大小 `33,554,432` bytes、SHA-256 `83ee47245398adee79bd9c0a8bc57b821e92aba10f5f9ade8a5d1fae4d8c4302`；取消约 35% 后保留既有完整目标且无 staging，暂停/继续从约 11 MiB 断点完成。该结果是 A-10 的实机增量证据，未把整个 A-10/A-11 标成通过。
 - Windows `package:windows` 已固定使用本地 `node_modules/electron/dist`，避免 Electron 下载超时，并将 NSIS/portable 分目录输出。当前制品：NSIS `127,632,075` bytes / SHA-256 `979E3D6CECD611AE99F3DE3CA41D3E6A298A5906196B685B61318A5853FDF20F`；portable `113,552,550` bytes / SHA-256 `82F8D40377037DF2392CFF2B20F7ED0E537C7011D118EEDFC99C01B37C0CAC7D`；均为 `NotSigned`。Electron ABI 149 的 `argon2`、`better-sqlite3`、`cpu-features` 加载通过，NSIS 安装/启动/卸载通过。
 - 当前自动化门禁：`npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows`、Android `:app:testDebugUnitTest :app:assembleDebug`、定向 Web/native 31 测试和全量 Web/Server 731 测试通过（161 文件通过、1 跳过；2 测试跳过）。剩余门禁仍包括 Android A-03～A-09、A-11～A-17、Windows 升级迁移/崩溃恢复/打包后完整任务链，以及签名和持久制品来源。
+
+## 2026-09-19 URI 权限复核与 32 MiB 下载续验（提交 `b094ee9`）
+
+- 当前 APK SHA-256 为 `42F5C183FB0CB4F6DAAAFA0825E8F3C41408B7CEF39A7F92390016AB85A6F19F`；两台 Android 真机均重新安装成功。`25091RP04C` 从用户提供的真实主机下载 32 MiB 文件到本机，大小与 SHA-256 均一致，Transfer Center 显示 100%。
+- Android executor 已做 Activity/application 双重 revoke best-effort，但真实设备在任务结束后仍显示 Activity-owned 临时 URI grant，只有 force-stop 后清空。因此 A-11 继续保持 `🟡/待执行`，不能按代码调用或传输成功替代权限释放验收。
