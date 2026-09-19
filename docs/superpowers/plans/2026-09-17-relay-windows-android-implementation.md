@@ -372,3 +372,10 @@
 - Android instrumentation 新增 `importsTheFullFixedVectorThroughChunkedAndroidBridgeWithoutPartialWrites`：固定向量经过 1 KiB 分块导入、预览、应用，覆盖错误密码、篡改 authTag、无部分写入、Host/Group/Identity/Profile 计数、标签和私钥凭据恢复。该测试已随 `npm run test:android:local` 编译进 AndroidTest APK，但本机无设备，尚未执行 instrumentation。
 - Vitest 配置固化 `testTimeout=15000` 与 `hookTimeout=15000`；标准命令 `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 现已通过 `162` 文件、`745` 测试（`1/2` 跳过）。这是对低内存主机串行隔离启动负载的验证入口修正，不改变业务超时逻辑。
 - 提交后仍未触发 Android 安装、卸载、`pm clear` 或授权；当前 APK hash 不变。设备恢复后继续按统一批次保留数据部署，再执行 A-01～A-17 全量回填。
+
+## 2026-09-20 独立 Android 模拟器 instrumentation 全量回归
+
+- 为验证 `0766a9b` 新增的固定向量分块导入测试，启动独立 AVD `homeops-api35`（Android 35、x86_64、2 GB、serial `emulator-5554`），执行 `:app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`。
+- Gradle 返回 `BUILD SUCCESSFUL`；`cn.ayan.relay.AndroidBundlePayloadInstrumentedTest` 共 `9` 个测试，`9/9` 通过、`0` 跳过、`0` 失败。`importsTheFullFixedVectorThroughChunkedAndroidBridgeWithoutPartialWrites` 已实际执行并通过，包含 1 KiB 分块、错误密码/篡改 authTag 无写入以及完整 apply 字段断言。
+- 该结果是独立模拟器的自动化证据，不替代两台 Android 真机的安装保留数据验证、A-01～A-17 人工清单或 Android→Web/Windows 回传。执行时 ADB 列表只有 `emulator-5554`，没有向用户的手机/平板部署，也没有卸载、`pm clear` 或改动真机数据。
+- 当前仍未关闭的门禁包括 A-04、A-05～A-08、A-11、A-15、A-17 的真机/跨端证据，以及 Windows 签名、升级/回滚、崩溃恢复和持久制品来源。后续真机恢复后继续按统一批次一次部署，不按单个问题重复安装。

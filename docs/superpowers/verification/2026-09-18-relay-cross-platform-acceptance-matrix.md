@@ -313,3 +313,13 @@
 | Android 设备状态 | 未改变 | `adb devices -l` 仍为空；本批次没有安装、卸载、`pm clear` 或运行时授权。 |
 
 该补充只提高自动化覆盖和回归入口稳定性，不关闭 A-17 的 Android→Web/Windows 实机回传，也不改变 A-01～A-17 真机验收边界。
+
+## 2026-09-20 独立 Android 模拟器 instrumentation 回归
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Android full instrumentation | 通过（独立模拟器） | AVD `homeops-api35`（Android 35、x86_64、2 GB，`emulator-5554`）执行 `:app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`，`AndroidBundlePayloadInstrumentedTest` 为 `9/9` 通过、`0` 跳过、`0` 失败；固定向量 chunked import→preview→apply 测试实际执行通过。 |
+| Android 真机部署 | 未执行 | 本轮 ADB 只有独立模拟器，没有用户手机/平板；未向真机安装、卸载、`pm clear` 或修改数据。真机恢复后仍使用 `adb push` + `pm install -r --user 0`，不使用 `-g`，按批次一次部署。 |
+| A-01～A-17 / A-17 | 未整体通过 | 模拟器自动化不能替代真机 UI、生命周期、URI grant、低内存和 Android→Web/Windows 实际回传；完整跨端闭环、冲突及旧数据不变性仍缺目标设备证据。 |
+
+本条只补充自动化模拟器证据，不改变真机验收和 Windows 签名/升级/持久制品来源的未完成状态。

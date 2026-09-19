@@ -534,3 +534,17 @@
 - AndroidTest 新增固定完整向量的 chunked import→preview→apply 回归，覆盖 1 KiB 分块、错误密码、篡改 authTag、无部分写入以及 Host/Group/Identity/Profile/标签/私钥字段。它已编译进 AndroidTest APK；没有设备时不记录为 instrumentation 通过。
 - Vitest 已在配置中固化 15 秒测试与 hook 超时；标准串行命令 `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 通过 `162` 文件、`745` 测试，分别跳过 1 和 2 项。
 - 本批次仍不安装、不卸载、不清理 Android 数据。设备恢复后只执行一次 `npm run install:android:debug -- <serial> <apk-path>`，随后按 A-01～A-17 全量测试；A-17 真机双向回传、A-11 即时 URI grant、Windows 签名/升级/持久制品来源仍是未闭环门禁。
+
+## 38. 2026-09-20 独立 Android 模拟器全量 instrumentation 交接
+
+### 自动化结果
+
+- 设备为独立本机 AVD `homeops-api35`，Android 35、x86_64、2 GB，ADB serial `emulator-5554`；该设备不是用户提供的手机或平板。
+- 在 `apps/android` 执行 `node run-gradle.mjs :app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`，Gradle 返回 `BUILD SUCCESSFUL`。
+- `cn.ayan.relay.AndroidBundlePayloadInstrumentedTest` 报告 `9` 个测试全部通过，`0` 跳过、`0` 失败。其中 `importsTheFullFixedVectorThroughChunkedAndroidBridgeWithoutPartialWrites` 实际覆盖并通过 1 KiB 分块导入、错误密码、篡改 authTag 无部分写入和完整实体字段恢复。
+
+### 验收边界
+
+- 本条仅作为 Android 自动化回归证据，不回填两台真机的 A-01～A-17，也不关闭 A-17 的 Android→Web/Windows 实际导出回传、Windows 导入、冲突和旧数据不变性验收。
+- 本轮没有向真机安装、卸载、`pm clear` 或修改已有数据。真机恢复后继续使用 `npm run install:android:debug -- <serial> <apk-path>`，由脚本执行 `adb push` + `pm install -r --user 0`，不申请 `-g`、不卸载、不清数据、不循环重装，然后一次性按清单回归。
+- Windows 签名、升级/回滚、崩溃恢复和持久制品来源仍保持未闭环；不能因本次模拟器 `9/9` 通过宣称跨平台验收完成。
