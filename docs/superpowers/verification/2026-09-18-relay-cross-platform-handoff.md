@@ -390,6 +390,15 @@
 - `25091RP04C` 实机复测：force-stop/重启、Vault 解锁后，`Provided Acceptance Host`/Console 自动恢复，未出现 `.terminal-recovery` 或“此 Console 需要重新连接”，状态点绿色；真实测试主机执行 `echo FINAL_RESTART_INPUT_OK_25091` 并回显成功。
 - `2407FRK8EC` 本轮设备处于系统锁屏（`isKeyguardShowing=true`），未能进入 Relay UI；因此只记录安装成功，不记录该设备的自动恢复通过。设备解锁后需重新执行 A-05 重启恢复及命令回显，并继续完成复制/粘贴、网络切换、生命周期和其余 A-01～A-17 清单。
 
+## 2026-09-20 最新批次：移动锁入口与启动恢复竞态
+
+- Web/Server 全量：Vitest `162/163` 文件（`162` 通过、`1` 跳过），`740/742` 测试通过；Playwright Chromium `5/5`；typecheck、lint、build、build:windows 均通过。
+- 产品修复：启动/解锁的 workspace hydration 完成前不展示可操作 Server 页面，避免异步恢复把用户操作入口卸载；窄屏终端顶部新增紧凑可见的 Vault 锁定入口。Web 320px/390px 终端回归已通过。
+- Android 构建产物：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，`8,305,939` bytes，SHA-256 `72E538719BF2C926CB3CC0602BE384B641FCD34C92B886C9D3B6ECB21973B683`。`npm run build:android:debug` 已在 JDK 21、SDK、Gradle wrapper 8.14.3、offline、单 worker 下成功；`apps/android/run-gradle.mjs` 已消除 Windows 下 `./gradlew` 启动失败。
+- Android 部署约束：遵循“不卸载、不反复安装”的要求，本批次没有安装新 APK。只读状态为：2407 mDNS 设备在线但仍运行旧 APK；25091 `192.168.1.3:46545` 当前 offline，且 `pm path cn.ayan.relay` 无结果。待 25091 恢复 ADB/解除安装限制后，再用该 APK 和测试 APK 做一次统一部署与 A-01～A-17 全量回归。
+- Windows 最新制品：NSIS `127,554,507` bytes / SHA-256 `CF6375567AB6FB471D19C6E97ABC74E9BA1EE821595F1E88A3D65664653110A3`；Portable `113,554,529` bytes / SHA-256 `DF17F53536DBB336039406DB766C15F2DE2D6F17E7DFC350BEE150D358766F90`；两者 `NotSigned`。签名、升级迁移、持久制品来源仍为发布阻塞。
+- 本批次未改变验收边界：Android A-04 完整失败矩阵/A-06 网络切换/A-08 软键盘旋转安全区/A-11 URI 释放/A-15 低内存/A-17 双向 bundle，以及 Windows 完整发布任务链仍需后续统一验收。
+
 ## 28. 2026-09-19 当前 Windows 制品与 Android 2407 续验
 
 - 当前源码 `9150f85`：`npm run build`、`npm run build:windows`、`npm run package:windows` 均成功；全量 Vitest `161` 个文件通过、`1` 个跳过，`738` 个测试通过、`2` 个跳过。

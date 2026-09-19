@@ -215,7 +215,17 @@ test.describe('host to terminal journey', () => {
     await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
     await page.getByRole('button', { name: '关闭偏好设置' }).click();
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible({ timeout: 15_000 });
+    const serverHeadingAfterReload = page.getByRole('heading', { name: 'Server', exact: true });
+    const terminalBackAfterReload = page.getByRole('button', { name: '← Server 列表', exact: true });
+    let restoredView: 'loading' | 'servers' | 'terminal' = 'loading';
+    await expect.poll(async () => {
+      restoredView = await serverHeadingAfterReload.isVisible()
+        ? 'servers'
+        : await terminalBackAfterReload.isVisible() ? 'terminal' : 'loading';
+      return restoredView;
+    }, { timeout: 15_000 }).toMatch(/servers|terminal/u);
+    if (restoredView === 'terminal') await terminalBackAfterReload.click();
+    await expect(serverHeadingAfterReload).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'tokyo-day');
     await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
     await expect(page.locator('html')).toHaveAttribute('data-relay-theme', 'tokyo-day');
@@ -244,6 +254,7 @@ test.describe('host to terminal journey', () => {
       expect(shortViewportLayout.bodyWidth).toBeLessThanOrEqual(shortViewportLayout.width);
       expect(shortViewportLayout.layoutHeight).toBeGreaterThan(260);
       expect(shortViewportLayout.topbarHeight).toBeLessThanOrEqual(38);
+      await expect(page.getByRole('button', { name: 'Vault 已解锁，点击锁定' })).toBeVisible();
     }
   });
 });

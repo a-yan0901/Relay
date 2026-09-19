@@ -198,3 +198,18 @@
 | 跨端 bundle A-17 | 未闭环 | Android 新增 bundle round-trip 测试已编译，但本轮 connected instrumentation 未安装成功；Android→Web/Windows 实机回传仍缺证据。 |
 
 本轮遵循批量验收原则：先执行同一版本全量检查，集中记录问题，再统一构建/部署；后续不因单个缺陷单独卸载、重装或重新打包。
+
+## 2026-09-20 移动锁入口与启动恢复竞态修复后批次
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Web / Server 自动化 | 通过 | Vitest `162/163` 文件（`162` 通过、`1` 跳过），`740/742` 测试通过；Playwright Chromium `5/5`；typecheck、lint、build、build:windows 通过。 |
+| 启动恢复竞态 | 通过 | hydration 完成前不再展示可操作 Server 页面；刷新后工作区恢复不会把 Server 操作短暂卸载。host-to-terminal 和 SSH productivity 全量 E2E 通过。 |
+| 移动 Vault 锁入口 | Web 通过 / Android 待部署 | 320px/390px 终端顶部锁按钮可见、可定位且为 `display:flex`；Android 新 APK 已包含修复，但本批次未重复安装，尚无新 APK 真机证据。 |
+| Windows 安装包 | 部分通过 | NSIS `127,554,507` bytes / `CF6375567AB6FB471D19C6E97ABC74E9BA1EE821595F1E88A3D65664653110A3`；Portable `113,554,529` bytes / `DF17F53536DBB336039406DB766C15F2DE2D6F17E7DFC350BEE150D358766F90`；均 `NotSigned`。 |
+| Android APK 构建 | 通过 | `npm run build:android:debug` 在 JDK 21/SDK、Gradle wrapper 8.14.3、offline、单 worker 下成功；APK `8,305,939` bytes / `72E538719BF2C926CB3CC0602BE384B641FCD34C92B886C9D3B6ECB21973B683`。 |
+| Android 2407 真机 | 旧版本部分通过 | 设备仍在线且已安装旧 APK；本轮不重装。此前旧 APK 的 Vault/Host Key/SSH/SFTP CDP 主链路有效，新 hydration/锁入口未在设备上验收。 |
+| Android 25091 真机 | 阻塞 | 当前 ADB serial `192.168.1.3:46545` 为 offline，且只读 `pm path cn.ayan.relay` 无结果；不重复触发安装，待设备侧恢复 ADB/解除安装策略。 |
+| 跨端 bundle A-17 | 未闭环 | 本轮没有设备部署，Android→Web/Windows 回传和实机冲突验收仍缺证据。 |
+
+本批次继续遵循批量验收原则：先集中修复 hydration、移动锁入口和 Windows Gradle 启动器，再统一构建；没有因单个问题卸载或重复安装 Android。A-04、A-06、A-08、A-11、A-15、A-17 以及 Windows 签名/升级/持久制品来源仍保持未完成。

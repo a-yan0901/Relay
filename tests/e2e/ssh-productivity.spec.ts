@@ -122,7 +122,7 @@ test.describe('SSH productivity boundaries', () => {
 
     await waitForReady(page);
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-    await expect(page.getByText(/网络已断开/u)).toBeVisible();
+    await expect(page.getByText('网络已断开，终端会话将在恢复后自动重连；未提交的操作请稍后重试。', { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 320, height: 640 });
     const layout = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: window.innerWidth }));
     expect(layout.width).toBeLessThanOrEqual(layout.viewport);

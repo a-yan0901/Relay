@@ -257,6 +257,15 @@
 - Android 转移验证边界：固定 bundle 已完成 Node → Android 解密/解析；真实设备还完成 32 MiB 上传、取消、暂停/继续和下载哈希校验。Android → Web/Windows 真实导出回传、Windows 导入、完整冲突策略仍未完成；URI 任务结束立即释放、拒绝权限与分享仍是 A-11 阻塞项。
 - 当前发布阻塞仍包括：A-04 完整密码/私钥失败矩阵和系统备份审计，A-06 网络切换，A-08 软键盘/旋转/安全区，A-11 URI 权限，A-15 长时低内存，A-17 双向 bundle；Windows 升级迁移、签名、持久制品来源和打包后完整任务链也未完成。继续执行时必须逐项回填证据，不能以单元测试或状态点变绿替代真实任务结果。
 
+## 2026-09-20 移动锁入口与启动恢复竞态修复后复验
+
+- 根因：启动/解锁时 `state.phase` 先进入 ready，异步 `loadWorkspace()` 尚未完成，Server 页面短暂可操作；工作区恢复完成后又自动切回 Console，造成用户点击入口被卸载。现在 hydration 完成前显示 Loading，后台云端拉取保持当前页面，不再把恢复过程暴露为可操作竞态。
+- 移动端锁入口修复：窄屏终端顶部保留紧凑、可见的 Vault 锁定按钮（`display:flex`、锁图标伪元素、原有 aria-label/title 不变）；新增 CSS 单测和 320px/真实终端浏览器回归。
+- Web/Server 本批次全量：Vitest `162` 个文件通过、`1` 个跳过，`740` 个测试通过、`2` 个跳过；Playwright Chromium `5/5`；`typecheck`、`lint`、`build`、`build:windows` 通过。新增移动锁回归与刷新恢复语义测试均通过。
+- Android 构建：JDK 21、Android SDK、Gradle wrapper 8.14.3、offline、单 worker；修正 `apps/android/run-gradle.mjs` 使 Windows/Unix 自动选择 `gradlew.bat`/`gradlew`。`npm run build:android:debug` 在显式 SDK 环境下成功，当前 APK `8,305,939` bytes，SHA-256 `72E538719BF2C926CB3CC0602BE384B641FCD34C92B886C9D3B6ECB21973B683`。
+- 按最新指示，本批次未卸载或重复安装 Android。只读复核显示 `2407FRK8EC` 仍有旧 APK，`25091RP04C` 当前 ADB 为 offline 且 `pm path cn.ayan.relay` 无结果；新 APK 尚未部署到设备，故移动锁入口和本批次 hydration 修复仍需在解除设备限制后统一部署验收。
+- Windows 最新 NSIS `127,554,507` bytes / SHA-256 `CF6375567AB6FB471D19C6E97ABC74E9BA1EE821595F1E88A3D65664653110A3`；Portable `113,554,529` bytes / SHA-256 `DF17F53536DBB336039406DB766C15F2DE2D6F17E7DFC350BEE150D358766F90`；Authenticode 均为 `NotSigned`。Windows 签名、升级迁移、持久制品来源和完整发布任务链仍未完成。
+
 ## 2026-09-19 Android Console 自动恢复修复与双设备复测
 
 - 根因已确认：`TerminalPanel` 对恢复标签传入 `recoveryStatus="needs-reopen"` 时显式设置了 `autoConnect: false`，同时把旧 native Shell 失效状态直接渲染为“此 Console 需要重新连接”，把本应由客户端完成的新 Shell 创建交给用户。

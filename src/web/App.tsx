@@ -431,9 +431,11 @@ export const App = ({ runtime }: AppProps) => {
     savePreferences(preferences, preferenceStorage ?? null);
   }, [preferenceStorage, preferences]);
 
-  const loadWorkspace = useCallback(async (options: { openTerminalView?: boolean } = {}): Promise<void> => {
+  const loadWorkspace = useCallback(async (options: { openTerminalView?: boolean; resetHydration?: boolean } = {}): Promise<void> => {
     const loadRequest = workspaceLoadRequestRef.current + 1;
     workspaceLoadRequestRef.current = loadRequest;
+    const resetHydration = options.resetHydration ?? true;
+    if (resetHydration) setWorkspaceHydrated(false);
     try {
       const negotiatedCapabilities = await runtime.negotiateCapabilities().catch(() => runtime.capabilities);
       setCapabilities(negotiatedCapabilities);
@@ -477,6 +479,7 @@ export const App = ({ runtime }: AppProps) => {
       lastSavedWorkspaceRef.current = JSON.stringify({ ...workspace, version: undefined });
       setWorkspaceHydrated(true);
     } catch (error) {
+      if (resetHydration) setWorkspaceHydrated(true);
       dispatch({ type: 'error', message: messageFromError(error) });
     }
   }, [enqueueWorkspaceSave, persistTerminalDescriptors, runtime, sessionStorage]);
@@ -585,7 +588,7 @@ export const App = ({ runtime }: AppProps) => {
     try {
       const result = await runtime.cloudSync.sync();
       setCloudSyncResult(result);
-      if (result.status === 'pulled') await loadWorkspace({ openTerminalView: false });
+      if (result.status === 'pulled') await loadWorkspace({ openTerminalView: false, resetHydration: false });
     } catch (error: unknown) {
       setCloudSyncError(messageFromError(error));
     } finally {
@@ -1473,6 +1476,7 @@ export const App = ({ runtime }: AppProps) => {
     />
     {syncCenterOpen && accountSession && runtime.sync && <SyncCenter account={accountSession} sync={syncCenterState} capabilities={capabilities} vaultLocked syncPort={runtime.sync} devicesPort={runtime.devices} clipboard={runtime.platformServices?.clipboard} fileSave={runtime.platformServices?.fileSave} onSyncChange={setSyncState} onClose={() => setSyncCenterOpen(false)} />}
   </>;
+  if (!workspaceHydrated) return <LoadingView errorMessage={state.errorMessage} onRetry={retryBoot} />;
 
   return (
     <main className="app-shell" onContextMenu={handleAppContextMenu}>
