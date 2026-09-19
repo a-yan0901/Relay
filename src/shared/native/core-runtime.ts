@@ -2,7 +2,7 @@ import { Sha256 } from '../crypto/sha256.js';
 import { createCapabilitySet } from '../core/capabilities.js';
 import type { Capability, ClientPlatform, ConnectionProfile, HostListFilter, SftpEntry, SftpListOptions, SftpListPage, TransferJob, TransferRequest, TransferResumeRequest, CommandRun, CommandRunRequest, ActivityFilter, ActivityPage, IdentityMetadata, GroupNode, WorkspaceState, WorkspaceTemplate, WorkspaceTemplateInput, VaultStatus, ConnectionTestResult, Snippet, SnippetMetadata } from '../core/models.js';
 import type { HostMetadata } from '../validation.js';
-import type { AccountSessionPort, ActivityStore, BinarySource, CommandTransport, ConnectionProbe, DeviceTrustPort, FileTransport, GroupStore, HostStore, IdentityStore, ImportExportPort, PlatformServices, SecretRef, SecretStore, SessionEvent, SessionHandle, SessionTransport, SnippetStore, SyncPort, TerminalProfileStore, VaultSessionPort, WorkspaceStore, OpenShellRequest } from '../core/ports.js';
+import type { AccountSessionPort, ActivityStore, BinarySource, CommandTransport, ConnectionProbe, DeviceTrustPort, FileTransport, GroupStore, HostStore, IdentityStore, ImportExportPort, NativeUploadSource, PlatformServices, SecretRef, SecretStore, SessionEvent, SessionHandle, SessionTransport, SnippetStore, SyncPort, TerminalProfileStore, VaultSessionPort, WorkspaceStore, OpenShellRequest } from '../core/ports.js';
 import type { CoreRuntime } from '../core/runtime.js';
 import type { ImportApplyRequest, ImportApplyResult, ImportFormat, ImportPreview, ImportSourceFile, ExportOptions, VaultBundleApplyResult, VaultBundlePreview, VaultBundleResolution } from '../import/types.js';
 import type { TerminalProfile } from '../terminal-appearance.js';
@@ -600,6 +600,18 @@ class NativeFileTransport implements FileTransport {
     } finally {
       await iterator.return?.();
     }
+  }
+
+  pickUploadSource(): Promise<NativeUploadSource | null> {
+    return this.port.invoke('system.fileOpen.open', {});
+  }
+
+  async uploadFromSource(transferId: string, source: NativeUploadSource, resume?: TransferResumeRequest): Promise<TransferJob> {
+    return jobFromResult(await this.port.invoke('files.uploadFromSource', {
+      transferId,
+      sourceId: source.sourceId,
+      ...(resume === undefined ? {} : { resume })
+    }));
   }
 
   async download(transferId: string, resume?: TransferResumeRequest): Promise<AsyncIterable<Uint8Array>> {

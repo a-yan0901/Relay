@@ -88,6 +88,33 @@ describe('SftpWorkspace', () => {
     expect(await screen.findByRole('button', { name: '.env' })).toBeInTheDocument();
   });
 
+  it('routes a native upload picker to the active remote directory', async () => {
+    const user = userEvent.setup();
+    const onPickUpload = vi.fn(async () => {});
+    const fileTransport = {
+      list: vi.fn(async () => entries),
+      createDirectory: vi.fn(async () => {}),
+      rename: vi.fn(async () => {}),
+      remove: vi.fn(async () => {})
+    };
+
+    render(
+      <SftpWorkspace
+        hostId="host-1"
+        workspaceId="workspace-1"
+        remotePath="/srv"
+        fileTransport={fileTransport}
+        transferJobs={[]}
+        onPickUpload={onPickUpload}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '拖放文件到 /srv' }));
+
+    expect(onPickUpload).toHaveBeenCalledWith('/srv');
+    expect(screen.queryByLabelText('选择本地文件')).not.toBeInTheDocument();
+  });
+
   it('renders every returned entry and keeps the remote pane as the scroll owner', async () => {
     const manyEntries: SftpEntry[] = Array.from({ length: 120 }, (_, index) => ({
       name: `file-${String(index).padStart(3, '0')}.log`,

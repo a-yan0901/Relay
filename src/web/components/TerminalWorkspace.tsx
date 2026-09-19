@@ -63,6 +63,7 @@ export interface TerminalWorkspaceProps {
   onRenameSftp?: (hostId: string, from: string, to: string) => Promise<void>;
   onDeleteSftp?: (hostId: string, path: string) => Promise<void>;
   onUploadSftp?: (hostId: string, file: File, path: string) => Promise<void>;
+  onPickUploadSftp?: (hostId: string, path: string) => void | Promise<void>;
   onDownloadSftp?: (hostId: string, path: string, name: string) => Promise<void>;
   onCopyText?: (value: string) => Promise<void> | void;
   fileTransport?: Pick<FileTransport, 'list' | 'listPage' | 'createDirectory' | 'rename' | 'remove'>;
@@ -146,6 +147,7 @@ export const TerminalWorkspace = ({
   onRenameSftp,
   onDeleteSftp,
   onUploadSftp,
+  onPickUploadSftp,
   onDownloadSftp,
   onCopyText,
   fileTransport,
@@ -735,6 +737,7 @@ export const TerminalWorkspace = ({
               hostAliases={hostAliases}
               onRemotePathChange={handleRemotePathChange}
               onUploadFile={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined}
+              onPickUpload={onPickUploadSftp ? (path) => onPickUploadSftp(activeHostId, path) : undefined}
               onDownloadFile={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined}
               localFilesEnabled={localFilesEnabled}
               mutationsEnabled={sftpMutationsEnabled}

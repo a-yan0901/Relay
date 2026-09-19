@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import android.util.Base64
 import com.getcapacitor.JSObject
 import com.jcraft.jsch.ChannelSftp
@@ -17,6 +18,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.Collections
 import java.util.LinkedHashMap
@@ -93,6 +95,7 @@ internal class AndroidLocalExecutor(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, JSONObject>?): Boolean = size > MAX_RETAINED_REQUESTS
     })
     private val transfers = Collections.synchronizedMap(LinkedHashMap<String, AndroidTransfer>())
+    private val uploadSources = AndroidUploadSourceStore()
     private val externalPreviews = Collections.synchronizedMap(object : LinkedHashMap<String, PendingExternalPreview>(MAX_EXTERNAL_PREVIEWS, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PendingExternalPreview>?): Boolean = size > MAX_EXTERNAL_PREVIEWS
     })
@@ -154,6 +157,18 @@ internal class AndroidLocalExecutor(
         }
     }
 
+    override fun invokeFileOpenSelection(request: JSObject, uri: String, complete: (JSObject) -> Unit) {
+        if (closed.get()) {
+            complete(failure(request, "SERVICE_RESTARTED"))
+            return
+        }
+        try {
+            operationExecutor.execute { complete(runSafely(request, uri)) }
+        } catch (_: RejectedExecutionException) {
+            complete(failure(request, "OPERATION_INTERRUPTED", "本机任务队列已满，请稍后重试"))
+        }
+    }
+
     override fun invokeFileSaveSelection(request: JSObject, uri: String, complete: (JSObject) -> Unit) {
         if (closed.get()) {
             complete(failure(request, "SERVICE_RESTARTED"))
@@ -185,6 +200,7 @@ internal class AndroidLocalExecutor(
             }
             transfers.clear()
         }
+        uploadSources.clear()
         synchronized(fileWriters) {
             fileWriters.values.forEach { it.cancel() }
             fileWriters.clear()
@@ -243,6 +259,7 @@ internal class AndroidLocalExecutor(
             JSONObject.NULL
         }
         "system.confirm" -> failNative("CAPABILITY_UNAVAILABLE")
+        "system.fileOpen.open" -> openFileSource(selectedFileUri ?: failNative("CAPABILITY_UNAVAILABLE"))
         "system.fileSave.open" -> openFileWriter(payload, selectedFileUri ?: failNative("CAPABILITY_UNAVAILABLE"))
         "system.fileSave.write" -> writeFileWriter(payload)
         "system.fileSave.seek" -> seekFileWriter(payload)
@@ -293,6 +310,7 @@ internal class AndroidLocalExecutor(
         "files.listTransfers" -> listTransfers()
         "files.getTransfer" -> getTransfer(requiredText(payload, "transferId", 128))
         "files.upload" -> upload(payload)
+        "files.uploadFromSource" -> uploadFromSource(payload)
         "files.download" -> download(payload)
         "files.pauseTransfer" -> pauseTransfer(requiredText(payload, "transferId", 128))
         "files.cancelTransfer" -> cancelTransfer(requiredText(payload, "transferId", 128))
@@ -1539,6 +1557,30 @@ internal class AndroidLocalExecutor(
             }
         }
 
+    private fun openFileSource(selectedUri: String): JSONObject {
+        val uri = try { Uri.parse(selectedUri) } catch (_: Exception) { failNative("PROTOCOL_INVALID_MESSAGE") }
+        if (uri.scheme != ContentResolver.SCHEME_CONTENT || uri.authority.isNullOrEmpty()) failNative("CAPABILITY_UNAVAILABLE")
+        val metadata = try {
+            appContext.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) null else {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    val displayName = if (nameIndex >= 0) cursor.getString(nameIndex) else null
+                    val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) cursor.getLong(sizeIndex).takeIf { it >= 0L } else null
+                    displayName to size
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+        val name = try { AndroidNativeValidation.requireFileName(metadata?.first ?: "upload") } catch (_: Exception) { "upload" }
+        val source = uploadSources.put(uri.toString(), name, metadata?.second)
+        return JSONObject()
+            .put("sourceId", source.sourceId)
+            .put("name", source.name)
+            .put("size", source.size ?: JSONObject.NULL)
+    }
+
     private fun openFileWriter(payload: JSONObject, selectedUri: String): JSONObject {
         val name = AndroidNativeValidation.requireFileName(requiredText(payload, "name", 255))
         AndroidNativeValidation.requireMimeType(requiredText(payload, "mimeType", 128))
@@ -1783,7 +1825,126 @@ internal class AndroidLocalExecutor(
         return synchronized(transfer) { uploadLocked(payload, transfer) }
     }
 
-    private fun uploadLocked(payload: JSONObject, transfer: AndroidTransfer): JSONObject {
+    private fun uploadFromSource(payload: JSONObject): JSONObject {
+        requireUnlocked()
+        val transfer = getTransferRecord(requiredText(payload, "transferId", 128))
+        val source = uploadSources.take(requiredText(payload, "sourceId", 128)) ?: failNative("TRANSFER_NOT_FOUND")
+        val uri = try { Uri.parse(source.uri) } catch (_: Exception) { failNative("PROTOCOL_INVALID_MESSAGE") }
+        if (uri.scheme != ContentResolver.SCHEME_CONTENT || uri.authority.isNullOrEmpty()) failNative("CAPABILITY_UNAVAILABLE")
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(MAX_OUTPUT_CHUNK)
+        var input: InputStream? = null
+        var connection: AndroidJschConnection? = null
+        var sftp: ChannelSftp? = null
+        try {
+            synchronized(transfer) {
+                if (transfer.status == "cancelled" || transfer.status == "completed") failNative("TRANSFER_CANCELLED")
+                if (source.size != null && transfer.totalBytes != null && source.size != transfer.totalBytes) {
+                    failNative("TRANSFER_RESUME_INVALID")
+                }
+            }
+            input = try { appContext.contentResolver.openInputStream(uri) } catch (_: Exception) { null }
+                ?: failNative("CAPABILITY_UNAVAILABLE")
+            val host = requireHost(transfer.hostId)
+            connection = connectAndroidJsch(host, store, vault, false)
+            val opened = connection?.session?.openChannel("sftp") as? ChannelSftp ?: failNative("SFTP_CONNECTION_FAILED")
+            opened.setBulkRequests(4)
+            opened.connect(60_000)
+            sftp = opened
+            synchronized(transfer) {
+                transfer.connection = connection
+                transfer.sftp = opened
+            }
+            val resumeOffset = synchronized(transfer) { transfer.completedBytes }
+            var remaining = resumeOffset
+            var prefixVerified = resumeOffset == 0L
+            var count = input.read(buffer)
+            while (count >= 0) {
+                if (count > 0) {
+                    var start = 0
+                    if (remaining > 0L) {
+                        val skipped = minOf(remaining, count.toLong()).toInt()
+                        digest.update(buffer, 0, skipped)
+                        remaining -= skipped.toLong()
+                        start = skipped
+                        if (remaining == 0L) {
+                            val expectedChecksum = synchronized(transfer) { transfer.checksum }
+                            if (expectedChecksum == null || !expectedChecksum.equals(checksumSnapshot(digest), ignoreCase = true)) {
+                                failNative("TRANSFER_RESUME_INVALID")
+                            }
+                            prefixVerified = true
+                        }
+                    }
+                    if (start < count) {
+                        digest.update(buffer, start, count - start)
+                        val chunk = buffer.copyOfRange(start, count)
+                        try {
+                            synchronized(transfer) {
+                                if (transfer.status == "cancelled") failNative("TRANSFER_CANCELLED")
+                                if (transfer.status == "paused") return transferJson(transfer)
+                                if (!prefixVerified) failNative("TRANSFER_RESUME_INVALID")
+                                uploadLocked(JSONObject()
+                                    .put("transferId", transfer.id)
+                                    .put("data", Base64.encodeToString(chunk, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING))
+                                    .put("resume", JSONObject()
+                                        .put("transferId", transfer.id)
+                                        .put("expectedOffset", transfer.completedBytes)
+                                        .put("checksum", transfer.checksum ?: JSONObject.NULL))
+                                    .put("nextChecksum", checksumSnapshot(digest))
+                                    .put("final", false), transfer, opened)
+                            }
+                        } finally {
+                            chunk.fill(0)
+                        }
+                    }
+                }
+                synchronized(transfer) {
+                    if (transfer.status == "cancelled") failNative("TRANSFER_CANCELLED")
+                    if (transfer.status == "paused") return transferJson(transfer)
+                }
+                count = input.read(buffer)
+            }
+            if (remaining > 0L) {
+                failNative("TRANSFER_RESUME_INVALID")
+            }
+            synchronized(transfer) {
+                if (transfer.status == "cancelled") failNative("TRANSFER_CANCELLED")
+                if (transfer.status == "paused") return transferJson(transfer)
+                uploadLocked(JSONObject()
+                    .put("transferId", transfer.id)
+                    .put("data", "")
+                    .put("resume", JSONObject()
+                        .put("transferId", transfer.id)
+                        .put("expectedOffset", transfer.completedBytes)
+                        .put("checksum", transfer.checksum ?: JSONObject.NULL))
+                    .put("nextChecksum", checksumSnapshot(digest))
+                    .put("final", true), transfer, opened)
+            }
+            return synchronized(transfer) { transferJson(transfer) }
+        } catch (error: Throwable) {
+            markTransferFailed(transfer, error)
+            throw error
+        } finally {
+            buffer.fill(0)
+            try { input?.close() } catch (_: Exception) { }
+            synchronized(transfer) {
+                if (transfer.sftp === sftp) {
+                    transfer.sftp = null
+                    transfer.connection = null
+                }
+            }
+            try { sftp?.disconnect() } catch (_: Exception) { }
+            try { connection?.close() } catch (_: Exception) { }
+            try { appContext.revokeUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+        }
+    }
+
+    private fun checksumSnapshot(digest: MessageDigest): String {
+        val bytes = try { (digest.clone() as MessageDigest).digest() } catch (_: Exception) { failNative("SFTP_TRANSFER_FAILED") }
+        return bytes.joinToString("") { byte -> "%02x".format(Locale.ROOT, byte.toInt() and 0xff) }
+    }
+
+    private fun uploadLocked(payload: JSONObject, transfer: AndroidTransfer, activeSftp: ChannelSftp? = null): JSONObject {
         if (transfer.kind != "upload") failNative("TRANSFER_RESUME_INVALID")
         val resume = payload.optJSONObject("resume") ?: failNative("TRANSFER_RESUME_INVALID")
         val expectedOffset = longField(resume, "expectedOffset", 0L, Long.MAX_VALUE)
@@ -1797,33 +1958,80 @@ internal class AndroidLocalExecutor(
         if (!nextChecksum.matches(Regex("^[a-fA-F0-9]{64}$"))) failNative("TRANSFER_RESUME_INVALID")
         if (transfer.status == "cancelled" || transfer.status == "completed") failNative("TRANSFER_CANCELLED")
         transfer.status = "running"
+        transfer.errorCode = null
         try {
             if (bytes.isNotEmpty()) {
                 val host = requireHost(transfer.hostId)
-                withSftpValue(host) { sftp ->
+                val writeChunk: (ChannelSftp) -> Unit = { sftp ->
                     val mode = if (transfer.completedBytes == 0L) ChannelSftp.OVERWRITE else ChannelSftp.APPEND
-                    sftp.put(ByteArrayInputStream(bytes), transfer.targetPath, mode)
+                    sftp.put(ByteArrayInputStream(bytes), uploadRemotePath(transfer), mode)
                 }
+                if (activeSftp != null) writeChunk(activeSftp) else withSftpValue(host, writeChunk)
                 transfer.completedBytes += bytes.size.toLong()
             }
+            transfer.checksum = nextChecksum.lowercase(Locale.ROOT)
+            transfer.updatedAt = Instant.now().toString()
+            if (final) {
+                val host = requireHost(transfer.hostId)
+                val rename: (ChannelSftp) -> Unit = { sftp -> sftp.rename(uploadRemotePath(transfer), transfer.targetPath) }
+                if (activeSftp != null) rename(activeSftp) else withSftpValue(host, rename)
+                transfer.status = "completed"
+                recordActivity(
+                    "sftp_upload_succeeded",
+                    transfer.hostId,
+                    transfer.id,
+                    JSONObject().put("transferId", transfer.id).put("status", "succeeded")
+                )
+            }
+            persistTransfer(transfer)
+            val result = transferJson(transfer)
+            emitTransferProgress(transfer)
+            return result
+        } catch (error: Throwable) {
+            markTransferFailed(transfer, error)
+            throw error
         } finally {
             bytes.fill(0)
         }
-        transfer.checksum = nextChecksum.lowercase(Locale.ROOT)
-        transfer.updatedAt = Instant.now().toString()
-        if (final) {
-            transfer.status = "completed"
+    }
+
+    private fun uploadRemotePath(transfer: AndroidTransfer): String = "${transfer.targetPath}.relay-part-${transfer.id}"
+
+    private fun markTransferFailed(transfer: AndroidTransfer, error: Throwable) {
+        synchronized(transfer) {
+            if (transfer.status == "cancelled" || transfer.status == "completed" || transfer.status == "failed" || transfer.status == "paused" || transfer.status == "interrupted") return
+            transfer.status = "failed"
+            transfer.errorCode = when (error) {
+                is NativeVaultFailure -> error.code
+                is SftpException -> mapSftpError(error)
+                else -> mapJschError(error)
+            }
+            transfer.updatedAt = Instant.now().toString()
+            persistTransfer(transfer)
             recordActivity(
-                "sftp_upload_succeeded",
+                "sftp_${transfer.kind}_failed",
                 transfer.hostId,
                 transfer.id,
-                JSONObject().put("transferId", transfer.id).put("status", "succeeded")
+                JSONObject().put("transferId", transfer.id).put("status", "failed").put("reason", transfer.errorCode)
             )
+            emitTransferProgress(transfer)
         }
-        persistTransfer(transfer)
-        val result = transferJson(transfer)
-        emitTransferProgress(transfer)
-        return result
+    }
+
+    private fun deleteUploadStaging(transfer: AndroidTransfer) {
+        if (transfer.kind != "upload") return
+        try {
+            val host = requireHost(transfer.hostId)
+            withSftpValue(host) { sftp ->
+                try {
+                    sftp.rm(uploadRemotePath(transfer))
+                } catch (error: SftpException) {
+                    if (error.id != ChannelSftp.SSH_FX_NO_SUCH_FILE) throw error
+                }
+            }
+        } catch (_: Throwable) {
+            // Cancellation remains terminal even if the best-effort cleanup connection fails.
+        }
     }
 
     private fun download(payload: JSONObject): JSONObject {
@@ -1916,10 +2124,12 @@ internal class AndroidLocalExecutor(
         requireUnlocked()
         val transfer = getTransferRecord(id)
         return synchronized(transfer) {
+            if (transfer.status == "completed" || transfer.status == "cancelled") return@synchronized transferJson(transfer)
             transfer.status = "cancelled"
             transfer.updatedAt = Instant.now().toString()
             transfer.closeDownload()
             persistTransfer(transfer)
+            deleteUploadStaging(transfer)
             recordActivity(
                 "sftp_${transfer.kind}_cancelled",
                 transfer.hostId,

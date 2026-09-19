@@ -279,6 +279,35 @@ describe('TerminalWorkspace', () => {
     expect(restoredTerminalWorkspace.querySelector<HTMLElement>('.terminal-topbar-actions')?.style.display).toBe('');
   });
 
+  it('passes the active Host and remote path to a native upload picker', async () => {
+    const user = userEvent.setup();
+    const onPickUploadSftp = vi.fn(async () => {});
+    const fileTransport: Pick<FileTransport, 'list' | 'createDirectory' | 'rename' | 'remove'> = {
+      list: vi.fn(async () => []),
+      createDirectory: vi.fn(async () => {}),
+      rename: vi.fn(async () => {}),
+      remove: vi.fn(async () => {})
+    };
+    render(
+      <TerminalWorkspace
+        hosts={[host('host-1', 'Production')]}
+        terminals={[{ terminalId: 'tab-1', hostId: 'host-1', state: 'connected', reconnectDelayMs: 0, errorMessage: null }]}
+        activeTerminalId="tab-1"
+        onActivate={vi.fn()}
+        onClose={vi.fn()}
+        fileTransport={fileTransport}
+        transferJobs={[]}
+        onPickUploadSftp={onPickUploadSftp}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '远程文件' }));
+    await user.click(screen.getByRole('button', { name: '拖放文件到 /' }));
+
+    expect(onPickUploadSftp).toHaveBeenCalledWith('host-1', '/');
+    expect(screen.queryByLabelText('选择本地文件')).not.toBeInTheDocument();
+  });
+
   it('embeds the global header while keeping session actions out of the terminal bar', async () => {
     const user = userEvent.setup();
     const onLock = vi.fn();

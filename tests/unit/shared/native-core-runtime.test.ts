@@ -61,6 +61,28 @@ describe('native core runtime adapter', () => {
     expect(listeners.size).toBe(0);
   });
 
+  it('keeps Android file selection native and starts URI upload without WebView file bytes', async () => {
+    const calls: Array<{ operation: string; payload: unknown }> = [];
+    const invoke = vi.fn(async <T,>(operation: string, payload: unknown): Promise<T> => {
+      calls.push({ operation, payload });
+      if (operation === 'system.fileOpen.open') return { sourceId: 'source-1', name: 'large.bin', size: 32 * 1024 * 1024 } as T;
+      if (operation === 'files.createTransfer') return { id: 'transfer-native', kind: 'upload', hostId: 'host-1', sourcePath: 'large.bin', targetPath: '/tmp/large.bin', status: 'queued', completedBytes: 0, totalBytes: 32 * 1024 * 1024, createdAt: '2026-09-19T00:00:00.000Z', updatedAt: '2026-09-19T00:00:00.000Z' } as T;
+      if (operation === 'files.uploadFromSource') return { id: 'transfer-native', kind: 'upload', hostId: 'host-1', sourcePath: 'large.bin', targetPath: '/tmp/large.bin', status: 'completed', completedBytes: 32 * 1024 * 1024, totalBytes: 32 * 1024 * 1024, createdAt: '2026-09-19T00:00:00.000Z', updatedAt: '2026-09-19T00:00:00.000Z' } as T;
+      return undefined as T;
+    });
+    const port: NativeOperationPort = { invoke, subscribe() { return () => undefined; } };
+    const runtime = createNativeCoreRuntime({ platform: 'android', port });
+
+    const source = await runtime.files.pickUploadSource?.();
+    expect(source).toEqual({ sourceId: 'source-1', name: 'large.bin', size: 32 * 1024 * 1024 });
+    const transfer = await runtime.files.createTransfer({ kind: 'upload', hostId: 'host-1', sourcePath: source?.name ?? '', targetPath: '/tmp/large.bin', totalBytes: source?.size ?? null });
+    await expect(runtime.files.uploadFromSource?.(transfer.id, source!)).resolves.toMatchObject({ status: 'completed' });
+
+    expect(calls.map(({ operation }) => operation)).toEqual(['system.fileOpen.open', 'files.createTransfer', 'files.uploadFromSource']);
+    expect(calls.filter(({ operation }) => operation === 'files.upload')).toHaveLength(0);
+    expect(calls.find(({ operation }) => operation === 'files.uploadFromSource')?.payload).toEqual({ transferId: 'transfer-native', sourceId: 'source-1' });
+  });
+
   it('routes terminal output to one bounded event subscription', async () => {
     let emit: ((event: NativeEventFrame) => void) | undefined;
     const port: NativeOperationPort = {

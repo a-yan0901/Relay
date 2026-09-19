@@ -17,6 +17,7 @@ export interface SftpWorkspaceProps {
   hostAliases?: Readonly<Record<string, string>>;
   onRemotePathChange?: (path: string) => void;
   onUploadFile?: (file: File, path: string) => Promise<void>;
+  onPickUpload?: (path: string) => void | Promise<void>;
   onDownloadFile?: (path: string, name: string) => Promise<void>;
   onCopyText?: (value: string) => Promise<void> | void;
   /** Whether this client can open a local file picker/drop target. */
@@ -40,6 +41,7 @@ export const SftpWorkspace = ({
   hostAliases,
   onRemotePathChange,
   onUploadFile,
+  onPickUpload,
   onDownloadFile,
   onCopyText,
   localFilesEnabled = true,
@@ -90,7 +92,7 @@ export const SftpWorkspace = ({
       </div>
       <div className="sftp-workspace-columns">
         {localFilesEnabled
-          ? <LocalFilePanel remotePath={currentPath} onFilesSelected={uploadFiles} disabled={uploading || onUploadFile === undefined} />
+          ? <LocalFilePanel remotePath={currentPath} onFilesSelected={uploadFiles} onPickUpload={onPickUpload ? () => onPickUpload(currentPath) : undefined} disabled={uploading || (onUploadFile === undefined && onPickUpload === undefined)} />
           : <section className="local-file-panel local-file-panel-unavailable" aria-label="本地文件">
             <div className="form-heading"><div><p className="eyebrow">LOCAL FILES</p><h2>本地文件</h2></div><span className="local-file-panel-count">不可用</span></div>
             <p className="local-file-panel-path">当前客户端不支持本地文件选择。</p>

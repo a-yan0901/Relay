@@ -32,6 +32,7 @@ class RelayNativePlugin : Plugin() {
             "vault.status", "vault.setup", "vault.unlock", "vault.lock",
             "system.clipboard.readText", "system.clipboard.writeText",
             "system.confirm", "system.openExternal",
+            "system.fileOpen.open",
             "system.fileSave.open", "system.fileSave.write", "system.fileSave.seek", "system.fileSave.close", "system.fileSave.cancel",
             "connection.test",
             "hosts.list", "hosts.get", "hosts.listProfiles", "hosts.getProfile", "hosts.create", "hosts.update", "hosts.delete", "hosts.clearHostKey",
@@ -40,7 +41,7 @@ class RelayNativePlugin : Plugin() {
             "workspace.load", "workspace.save", "workspace.listTemplates", "workspace.createTemplate", "workspace.deleteTemplate",
             "terminalProfiles.list", "terminalProfiles.getDefault", "terminalProfiles.create", "terminalProfiles.setDefault", "terminalProfiles.delete",
             "sessions.openShell", "sessions.reconnect", "sessions.write", "sessions.resize", "sessions.hostKeyDecision", "sessions.credential", "sessions.close",
-            "files.list", "files.listPage", "files.createDirectory", "files.rename", "files.remove", "files.createTransfer", "files.listTransfers", "files.getTransfer", "files.upload", "files.download", "files.pauseTransfer", "files.cancelTransfer", "files.retryTransfer",
+            "files.list", "files.listPage", "files.createDirectory", "files.rename", "files.remove", "files.createTransfer", "files.listTransfers", "files.getTransfer", "files.upload", "files.uploadFromSource", "files.download", "files.pauseTransfer", "files.cancelTransfer", "files.retryTransfer",
             "commands.start", "commands.get", "commands.cancel",
             "snippets.list", "snippets.get", "snippets.create", "snippets.update", "snippets.delete",
             "activity.list",
@@ -50,6 +51,7 @@ class RelayNativePlugin : Plugin() {
 
     interface Executor {
         fun invoke(request: JSObject, complete: (JSObject) -> Unit)
+        fun invokeFileOpenSelection(request: JSObject, uri: String, complete: (JSObject) -> Unit)
         fun invokeFileSaveSelection(request: JSObject, uri: String, complete: (JSObject) -> Unit)
         fun close() {}
     }
@@ -61,6 +63,7 @@ class RelayNativePlugin : Plugin() {
     }
     private val eventDrainScheduled = AtomicBoolean(false)
     private val confirmInFlight = AtomicBoolean(false)
+    private val fileOpenInFlight = AtomicBoolean(false)
     private val fileSaveInFlight = AtomicBoolean(false)
     @Volatile
     private var confirmDialog: AlertDialog? = null
@@ -76,6 +79,7 @@ class RelayNativePlugin : Plugin() {
         confirmDialog?.dismiss()
         confirmDialog = null
         confirmInFlight.set(false)
+        fileOpenInFlight.set(false)
         fileSaveInFlight.set(false)
         pendingEvents.clear()
         mainHandler.removeCallbacksAndMessages(null)
@@ -111,6 +115,10 @@ class RelayNativePlugin : Plugin() {
         }
         if (operation == "system.confirm") {
             showConfirm(call, request)
+            return
+        }
+        if (operation == "system.fileOpen.open") {
+            beginFileOpen(call, request)
             return
         }
         if (operation == "system.fileSave.open") {
@@ -207,6 +215,47 @@ class RelayNativePlugin : Plugin() {
         }
     }
 
+    private fun beginFileOpen(call: PluginCall, request: JSObject) {
+        if (!fileOpenInFlight.compareAndSet(false, true)) {
+            call.resolve(failureResponse(request, "OPERATION_INTERRUPTED", "已有文件选择对话框正在显示"))
+            return
+        }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(call, intent, "fileOpenActivity")
+        } catch (_: Exception) {
+            fileOpenInFlight.set(false)
+            call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE"))
+        }
+    }
+
+    @ActivityCallback
+    fun fileOpenActivity(call: PluginCall, result: ActivityResult) {
+        fileOpenInFlight.set(false)
+        val request = call.data
+        val uri = if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
+        if (uri == null) {
+            call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE", "已取消文件选择"))
+            return
+        }
+        val activeExecutor = executor
+        if (activeExecutor == null) {
+            call.resolve(failureResponse(request, "SERVICE_RESTARTED"))
+            return
+        }
+        try {
+            activeExecutor.invokeFileOpenSelection(request, uri.toString()) { response ->
+                mainHandler.post { call.resolve(response) }
+            }
+        } catch (_: Exception) {
+            call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE"))
+        }
+    }
+
     @ActivityCallback
     fun fileSaveActivity(call: PluginCall, result: ActivityResult) {
         fileSaveInFlight.set(false)
@@ -260,6 +309,11 @@ class RelayNativePlugin : Plugin() {
             if (!isSafeId(payload.optString("sessionId", ""))) return false
         }
         if (operation == "files.upload" && payload.optString("data", "").length > MAX_ENCODED_CHUNK_BYTES) return false
+        if (operation == "files.uploadFromSource") {
+            if (!isSafeId(payload.optString("transferId", "")) || !isSafeId(payload.optString("sourceId", ""))) return false
+            val resume = payload.optJSONObject("resume")
+            if (resume != null && (!isSafeId(resume.optString("transferId", "")) || resume.optLong("expectedOffset", -1L) < 0L)) return false
+        }
         if (operation == "imports.writeVaultImportChunk" && payload.optString("data", "").length > MAX_ENCODED_CHUNK_BYTES) return false
         if (operation == "system.fileSave.seek") {
             val writerId = payload.optString("writerId", "")

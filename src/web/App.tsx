@@ -27,7 +27,7 @@ import { RemoteWorkspacePanel } from './components/RemoteWorkspacePanel';
 import type { SftpOpenRequest } from './components/ServerContextMenu';
 import type { AccountSession, ActivityFilter, AuditEvent, BroadcastTargetSnapshot, CommandRun, CommandRunRequest, IdentityMetadata, OperationDiagnostic, SftpListPage, SftpListOptions, Snippet, SnippetMetadata, SyncState, TargetSelectionSource, TransferJob, WorkspaceTemplate } from '../shared/core/models';
 import { effectiveMaxPanes, supportsWorkspacePanes, type CapabilitySet } from '../shared/core/capabilities';
-import type { BinarySource, CloudSyncResult, FileWriter, NotificationPermission, NotificationPort } from '../shared/core/ports';
+import type { BinarySource, CloudSyncResult, FileWriter, NativeUploadSource, NotificationPermission, NotificationPort } from '../shared/core/ports';
 import type { CoreRuntime } from '../shared/core/runtime';
 import type { TerminalSessionSnapshot } from './hooks/use-terminal-session';
 import { useDialogFocus } from './hooks/use-dialog-focus';
@@ -259,6 +259,7 @@ export const App = ({ runtime }: AppProps) => {
   const [expiredRunIds, setExpiredRunIds] = useState<Set<string>>(new Set());
   const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
   const transferFilesRef = useRef(new Map<string, File>());
+  const transferSourcesRef = useRef(new Map<string, NativeUploadSource>());
   const downloadWritersRef = useRef(new Map<string, DownloadWriter>());
   const terminalBackHandlerRef = useRef<(() => boolean) | null>(null);
   const refreshedHostForTerminalRef = useRef(new Set<string>());
@@ -1037,6 +1038,24 @@ export const App = ({ runtime }: AppProps) => {
     }
   };
 
+  const handlePickUploadSftp = async (hostId: string, path: string): Promise<void> => {
+    if (!runtime.files.pickUploadSource || !runtime.files.uploadFromSource) throw new AppError('CAPABILITY_UNAVAILABLE', '当前客户端不支持原生文件选择');
+    const source = await runtime.files.pickUploadSource();
+    if (!source) return;
+    const targetPath = path === '/' ? `/${source.name}` : `${path}/${source.name}`;
+    const job = await runtime.files.createTransfer({ kind: 'upload', hostId, sourcePath: source.name, targetPath, totalBytes: source.size });
+    transferSourcesRef.current.set(job.id, source);
+    updateTransferJob(job);
+    try {
+      updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
+      updateTransferJob(await runtime.files.uploadFromSource(job.id, source));
+    } catch (error) {
+      const latest = await refreshTransferJob(job.id);
+      if (latest?.status === 'paused') return;
+      throw error;
+    }
+  };
+
   const handleDownloadSftp = async (hostId: string, sourcePath: string, name: string): Promise<void> => {
     const writer = await openDownloadWriter(name);
     const job = await runtime.files.createTransfer({ kind: 'download', hostId, sourcePath, targetPath: name });
@@ -1069,6 +1088,7 @@ export const App = ({ runtime }: AppProps) => {
   const handleCancelTransfer = (id: string): void => {
     const job = transferJobs.find((candidate) => candidate.id === id);
     if (job) updateTransferJob({ ...job, status: 'cancelled', updatedAt: new Date().toISOString() });
+    transferSourcesRef.current.delete(id);
     void runtime.files.cancelTransfer(id).then(() => refreshTransferJob(id));
   };
 
@@ -1088,7 +1108,16 @@ export const App = ({ runtime }: AppProps) => {
       updateTransferJob(job);
       if (job.kind === 'upload') {
         const file = transferFilesRef.current.get(id);
-        if (!file) return;
+        if (!file) {
+          if (!runtime.files.pickUploadSource || !runtime.files.uploadFromSource) return;
+          void runtime.files.pickUploadSource().then((source) => {
+            if (!source) return null;
+            transferSourcesRef.current.set(id, source);
+            updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
+            return runtime.files.uploadFromSource!(id, source, resumeSupported ? resumeRequestForJob(job) : undefined).then(updateTransferJob);
+          }).catch(() => refreshTransferJob(id));
+          return;
+        }
         updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
         void runtime.files.upload(id, fileToBinarySource(file), resumeSupported ? resumeRequestForJob(job) : undefined).then(updateTransferJob).catch(() => refreshTransferJob(id));
         return;
@@ -1392,6 +1421,7 @@ export const App = ({ runtime }: AppProps) => {
       setCommandRun(null);
       setTransferJobs([]);
       transferFilesRef.current.clear();
+      transferSourcesRef.current.clear();
       downloadWritersRef.current.clear();
     } catch (error) {
       dispatch({ type: 'error', message: messageFromError(error) });
@@ -1560,6 +1590,7 @@ export const App = ({ runtime }: AppProps) => {
             fileTransport={capabilities.supports('sftp.browse') ? runtime.files : undefined}
             sftpMutationsEnabled={capabilities.supports('sftp.entry-mutations')}
             onUploadSftp={capabilities.supports('sftp.transfer') && capabilities.supports('sftp.local-files') ? handleUploadSftp : undefined}
+            onPickUploadSftp={capabilities.supports('sftp.transfer') && capabilities.supports('sftp.local-files') && runtime.files.pickUploadSource && runtime.files.uploadFromSource ? handlePickUploadSftp : undefined}
             onDownloadSftp={capabilities.supports('sftp.transfer') ? handleDownloadSftp : undefined}
             onCopyText={handleCopyText}
             transferJobs={capabilities.supports('sftp.transfer') ? transferJobs : []}

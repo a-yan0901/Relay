@@ -69,6 +69,13 @@ export interface BinarySource {
   stream(): ByteStream;
 }
 
+/** An opaque platform-owned file selection; the URI and stream stay native. */
+export interface NativeUploadSource {
+  sourceId: string;
+  name: string;
+  size: number | null;
+}
+
 export type NotificationPermission = 'default' | 'granted' | 'denied';
 
 export interface NotificationRequest {
@@ -351,6 +358,9 @@ export interface FileTransport {
   getTransfer(transferId: string): Promise<TransferJob | null>;
   /** Resume arguments are optional so clients without `transfer.resume` can use a fresh transfer. */
   upload(transferId: string, source: BinarySource, resume?: TransferResumeRequest): Promise<TransferJob>;
+  /** Native clients may keep the selected URI and stream it without exposing file bytes to the WebView. */
+  pickUploadSource?(): Promise<NativeUploadSource | null>;
+  uploadFromSource?(transferId: string, source: NativeUploadSource, resume?: TransferResumeRequest): Promise<TransferJob>;
   download(transferId: string, resume?: TransferResumeRequest): Promise<ByteStream>;
   /** Optional browser fallback when no user-selected streaming writer exists. */
   directDownload?(transferId: string, name: string): Promise<void>;

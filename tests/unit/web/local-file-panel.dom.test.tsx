@@ -35,4 +35,15 @@ describe('LocalFilePanel', () => {
 
     expect(onFilesSelected).toHaveBeenCalledWith([file]);
   });
+
+  it('delegates Android source selection without creating a WebView file input', async () => {
+    const user = userEvent.setup();
+    const onPickUpload = vi.fn(async () => {});
+    render(<LocalFilePanel remotePath="/sdcard" onFilesSelected={vi.fn()} onPickUpload={onPickUpload} />);
+
+    await user.click(screen.getByRole('button', { name: '拖放文件到 /sdcard' }));
+
+    expect(onPickUpload).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText('选择本地文件')).not.toBeInTheDocument();
+  });
 });
