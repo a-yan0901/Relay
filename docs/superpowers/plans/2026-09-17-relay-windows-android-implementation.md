@@ -419,3 +419,8 @@
 - 已为非嵌入式主工作区恢复紧凑的锁按钮（保留既有 `aria-label`/`title`，仅在窄屏改为图标化显示），并新增 CSS 回归测试覆盖显示状态和最小触控宽度。
 - TDD 证据：先以缺失选择器得到预期失败，再实现后定向测试 `2/2`、关联 Web DOM 测试 `20/20`，`npm run build:web` 与 `npm run lint` 均通过。
 - 本次只改 Web 样式与测试，未重新安装、卸载、清理或授权 Android；待真实设备可用时随下一次统一交接批次部署，不把单个 UI 修复拆成一次设备重装。
+
+### Android 包构建交接（未部署）
+
+- 为确认该 Web 样式能进入 Android WebView 资源包，使用 session-only JDK 21 与 Android SDK 环境执行 `npm run build:android:debug`，返回 `BUILD SUCCESSFUL`（36s；73 tasks，21 executed，52 up-to-date）。
+- 新生成但未安装的 Debug APK 为 `8,655,609` bytes，SHA-256 `FA9986C4EE05D14FF7C1ADAAB49D9FD96E7E916209F5F6E33555F853470F6F44`；本轮没有 ADB 安装、卸载、`pm clear`、`-g` 或新增授权。

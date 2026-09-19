@@ -591,3 +591,9 @@
 - 发现并修复 `max-width: 620px` 下主工作区头部隐藏 Vault 锁按钮的问题；非嵌入式 `.secure-pill` 现在以紧凑图标按钮显示，既有 `aria-label`/`title` 不变，Console 嵌入式锁入口保持原样。
 - TDD 结果：缺少选择器时定向测试按预期失败；实现后 CSS 测试 `2/2`、关联 Web DOM 测试 `20/20`，`npm run build:web` 与 `npm run lint` 通过。
 - 交接策略：本轮不重新安装、卸载、清库或新增 Android 授权；实际设备验证纳入下一次统一部署与全量验收批次，避免为单个问题反复重装。
+
+### Android 包构建交接（未部署）
+
+- 为验证 Web 修复已同步进入 Android WebView 资源，使用 session-only JDK 21/Android SDK 执行 `npm run build:android:debug`，`BUILD SUCCESSFUL`（36s；73 tasks，21 executed，52 up-to-date）。
+- Debug APK：`8,655,609` bytes，SHA-256 `FA9986C4EE05D14FF7C1ADAAB49D9FD96E7E916209F5F6E33555F853470F6F44`。
+- 该 APK 仅构建未安装；恢复真机连接后按统一批次用数据保留方式部署，不执行卸载、`pm clear`、`-g` 或重复授权。

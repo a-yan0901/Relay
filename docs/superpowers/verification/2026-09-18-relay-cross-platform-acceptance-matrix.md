@@ -379,3 +379,11 @@
 | 窄屏主工作区 Vault 锁入口 | 代码修复通过 | `max-width: 620px` 下非嵌入式 `.secure-pill` 恢复为紧凑可见按钮，保留可访问名称与标题；终端嵌入式锁入口保持原行为 |
 | Web 回归验证 | 通过 | TDD 先红后绿；定向 CSS `2/2`、关联 Web DOM `20/20`，`npm run build:web`、`npm run lint` 通过 |
 | Android 真机 UI 验收 | 未完成 | 本轮未重新安装或清理 Android 数据；仍需在两台真机的统一部署批次中验证实际触控、旋转、安全区和生命周期 |
+
+### Android 包构建交接（未部署）
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Web 修复进入 Android 包 | 通过 | `npm run build:android:debug` 使用 session-only JDK 21/Android SDK，`BUILD SUCCESSFUL`，36s；73 tasks 中 21 executed、52 up-to-date |
+| Debug APK | 已生成，未部署 | `8,655,609` bytes，SHA-256 `FA9986C4EE05D14FF7C1ADAAB49D9FD96E7E916209F5F6E33555F853470F6F44` |
+| 设备数据保护 | 通过 | 本轮无 ADB install/uninstall、`pm clear`、`-g` 或新增授权；真机验证留到统一部署批次 |
