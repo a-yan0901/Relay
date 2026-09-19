@@ -323,3 +323,8 @@
 
 - 新增 Windows local runtime 回归：先创建缺少现代字段的旧版 `relay.sqlite`，再通过真实 `createWindowsLocalRuntime` 启动；启动迁移完成后，旧 Host、分组关系、显式连接配置和解析后的连接 profile 均保持可读。
 - `tests/unit/windows/local-runtime.test.ts` 定向套件 `11/11` 通过，新增跨 runtime 的分块导出→导入回归。该证据覆盖代码级启动迁移、数据保留和 Windows IPC bundle 往返，不等同于签名安装包从旧版本升级、回滚或崩溃恢复；后者仍需在 Windows 安装环境补验。
+
+## 2026-09-20 全量回归与设备路径复核
+
+- Web/Server 全量 Vitest：`162` 个测试文件通过、`1` 个跳过；`744` 个测试通过、`2` 个跳过（共 `746` 个测试）。本轮新增的 Windows 旧库迁移与 bundle 往返测试包含在该计数中；此前已通过的 `typecheck`、`lint` 和 Android 本地入口结果不变。
+- 本机 `adb devices -l` 仍为空。用户提供的测试主机只读复核显示：`t2` 会话没有可调用的 `adb` 命令，USB 设备只有 QEMU Tablet，没有 Android 真机；已有 ADB server 仅监听远端 `127.0.0.1:5037`，不能作为本机设备桥接。Android 真机 A-01～A-17 仍待设备路径恢复后统一部署验收。

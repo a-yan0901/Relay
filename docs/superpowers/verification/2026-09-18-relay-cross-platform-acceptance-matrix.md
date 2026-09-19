@@ -244,3 +244,13 @@
 | --- | --- | --- |
 | Windows local runtime 旧库迁移与 bundle 往返 | 通过 | `tests/unit/windows/local-runtime.test.ts` 创建缺少现代字段的旧版 SQLite，再由真实 `createWindowsLocalRuntime` 启动并自动迁移；另以两个 local runtime 验证分块导出→导入；Host、分组和显式/解析连接 profile 保持可读，定向测试 `11/11`。 |
 | Windows 安装包升级 | 未闭环 | 代码级迁移已有证据，但签名安装包的旧版本安装 → 新版本升级 → 数据/配置保留 → 回滚/崩溃恢复仍需在 Windows 安装环境验证；不因单测标记 Windows 发布门禁通过。 |
+
+## 2026-09-20 全量回归与设备路径复核
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Web / Server 全量 Vitest | 通过 | `162` 个测试文件通过、`1` 个跳过；`744` 个测试通过、`2` 个跳过（共 `746` 个测试）。新增 Windows 迁移和 bundle 往返测试已包含在内。 |
+| 本机 Android ADB | 阻塞 | `adb devices -l` 无设备，不能进行安装或 connected instrumentation。 |
+| 用户测试主机 Android 设备路径 | 阻塞 | `t2` 会话没有可调用的 `adb` 命令；USB 只有 QEMU Tablet，没有 Android 真机；已有 ADB server 仅监听远端 `127.0.0.1:5037`，没有可供本机使用的设备桥接。 |
+
+该复核证明的是设备路径缺失，不是 Android 产品测试失败；在设备恢复前不执行安装、卸载或数据清理。
