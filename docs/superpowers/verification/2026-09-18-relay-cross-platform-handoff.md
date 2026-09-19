@@ -567,3 +567,15 @@
 - GitHub Actions run `35472655232`（commit `6e3ed06`）全部成功：`npm ci`、typecheck、lint、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 和 artifact 上传均通过。
 - artifact 名称为 `Relay-Windows-main-6e3ed06aaa5e2e1b0297bfefc96c60e134f68f15`，压缩包大小 `240,656,840` bytes，保留至 `2026-12-18`；run 页面：`https://github.com/a-yan0901/Relay/actions/runs/35472655232`。
 - 该条补齐 Windows 持久制品来源交接；artifact 中的 Authenticode 仍为 `NotSigned`，Windows 签名、旧版本升级/回滚、崩溃恢复多轮和完整安装包任务链仍保持未闭环。
+
+## 2026-09-20 Android→Windows bundle 交接证据
+
+- 当前模拟器 `emulator-5554` 保持原安装和数据，通过 WebView CDP 调用已存在的 Android 原生 bridge 完成一次 bundle export；本轮没有卸载、`pm clear`、反复安装或新增运行时授权。
+- 合成 bundle：`1,401` bytes，SHA-256 `8a5f8ab17127cfe7c08479f746709e8dc2324524a2c9f698b3cd4a492eba39f4`；`webssh-vault` v1，Argon2id 参数 `19456/2/1/32`。不记录导出密码，不包含真实凭据。
+- Windows 侧使用隔离内存数据库 `createWindowsLocalRuntime({ dataDir: ':memory:' })`：预览得到 `1 Host / 0 Group / 0 Identity`、`conflicts=0`；应用结果为 `importedHosts=1`。
+- 错误导出密码、篡改 `payload.authTag` 均返回拒绝，拒绝后目标库无写入；再次预览得到 `1` 个 Host 冲突，按 `hostConflicts=skip`、`groupConflicts=reuse`、`identityConflicts=reuse` 应用后 `skippedHosts=1`，最终仍为 `1` Host。
+
+### A-17 状态更新
+
+- 本轮将 A-17 的“Android 导出→Windows local-runtime 导入、错误输入、冲突和原数据不变性”标记为自动化部分通过。
+- 尚未通过的边界：两台真实 Android 设备上的完整清单、Android→Web 实际导入、Windows 打包 UI 实际导入、Web/Windows→Android 反向导入，以及真实设备上的双向字段核对。因此 A-17 总项仍为“部分完成”，不能据此宣布跨端验收闭环。

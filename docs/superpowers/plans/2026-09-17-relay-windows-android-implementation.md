@@ -398,3 +398,11 @@
 - Chromium Web E2E `npm run test:e2e -- --project=chromium --workers=1`：`5/5` 通过，用时 `49.2s`，覆盖 Vault、Host Key、移动锁入口、SFTP/批量任务、布局恢复和 Console 自动重连。
 - GitHub Actions Windows run `35472655232`（commit `6e3ed06`）成功完成 checkout、`npm ci`、typecheck、lint、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 和 artifact 上传。artifact 为 `Relay-Windows-main-6e3ed06aaa5e2e1b0297bfefc96c60e134f68f15`，大小 `240,656,840` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35472655232`。
 - 该 CI 结果补齐 Windows 持久制品来源门禁，但 artifact manifest 仍记录 `NotSigned`；真实签名、旧版本升级/回滚、崩溃恢复多轮和完整安装包任务链仍未完成。
+
+## 2026-09-20 Android 导出到 Windows 本地 runtime 的跨端交接
+
+- 保留当前模拟器 `emulator-5554` 的已安装 APK 和 Vault/Host 数据，通过 WebView 原生桥直接执行一次 chunked bundle export；没有卸载、`pm clear`、重复安装或新增授权。
+- 仅使用合成 Host/凭据，导出的 Vault bundle 为 `1,401` bytes，SHA-256 为 `8a5f8ab17127cfe7c08479f746709e8dc2324524a2c9f698b3cd4a492eba39f4`；格式 `webssh-vault` v1，KDF 为 Argon2id（`memoryCost=19456`、`timeCost=2`、`parallelism=1`、`hashLength=32`）。导出密码不写入记录。
+- 在隔离的 Windows `createWindowsLocalRuntime({ dataDir: ':memory:' })` 中完成 Android→Windows 方向预览/应用：预览 `1 Host / 0 Group / 0 Identity`、无冲突；应用导入 `1 Host`。
+- 错误导出密码和篡改 `authTag` 均被拒绝，目标库在拒绝后保持零写入；再次预览同一 bundle 产生 `1` 个 Host 冲突，按 `skip/reuse` 应用后仍保持 `1` 台 Host，证明冲突策略和原数据不变。
+- 本条只补充自动化的 Android→Windows local-runtime 方向证据，不替代 Android 两台真机、打包后 Windows UI、Web 端导入和反向 Android 导入；A-17 仍保持部分完成。

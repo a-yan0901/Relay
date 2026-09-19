@@ -353,3 +353,15 @@
 | Windows 签名/升级发布 | 未整体通过 | manifest 仍为 `NotSigned`；旧版本安装包升级/回滚、签名和完整发布任务链仍需目标 Windows 环境补验。 |
 
 本条关闭的是 Web/Server 当前自动化证据和 Windows CI 可追溯制品来源，不改变 Android 真机和 Windows 签名/升级门禁。
+
+## 2026-09-20 Android→Windows bundle 交接复核
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Android 原生桥导出 | 通过 | 使用现有 `emulator-5554` 的已解锁 Vault；仅导出一次，未卸载、未清理数据、未重复授权安装 |
+| Windows local-runtime 预览/应用 | 通过 | 隔离内存库；`1 Host / 0 Group / 0 Identity`，首次无冲突并导入 1 Host |
+| 错误密码/篡改保护 | 通过 | 错误导出密码和篡改 `authTag` 均拒绝且无部分写入 |
+| 冲突与原数据不变 | 通过 | 重复预览得到 1 个 Host 冲突，`skip/reuse` 后仍为 1 Host |
+| A-17 完整验收 | 未完成 | 本轮只覆盖 Android→Windows local-runtime；两台真机、Web/打包 Windows UI、反向 Android 导入仍待执行 |
+
+- Bundle SHA-256：`8a5f8ab17127cfe7c08479f746709e8dc2324524a2c9f698b3cd4a492eba39f4`。该 bundle 只含合成测试数据，导出密码不记录。
