@@ -8,6 +8,7 @@ import { AppError } from '../../../src/shared/errors.js';
 import { openDatabase } from '../../../src/server/db/database.js';
 import { migrate } from '../../../src/server/db/migrations.js';
 import { SshSessionManager } from '../../../src/server/ssh/session-manager.js';
+import { OperationEventBus } from '../../../src/server/ws/operation-gateway.js';
 import type {
   SshAdapterPort,
   SshChannel,
@@ -73,10 +74,12 @@ const makeApp = async (serviceInstanceId = 'service-test', accountSyncEnabled = 
   migrate(database);
   databases.push(database);
   const adapter = new ChallengeAdapter();
+  const operationBus = new OperationEventBus();
   const manager = new SshSessionManager({ adapter, maxSessions: 4, detachGraceMs: 30_000 });
   const app = await buildApp({
     database,
     sshSessionManager: manager,
+    operationBus,
     serviceInstanceId,
     config: {
       nodeEnv: 'test',
@@ -90,7 +93,7 @@ const makeApp = async (serviceInstanceId = 'service-test', accountSyncEnabled = 
     }
   });
   apps.push(app);
-  return { app, adapter };
+  return { app, adapter, database, operationBus };
 };
 
 const listen = async (app: Awaited<ReturnType<typeof buildApp>>): Promise<string> => {
@@ -98,8 +101,8 @@ const listen = async (app: Awaited<ReturnType<typeof buildApp>>): Promise<string
   return address.replace(/^http/u, 'ws');
 };
 
-const connectSocket = (url: string, options: { cookie?: string; origin?: string } = {}): Promise<WebSocket> => new Promise((resolve, reject) => {
-  const socket = new WebSocket(`${url}/ws/terminal`, {
+const connectSocket = (url: string, options: { cookie?: string; origin?: string; path?: string } = {}): Promise<WebSocket> => new Promise((resolve, reject) => {
+  const socket = new WebSocket(`${url}${options.path ?? '/ws/terminal'}`, {
     headers: {
       ...(options.cookie ? { Cookie: options.cookie } : {}),
       ...(options.origin ? { Origin: options.origin } : {})
@@ -149,6 +152,28 @@ const nextJson = async <T>(socket: WebSocket): Promise<T> => {
   const message = await nextMessage(socket);
   return JSON.parse(Buffer.isBuffer(message) ? message.toString('utf8') : message) as T;
 };
+
+const expectNoMessage = (socket: WebSocket, timeoutMs = 250): Promise<void> => new Promise((resolve, reject) => {
+  const onMessage = (): void => {
+    cleanup();
+    reject(new Error('received an unexpected WebSocket message'));
+  };
+  const onError = (error: Error): void => {
+    cleanup();
+    reject(error);
+  };
+  const cleanup = (): void => {
+    clearTimeout(timer);
+    socket.off('message', onMessage);
+    socket.off('error', onError);
+  };
+  const timer = setTimeout(() => {
+    cleanup();
+    resolve();
+  }, timeoutMs);
+  socket.once('message', onMessage);
+  socket.once('error', onError);
+});
 
 const waitFor = async (predicate: () => boolean, timeoutMs = 1_000): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
@@ -276,6 +301,56 @@ describe('terminal WebSocket gateway', () => {
     expect(adapter.channels).toHaveLength(1);
     socket.send(JSON.stringify({ type: 'close' }));
     expect(await nextJson<{ type: string; state?: string }>(socket)).toEqual(expect.objectContaining({ type: 'status', state: 'closed' }));
+    socket.close();
+  });
+
+  it('binds the operations WebSocket to the authenticated account owner', async () => {
+    const { app, database, operationBus } = await makeApp('service-account-operations', true);
+    const setup = await app.inject({ method: 'POST', url: '/api/setup', headers: { origin: ORIGIN }, payload: { masterPassword: MASTER_PASSWORD } });
+    const vaultCookie = cookieFrom(setup);
+    const registered = await app.inject({
+      method: 'POST',
+      url: '/api/account/register',
+      headers: { origin: ORIGIN },
+      payload: { email: 'operations-owner@example.com', password: 'long enough password' }
+    });
+    const accountCookie = cookieFrom(registered);
+    const cookies = `${vaultCookie}; ${accountCookie}`;
+    const accountId = (database.prepare('SELECT id FROM accounts WHERE email = ?').get('operations-owner@example.com') as { id: string }).id;
+    const url = await listen(app);
+    const socket = await connectSocket(url, { cookie: cookies, origin: ORIGIN, path: '/ws/operations' });
+
+    const noDefaultEvent = expectNoMessage(socket);
+    operationBus.publishDiagnostic('default', {
+      operationId: 'default-owner-event',
+      hostId: 'host-default',
+      kind: 'command',
+      stage: 'command',
+      state: 'completed',
+      retryable: false,
+      nextAction: 'none',
+      errorCode: null,
+      startedAt: '2026-09-20T00:00:00.000Z',
+      endedAt: '2026-09-20T00:00:01.000Z'
+    });
+    await noDefaultEvent;
+
+    operationBus.publishDiagnostic(accountId, {
+      operationId: 'account-owner-event',
+      hostId: 'host-account',
+      kind: 'command',
+      stage: 'command',
+      state: 'completed',
+      retryable: false,
+      nextAction: 'none',
+      errorCode: null,
+      startedAt: '2026-09-20T00:00:00.000Z',
+      endedAt: '2026-09-20T00:00:01.000Z'
+    });
+    expect(await nextJson<{ type: string; diagnostic: { operationId: string } }>(socket)).toMatchObject({
+      type: 'diagnostic',
+      diagnostic: { operationId: 'account-owner-event' }
+    });
     socket.close();
   });
 
