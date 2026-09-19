@@ -14,7 +14,7 @@
 | SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；Android 真实主机证据包括两台设备 `/tmp` 各 19 项、本轮 `25091RP04C` 的 `/` 36 项和 `/tmp` 25 项；2407 真机 32 MiB 原生 URI 上传完成并校验哈希，取消保留既有目标且无 staging，暂停/继续从断点完成；25091 系统选择器上传与 DocumentsUI 下载均完成 100% | 两端真实 UI SFTP、重试/部分失败、完整 URI 任务边界和低内存 |
 | SFTP 单层滚动、终端最后一行可见 | ✅ | 🟡 | 🟡 | Web 窄视口几何断言 | Windows 窗口和 Android 软键盘/安全区 |
 | Vault 锁定、重开、任务恢复状态 | ✅ | 🟡 | 🟡 | Web/Windows/Android 本地实现与 JVM/DOM 测试 | 崩溃、重启、锁屏/进程回收 |
-| 主题、字号、grid/list 偏好持久化 | ✅ | 🟡 | 🟡 | Web E2E 主题持久化与第三方 `data-theme` 隔离 | 两端重启后视觉走查 |
+| 主题、字号、grid/list 偏好持久化 | ✅ | 🟡 | 🟡 | Web E2E 主题持久化与第三方 `data-theme` 隔离；Android 两台 Android 16 真机选择 Everforest/16px 后 force-stop、重启、解锁仍保持 | Windows 重启后视觉走查；Android grid/list、旋转、软键盘与完整视觉走查 |
 | Vault bundle v1 正反向导入导出 | ✅ | 🟡 | 🟡 | shared/native bundle、分块、错误输入测试；Android 已有 Node V1 加密 envelope 固定向量 | [交接任务书 A-17](./2026-09-18-relay-cross-platform-handoff.md) 的 Web↔Windows↔Android 完整 payload 固定向量实测 |
 | 原生安全边界：无 HTTP/cookie、IPC/bridge allowlist | ✅ | 🟡 | 🟡 | Windows policy/IPC 测试；Android bridge schema/JVM 测试 | 目标设备检查端口、日志、备份和 URI |
 | 低内存边界与产物 | ✅ | 🟡 | 🟡 | Web/Server/Windows 构建；NSIS/portable PE；Electron ABI 149 native load；Debug APK；单 worker 构建 | 目标平台 RSS/低内存、签名和持久制品来源；Android 设备内存采样 |
@@ -152,3 +152,10 @@
 - connected runner 清理应用后，首次重新安装曾在两台设备分别返回 `INSTALL_FAILED_USER_RESTRICTED`；再次触发安装后，两台设备均成功安装并通过 `pm path cn.ayan.relay` 复核。这只更新当前安装/原生测试状态，不把完整 Android 平台验收标为通过。
 - `android.loggingBehavior: 'none'` 修复了 Capacitor verbose bridge 可能记录插件 payload 的边界。`25091RP04C` 的合成哨兵复核中，logcat、WebView `localStorage`、`sessionStorage`、IndexedDB 均无匹配，manifest `allowBackup=false`；系统备份导出/恢复和长时间日志审计仍待执行，A-16 保持 `🟡`。
 - 相关脱敏证据：[Android 私密字段日志边界](./evidence/2026-09-19-android-secret-log-boundary.md)。A-04/A-06～A-17 未覆盖的人工边界以及 Windows 发布门禁继续保持原状态。
+
+## 2026-09-19 Android 内置主题同步与偏好重启复验
+
+- 根因已确认：Android 原生 terminal profile 只支持 `builtin:termius`，解锁时 `loadWorkspace` 读取默认 profile 会覆盖 Web 偏好中的非 Termius 主题；新增五套与 `src/shared/terminal-appearance.ts` 对齐的 Android 内置 profile，并统一 list/getDefault/setDefault 路径。
+- `AndroidBuiltinTerminalProfilesTest` 先红后绿；目标单测 2/2 通过，随后 `:app:testDebugUnitTest :app:assembleDebug` 返回 `BUILD SUCCESSFUL`。当前 APK `8,633,755` bytes，SHA-256 `561351D1B83050CD3F60D358675366E4379BF7AC146D290440C601300314AA9B`。
+- `2407FRK8EC`（mDNS ADB）与 `25091RP04C`（`192.168.1.3:46545`）均安装该 APK 成功。两台设备选择 `Everforest Dark` 和 `16px`，强制停止/重启/解锁后 DOM 仍为 `everforest-dark`、字号仍为 `16`，`relay.ui.preferences.v1` 仍保存相同主题和字号。
+- 该条将 Android 主题/字号持久化从“仅有 Web 证据”更新为“两台真机部分证据”；grid/list、旋转、软键盘、安全区和完整视觉走查仍保持 🟡。证据：[Android 偏好重启 CDP 证据](./evidence/2026-09-19-android-preferences-restart-cdp.md)。

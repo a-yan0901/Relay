@@ -596,7 +596,10 @@ internal class AndroidLocalExecutor(
 
     private fun terminalProfilesList(): JSONArray {
         requireUnlocked()
-        val output = JSONArray().put(termiusProfile())
+        val output = JSONArray()
+        AndroidBuiltinTerminalProfiles.ids().forEach { id ->
+            output.put(AndroidBuiltinTerminalProfiles.json(id) ?: failNative("INTERNAL_ERROR"))
+        }
         store.listTerminalProfiles().forEach { output.put(terminalProfileJson(it)) }
         return output
     }
@@ -604,7 +607,10 @@ internal class AndroidLocalExecutor(
     private fun terminalProfileDefault(): JSONObject {
         requireUnlocked()
         val id = store.getDefaultTerminalProfileId()
-        return if (id == null || id == "builtin:termius") termiusProfile() else store.getTerminalProfile(id)?.let(::terminalProfileJson) ?: termiusProfile()
+        return AndroidBuiltinTerminalProfiles.json(id ?: "builtin:termius")
+            ?: store.getTerminalProfile(id ?: "")?.let(::terminalProfileJson)
+            ?: AndroidBuiltinTerminalProfiles.json("builtin:termius")
+            ?: failNative("INTERNAL_ERROR")
     }
 
     private fun createTerminalProfile(input: JSONObject): JSONObject {
@@ -620,7 +626,9 @@ internal class AndroidLocalExecutor(
     private fun setDefaultTerminalProfile(id: String): JSONObject {
         requireUnlocked()
         AndroidNativeValidation.requireSafeId(id)
-        val profile = if (id == "builtin:termius") termiusProfile() else store.getTerminalProfile(id)?.let(::terminalProfileJson) ?: failNative("NOT_FOUND")
+        val profile = AndroidBuiltinTerminalProfiles.json(id)
+            ?: store.getTerminalProfile(id)?.let(::terminalProfileJson)
+            ?: failNative("NOT_FOUND")
         store.setDefaultTerminalProfileId(id)
         return profile
     }
@@ -2318,41 +2326,6 @@ internal class AndroidLocalExecutor(
             .put("maxAttempts", host.reconnectMaxAttempts)
             .put("baseDelayMs", host.reconnectBaseDelayMs)
             .put("maxDelayMs", host.reconnectMaxDelayMs))
-
-    private fun termiusProfile(): JSONObject = JSONObject()
-        .put("id", "builtin:termius")
-        .put("name", "Termius Dark")
-        .put("createdAt", "1970-01-01T00:00:00.000Z")
-        .put("updatedAt", "1970-01-01T00:00:00.000Z")
-        .put("appearance", JSONObject()
-            .put("foreground", "#5cc97c")
-            .put("background", "#141728")
-            .put("cursor", "#92a0a7")
-            .put("cursorAccent", "#141728")
-            .put("selectionBackground", "#225388")
-            .put("selectionForeground", "#ffffff")
-            .put("black", "#141728")
-            .put("red", "#e05b57")
-            .put("green", "#5cc97c")
-            .put("yellow", "#e7ebed")
-            .put("blue", "#225388")
-            .put("magenta", "#ee7b79")
-            .put("cyan", "#478fef")
-            .put("white", "#d6dde0")
-            .put("brightBlack", "#333649")
-            .put("brightRed", "#e16866")
-            .put("brightGreen", "#5cc97c")
-            .put("brightYellow", "#ffffff")
-            .put("brightBlue", "#346baf")
-            .put("brightMagenta", "#ee7b79")
-            .put("brightCyan", "#5d9fef")
-            .put("brightWhite", "#ffffff")
-            .put("fontFamily", "\"SFMono-Regular\", Consolas, \"Liberation Mono\", monospace")
-            .put("fontSize", 13)
-            .put("lineHeight", 1.25)
-            .put("cursorStyle", "bar")
-            .put("cursorBlink", true)
-            .put("scrollback", 5_000))
 
     private fun jsonObjectOrNull(value: String): JSONObject? = try {
         JSONObject(value)

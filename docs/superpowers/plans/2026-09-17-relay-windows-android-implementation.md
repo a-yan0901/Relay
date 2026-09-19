@@ -247,3 +247,12 @@
 - `25091RP04C` 与 `2407FRK8EC` 的 `:app:connectedDebugAndroidTest` 均完成 `7/7`，Gradle 返回 `BUILD SUCCESSFUL`。connected runner 清理应用后首次再次安装曾返回 `INSTALL_FAILED_USER_RESTRICTED`；重新触发安装后两台设备均成功安装，package path 已复核存在。
 - `apps/android/capacitor.config.ts` 新增 `android.loggingBehavior: 'none'`。在 `25091RP04C` 用一次性合成哨兵复核后，logcat、WebView `localStorage`/`sessionStorage`/IndexedDB 未发现哨兵；临时 Host 已清理，APK manifest 继续保持 `android:allowBackup=false`。
 - 该复核只收紧 Android 私密字段日志边界，不改变任务门禁口径：系统备份导出/恢复、长时间日志审计、完整 A-04 失败矩阵以及 A-06～A-08、A-10～A-17 的真实人工验收仍未完成。证据：[Android 私密字段日志边界](../verification/evidence/2026-09-19-android-secret-log-boundary.md)。
+
+## 2026-09-19 复审：Android 内置主题同步、内存边界与当前阻塞
+
+- 修复了 Android 解锁时把 Web 偏好主题复位为 Termius 的跨端缺陷：原生端现在提供与 `src/shared/terminal-appearance.ts` 对齐的 `builtin:termius`、`builtin:termius-light`、`builtin:everforest-dark`、`builtin:tokyo-day`、`builtin:monokai`，并由 list/getDefault/setDefault 共用定义。`AndroidBuiltinTerminalProfilesTest` 先红后绿；随后 `:app:testDebugUnitTest :app:assembleDebug --offline --no-daemon --max-workers=1 --console=plain` 成功。
+- 当前 Debug APK 为 `8,633,755` bytes，SHA-256 `561351D1B83050CD3F60D358675366E4379BF7AC146D290440C601300314AA9B`。两台 Android 16 真机安装均返回 `Success`；两台均选择 Everforest Dark/16px，force-stop、重启、解锁后仍保持主题和字号。该结果只补齐 A-14 的主题/字号部分，不等同于完整偏好验收。
+- 内存约束保持显式：Android/Gradle 使用 JDK 21、缓存 Gradle 9.3.1、offline、单 worker，以避免本机低内存时 Gradle、Kotlin 和 dex 并行叠加；真实大目录采样曾从 `270,324 KB` PSS 降至约 `251,874 KB`，无 OOM/ANR，但缺少任务书要求的 2 分钟基线与 32 MiB 传输并行采样，A-15 不得标记通过。
+- 模拟器阻塞原因未改变：AOSP 软件模拟器缺少 `/dev/kvm`，曾进入 `adb offline` 后退出；模拟器 fixture 仅用于自动化回归。当前验收以两台 Android 16 真机为准，不再把模拟器失败误写成产品失败，也不把真机有限证据扩大为平台完成。
+- Android 转移验证边界：固定 bundle 已完成 Node → Android 解密/解析；真实设备还完成 32 MiB 上传、取消、暂停/继续和下载哈希校验。Android → Web/Windows 真实导出回传、Windows 导入、完整冲突策略仍未完成；URI 任务结束立即释放、拒绝权限与分享仍是 A-11 阻塞项。
+- 当前发布阻塞仍包括：A-04 完整密码/私钥失败矩阵和系统备份审计，A-06 网络切换，A-08 软键盘/旋转/安全区，A-11 URI 权限，A-15 长时低内存，A-17 双向 bundle；Windows 升级迁移、签名、持久制品来源和打包后完整任务链也未完成。继续执行时必须逐项回填证据，不能以单元测试或状态点变绿替代真实任务结果。

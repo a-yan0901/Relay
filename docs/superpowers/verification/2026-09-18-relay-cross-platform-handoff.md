@@ -15,7 +15,7 @@
 | --- | --- | --- | --- |
 | Web | ✅ 自动化基线可复现 | 标准全量回归 161 个测试文件通过、1 个跳过；731 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
 | Windows | 🟡 已有打包与安装证据，平台门禁未完成 | root Electron 真实服务器 UI smoke；`npm run package:windows` 已本地离线生成 NSIS/portable；Electron ABI 149 native load、NSIS 安装/启动/卸载通过 | 升级迁移、崩溃恢复、打包后完整 SSH/SFTP/Vault/UI 任务链、签名和持久制品来源 |
-| Android | 🟡 已完成有限设备 SSH/SFTP 证据，不代表平台完成 | Kotlin/JVM/connected instrumentation、Debug APK；当前 APK 已安装两台 Android 16 真机；2407 真实主机 32 MiB 原生 URI 上传、取消、暂停/继续和哈希校验通过，25091 完成系统选择器上传/下载 | Host Key 变更、私钥、网络切换、URI 立即释放、返回键、软键盘、锁屏/进程回收、低内存和 A-01～A-17 其余项目 |
+| Android | 🟡 已完成有限设备 SSH/SFTP 证据，不代表平台完成 | Kotlin/JVM/connected instrumentation、Debug APK；当前 APK 已安装两台 Android 16 真机；2407 真实主机 32 MiB 原生 URI 上传、取消、暂停/继续和哈希校验通过，25091 完成系统选择器上传/下载；本轮补齐 Android 内置主题同步，并在两台真机验证 Everforest Dark/16px 经 force-stop、重启、解锁后仍保持 | Host Key 变更、私钥、网络切换、URI 立即释放、返回键、软键盘、锁屏/进程回收、grid/list、低内存和 A-01～A-17 其余项目 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
@@ -42,10 +42,10 @@
 
 - 文件：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`
 - 应用 ID：`cn.ayan.relay`
-- 应用代码基线：`b094ee9`
-- 构建时间（文件时间，Asia/Shanghai）：`2026-09-19 15:02:14`
+- 应用代码基线：本次 Android 内置主题同步修订（随本次文档修订提交）
+- 构建时间（文件时间，Asia/Shanghai）：`2026-09-19 20:52:24`
 - 大小：`8,633,755` bytes
-- SHA-256：`42F5C183FB0CB4F6DAAAFA0825E8F3C41408B7CEF39A7F92390016AB85A6F19F`
+- SHA-256：`561351D1B83050CD3F60D358675366E4379BF7AC146D290440C601300314AA9B`
 - 构建命令：
 
   ```powershell
@@ -141,7 +141,7 @@
 | A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 待执行；真实系统文件选择与 DocumentsUI 保存已走通；传输完成后 Activity 内仍可观察到临时 URI grant，`force-stop` 后重启 Relay 才清空 `readUriPermissions/writeUriPermissions`。任务结束立即释放、拒绝权限提示和分享仍待执行。 |
 | A-12 | Vault 锁定和重开 | 锁定后秘密不可读取；正确解锁恢复；错误密码/损坏 bundle 不覆盖旧数据 | 待执行 |
 | A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行；`25091RP04C` force-stop/重启后 Host 与 Vault 数据仍在，旧 Console 显示“需要重新连接”，重新打开后建立新 Shell；锁屏、旋转和完整进程回收证据仍待执行。 |
-| A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | 待执行 |
+| A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | 待执行；新增部分证据：两台 Android 16 真机均在真实 APK 上选中 `Everforest Dark`、字号 `16px`，随后 `force-stop`、重启并解锁；两台均再次显示 Everforest、字号 16，`relay.ui.preferences.v1` 保持 `theme=everforest-dark,fontSize=16`。本轮未完成 grid/list 和完整视觉走查，故不标记整体通过。证据：[Android 偏好重启 CDP 证据](./evidence/2026-09-19-android-preferences-restart-cdp.md) |
 | A-15 | 低内存行为 | 大目录/大文件操作不明显失控；取消/退出后资源释放；无持续增长的输出/文件缓冲 | 待执行；`25091RP04C` 大目录分页期间采样 PSS `270,324 KB`，返回 Server 后 30 秒采样降至 `251,874 KB`，未观察到 OOM/ANR；当前还缺少按任务书要求的 2 分钟基线、同时进行 32 MiB 传输的每 5 秒采样和完整 `dumpsys meminfo` 摘要，因此不回填为通过。 |
 | A-16 | 秘密和网络边界 | 普通 logcat、WebView 持久化和系统备份中不出现密码/私钥/Vault 明文；客户端不要求本地 HTTP 监听 | 部分证据；`25091RP04C` 使用合成哨兵复核时，关闭 Capacitor verbose bridge 日志后 logcat、`localStorage`、`sessionStorage`、IndexedDB 均无匹配；app manifest `allowBackup=0`，且未发现 Relay/5173/3000/4173 监听。系统备份导出/恢复、长时间日志审计仍待执行。证据：[Android 私密字段日志边界](./evidence/2026-09-19-android-secret-log-boundary.md)。 |
 | A-17 | Vault bundle v1 跨端固定向量 | Web/Windows 导出 → Android 预览/应用 → Android 导出 → Web/Windows 导入；字段、计数、错误密码/篡改和原数据不变性均符合固定向量 | 待执行 |
@@ -373,3 +373,11 @@
 - Android 配置新增 `android.loggingBehavior: 'none'`，用于关闭 Capacitor verbose bridge 的插件 payload 日志。使用一次性合成哨兵进行真实设备复核时，logcat、WebView `localStorage`/`sessionStorage`/IndexedDB 未发现哨兵；临时 Host 已删除。该证据不包含任何真实凭据或哨兵值。
 - APK manifest 的 `android:allowBackup` 仍为 `false`；系统备份导出/恢复、长时间进程日志审计和完整 A-16 失败矩阵仍未完成，因此 A-04/A-16 不回填为整体通过。
 - 脱敏证据：[Android 私密字段日志边界](./evidence/2026-09-19-android-secret-log-boundary.md)。
+
+## 26. 2026-09-19 Android 内置主题同步与双真机重启复验
+
+- 根因：Web 偏好会把主题保存为 `builtin:<theme>` 的 terminal profile；Android 原生此前只返回/接受 `builtin:termius`，解锁时读取默认 profile 会把用户刚选的主题覆盖回 Termius。该修复新增与 shared `terminal-appearance.ts` 对齐的五套 Android 内置 profile，并让 list/getDefault/setDefault 使用同一组定义。
+- TDD/构建：新增 `AndroidBuiltinTerminalProfilesTest`；先以未实现的 helper 运行得到 unresolved reference 红灯，再实现后 `:app:testDebugUnitTest --tests cn.ayan.relay.AndroidBuiltinTerminalProfilesTest` 通过 2/2；随后 `:app:testDebugUnitTest :app:assembleDebug --offline --no-daemon --max-workers=1 --console=plain` 返回 `BUILD SUCCESSFUL`。
+- 当前 APK：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，大小 `8,633,755` bytes，SHA-256 `561351D1B83050CD3F60D358675366E4379BF7AC146D290440C601300314AA9B`。`adb install -r -g --no-streaming` 在 `2407FRK8EC`（mDNS serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp`）和 `25091RP04C`（`192.168.1.3:46545`）均返回 `Success`。
+- 两台设备均完成真实 UI 验证：使用 `dsjb@123` 解锁 Vault，在偏好设置选择 `Everforest Dark`、字号 `16px`；强制停止 `cn.ayan.relay`，重新启动并解锁后，两台设备的 DOM 主题仍为 `everforest-dark`，字号 select 为 `16`，`relay.ui.preferences.v1` 保持 `fontSize=16` 和 `theme=everforest-dark`。`25091RP04C` 的 `Provided Acceptance Host` 仍保留，旧 Console 明确显示需重新打开；本轮未覆盖 grid/list、旋转、软键盘和完整视觉走查。
+- 结论：修复了 A-14 的 Android 主题复位缺陷，A-14 仍按任务书保持“待执行（部分证据）”；不扩大为 Android 平台整体通过。脱敏操作记录：[Android 偏好重启 CDP 证据](./evidence/2026-09-19-android-preferences-restart-cdp.md)。
