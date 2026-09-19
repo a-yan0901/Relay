@@ -20,6 +20,16 @@ class AndroidUploadSourceStoreTest {
     }
 
     @Test
+    fun retainsTheExactGrantModeAndPersistableStateForLaterRelease() {
+        val store = AndroidUploadSourceStore(now = { 1_000L })
+
+        val source = store.put("content://picker/3", "grant.bin", 4L, grantFlags = 1, persistable = true)
+
+        assertEquals(1, source.grantFlags)
+        assertTrue(source.persistable)
+    }
+
+    @Test
     fun expiresStaleUrisAndClearsAllHandles() {
         var now = 1_000L
         val store = AndroidUploadSourceStore(now = { now }, ttlMs = 100L)

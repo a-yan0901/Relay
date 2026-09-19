@@ -158,25 +158,25 @@ internal class AndroidLocalExecutor(
         }
     }
 
-    override fun invokeFileOpenSelection(request: JSObject, uri: String, complete: (JSObject) -> Unit) {
+    override fun invokeFileOpenSelection(request: JSObject, uri: String, grantFlags: Int, complete: (JSObject) -> Unit) {
         if (closed.get()) {
             complete(failure(request, "SERVICE_RESTARTED"))
             return
         }
         try {
-            operationExecutor.execute { complete(runSafely(request, uri)) }
+            operationExecutor.execute { complete(runSafely(request, uri, grantFlags)) }
         } catch (_: RejectedExecutionException) {
             complete(failure(request, "OPERATION_INTERRUPTED", "本机任务队列已满，请稍后重试"))
         }
     }
 
-    override fun invokeFileSaveSelection(request: JSObject, uri: String, complete: (JSObject) -> Unit) {
+    override fun invokeFileSaveSelection(request: JSObject, uri: String, grantFlags: Int, complete: (JSObject) -> Unit) {
         if (closed.get()) {
             complete(failure(request, "SERVICE_RESTARTED"))
             return
         }
         try {
-            operationExecutor.execute { complete(runSafely(request, uri)) }
+            operationExecutor.execute { complete(runSafely(request, uri, grantFlags)) }
         } catch (_: RejectedExecutionException) {
             complete(failure(request, "OPERATION_INTERRUPTED", "本机任务队列已满，请稍后重试"))
         }
@@ -216,8 +216,8 @@ internal class AndroidLocalExecutor(
         store.close()
     }
 
-    private fun runSafely(request: JSObject, selectedFileUri: String? = null): JSObject = try {
-        success(request, dispatch(request.optString("operation", ""), request.optJSONObject("payload") ?: JSONObject(), selectedFileUri))
+    private fun runSafely(request: JSObject, selectedFileUri: String? = null, selectedGrantFlags: Int = 0): JSObject = try {
+        success(request, dispatch(request.optString("operation", ""), request.optJSONObject("payload") ?: JSONObject(), selectedFileUri, selectedGrantFlags))
     } catch (error: NativeVaultFailure) {
         failure(request, error.code)
     } catch (error: SftpException) {
@@ -230,7 +230,7 @@ internal class AndroidLocalExecutor(
         failure(request, mapJschError(error))
     }
 
-    private fun dispatch(operation: String, payload: JSONObject, selectedFileUri: String? = null): Any? = when (operation) {
+    private fun dispatch(operation: String, payload: JSONObject, selectedFileUri: String? = null, selectedGrantFlags: Int = 0): Any? = when (operation) {
         "vault.status" -> JSONObject().put("phase", vault.phase())
         "vault.setup" -> {
             vault.setup(requiredText(payload, "masterPassword", 4096))
@@ -260,8 +260,8 @@ internal class AndroidLocalExecutor(
             JSONObject.NULL
         }
         "system.confirm" -> failNative("CAPABILITY_UNAVAILABLE")
-        "system.fileOpen.open" -> openFileSource(selectedFileUri ?: failNative("CAPABILITY_UNAVAILABLE"))
-        "system.fileSave.open" -> openFileWriter(payload, selectedFileUri ?: failNative("CAPABILITY_UNAVAILABLE"))
+        "system.fileOpen.open" -> openFileSource(selectedFileUri ?: failNative("CAPABILITY_UNAVAILABLE"), selectedGrantFlags)
+        "system.fileSave.open" -> openFileWriter(payload, selectedFileUri ?: failNative("CAPABILITY_UNAVAILABLE"), selectedGrantFlags)
         "system.fileSave.write" -> writeFileWriter(payload)
         "system.fileSave.seek" -> seekFileWriter(payload)
         "system.fileSave.close" -> closeFileWriter(requiredText(payload, "writerId", 128), cancel = false)
@@ -1558,9 +1558,11 @@ internal class AndroidLocalExecutor(
             }
         }
 
-    private fun openFileSource(selectedUri: String): JSONObject {
+    private fun openFileSource(selectedUri: String, selectedGrantFlags: Int): JSONObject {
         val uri = try { Uri.parse(selectedUri) } catch (_: Exception) { failNative("PROTOCOL_INVALID_MESSAGE") }
         if (uri.scheme != ContentResolver.SCHEME_CONTENT || uri.authority.isNullOrEmpty()) failNative("CAPABILITY_UNAVAILABLE")
+        val grantFlags = normalizeUriGrantFlags(selectedGrantFlags, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val persistable = takePersistableUriPermission(uri, grantFlags)
         val metadata = try {
             appContext.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
                 if (!cursor.moveToFirst()) null else {
@@ -1575,27 +1577,32 @@ internal class AndroidLocalExecutor(
             null
         }
         val name = try { AndroidNativeValidation.requireFileName(metadata?.first ?: "upload") } catch (_: Exception) { "upload" }
-        val source = uploadSources.put(uri.toString(), name, metadata?.second)
+        val source = uploadSources.put(uri.toString(), name, metadata?.second, grantFlags, persistable)
         return JSONObject()
             .put("sourceId", source.sourceId)
             .put("name", source.name)
             .put("size", source.size ?: JSONObject.NULL)
     }
 
-    private fun openFileWriter(payload: JSONObject, selectedUri: String): JSONObject {
+    private fun openFileWriter(payload: JSONObject, selectedUri: String, selectedGrantFlags: Int): JSONObject {
         val name = AndroidNativeValidation.requireFileName(requiredText(payload, "name", 255))
         AndroidNativeValidation.requireMimeType(requiredText(payload, "mimeType", 128))
         val uri = try { Uri.parse(selectedUri) } catch (_: Exception) { failNative("PROTOCOL_INVALID_MESSAGE") }
         if (uri.scheme != ContentResolver.SCHEME_CONTENT || uri.authority.isNullOrEmpty()) failNative("CAPABILITY_UNAVAILABLE")
+        val grantFlags = normalizeUriGrantFlags(selectedGrantFlags, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        val persistable = takePersistableUriPermission(uri, grantFlags)
         val tempFile = try {
             File.createTempFile("relay-export-", ".part", appContext.cacheDir)
         } catch (_: Exception) {
             failNative("CAPABILITY_UNAVAILABLE")
         }
         val writer = try {
-            AndroidFileWriter(appContext.contentResolver, uri, tempFile)
+            AndroidFileWriter(appContext.contentResolver, uri, tempFile) {
+                releaseUriPermission(uri, grantFlags, persistable)
+            }
         } catch (_: Exception) {
             tempFile.delete()
+            releaseUriPermission(uri, grantFlags, persistable)
             failNative("CAPABILITY_UNAVAILABLE")
         }
         val writerId = UUID.randomUUID().toString()
@@ -1937,10 +1944,30 @@ internal class AndroidLocalExecutor(
             try { sftp?.disconnect() } catch (_: Exception) { }
             try { connection?.close() } catch (_: Exception) { }
             try {
-                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                (revokeUriPermission ?: { target, grantFlags -> appContext.revokeUriPermission(target, grantFlags) })(uri, flags)
+                releaseUriPermission(uri, source.grantFlags, source.persistable)
             } catch (_: Exception) { }
         }
+    }
+
+    private fun normalizeUriGrantFlags(flags: Int, fallback: Int): Int {
+        val modeFlags = flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        return if (modeFlags == 0) fallback else modeFlags
+    }
+
+    private fun takePersistableUriPermission(uri: Uri, flags: Int): Boolean = try {
+        appContext.contentResolver.takePersistableUriPermission(uri, flags)
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun releaseUriPermission(uri: Uri, flags: Int, persistable: Boolean) {
+        if (persistable) {
+            try { appContext.contentResolver.releasePersistableUriPermission(uri, flags) } catch (_: Exception) { }
+        }
+        try {
+            (revokeUriPermission ?: { target, grantFlags -> appContext.revokeUriPermission(target, grantFlags) })(uri, flags)
+        } catch (_: Exception) { }
     }
 
     private fun checksumSnapshot(digest: MessageDigest): String {
@@ -2516,10 +2543,18 @@ internal class AndroidLocalExecutor(
     private class AndroidFileWriter(
         private val resolver: ContentResolver,
         private val uri: Uri,
-        private val tempFile: File
+        private val tempFile: File,
+        private val releaseUriPermission: () -> Unit
     ) {
         private val output = FileOutputStream(tempFile)
         private var closed = false
+        private var permissionReleased = false
+
+        private fun releasePermissionOnce() {
+            if (permissionReleased) return
+            permissionReleased = true
+            releaseUriPermission()
+        }
 
         @Synchronized
         fun write(bytes: ByteArray) {
@@ -2575,6 +2610,8 @@ internal class AndroidLocalExecutor(
             } catch (_: Exception) {
                 tempFile.delete()
                 throw NativeVaultFailure("SFTP_TRANSFER_FAILED")
+            } finally {
+                releasePermissionOnce()
             }
         }
 
@@ -2584,6 +2621,7 @@ internal class AndroidLocalExecutor(
             try { output.close() } catch (_: Exception) { }
             closed = true
             tempFile.delete()
+            releasePermissionOnce()
         }
     }
 

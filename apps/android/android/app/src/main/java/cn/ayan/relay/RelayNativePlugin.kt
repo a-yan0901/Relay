@@ -51,8 +51,8 @@ class RelayNativePlugin : Plugin() {
 
     interface Executor {
         fun invoke(request: JSObject, complete: (JSObject) -> Unit)
-        fun invokeFileOpenSelection(request: JSObject, uri: String, complete: (JSObject) -> Unit)
-        fun invokeFileSaveSelection(request: JSObject, uri: String, complete: (JSObject) -> Unit)
+        fun invokeFileOpenSelection(request: JSObject, uri: String, grantFlags: Int, complete: (JSObject) -> Unit)
+        fun invokeFileSaveSelection(request: JSObject, uri: String, grantFlags: Int, complete: (JSObject) -> Unit)
         fun close() {}
     }
 
@@ -208,7 +208,7 @@ class RelayNativePlugin : Plugin() {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = mimeType
             putExtra(Intent.EXTRA_TITLE, name)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         try {
             startActivityForResult(call, intent, "fileSaveActivity")
@@ -226,7 +226,7 @@ class RelayNativePlugin : Plugin() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         try {
             startActivityForResult(call, intent, "fileOpenActivity")
@@ -251,7 +251,8 @@ class RelayNativePlugin : Plugin() {
             return
         }
         try {
-            activeExecutor.invokeFileOpenSelection(request, uri.toString()) { response ->
+            val modeFlags = (result.data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            activeExecutor.invokeFileOpenSelection(request, uri.toString(), if (modeFlags == 0) Intent.FLAG_GRANT_READ_URI_PERMISSION else modeFlags) { response ->
                 mainHandler.post { call.resolve(response) }
             }
         } catch (_: Exception) {
@@ -274,7 +275,8 @@ class RelayNativePlugin : Plugin() {
             return
         }
         try {
-            activeExecutor.invokeFileSaveSelection(request, uri.toString()) { response ->
+            val modeFlags = (result.data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            activeExecutor.invokeFileSaveSelection(request, uri.toString(), if (modeFlags == 0) Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION else modeFlags) { response ->
                 mainHandler.post { call.resolve(response) }
             }
         } catch (_: Exception) {

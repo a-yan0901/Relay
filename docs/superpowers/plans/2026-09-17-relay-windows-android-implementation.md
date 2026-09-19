@@ -181,3 +181,12 @@
 - 代码修复了四个跨端兼容缺陷：Web 标签不应使用 native safe-id 规则、PEM 私钥必须允许换行、Group profile 是可选 patch、`credentialSource` 应以 canonical string 表达并兼容旧 object 形状。Android 本地私钥创建/更新也采用多行文本边界校验。
 - `25091RP04C` 普通 APK 安装曾被系统拒绝（`INSTALL_FAILED_USER_RESTRICTED`）；通过 `adb push` 后 `pm install -r --user 0` 成功，测试 APK 安装成功并完成 5/5。该安装阻塞已解除。
 - A-17 仍保持部分证据：Node → Android 固定向量解密/解析已在两台真机完成，但 Android → Web/Windows 真实导出回传、Windows 端导入、完整冲突策略和发布门禁尚未完成；不能把跨端任务书或 Windows/Android 客户端宣称为完整交付。
+
+## 2026-09-19 URI 授权模式修复与在线真机复验
+
+- Android SAF 选择结果现在保留实际的 `READ|WRITE` mode flags 及是否成功取得 persistable grant；文件打开、保存、上传完成/失败/取消和 writer close/cancel 均按实际授权模式执行 release。补充的 Android JVM 红绿测试验证了 mode flags 与 persistable 状态不会丢失。
+- 当前 APK `app-debug.apk` 为 `8,633,755` bytes，SHA-256 `068A16E94F09EA90C97F609DD456BDEE0874F830FC57668C364A8C997DB18C89`。JDK 21 / Gradle 9.3.1 / offline / 单 worker 下 `:app:testDebugUnitTest` 和 `:app:assembleDebug` 均成功；在线设备 `25091RP04C` 的上一轮已安装版本完成 5/5 connected instrumentation，本轮重装被设备系统拒绝。
+- `25091RP04C` 使用真实 MIUI 文件选择器选择 `relay-uri-check.json`，向用户提供的 `106.14.61.92:22`、账号 `t2` 上传到 `/tmp/relay-uri-grant-check.json`；远端大小 `5,176` bytes，SHA-256 `169800b9708c5bc818d64cf3410f566469b65809bcbd3ef9401e4a12a8b4f783`，与固定合成源一致。测试 Host、远端临时文件和设备测试文件已清理。
+- 传输完成时 `dumpsys activity permissions` 仍可看到当前 `MainActivity` 持有本轮的 Activity 临时 grant；`force-stop cn.ayan.relay` 后该 URI grant 不再出现，说明未留下持久化授权，但 Android/MIUI 不允许把 Activity-owned 临时 grant 证明为任务结束即时消失。A-11 继续保持待执行，拒绝权限和分享链路也未宣称通过。
+- 本轮复验期间 `2407FRK8EC` 未在线：`adb connect 192.168.1.2:40019` 超时，重试安装返回 `device not found`；因此本条真机新证据只归属于 `25091RP04C`，不扩大为两台设备均已复验。
+- 本轮随后再次触发在线设备 `25091RP04C` 安装：Gradle connected 及设备侧 `adb push` + `pm install -r --user 0` 均返回 `INSTALL_FAILED_USER_RESTRICTED`，connected 实际为 0 tests；因此最新 APK 只完成本地构建，不能记录为本轮真机安装成功。

@@ -88,3 +88,11 @@
 - Node 固定向量测试 6/6 通过；两台 Android 16 真机的 `AndroidBundlePayloadInstrumentedTest` 各 5/5 通过。当前 Debug APK `8,633,755` bytes，SHA-256 `EC1366A3943ED4879E639D1F3D8AA75BE57F3E983E3F66AC82F00CB325E57A18`。本轮同时修复标签、PEM 换行、Group 部分 profile 和 `credentialSource` string/object 兼容边界。
 - `25091RP04C` 普通 app 安装曾返回 `INSTALL_FAILED_USER_RESTRICTED`；改用 `adb push` + `pm install -r --user 0` 返回 `Success`，测试 APK 安装并完成 5/5。该设备安装阻塞已解除。
 - 该证据把 bundle 行标记为“已有固定向量部分证据”，仍不等同于 A-17 通过：Android → Web/Windows 的真实导出回传、Windows 实机导入及完整冲突/原数据不变性闭环仍待补齐；因此矩阵中的 Windows/Android 完整发布状态继续保持 `🟡`。
+
+## 2026-09-19 URI 授权模式修复与在线真机复验
+
+- Android URI source handle 现在保留实际 `READ|WRITE` mode flags 和 persistable 取得结果；上传、保存 writer 的成功/失败/取消路径均按实际 flags 释放，Android JVM 红绿测试、Debug 构建和在线 `25091RP04C` connected instrumentation 5/5 通过。
+- 当前 APK SHA-256：`068A16E94F09EA90C97F609DD456BDEE0874F830FC57668C364A8C997DB18C89`，大小 `8,633,755` bytes。`25091RP04C` 通过真实 MIUI 文件选择器上传合成固定文件到用户主机 `/tmp`，远端 `5,176` bytes、SHA-256 `169800b9708c5bc818d64cf3410f566469b65809bcbd3ef9401e4a12a8b4f783`，随后清理 Host、远端文件和设备文件。
+- 传输完成后 Activity 内仍能观察到当前临时 URI grant；`force-stop` 并重启 Relay 后该 grant 清空，未证明有持久化 grant，但也未证明 Activity-owned 临时 grant 可在任务结束瞬间消失。A-11 仍为 `🟡/待执行`，权限拒绝提示和分享未覆盖。
+- 2407 本轮处于不可达状态（`adb connect 192.168.1.2:40019` 超时，安装重试返回 `device not found`），本条不把 25091 的证据扩展到 2407。
+- 安装重试边界：`25091RP04C` 的 Gradle 自动安装和设备侧 `pm install -r --user 0` 均被 MIUI 以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝，connected 本次为 0 tests；本轮不把最新 APK 标记为已安装。

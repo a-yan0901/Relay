@@ -7,7 +7,9 @@ internal data class AndroidUploadSource(
     val sourceId: String,
     val uri: String,
     val name: String,
-    val size: Long?
+    val size: Long?,
+    val grantFlags: Int,
+    val persistable: Boolean
 )
 
 /** Keeps picker URI grants behind an opaque, short-lived native handle. */
@@ -20,13 +22,15 @@ internal class AndroidUploadSourceStore(
     private val entries = LinkedHashMap<String, Entry>()
 
     @Synchronized
-    fun put(uri: String, name: String, size: Long?): AndroidUploadSource {
+    fun put(uri: String, name: String, size: Long?, grantFlags: Int = 0, persistable: Boolean = false): AndroidUploadSource {
         prune()
         val source = AndroidUploadSource(
             sourceId = "source-${UUID.randomUUID()}",
             uri = uri,
             name = name,
-            size = size
+            size = size,
+            grantFlags = grantFlags,
+            persistable = persistable
         )
         entries[source.sourceId] = Entry(source, now() + ttlMs)
         return source
