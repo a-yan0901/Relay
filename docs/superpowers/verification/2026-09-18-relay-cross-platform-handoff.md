@@ -314,6 +314,7 @@
 - URI 结论：传输后 Activity 内仍显示本轮临时 grant；`force-stop cn.ayan.relay` 后再检查已无该 URI grant，说明没有留下持久化 grant，但尚不能宣称 Activity-owned 临时 grant 在任务终态即时消失。A-11 仍待执行；拒绝权限和分享也未覆盖。
 - 设备边界：本轮 `2407FRK8EC` 不在线，`adb connect 192.168.1.2:40019` 超时，重试安装返回 `device not found`；因此本节所有新增在线真机证据仅适用于 `25091RP04C`。
 - 本轮再次触发 `25091RP04C` 安装时，Gradle 与设备侧 ADB fallback 都返回 `INSTALL_FAILED_USER_RESTRICTED`；connected instrumentation 因安装失败为 0 tests。已确认设备 `USB安装` 与 `USB调试（安全设置）` 为开启，但仍需在设备侧解除 MIUI 安装策略后才能重新安装。
+- 后续复核显示 `25091RP04C` 仍在线；`2407FRK8EC` 的 `adb connect 192.168.1.2:40019` 被目标端主动拒绝（Windows socket 10061），`get-state` 为 `device not found`。责任人需在 2407 端重新开启并保持无线调试后再执行安装回退。
 
 ## 17. 2026-09-19 Windows 打包版启动与定向回归
 

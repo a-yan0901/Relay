@@ -190,6 +190,7 @@
 - 传输完成时 `dumpsys activity permissions` 仍可看到当前 `MainActivity` 持有本轮的 Activity 临时 grant；`force-stop cn.ayan.relay` 后该 URI grant 不再出现，说明未留下持久化授权，但 Android/MIUI 不允许把 Activity-owned 临时 grant 证明为任务结束即时消失。A-11 继续保持待执行，拒绝权限和分享链路也未宣称通过。
 - 本轮复验期间 `2407FRK8EC` 未在线：`adb connect 192.168.1.2:40019` 超时，重试安装返回 `device not found`；因此本条真机新证据只归属于 `25091RP04C`，不扩大为两台设备均已复验。
 - 本轮随后再次触发在线设备 `25091RP04C` 安装：Gradle connected 及设备侧 `adb push` + `pm install -r --user 0` 均返回 `INSTALL_FAILED_USER_RESTRICTED`，connected 实际为 0 tests；因此最新 APK 只完成本地构建，不能记录为本轮真机安装成功。
+- 后续设备复核：`25091RP04C` 仍在线；`2407FRK8EC` 的 `adb connect 192.168.1.2:40019` 当前由设备端主动拒绝（Windows socket 10061），`adb get-state` 返回 `device not found`，因此本轮没有新的 2407 安装证据。
 
 ## 2026-09-19 Windows 打包版启动与定向回归
 

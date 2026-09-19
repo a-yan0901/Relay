@@ -96,6 +96,7 @@
 - 传输完成后 Activity 内仍能观察到当前临时 URI grant；`force-stop` 并重启 Relay 后该 grant 清空，未证明有持久化 grant，但也未证明 Activity-owned 临时 grant 可在任务结束瞬间消失。A-11 仍为 `🟡/待执行`，权限拒绝提示和分享未覆盖。
 - 2407 本轮处于不可达状态（`adb connect 192.168.1.2:40019` 超时，安装重试返回 `device not found`），本条不把 25091 的证据扩展到 2407。
 - 安装重试边界：`25091RP04C` 的 Gradle 自动安装和设备侧 `pm install -r --user 0` 均被 MIUI 以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝，connected 本次为 0 tests；本轮不把最新 APK 标记为已安装。
+- 后续复核：`25091RP04C` 仍在线；`2407FRK8EC` 的 `adb connect 192.168.1.2:40019` 返回 Windows socket 10061（目标端主动拒绝），因此不新增 2407 安装或 connected 证据。
 
 ## 2026-09-19 Windows 打包版启动与定向回归
 
