@@ -284,3 +284,9 @@
 | Windows CI 打包与 manifest | 通过 | run `35466675429`、提交 `28b43e7`：typecheck、lint、Electron runtime 准备、NSIS/Portable、manifest 和 artifact 上传均成功。 |
 | 持久 artifact | 通过 | `Relay-Windows-main-28b43e7eb39d1d5b2e71121750faec2c94bd80fc`，`240,657,050` bytes，保留至 `2026-12-18`；来源可由 run 页面追溯。 |
 | Windows 签名 / 升级发布门禁 | 未闭环 | artifact manifest 如实记录签名状态；`NotSigned` 仍不满足签名要求，真实旧版本升级/回滚、崩溃恢复和完整打包任务链仍需 Windows 安装环境证据。 |
+
+## 2026-09-20 URI source 句柄释放与 Android 部署边界
+
+- 原生文件选择句柄新增显式 `files.releaseUploadSource` operation；创建传输失败、取消未消费句柄、Vault 锁定和原生重试失败均会 best-effort 回收。该改动只关闭代码层的未消费句柄路径，不替代 MIUI 对当前 Activity 临时 grant 的真机即时释放验收。
+- 本批次回归：native runtime 定向测试 `9/9`；全量 Vitest `162` 个文件通过、`1` 个跳过，`745` 个测试通过、`2` 个跳过；`typecheck`、`lint`、Android JVM/AndroidTest APK 编译和 Debug APK 构建通过。Debug APK SHA-256：`73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。
+- 本批次本机 `adb devices -l` 为空，因此没有安装、卸载、`pm clear` 或修改设备数据。设备恢复后按批次统一使用 `adb push` + `pm install -r --user 0` 覆盖安装，保留应用数据并避免 `-g` 运行时授权；不针对单个问题重复重装。

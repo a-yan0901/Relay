@@ -312,6 +312,7 @@ internal class AndroidLocalExecutor(
         "files.getTransfer" -> getTransfer(requiredText(payload, "transferId", 128))
         "files.upload" -> upload(payload)
         "files.uploadFromSource" -> uploadFromSource(payload)
+        "files.releaseUploadSource" -> releaseUploadSourceHandle(requiredText(payload, "sourceId", 128))
         "files.download" -> download(payload)
         "files.pauseTransfer" -> pauseTransfer(requiredText(payload, "transferId", 128))
         "files.cancelTransfer" -> cancelTransfer(requiredText(payload, "transferId", 128))
@@ -1991,6 +1992,12 @@ internal class AndroidLocalExecutor(
     private fun releaseUploadSource(source: AndroidUploadSource) {
         val uri = try { Uri.parse(source.uri) } catch (_: Exception) { return }
         releaseUriPermission(uri, source.grantFlags, source.persistable)
+    }
+
+    private fun releaseUploadSourceHandle(sourceId: String): Any? {
+        releaseUploadSources(uploadSources.expire())
+        uploadSources.take(sourceId)?.let(::releaseUploadSource)
+        return JSONObject.NULL
     }
 
     private fun releaseUploadSources(sources: Iterable<AndroidUploadSource>) {

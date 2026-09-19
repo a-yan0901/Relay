@@ -83,6 +83,25 @@ describe('native core runtime adapter', () => {
     expect(calls.find(({ operation }) => operation === 'files.uploadFromSource')?.payload).toEqual({ transferId: 'transfer-native', sourceId: 'source-1' });
   });
 
+  it('releases a native upload source handle when the renderer no longer needs it', async () => {
+    const calls: Array<{ operation: string; payload: unknown }> = [];
+    const invoke = vi.fn(async <T,>(operation: string, payload: unknown): Promise<T> => {
+      calls.push({ operation, payload });
+      if (operation === 'system.fileOpen.open') return { sourceId: 'source-1', name: 'selected.bin', size: 12 } as T;
+      return undefined as T;
+    });
+    const port: NativeOperationPort = { invoke, subscribe() { return () => undefined; } };
+    const runtime = createNativeCoreRuntime({ platform: 'android', port });
+
+    const source = await runtime.files.pickUploadSource?.();
+    await runtime.files.releaseUploadSource?.(source!);
+
+    expect(calls).toEqual([
+      { operation: 'system.fileOpen.open', payload: {} },
+      { operation: 'files.releaseUploadSource', payload: { sourceId: 'source-1' } }
+    ]);
+  });
+
   it('routes terminal output to one bounded event subscription', async () => {
     let emit: ((event: NativeEventFrame) => void) | undefined;
     const port: NativeOperationPort = {

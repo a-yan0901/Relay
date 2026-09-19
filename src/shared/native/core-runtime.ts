@@ -614,6 +614,10 @@ class NativeFileTransport implements FileTransport {
     }));
   }
 
+  async releaseUploadSource(source: NativeUploadSource): Promise<void> {
+    await this.port.invoke('files.releaseUploadSource', { sourceId: source.sourceId });
+  }
+
   async download(transferId: string, resume?: TransferResumeRequest): Promise<AsyncIterable<Uint8Array>> {
     return (async function* (port: NativeOperationPort): AsyncGenerator<Uint8Array> {
       let offset = resume?.expectedOffset ?? 0;

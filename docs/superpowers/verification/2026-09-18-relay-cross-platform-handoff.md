@@ -514,3 +514,9 @@
 - GitHub Actions run `35466675429`（提交 `28b43e7`）已通过；`npm ci`、typecheck、lint、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 生成和 artifact 上传均成功。
 - artifact 名称为 `Relay-Windows-main-28b43e7eb39d1d5b2e71121750faec2c94bd80fc`，压缩包大小 `240,657,050` bytes，保留至 `2026-12-18`；run 页面：`https://github.com/a-yan0901/Relay/actions/runs/35466675429`。
 - 该条只关闭 Windows CI 和持久制品来源证据；artifact 的 Authenticode 状态仍为 `NotSigned`，Windows 签名、真实升级/回滚、崩溃恢复和完整安装包任务链仍未通过。Android 本批次仍未安装、卸载或清理数据。
+
+## 2026-09-20 部署与 URI 句柄交接补充
+
+- 当前 Debug APK：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，`8,655,609` bytes，SHA-256 `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。该 APK 已完成本地 Android JVM/AndroidTest APK 编译和 `assembleDebug`，本批次没有下发到设备。
+- 设备恢复后只执行一次按批次部署：`npm run install:android:debug -- <serial> <apk-path>`。脚本使用 `adb push` 后 `adb shell pm install -r --user 0`，不卸载、不 `pm clear`、不使用 `-g`，以保留 Vault/Host/Console 数据；安装被系统拒绝时先处理设备授权/安全策略，不循环重装。
+- Web/Android bridge 新增 `files.releaseUploadSource`，用于创建传输失败、取消未消费源句柄、锁定和重试失败的 best-effort 清理。A-11 仍要求真机确认任务结束后 URI grant 即时释放、权限拒绝提示和分享链路；本地测试不能替代这些步骤。

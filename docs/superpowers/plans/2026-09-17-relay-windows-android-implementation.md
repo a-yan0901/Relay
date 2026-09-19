@@ -352,3 +352,10 @@
 - GitHub Actions run `35466675429`（提交 `28b43e7`）通过：`npm ci`、typecheck、lint、Electron runtime 准备、NSIS/Portable 打包、manifest 生成和 artifact 上传均成功。
 - 持久 artifact：`Relay-Windows-main-28b43e7eb39d1d5b2e71121750faec2c94bd80fc`，压缩包大小 `240,657,050` bytes，未过期，保留至 `2026-12-18`；run 页面为 `https://github.com/a-yan0901/Relay/actions/runs/35466675429`。
 - 该证据关闭“Windows CI 可追溯制品来源”代码与流程问题，但 manifest 中的 `NotSigned` 不等于签名通过；真实签名、旧版本升级/回滚、崩溃恢复和完整打包任务链仍保持发布门禁未完成。
+
+## 2026-09-20 Android URI source 主动释放与保留数据部署策略
+
+- Android 原生文件传输新增可选的 `files.releaseUploadSource` bridge operation。Web/原生 runtime 在创建传输失败、取消尚未消费的选择句柄、锁定 Vault 和重试失败路径执行 best-effort release；真正进入 `uploadFromSource` 后仍由 native `finally` 释放，重复 release 不改变结果。
+- 验证：新增 native runtime 释放句柄回归测试；定向测试 `9/9`，全量 Vitest `162` 个文件通过、`1` 个跳过，`745` 个测试通过、`2` 个跳过；`typecheck`、`lint`、Android `:app:testDebugUnitTest :app:assembleDebugAndroidTest` 和 `:app:assembleDebug` 均通过。
+- 本批次 Debug APK：`8,655,609` bytes，SHA-256 `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。本机 `adb devices -l` 当前为空，未向设备安装，也未卸载、`pm clear` 或改变设备数据。
+- Android 部署约束固定为：统一批次验收时使用 `adb push` + `pm install -r --user 0`，不使用 `-g`，不主动卸载、不清数据、不因单个问题重复安装；设备重新在线后再用同一 APK 一次性覆盖部署。A-11 的 MIUI Activity-owned 临时 grant 即时消失仍需真机证据，不能把本次代码回归标成通过。

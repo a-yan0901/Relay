@@ -1047,16 +1047,25 @@ export const App = ({ runtime }: AppProps) => {
     const source = await runtime.files.pickUploadSource();
     if (!source) return;
     const targetPath = path === '/' ? `/${source.name}` : `${path}/${source.name}`;
-    const job = await runtime.files.createTransfer({ kind: 'upload', hostId, sourcePath: source.name, targetPath, totalBytes: source.size });
+    let job: TransferJob;
+    try {
+      job = await runtime.files.createTransfer({ kind: 'upload', hostId, sourcePath: source.name, targetPath, totalBytes: source.size });
+    } catch (error) {
+      try { await runtime.files.releaseUploadSource?.(source); } catch { /* best-effort URI grant cleanup */ }
+      throw error;
+    }
     transferSourcesRef.current.set(job.id, source);
     updateTransferJob(job);
     try {
       updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
       updateTransferJob(await runtime.files.uploadFromSource(job.id, source));
     } catch (error) {
+      try { await runtime.files.releaseUploadSource?.(source); } catch { /* native upload normally releases in finally */ }
       const latest = await refreshTransferJob(job.id);
       if (latest?.status === 'paused') return;
       throw error;
+    } finally {
+      transferSourcesRef.current.delete(job.id);
     }
   };
 
@@ -1092,7 +1101,11 @@ export const App = ({ runtime }: AppProps) => {
   const handleCancelTransfer = (id: string): void => {
     const job = transferJobs.find((candidate) => candidate.id === id);
     if (job) updateTransferJob({ ...job, status: 'cancelled', updatedAt: new Date().toISOString() });
+    const source = transferSourcesRef.current.get(id);
     transferSourcesRef.current.delete(id);
+    if (source) {
+      void runtime.files.releaseUploadSource?.(source).catch(() => undefined);
+    }
     void runtime.files.cancelTransfer(id).then(() => refreshTransferJob(id));
   };
 
@@ -1118,7 +1131,13 @@ export const App = ({ runtime }: AppProps) => {
             if (!source) return null;
             transferSourcesRef.current.set(id, source);
             updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
-            return runtime.files.uploadFromSource!(id, source, resumeSupported ? resumeRequestForJob(job) : undefined).then(updateTransferJob);
+            return runtime.files.uploadFromSource!(id, source, resumeSupported ? resumeRequestForJob(job) : undefined)
+              .then(updateTransferJob)
+              .catch(async (error) => {
+                try { await runtime.files.releaseUploadSource?.(source); } catch { /* native upload normally releases in finally */ }
+                throw error;
+              })
+              .finally(() => transferSourcesRef.current.delete(id));
           }).catch(() => refreshTransferJob(id));
           return;
         }
@@ -1397,6 +1416,10 @@ export const App = ({ runtime }: AppProps) => {
 
   const handleLock = async (): Promise<void> => {
     try {
+      await Promise.all(Array.from(transferSourcesRef.current.values()).map(async (source) => {
+        try { await runtime.files.releaseUploadSource?.(source); } catch { /* best-effort URI grant cleanup */ }
+      }));
+      transferSourcesRef.current.clear();
       await runtime.vault.lock();
       if (remoteWorkspaceSession) {
         await remoteWorkspaceSession.close();

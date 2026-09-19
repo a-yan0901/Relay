@@ -361,6 +361,8 @@ export interface FileTransport {
   /** Native clients may keep the selected URI and stream it without exposing file bytes to the WebView. */
   pickUploadSource?(): Promise<NativeUploadSource | null>;
   uploadFromSource?(transferId: string, source: NativeUploadSource, resume?: TransferResumeRequest): Promise<TransferJob>;
+  /** Release a selected native source that was not consumed by an upload. */
+  releaseUploadSource?(source: NativeUploadSource): Promise<void>;
   download(transferId: string, resume?: TransferResumeRequest): Promise<ByteStream>;
   /** Optional browser fallback when no user-selected streaming writer exists. */
   directDownload?(transferId: string, name: string): Promise<void>;
