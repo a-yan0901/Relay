@@ -303,3 +303,13 @@
 | A-17 跨端 bundle | 未闭环 | Node/Windows 自动化与 Android instrumentation 源码证据存在；Android→Web/Windows 真机回传、冲突和旧数据不变性仍缺设备交接证据。 |
 
 本批次没有因单个问题重复打包或重装 Android；全量验收仍以问题分组集中修复后统一部署为准。
+
+## 2026-09-20 固定向量回归与测试入口稳定性补充（`0766a9b`）
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Android 固定向量 chunked service | 已补自动化，待真机 | 新增 `importsTheFullFixedVectorThroughChunkedAndroidBridgeWithoutPartialWrites`，覆盖 1 KiB 分块导入、错误密码/篡改无写入、完整 apply 字段和凭据；已编译进 AndroidTest APK，未在设备执行。 |
+| Vitest 标准入口 | 通过 | 配置默认 `testTimeout=15000`、`hookTimeout=15000` 后，标准 `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 为 `162` 文件通过、`1` 跳过，`745` 测试通过、`2` 跳过。 |
+| Android 设备状态 | 未改变 | `adb devices -l` 仍为空；本批次没有安装、卸载、`pm clear` 或运行时授权。 |
+
+该补充只提高自动化覆盖和回归入口稳定性，不关闭 A-17 的 Android→Web/Windows 实机回传，也不改变 A-01～A-17 真机验收边界。

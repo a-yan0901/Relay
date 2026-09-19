@@ -366,3 +366,9 @@
 - `npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows` 和 Chromium E2E `5/5` 通过。当前 Windows NSIS 制品 `127,707,203` bytes / SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`，Portable `113,685,227` bytes / SHA-256 `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06`；两者 `Get-AuthenticodeSignature=NotSigned`，签名发布门禁仍未通过。
 - Android `npm run test:android:local` 与 `npm run build:android:debug` 均 `BUILD SUCCESSFUL`；JDK 21/SDK、offline、单 worker 下本地 JVM/AndroidTest APK 编译完成，Debug APK `8,655,609` bytes / SHA-256 `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。Android bundle instrumentation 源码仍覆盖固定向量、chunked export、错误密码/篡改拒绝和无部分写入，但本批次无真机执行证据。
 - 本机 `adb devices -l` 仍为空；本批次未安装、卸载、`pm clear` 或修改任何 Android 数据。设备恢复后只按统一批次使用 `adb push` + `pm install -r --user 0`，不使用 `-g`、不循环重装，再一次性回填 A-01～A-17。A-05/A-06/A-08/A-11/A-15/A-17 真机证据及 Windows 签名/升级/持久制品来源继续保持未完成。
+
+## 2026-09-20 固定向量回归与测试入口稳定性补充（`0766a9b`）
+
+- Android instrumentation 新增 `importsTheFullFixedVectorThroughChunkedAndroidBridgeWithoutPartialWrites`：固定向量经过 1 KiB 分块导入、预览、应用，覆盖错误密码、篡改 authTag、无部分写入、Host/Group/Identity/Profile 计数、标签和私钥凭据恢复。该测试已随 `npm run test:android:local` 编译进 AndroidTest APK，但本机无设备，尚未执行 instrumentation。
+- Vitest 配置固化 `testTimeout=15000` 与 `hookTimeout=15000`；标准命令 `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 现已通过 `162` 文件、`745` 测试（`1/2` 跳过）。这是对低内存主机串行隔离启动负载的验证入口修正，不改变业务超时逻辑。
+- 提交后仍未触发 Android 安装、卸载、`pm clear` 或授权；当前 APK hash 不变。设备恢复后继续按统一批次保留数据部署，再执行 A-01～A-17 全量回填。

@@ -528,3 +528,9 @@
 - Android 本地入口 `npm run test:android:local`、`npm run build:android:debug` 均成功；当前 Debug APK 为 `8,655,609` bytes，SHA-256 `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`。固定向量 Android bundle instrumentation 已编译，未在本批次真机运行。
 - 设备状态：本机 `adb devices -l` 无设备，本批次未安装、卸载或清理 Android 数据。设备恢复后按一次统一交接批次运行 `npm run install:android:debug -- <serial> <apk-path>`；该路径使用 `adb push` + `pm install -r --user 0`，不使用 `-g`、不卸载、不 `pm clear`、不自动重试。随后两台设备按 A-01～A-17 全量测试，集中回填问题，不按单个问题反复部署。
 - 交接边界：A-05/A-06/A-08/A-11/A-15/A-17 的真机证据，以及 Windows 签名、升级/回滚、崩溃恢复和持久制品来源仍未闭环；当前不能宣称跨平台验收完成。
+
+## 37. 2026-09-20 固定向量回归与标准测试入口（`0766a9b`）
+
+- AndroidTest 新增固定完整向量的 chunked import→preview→apply 回归，覆盖 1 KiB 分块、错误密码、篡改 authTag、无部分写入以及 Host/Group/Identity/Profile/标签/私钥字段。它已编译进 AndroidTest APK；没有设备时不记录为 instrumentation 通过。
+- Vitest 已在配置中固化 15 秒测试与 hook 超时；标准串行命令 `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 通过 `162` 文件、`745` 测试，分别跳过 1 和 2 项。
+- 本批次仍不安装、不卸载、不清理 Android 数据。设备恢复后只执行一次 `npm run install:android:debug -- <serial> <apk-path>`，随后按 A-01～A-17 全量测试；A-17 真机双向回传、A-11 即时 URI grant、Windows 签名/升级/持久制品来源仍是未闭环门禁。
