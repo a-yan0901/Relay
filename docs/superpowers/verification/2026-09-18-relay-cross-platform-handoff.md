@@ -548,3 +548,9 @@
 - 本条仅作为 Android 自动化回归证据，不回填两台真机的 A-01～A-17，也不关闭 A-17 的 Android→Web/Windows 实际导出回传、Windows 导入、冲突和旧数据不变性验收。
 - 本轮没有向真机安装、卸载、`pm clear` 或修改已有数据。真机恢复后继续使用 `npm run install:android:debug -- <serial> <apk-path>`，由脚本执行 `adb push` + `pm install -r --user 0`，不申请 `-g`、不卸载、不清数据、不循环重装，然后一次性按清单回归。
 - Windows 签名、升级/回滚、崩溃恢复和持久制品来源仍保持未闭环；不能因本次模拟器 `9/9` 通过宣称跨平台验收完成。
+
+## 39. 2026-09-20 独立模拟器 WebView UI smoke 交接
+
+- 当前 Debug APK 仅向独立 AVD `emulator-5554` 执行一次保留数据部署：`npm run install:android:debug -- emulator-5554 <apk-path>`；脚本使用 `adb push` + `pm install -r --user 0`，返回 `Success`，没有 `-g`、卸载或 `pm clear`。
+- WebView CDP 页面标题为 `Relay SSH Workspace`。自动化创建 Vault 并保存合成 Host `Emulator Fixture Host` 后，执行 `adb shell am force-stop cn.ayan.relay` 和重新启动；锁定页出现，错误密码被拒绝并显示“主密码错误或 Vault 已损坏”，正确解锁后原 Host 仍显示。
+- 该条只交接模拟器 UI 子路径证据：Vault/Host 持久化、锁定、错误解锁和重开。它不回填真机 A-01、A-12、A-13，不覆盖真实 SSH、锁屏/旋转/软键盘、低内存，也不关闭 A-17。

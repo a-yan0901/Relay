@@ -323,3 +323,13 @@
 | A-01～A-17 / A-17 | 未整体通过 | 模拟器自动化不能替代真机 UI、生命周期、URI grant、低内存和 Android→Web/Windows 实际回传；完整跨端闭环、冲突及旧数据不变性仍缺目标设备证据。 |
 
 本条只补充自动化模拟器证据，不改变真机验收和 Windows 签名/升级/持久制品来源的未完成状态。
+
+## 2026-09-20 独立模拟器 WebView UI smoke
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Android Vault/Host UI 子路径 | 通过（独立模拟器） | 当前 APK 通过 `npm run install:android:debug -- emulator-5554 <apk-path>` 一次部署；WebView CDP 完成创建 Vault、保存合成 Host、`am force-stop`/重启、错误密码拒绝和正确解锁后 Host 恢复。 |
+| Android 真机 A-01/A-12/A-13 | 未整体通过 | 模拟器 UI smoke 不是用户手机/平板证据；锁屏、进程回收、真实 SSH、旋转/软键盘、低内存和完整人工操作仍待真机。 |
+| Android 数据保护 | 未改变真机 | 本轮只操作 `emulator-5554`，部署入口保留数据且不使用 `-g`、不卸载、不 `pm clear`；两台真机没有安装或数据变更。 |
+
+本条与上一条 9/9 instrumentation 共同构成模拟器自动化回归证据，仍不改变 A-01～A-17 真机验收边界。

@@ -379,3 +379,9 @@
 - Gradle 返回 `BUILD SUCCESSFUL`；`cn.ayan.relay.AndroidBundlePayloadInstrumentedTest` 共 `9` 个测试，`9/9` 通过、`0` 跳过、`0` 失败。`importsTheFullFixedVectorThroughChunkedAndroidBridgeWithoutPartialWrites` 已实际执行并通过，包含 1 KiB 分块、错误密码/篡改 authTag 无写入以及完整 apply 字段断言。
 - 该结果是独立模拟器的自动化证据，不替代两台 Android 真机的安装保留数据验证、A-01～A-17 人工清单或 Android→Web/Windows 回传。执行时 ADB 列表只有 `emulator-5554`，没有向用户的手机/平板部署，也没有卸载、`pm clear` 或改动真机数据。
 - 当前仍未关闭的门禁包括 A-04、A-05～A-08、A-11、A-15、A-17 的真机/跨端证据，以及 Windows 签名、升级/回滚、崩溃恢复和持久制品来源。后续真机恢复后继续按统一批次一次部署，不按单个问题重复安装。
+
+## 2026-09-20 独立模拟器 WebView UI smoke
+
+- 使用当前 Debug APK `8,655,609` bytes / SHA-256 `73716BA21E71B0DB6B191831C43A9024B7997EA52F516533E989206518D1F625`，仅对独立 `emulator-5554` 执行一次 `npm run install:android:debug -- emulator-5554 <apk-path>`；`adb push` 和 `pm install -r --user 0` 均成功，未使用 `-g`、未卸载、未 `pm clear`。
+- 通过该模拟器 WebView CDP 页面 `Relay SSH Workspace` 完成自动化 UI smoke：创建本地 Vault，保存合成的 `Emulator Fixture Host`；执行 `am force-stop` 后重新启动，页面进入锁定状态，错误主密码显示“主密码错误或 Vault 已损坏”，正确解锁后 Host 仍可见。
+- 该结果只证明模拟器上的 Vault/Host 持久化、锁定/错误解锁/重开子路径可运行，不能回填真机 A-01、A-12、A-13 的完整人工结果，也不能替代真实 SSH、锁屏、旋转、低内存和 A-17 跨端回传验收。
