@@ -198,6 +198,97 @@ class AndroidBundlePayloadInstrumentedTest {
     }
 
     @Test
+    fun importsTheFullFixedVectorThroughChunkedAndroidBridgeWithoutPartialWrites() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        context.deleteDatabase("relay-local.db")
+        deleteVaultKey()
+
+        val vector = InstrumentationRegistry.getInstrumentation().context.assets.open("vault-bundle-v1-full-vector.json").use { stream ->
+            JSONObject(InputStreamReader(stream, StandardCharsets.UTF_8).readText())
+        }
+        val expected = vector.getJSONObject("expected")
+        val store = AndroidLocalStore(context)
+        val vault = AndroidVault(store)
+        val service = AndroidBundleService(store, vault)
+
+        try {
+            vault.setup("relay-device-test-2026")
+            val bundle = vector.getString("bundle")
+
+            assertThrows(NativeVaultFailure::class.java) {
+                service.preview("wrong-password", bundle)
+            }
+            val tampered = JSONObject(bundle)
+            val authTag = tampered.getJSONObject("payload").getString("authTag")
+            tampered.getJSONObject("payload").put("authTag", authTag.dropLast(1) + if (authTag.last() == 'A') 'B' else 'A')
+            assertThrows(NativeVaultFailure::class.java) {
+                service.preview(vector.getString("exportPassword"), tampered.toString())
+            }
+            assertEquals(0, store.countHosts())
+            assertEquals(0, store.countGroups())
+            assertEquals(0, store.countIdentities())
+
+            val importId = service.beginImport(vector.getString("exportPassword")).getString("importId")
+            val bytes = bundle.toByteArray(StandardCharsets.UTF_8)
+            try {
+                var offset = 0
+                while (offset < bytes.size) {
+                    val end = minOf(bytes.size, offset + 1_024)
+                    val chunk = bytes.copyOfRange(offset, end)
+                    try {
+                        service.appendImportChunk(
+                            importId,
+                            Base64.encodeToString(chunk, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+                        )
+                    } finally {
+                        chunk.fill(0)
+                    }
+                    offset = end
+                }
+            } finally {
+                bytes.fill(0)
+            }
+
+            val preview = service.finishImport(importId)
+            assertEquals(expected.getInt("hosts"), preview.getInt("hostCount"))
+            assertEquals(expected.getInt("groups"), preview.getInt("groupCount"))
+            assertEquals(expected.getInt("identities"), preview.getInt("identityCount"))
+            assertEquals(0, preview.getJSONArray("conflicts").length())
+
+            val applied = service.apply(
+                preview.getString("previewId"),
+                JSONObject()
+                    .put("hostConflicts", "skip")
+                    .put("groupConflicts", "reuse")
+                    .put("identityConflicts", "reuse")
+            )
+            assertEquals(expected.getInt("hosts"), applied.getInt("importedHosts"))
+            assertEquals(expected.getInt("groups"), applied.getInt("importedGroups"))
+            assertEquals(expected.getInt("identities"), applied.getInt("importedIdentities"))
+            assertEquals(expected.getInt("hosts"), store.countHosts())
+            assertEquals(expected.getInt("groups"), store.countGroups())
+            assertEquals(expected.getInt("identities"), store.countIdentities())
+            assertEquals(expected.getInt("terminalProfiles"), store.countTerminalProfiles())
+
+            val groupHost = store.getHost(expected.getString("groupHost"))!!
+            assertEquals("group", groupHost.credentialSource)
+            assertEquals(expected.getJSONArray("tags").toString(), groupHost.tagsJson)
+            val privateKeyHost = store.getHost(expected.getString("privateKeyHost"))!!
+            assertEquals("inline", privateKeyHost.credentialSource)
+            assertEquals("private_key", JSONObject(vault.decryptSecret(
+                privateKeyHost.credentialCiphertext!!,
+                "host:" + privateKeyHost.id + ":credentials:v1"
+            )).getString("type"))
+        } finally {
+            service.close()
+            vault.close()
+            store.close()
+            context.deleteDatabase("relay-local.db")
+            deleteVaultKey()
+        }
+    }
+
+    @Test
     fun exportsClearsAndImportsTheAndroidBundleWithoutPartialWrites() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         context.deleteDatabase("relay-local.db")

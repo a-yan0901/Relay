@@ -17,6 +17,11 @@ export default defineConfig({
     // The development host has limited RAM and no swap. Keep native/SSH
     // tests deterministic without multiplying Node/Vite workers.
     fileParallelism: false,
-    maxWorkers: 1
+    maxWorkers: 1,
+    // A full isolated run starts every file sequentially; server integration
+    // setup can exceed Vitest's 5s default on this low-memory host even when
+    // the test itself completes in a few hundred milliseconds.
+    testTimeout: 15_000,
+    hookTimeout: 15_000
   }
 });
