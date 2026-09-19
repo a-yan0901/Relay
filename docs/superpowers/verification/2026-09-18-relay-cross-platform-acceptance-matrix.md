@@ -76,3 +76,8 @@
 
 - `25091RP04C` 的真实 SFTP UI 在 `/tmp` 输入 `relay-native` 过滤后当前页显示 1 项；系统返回键从 Console 回到 Server 列表。该证据不替代完整滚动/分页、弹层返回栈和安全区验收。
 - 对同一设备执行 `force-stop` 后重启，Vault/Host 数据保留，旧 Console 显示需要重新连接；重新打开后建立新 Shell。锁屏、旋转和完整进程回收仍保持未完成。
+
+## 2026-09-19 打包版 Windows 与 Android 大目录/内存增量
+
+- 打包版 Windows 入口 `dist/releases/nsis/win-unpacked/Relay.exe` 已连接用户提供的真实 `106.14.61.92:22`/`t2` 主机，实际回显 `echo PACKAGED_WINDOWS_UI`；SFTP UI 读取 `/` 36 项、跳转 `/tmp` 并过滤 `relay-native` 得到 1 项。锁定/解锁后 Host 与信任记录保持；强制终止打包进程树后重启，旧 Console 显示需要重新连接，重新打开后 `echo PACKAGED_WINDOWS_AFTER_CRASH` 得到真实回显。该证据只覆盖一个打包版崩溃恢复场景，升级迁移和完整打包任务链仍保持 🟡。
+- `25091RP04C` 在真实主机创建 300 个一次性 1-byte 条目，Android SFTP UI 分页为 `128 + 128 + 44`，随后删除并确认目录清理；大目录页前后 PSS 采样为 `270,324 KB` 到约 30 秒后的 `251,874 KB`。无 OOM/ANR；A-15 因缺少合格 2 分钟基线和同时 32 MiB 传输采样，仍不能标记为通过。

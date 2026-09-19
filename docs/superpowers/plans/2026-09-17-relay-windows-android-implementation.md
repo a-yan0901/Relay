@@ -168,3 +168,8 @@
 
 - `25091RP04C` 从真实 Console 发送系统返回键后回到 Server 列表；在 `/tmp` 输入过滤 `relay-native` 后当前页收敛为 1 项，证明真实设备过滤入口可达。完整弹层/根页面返回栈、滚动和分页仍未完成。
 - 对同一设备执行 `force-stop cn.ayan.relay` 后重新启动，Vault 解锁后仍保留 `Provided Acceptance Host`；旧 Console 明确显示“此 Console 需要重新连接”，不是伪造 connected，点击重新打开后建立新的真实 Shell。锁屏、旋转和完整进程回收仍待验收。
+
+## 2026-09-19 打包版 Windows 与 Android 大目录/内存增量
+
+- 打包版 Windows `Relay.exe` 已在真实 `106.14.61.92:22`/`t2` 主机上完成 Shell 回显、SFTP `/` 浏览、`/tmp` 过滤、Vault 锁定/解锁和一次强制终止后的 Console 重新打开；`PACKAGED_WINDOWS_AFTER_CRASH` 真实远端回显已核对。该证据不替代升级迁移、签名、持久制品来源和完整打包下载链。
+- `25091RP04C` 在真实主机创建并清理 300 个一次性条目，Android UI 分页读取 `128 + 128 + 44`；大目录过程 PSS 从 `270,324 KB` 采样到返回 Server 后约 30 秒的 `251,874 KB`。无 OOM/ANR，但 A-15 仍缺 2 分钟基线和 32 MiB 传输并行采样，保持未完成。
