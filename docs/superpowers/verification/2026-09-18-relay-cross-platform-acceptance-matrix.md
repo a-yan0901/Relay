@@ -71,3 +71,8 @@
 
 - 当前 APK SHA-256 为 `42F5C183FB0CB4F6DAAAFA0825E8F3C41408B7CEF39A7F92390016AB85A6F19F`；两台 Android 真机均重新安装成功。`25091RP04C` 从用户提供的真实主机下载 32 MiB 文件到本机，大小与 SHA-256 均一致，Transfer Center 显示 100%。
 - Android executor 已做 Activity/application 双重 revoke best-effort，但真实设备在任务结束后仍显示 Activity-owned 临时 URI grant，只有 force-stop 后清空。因此 A-11 继续保持 `🟡/待执行`，不能按代码调用或传输成功替代权限释放验收。
+
+## 2026-09-19 Android 返回、过滤与进程恢复增量
+
+- `25091RP04C` 的真实 SFTP UI 在 `/tmp` 输入 `relay-native` 过滤后当前页显示 1 项；系统返回键从 Console 回到 Server 列表。该证据不替代完整滚动/分页、弹层返回栈和安全区验收。
+- 对同一设备执行 `force-stop` 后重启，Vault/Host 数据保留，旧 Console 显示需要重新连接；重新打开后建立新 Shell。锁屏、旋转和完整进程回收仍保持未完成。

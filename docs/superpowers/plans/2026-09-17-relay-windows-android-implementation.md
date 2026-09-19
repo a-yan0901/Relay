@@ -163,3 +163,8 @@
 - Android executor 现在同时尝试 Activity 与 application context 的 `READ|WRITE` URI revoke；构建、JVM 单测和 Debug APK 均通过。当前 APK 大小 `8,633,755` bytes，SHA-256 `42F5C183FB0CB4F6DAAAFA0825E8F3C41408B7CEF39A7F92390016AB85A6F19F`，两台真机均返回 `adb install -r --no-streaming` 的 `Success`。
 - `25091RP04C` 从用户提供的真实主机 `/tmp/relay-native-32m.bin` 下载到 `Download/relay-native-32m.bin`，最终大小 `33,554,432` bytes，设备端 SHA-256 为 `83ee47245398adee79bd9c0a8bc57b821e92aba10f5f9ade8a5d1fae4d8c4302`，与服务器和源文件一致；Transfer Center 显示 `已完成 · 100%`。
 - 传输完成后 `dumpsys activity permissions` 仍显示选择 URI 由当前 `MainActivity` 持有的临时 grant；`force-stop cn.ayan.relay` 后重新启动才清空。该现象属于当前 Android/MIUI 交互边界，A-11 继续保持未完成，不能把 best-effort revoke 误记为立即释放通过。
+
+## 2026-09-19 Android 返回、过滤与进程恢复增量
+
+- `25091RP04C` 从真实 Console 发送系统返回键后回到 Server 列表；在 `/tmp` 输入过滤 `relay-native` 后当前页收敛为 1 项，证明真实设备过滤入口可达。完整弹层/根页面返回栈、滚动和分页仍未完成。
+- 对同一设备执行 `force-stop cn.ayan.relay` 后重新启动，Vault 解锁后仍保留 `Provided Acceptance Host`；旧 Console 明确显示“此 Console 需要重新连接”，不是伪造 connected，点击重新打开后建立新的真实 Shell。锁屏、旋转和完整进程回收仍待验收。

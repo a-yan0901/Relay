@@ -134,13 +134,13 @@
 | A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行 |
 | A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行；两台真机连续 3 轮关闭/重开后输入 `whoami`，6/6 返回 `t2`；本轮分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到远端回显，`2407FRK8EC` 重装后又输入 `echo REAL_SERVER_2407_REINSTALLED` 得到真实回显。复制、粘贴确认、中文/长输入和底部布局仍待完整走查。 |
 | A-06 | 断网后恢复 | 网络切换/短暂断开显示真实 `reconnecting` 或 `interrupted`；恢复后按交互约定重连，不伪造 connected | 待执行 |
-| A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行 |
+| A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行；`25091RP04C` 从 Console 发送系统返回键后回到 Server 列表，完整弹层/根页面退出顺序仍待走查。 |
 | A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | 待执行 |
-| A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | 待执行；`25091RP04C` 已在真实主机 UI 浏览 `/`（36 项）和 `/tmp`（25 项），过滤、分页、滚动和安全区仍待完整走查。 |
+| A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | 待执行；`25091RP04C` 已在真实主机 UI 浏览 `/`（36 项）和 `/tmp`（26 项），输入过滤 `relay-native` 后当前页收敛为 1 项；滚动、分页和安全区仍待完整走查。 |
 | A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行；已有增量证据：`2407FRK8EC` 在真实主机完成 32 MiB 原生 URI 上传，远端大小/SHA-256 与源一致；约 35% 取消后既有完整目标保持不变且无 staging，暂停/继续从约 11 MiB 断点完成。`25091RP04C` 又将 `/tmp/relay-native-32m.bin` 下载到 `Download/relay-native-32m.bin`，大小 `33,554,432` bytes、SHA-256 与远端一致，Transfer Center `已完成 · 100%`；小文件系统选择器上传/下载也已完成，远端 `/` 无写权限任务 0% 后取消。完整重试、部分失败和全矩阵仍待执行。 |
 | A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 待执行；真实系统文件选择与 DocumentsUI 保存已走通；传输完成后 Activity 内仍可观察到临时 URI grant，`force-stop` 后重启 Relay 才清空 `readUriPermissions/writeUriPermissions`。任务结束立即释放、拒绝权限提示和分享仍待执行。 |
 | A-12 | Vault 锁定和重开 | 锁定后秘密不可读取；正确解锁恢复；错误密码/损坏 bundle 不覆盖旧数据 | 待执行 |
-| A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行 |
+| A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行；`25091RP04C` force-stop/重启后 Host 与 Vault 数据仍在，旧 Console 显示“需要重新连接”，重新打开后建立新 Shell；锁屏、旋转和完整进程回收证据仍待执行。 |
 | A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | 待执行 |
 | A-15 | 低内存行为 | 大目录/大文件操作不明显失控；取消/退出后资源释放；无持续增长的输出/文件缓冲 | 待执行 |
 | A-16 | 秘密和网络边界 | 普通 logcat、WebView 持久化和系统备份中不出现密码/私钥/Vault 明文；客户端不要求本地 HTTP 监听 | 待执行；`25091RP04C` 部分检查未发现 logcat/app-private 测试标记、Relay/5173/3000/4173 监听，APK manifest `allowBackup=0`；完整专用标记密码、WebView、备份和设备日志流程仍待执行。 |
@@ -279,3 +279,8 @@
 - 当前 Debug APK：`8,633,755` bytes，SHA-256 `42F5C183FB0CB4F6DAAAFA0825E8F3C41408B7CEF39A7F92390016AB85A6F19F`；`2407FRK8EC`、`25091RP04C` 均重新安装成功。Android JVM 单测与 `assembleDebug` 在 JDK 21 / Gradle 9.3.1 / offline / 单 worker 下成功。
 - `25091RP04C` 在真实主机 `106.14.61.92:22` 上下载 `/tmp/relay-native-32m.bin` 到 `Download/relay-native-32m.bin`，Transfer Center `已完成 · 100%`；最终大小 `33,554,432` bytes，设备端 SHA-256 `83ee47245398adee79bd9c0a8bc57b821e92aba10f5f9ade8a5d1fae4d8c4302`，与远端一致。
 - 新增的 Activity/application 双重 revoke best-effort 已随本 APK 验证，但传输完成后 `dumpsys activity permissions` 仍显示当前 `MainActivity` 持有选择 URI 的临时 grant；`force-stop cn.ayan.relay` 后重启才清空。该结果记录为 Android/MIUI 临时授权边界，A-11 仍为 `待执行`，不宣称立即释放通过。
+
+## 13. 2026-09-19 Android 返回、过滤与进程恢复增量
+
+- `25091RP04C` 在真实 SFTP `/tmp` 输入 `relay-native` 后当前页从 26 项收敛到 1 项；从 Console 发送系统返回键后回到 Server 列表。A-07/A-09 的完整弹层、滚动、分页和安全区仍待执行。
+- 对同一设备执行 `force-stop cn.ayan.relay` 并重新启动，Vault 解锁后 `Provided Acceptance Host` 仍存在；原 Console 显示“此 Console 需要重新连接”，点击重新打开后建立新的真实 Shell。该结果支持 A-13 的数据保留/descriptor 不复用边界，但锁屏、旋转和完整进程回收仍未完成。
