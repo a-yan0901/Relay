@@ -554,3 +554,9 @@
 - 当前 Debug APK 仅向独立 AVD `emulator-5554` 执行一次保留数据部署：`npm run install:android:debug -- emulator-5554 <apk-path>`；脚本使用 `adb push` + `pm install -r --user 0`，返回 `Success`，没有 `-g`、卸载或 `pm clear`。
 - WebView CDP 页面标题为 `Relay SSH Workspace`。自动化创建 Vault 并保存合成 Host `Emulator Fixture Host` 后，执行 `adb shell am force-stop cn.ayan.relay` 和重新启动；锁定页出现，错误密码被拒绝并显示“主密码错误或 Vault 已损坏”，正确解锁后原 Host 仍显示。
 - 该条只交接模拟器 UI 子路径证据：Vault/Host 持久化、锁定、错误解锁和重开。它不回填真机 A-01、A-12、A-13，不覆盖真实 SSH、锁屏/旋转/软键盘、低内存，也不关闭 A-17。
+
+## 40. 2026-09-20 Windows 当前 NSIS 解压版隔离持久化交接
+
+- 当前 NSIS 解压版 `dist/releases/nsis/win-unpacked/Relay.exe`（NSIS `127,707,203` bytes / SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`）使用临时 `--user-data-dir` 启动。
+- Playwright Electron runner 首次创建 Vault 并保存合成 `Packaged Smoke Host`；关闭进程后再次启动，解锁 Vault 后 Host 成功恢复，输出 `Relay SSH Workspace` / `persistedHost=true`。临时 userData 已清理，未接触本机现有 Relay 数据。
+- 该证据只覆盖当前打包版的 Vault/Host 持久化和一次退出重开；旧版本安装包升级/回滚、签名、崩溃恢复多轮以及真实 SSH/SFTP/UI 完整任务链仍需 Windows 安装环境补验。

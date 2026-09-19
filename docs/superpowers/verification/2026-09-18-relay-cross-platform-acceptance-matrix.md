@@ -333,3 +333,12 @@
 | Android 数据保护 | 未改变真机 | 本轮只操作 `emulator-5554`，部署入口保留数据且不使用 `-g`、不卸载、不 `pm clear`；两台真机没有安装或数据变更。 |
 
 本条与上一条 9/9 instrumentation 共同构成模拟器自动化回归证据，仍不改变 A-01～A-17 真机验收边界。
+
+## 2026-09-20 Windows 当前 NSIS 解压版隔离 userData 回归
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Windows 打包版 Vault/Host 持久化 | 通过（隔离 userData） | 当前 `dist/releases/nsis/win-unpacked/Relay.exe` 通过 Playwright Electron runner 完成创建 Vault、保存合成 Host、退出进程、再次启动、解锁并读回 Host；输出 `title=Relay SSH Workspace`、`persistedHost=true`。临时数据已清理。 |
+| Windows 发布门禁 | 未整体通过 | 本轮不覆盖旧版本安装包升级/回滚、签名、崩溃多轮恢复或打包后真实 SSH/SFTP/UI 完整任务链；当前制品仍为 `NotSigned`。 |
+
+本条只补充当前打包版的隔离持久化证据，不把代码级迁移或单次 smoke 扩大为 Windows 发布完成。
