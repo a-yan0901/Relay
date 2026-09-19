@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-19
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**当前实现源码基线：** `e5f8f18`（包含 Android URI revoke best-effort 修正、Windows fixed bundle metadata 修复和 IPC 回归；本次新增的文档/重启回归测试在其后续交接提交中）。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `e5f8f18` 及本文件后续交接提交；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
+**当前实现源码基线：** `8815e4b`（包含 Android URI revoke best-effort 修正、Windows fixed bundle metadata 修复、IPC 回归和 runtime 重启回归；本次文档/真实主机续验在其后续交接提交中）。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `8815e4b` 及本文件后续交接提交；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -335,3 +335,9 @@
 - 独立 `userData` 打包版通过真实 renderer/preload IPC 完成首次 Vault setup、Host/workspace 保存、锁定、错误密码拒绝、正确解锁；停止并重新启动进程后，Vault 初始为 locked，解锁后 Host/workspace 恢复。未读取或修改现有桌面 Vault。
 - Windows `local-runtime` 重启回归 7/7 通过；当前全量 Vitest 为 161 个文件通过、1 个跳过，735 个测试通过、2 个跳过；typecheck/lint 通过。
 - 本节只推进 Web/Windows 证据，不改变 Android 安装阻塞结论：`25091RP04C` 仍需设备侧解除 `INSTALL_FAILED_USER_RESTRICTED`，`2407FRK8EC` 仍需恢复无线调试。
+
+## 20. 2026-09-19 Windows 打包版真实主机 SSH/SFTP 验证
+
+- 最新 NSIS 解压版使用独立 `userData`，经真实 renderer/preload IPC 连接用户提供的 `106.14.61.92:22`、账号 `t2` 主机；Host Key 指纹为 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5k`，显式信任后 Shell 状态为 `connected`。
+- 通过 native IPC 写入固定合成命令标记并收到真实远端回显；同一 Host 的 `files.listPage` 读取 `/` 返回 16 项并带 cursor；随后关闭 Shell 并锁定 Vault，状态为 `locked`。密码只通过临时进程环境变量传入，未写入脚本、仓库或日志。
+- 该证据补上 Windows 打包版真实密码认证、首次 Host Key 信任、终端输入和 SFTP 分页；A-03 的指纹变化拒绝、A-04 私钥路径、完整 A-10 传输矩阵、升级迁移、签名和持久制品来源仍待执行。

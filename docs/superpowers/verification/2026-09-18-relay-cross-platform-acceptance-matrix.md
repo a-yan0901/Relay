@@ -116,3 +116,8 @@
 - Windows 最新 `build:windows` 与 `package:windows` 通过；NSIS 为 `127,632,261` bytes、SHA-256 `D79B07850B80F1E714C07EDB543EB0CA1CCBDC4E071BC74E2743904F93F95858`，portable 为 `113,552,538` bytes、SHA-256 `26C498BB91315FC39DF3DC4AA527FD9A06ED80700D177DA6F1FFAA49C931B99A`。两者签名状态均为 `NotSigned`，不能回填为签名发布通过。
 - 隔离 `userData` 的打包版经过真实 renderer/preload IPC 完成 Vault setup、Host/workspace 保存、lock、错误密码拒绝、unlock，并在进程重启后恢复 Host/workspace；Windows 本地 runtime 重启回归 7/7 通过。这补强了 Windows Vault/持久化证据，但仍不替代升级迁移、完整打包 SSH/SFTP/UI 任务链和签名验收。
 - 当前全量 Vitest 为 161/162 个测试文件通过（1 个跳过），735/737 个测试通过（2 个跳过）；typecheck 和 lint 通过。
+
+## 2026-09-19 Windows 打包版真实主机 SSH/SFTP 验证
+
+- 最新 NSIS 解压版在独立 `userData` 中经真实 renderer/preload IPC 连接 `106.14.61.92:22` 的 `t2` 主机；Host Key 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5k` 显式 trust 后 Shell 为 `connected`，固定合成命令标记获得真实回显。
+- 同一打包版 Host 经 `files.listPage` 读取远端 `/` 返回 16 项和下一页 cursor，关闭 Shell 后锁定 Vault，状态为 `locked`。这证明打包版真实密码认证、Host Key 首次信任、Shell 输入和 SFTP 分页链路；不扩大为私钥、指纹变更拒绝或完整传输矩阵通过。

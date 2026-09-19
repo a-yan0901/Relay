@@ -210,3 +210,9 @@
 - 最新 `npm run build:windows` 和 `npm run package:windows` 均成功；NSIS `127,632,261` bytes、SHA-256 `D79B07850B80F1E714C07EDB543EB0CA1CCBDC4E071BC74E2743904F93F95858`，portable `113,552,538` bytes、SHA-256 `26C498BB91315FC39DF3DC4AA527FD9A06ED80700D177DA6F1FFAA49C931B99A`。两者 `Get-AuthenticodeSignature` 均为 `NotSigned`，签名仍是发布门禁。
 - 使用独立 `--user-data-dir` 启动打包版并通过真实 renderer/preload IPC 完成：首次 Vault setup、Host 保存、workspace 保存、锁定、错误密码拒绝、正确解锁；停止进程后再次启动，状态先为 locked，解锁后 Host/workspace 均恢复。该证据不接触现有桌面用户数据。
 - 新增 Windows 本地文件 runtime 重启回归后，定向 `local-runtime` 为 7/7；当前全量 Vitest 为 161 个文件通过、1 个跳过，735 个测试通过、2 个跳过；typecheck/lint 均通过。
+
+## 2026-09-19 Windows 打包版真实主机 SSH/SFTP 验证
+
+- 用最新 NSIS 解压目录的 `Relay.exe` 和独立 `userData`，通过真实 renderer/preload IPC 连接用户提供的 `106.14.61.92:22`、账号 `t2` 主机；首次 Host Key 指纹为 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5k`，显式 trust 后 Shell 状态为 `connected`。
+- Shell 通过 native IPC 写入固定合成标记并收到真实远端回显；同一 Host 再经 `files.listPage` 读取 `/`，返回 16 项并带分页 cursor，随后关闭 Shell、锁定 Vault，`vault.status` 返回 `locked`。本次密码仅通过临时进程环境变量传入，没有写入脚本、仓库或日志。
+- 该证据补上 Windows 打包版真实密码认证、Host Key 首次信任、终端输入和 SFTP 分页链路；私钥认证、Host Key 变更拒绝、完整上传下载/失败矩阵、升级迁移、签名和持久制品来源仍未完成。
