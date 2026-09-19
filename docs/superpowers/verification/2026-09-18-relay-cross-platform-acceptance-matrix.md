@@ -109,3 +109,10 @@
 - Windows `local-runtime` 定向测试 6/6 通过；全量 Vitest 为 161/162 个测试文件通过（1 个跳过），734/736 个测试通过（2 个跳过）。这只证明本地 runtime/共享映射，不扩大为 Windows 打包版完整任务链通过。
 - 对 `25091RP04C`（`192.168.1.3:46545`）再次执行安装：设备在线，APK 传输成功，但 `adb install -r -g --no-streaming` 再次返回 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`；本轮仍为安装阻塞，不能记录为 APK 已安装或 connected tests 通过。
 - `2407FRK8EC`（`192.168.1.2:40019`）当前连接仍被目标端主动拒绝（10061），没有新增该设备安装证据。
+
+## 2026-09-19 Web 回归与 Windows 打包版 Vault 重启验证
+
+- Web Playwright 复跑 4/4 通过：Vault/Host Key/终端多标签和锁定、SFTP 上传下载/取消、批量任务、断线恢复、窄屏布局和主题持久化均有真实浏览器证据。
+- Windows 最新 `build:windows` 与 `package:windows` 通过；NSIS 为 `127,632,261` bytes、SHA-256 `D79B07850B80F1E714C07EDB543EB0CA1CCBDC4E071BC74E2743904F93F95858`，portable 为 `113,552,538` bytes、SHA-256 `26C498BB91315FC39DF3DC4AA527FD9A06ED80700D177DA6F1FFAA49C931B99A`。两者签名状态均为 `NotSigned`，不能回填为签名发布通过。
+- 隔离 `userData` 的打包版经过真实 renderer/preload IPC 完成 Vault setup、Host/workspace 保存、lock、错误密码拒绝、unlock，并在进程重启后恢复 Host/workspace；Windows 本地 runtime 重启回归 7/7 通过。这补强了 Windows Vault/持久化证据，但仍不替代升级迁移、完整打包 SSH/SFTP/UI 任务链和签名验收。
+- 当前全量 Vitest 为 161/162 个测试文件通过（1 个跳过），735/737 个测试通过（2 个跳过）；typecheck 和 lint 通过。

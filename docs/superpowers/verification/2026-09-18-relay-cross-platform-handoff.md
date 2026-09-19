@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-19
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**当前实现源码基线：** `b094ee9`（包含 Android URI revoke best-effort 修正；Windows 制品所对应的 Windows 源码内容与 `bde17c4` 相同）。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `59cb7e4`；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
+**当前实现源码基线：** `e5f8f18`（包含 Android URI revoke best-effort 修正、Windows fixed bundle metadata 修复和 IPC 回归；本次新增的文档/重启回归测试在其后续交接提交中）。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `e5f8f18` 及本文件后续交接提交；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -327,3 +327,11 @@
 - `tests/unit/windows/local-runtime.test.ts` 6/6 通过；全量 Vitest 为 161 个文件通过、1 个跳过，734 个测试通过、2 个跳过。该结果不替代打包版 UI 的完整 SSH/SFTP/Vault 验收。
 - 本轮对 `25091RP04C`（`192.168.1.3:46545`）再次触发最新 Debug APK 安装；APK 推送完成，但安装返回 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`，因此没有新增安装成功或 connected instrumentation 证据。
 - `2407FRK8EC`（`192.168.1.2:40019`）仍返回 Windows socket 10061、`device not found`，未进入安装阶段。责任人仍需在设备侧解除 25091 的 MIUI 安装授权，并在 2407 端恢复无线调试后再执行真机回归。
+
+## 19. 2026-09-19 Web 回归与 Windows 打包版 Vault 重启验证
+
+- Web Playwright 当前复跑 4/4 通过，覆盖 Vault/Host Key/终端多标签和锁定、SFTP 上传下载/取消、批量任务、断线恢复、窄屏布局及主题持久化。
+- 最新 Windows 制品：NSIS `127,632,261` bytes、SHA-256 `D79B07850B80F1E714C07EDB543EB0CA1CCBDC4E071BC74E2743904F93F95858`；portable `113,552,538` bytes、SHA-256 `26C498BB91315FC39DF3DC4AA527FD9A06ED80700D177DA6F1FFAA49C931B99A`。两者 `Get-AuthenticodeSignature` 均为 `NotSigned`，签名和可追溯持久制品来源仍未完成。
+- 独立 `userData` 打包版通过真实 renderer/preload IPC 完成首次 Vault setup、Host/workspace 保存、锁定、错误密码拒绝、正确解锁；停止并重新启动进程后，Vault 初始为 locked，解锁后 Host/workspace 恢复。未读取或修改现有桌面 Vault。
+- Windows `local-runtime` 重启回归 7/7 通过；当前全量 Vitest 为 161 个文件通过、1 个跳过，735 个测试通过、2 个跳过；typecheck/lint 通过。
+- 本节只推进 Web/Windows 证据，不改变 Android 安装阻塞结论：`25091RP04C` 仍需设备侧解除 `INSTALL_FAILED_USER_RESTRICTED`，`2407FRK8EC` 仍需恢复无线调试。

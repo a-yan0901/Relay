@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 import { createWindowsLocalRuntime, type WindowsLocalRuntimeHandle } from '../../../apps/windows/local-runtime.js';
 import type { SshAdapterPort, SshChannel } from '../../../src/server/ssh/types.js';
@@ -35,6 +38,36 @@ describe('Windows local runtime', () => {
     await request(runtime, 'workspace-2', 'workspace.save', { expectedVersion: 0, state: loaded });
     await request(runtime, 'vault.lock', 'vault.lock', {});
     await expect(runtime.router.dispatch({ version: 1, requestId: 'workspace-3', operation: 'workspace.load', payload: {} })).resolves.toMatchObject({ ok: false, error: { code: 'VAULT_LOCKED' } });
+  });
+
+  it('keeps the local Vault, Host, and workspace across a runtime restart', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'relay-windows-runtime-restart-'));
+    let first: WindowsLocalRuntimeHandle | undefined;
+    try {
+      first = createWindowsLocalRuntime({ dataDir });
+      await request(first, 'restart-setup', 'vault.setup', { masterPassword: 'restart-password' });
+      const host = await request(first, 'restart-host-create', 'hosts.create', {
+        input: { name: 'Restart Host', address: 'restart.invalid', port: 22, username: 'ops', auth: { type: 'password', password: 'synthetic-only' } }
+      }) as { id: string };
+      const state = await request(first, 'restart-workspace-load', 'workspace.load', {}) as { version: number; tabs: unknown[]; activeTabId: string | null; layout: unknown; filters: unknown };
+      await request(first, 'restart-workspace-save', 'workspace.save', {
+        expectedVersion: state.version,
+        state: { ...state, filters: { query: 'restart', groupId: null, favoriteOnly: true } }
+      });
+      await first.close();
+      first = undefined;
+
+      runtime = createWindowsLocalRuntime({ dataDir });
+      await expect(request(runtime, 'restart-status', 'vault.status', {})).resolves.toEqual({ phase: 'locked' });
+      await request(runtime, 'restart-unlock', 'vault.unlock', { masterPassword: 'restart-password' });
+      await expect(request(runtime, 'restart-host-list', 'hosts.list', {})).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: host.id, name: 'Restart Host' })]));
+      await expect(request(runtime, 'restart-workspace-reload', 'workspace.load', {})).resolves.toMatchObject({ version: 1, filters: { query: 'restart', groupId: null, favoriteOnly: true } });
+    } finally {
+      await runtime?.close();
+      runtime = undefined;
+      await first?.close();
+      await rm(dataDir, { recursive: true, force: true });
+    }
   });
 
   it('keeps host-key confirmation inside the native IPC session', async () => {

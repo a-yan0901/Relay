@@ -203,3 +203,10 @@
 - `tests/unit/windows/local-runtime.test.ts` 定向结果为 6/6 通过；全量 Vitest 结果为 161 个测试文件通过、1 个跳过，734 个测试通过、2 个跳过。全量运行中的 jsdom Canvas/跨文档导航提示为既有测试环境提示，未形成失败。
 - 本轮再次向在线设备 `192.168.1.3:46545`（`25091RP04C`）触发安装；设备连接和 APK 推送均成功，随后 `adb install -r -g --no-streaming` 返回 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`，安装仍未完成，不能把本轮记为真机安装或 connected instrumentation 通过。
 - `2407FRK8EC`（`192.168.1.2:40019`）仍由目标端主动拒绝连接（Windows socket 10061），未执行到安装阶段；两台设备的安装/测试状态继续分开记录。
+
+## 2026-09-19 Web 回归与 Windows 打包版 Vault 重启验证
+
+- Web Playwright 当前复跑 `npm run test:e2e -- --project=chromium` 为 4/4 通过，覆盖 Vault/Host Key/终端多标签与锁定、SFTP 上传下载和取消、批量任务、断线恢复、窄屏布局与主题持久化。
+- 最新 `npm run build:windows` 和 `npm run package:windows` 均成功；NSIS `127,632,261` bytes、SHA-256 `D79B07850B80F1E714C07EDB543EB0CA1CCBDC4E071BC74E2743904F93F95858`，portable `113,552,538` bytes、SHA-256 `26C498BB91315FC39DF3DC4AA527FD9A06ED80700D177DA6F1FFAA49C931B99A`。两者 `Get-AuthenticodeSignature` 均为 `NotSigned`，签名仍是发布门禁。
+- 使用独立 `--user-data-dir` 启动打包版并通过真实 renderer/preload IPC 完成：首次 Vault setup、Host 保存、workspace 保存、锁定、错误密码拒绝、正确解锁；停止进程后再次启动，状态先为 locked，解锁后 Host/workspace 均恢复。该证据不接触现有桌面用户数据。
+- 新增 Windows 本地文件 runtime 重启回归后，定向 `local-runtime` 为 7/7；当前全量 Vitest 为 161 个文件通过、1 个跳过，735 个测试通过、2 个跳过；typecheck/lint 均通过。
