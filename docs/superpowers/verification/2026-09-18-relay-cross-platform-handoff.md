@@ -130,8 +130,8 @@
 | --- | --- | --- | --- |
 | A-01 | 首次打开、创建 Host、保存凭据 | 不需要 Relay URL 或 cookie；Host 重启后仍存在 | 待执行 |
 | A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 通过（真实主机密码路径）：两台 Android 16 真机在 `106.14.61.92:22` 展示 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`；点击“信任并连接”后均成功建立 Shell。旧模拟器 fixture 结果仅保留为历史回归证据。 |
-| A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | 待执行 |
-| A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行 |
+| A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | 通过：`25091RP04C` 真机连接局域网 SSH fixture，Host Key 更换后真实 UI 显示 `HOST KEY CHANGED`；拒绝后返回指纹不一致且再次连接仍显示变化，只有显式替换才建立新 Shell。脱敏证据：[Android Host Key/私钥 CDP 证据](./evidence/2026-09-19-android-host-key-private-key-cdp.md)。 |
+| A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行；增量通过私钥正向链路：`25091RP04C` 使用临时 Ed25519 私钥连接 `106.14.61.92:22`，真实回显 `ANDROID_PRIVATE_KEY_ACCEPTED`；错误私钥/错误口令和日志保密性仍待执行。 |
 | A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行；两台真机连续 3 轮关闭/重开后输入 `whoami`，6/6 返回 `t2`；本轮分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到远端回显，`2407FRK8EC` 重装后又输入 `echo REAL_SERVER_2407_REINSTALLED` 得到真实回显。复制、粘贴确认、中文/长输入和底部布局仍待完整走查。 |
 | A-06 | 断网后恢复 | 网络切换/短暂断开显示真实 `reconnecting` 或 `interrupted`；恢复后按交互约定重连，不伪造 connected | 待执行 |
 | A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行；`25091RP04C` 从 Console 发送系统返回键后回到 Server 列表，完整弹层/根页面退出顺序仍待走查。 |
@@ -347,10 +347,15 @@
 - 当前 Debug APK 为 `8,633,755` bytes，SHA-256 `068A16E94F09EA90C97F609DD456BDEE0874F830FC57668C364A8C997DB18C89`。
 - `2407FRK8EC`（Android 16/API 36）使用 mDNS ADB serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp`，重新安装返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`。
 - `25091RP04C`（Android 16/API 36）使用 `192.168.1.3:46545`，重新安装返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`。
-- 之前记录的 `INSTALL_FAILED_USER_RESTRICTED` 作为历史阻塞保留，但不再是本轮两台设备的状态。此回填不把 A-03、A-04、A-06～A-08、A-10～A-17 标记为通过；这些仍需按本任务书补齐人工操作和证据。
+- 之前记录的 `INSTALL_FAILED_USER_RESTRICTED` 作为历史阻塞保留，但不再是本轮两台设备的状态。A-03 已由 `25091RP04C` 真机 Host Key 变化实测回填为通过；A-04、A-06～A-08、A-10～A-17 仍需按本任务书补齐人工操作和证据。
 
 ## 22. 2026-09-19 Windows 认证边界回归
 
 - Windows 本地 runtime 已补齐私钥传递和 Host Key 变化拒绝回归：合成私钥/口令从 Vault 读取后到达 SSH adapter；已保存指纹变化并拒绝后返回 `HOST_KEY_MISMATCH`，不会降级为 `INTERNAL_ERROR`，也不会自动替换旧信任。
 - `tests/unit/windows/local-runtime.test.ts` 与 `tests/unit/server/host-key-policy.test.ts` 定向 `15/15` 通过；全量测试、类型检查、lint、Web/Server/Windows 构建均通过。
 - 修复版 NSIS 为 `127,632,446` bytes、SHA-256 `79B7E5306CCF919C57D892ACA2345B91ACB4CB2BBAEE21873F0CA07C395D08F2`；portable 为 `113,553,011` bytes、SHA-256 `2742E04BC86F3891755F3FCFB018349FD27DD6BEA6EE5BCD1B8039EB8720ED4E`；签名状态均为 `NotSigned`。这部分仍属于 Windows 自动化/打包证据，不替代真实 Windows UI 认证和升级验收。
+## 23. 2026-09-19 Android A-03/A-04 真机 UI 增量
+
+- `25091RP04C` 通过真实 WebView UI 连接局域网 SSH fixture；更换 Host Key 后显示 `HOST KEY CHANGED`，拒绝后保留旧信任并再次拒绝，显式替换后才建立新 Shell。A-03 回填为通过。
+- 同一真机使用临时 Ed25519 私钥连接用户提供的 `106.14.61.92:22`/`t2`，收到 `ANDROID_PRIVATE_KEY_ACCEPTED` 远端回显。临时公钥、私钥和 Android 临时 Server 均已清理；A-04 的错误凭据、日志保密性和完整失败矩阵仍待执行。
+- 脱敏证据：[Android Host Key/私钥 CDP 证据](./evidence/2026-09-19-android-host-key-private-key-cdp.md)。

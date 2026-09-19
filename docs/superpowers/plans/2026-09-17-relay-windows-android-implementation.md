@@ -223,9 +223,14 @@
 - `2407FRK8EC`（Android 16/API 36）通过 mDNS ADB serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp` 重新触发安装，`adb install -r -g --no-streaming` 返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`，Gradle `BUILD SUCCESSFUL`。
 - `25091RP04C`（Android 16/API 36）通过 `192.168.1.3:46545` 重新触发安装，`adb install -r -g --no-streaming` 返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`，Gradle `BUILD SUCCESSFUL`。
 - 本轮证明此前的 `INSTALL_FAILED_USER_RESTRICTED` 已不再阻塞这两台设备的当前 APK 安装和 connected instrumentation；2407 使用恢复后的 mDNS 通道，不把旧的 `192.168.1.2:40019` 拒绝状态当作当前设备结论。
-- 该结果只回填“当前 APK 可安装且 Android 原生测试可在两台真机执行”；A-03、A-04、A-06～A-08、A-10～A-17 的完整人工验收仍按任务书保持未完成。
+- 该结果只回填“当前 APK 可安装且 Android 原生测试可在两台真机执行”；随后 `25091RP04C` 已完成 A-03 Host Key 变化拒绝/显式替换的真实 UI 验证，A-04、A-06～A-08、A-10～A-17 的完整人工验收仍按任务书保持未完成。
 ## 2026-09-19 Windows Host Key 与私钥认证边界回归
 
 - `HostKeyPolicy` 的 Windows runtime 回归补上两条高风险边界：合成私钥和口令经过 Vault 解密后实际传给 SSH adapter；已信任 Host Key 变化后显式拒绝返回稳定的 `HOST_KEY_MISMATCH`，不再被通用异常降级为 `INTERNAL_ERROR`。首次 Host Key 拒绝仍不写入信任记录。
 - 定向 `tests/unit/windows/local-runtime.test.ts` 与 `tests/unit/server/host-key-policy.test.ts` 共 `15/15` 通过；全量 Vitest `161` 个文件通过、`737` 个测试通过、`2` 个跳过，`typecheck`、`lint`、`build`、`build:windows` 均通过。
 - 修复后重新生成 Windows 制品：NSIS `127,632,446` bytes / SHA-256 `79B7E5306CCF919C57D892ACA2345B91ACB4CB2BBAEE21873F0CA07C395D08F2`，portable `113,553,011` bytes / SHA-256 `2742E04BC86F3891755F3FCFB018349FD27DD6BEA6EE5BCD1B8039EB8720ED4E`；两者 `NotSigned`，真实签名仍是发布门禁。该证据覆盖 Windows runtime/打包产物边界，不替代真实 Windows UI 私钥登录和真实 Host Key 变化场景。
+## 2026-09-19 Android A-03/A-04 真机 UI 增量
+
+- `25091RP04C` 通过 WebView CDP 驱动真实 Android UI，连接局域网 SSH fixture `192.168.1.5:22222`；Host Key 更换后显示 `HOST KEY CHANGED`，拒绝保留旧信任，再次连接仍拒绝，显式替换后才建立 Shell。A-03 由此回填为通过。
+- 同一真机使用临时 Ed25519 私钥连接用户提供的 `106.14.61.92:22`/`t2`，真实 Console 回显 `ANDROID_PRIVATE_KEY_ACCEPTED`；临时公钥、私钥和 Android 临时 Server 均已清理。A-04 仅回填私钥正向证据，错误凭据和日志保密性仍待执行。
+- 脱敏操作记录：[Android Host Key/私钥 CDP 证据](../verification/evidence/2026-09-19-android-host-key-private-key-cdp.md)。

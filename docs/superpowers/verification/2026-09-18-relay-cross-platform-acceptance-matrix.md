@@ -65,7 +65,7 @@
 - Android 原生上传链路已补齐：系统选择器返回的 URI 保留在 native store，WebView 只拿到 opaque `sourceId`，原生以 32 KiB 缓冲通过单条 SFTP 连接写入 `.relay-part-<transferId>`，完成后原子 rename；取消/失败清理 staging，既有最终目标不被覆盖。
 - `2407FRK8EC` 在用户提供的 `106.14.61.92:22`、账号 `t2` 上完成 32 MiB 上传，远端大小 `33,554,432` bytes、SHA-256 `83ee47245398adee79bd9c0a8bc57b821e92aba10f5f9ade8a5d1fae4d8c4302`；取消约 35% 后保留既有完整目标且无 staging，暂停/继续从约 11 MiB 断点完成。该结果是 A-10 的实机增量证据，未把整个 A-10/A-11 标成通过。
 - Windows `package:windows` 已固定使用本地 `node_modules/electron/dist`，避免 Electron 下载超时，并将 NSIS/portable 分目录输出。当前制品：NSIS `127,632,075` bytes / SHA-256 `979E3D6CECD611AE99F3DE3CA41D3E6A298A5906196B685B61318A5853FDF20F`；portable `113,552,550` bytes / SHA-256 `82F8D40377037DF2392CFF2B20F7ED0E537C7011D118EEDFC99C01B37C0CAC7D`；均为 `NotSigned`。Electron ABI 149 的 `argon2`、`better-sqlite3`、`cpu-features` 加载通过，NSIS 安装/启动/卸载通过。
-- 当前自动化门禁：`npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows`、Android `:app:testDebugUnitTest :app:assembleDebug`、定向 Web/native 31 测试和全量 Web/Server 731 测试通过（161 文件通过、1 跳过；2 测试跳过）。剩余门禁仍包括 Android A-03～A-09、A-11～A-17、Windows 升级迁移/崩溃恢复/打包后完整任务链，以及签名和持久制品来源。
+- 当前自动化门禁：`npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows`、Android `:app:testDebugUnitTest :app:assembleDebug`、定向 Web/native 31 测试和全量 Web/Server 731 测试通过（161 文件通过、1 跳过；2 测试跳过）。Android A-03 已有真实 UI 通过证据；剩余门禁仍包括 A-04、A-05～A-09、A-11～A-17、Windows 升级迁移/崩溃恢复/打包后完整任务链，以及签名和持久制品来源。
 
 ## 2026-09-19 URI 权限复核与 32 MiB 下载续验（提交 `b094ee9`）
 
@@ -134,3 +134,8 @@
 - Windows runtime 新增回归：保存的合成私钥/口令确实进入 SSH adapter；已信任指纹变化并选择拒绝时，IPC 稳定返回 `HOST_KEY_MISMATCH`，而不是 `INTERNAL_ERROR`，旧指纹信任不被静默替换。
 - 定向测试 `15/15` 通过；全量 Vitest `161` 个文件、`737` 个测试通过，`typecheck`、`lint`、Web/Server/Windows 构建均通过。
 - 修复版 NSIS/portable 制品已重新生成并校验，但均为 `NotSigned`；Windows 真实 UI 私钥认证、真实 Host Key 变化和升级迁移仍保持 `🟡`，不提前标记为平台发布通过。
+## 2026-09-19 Android A-03/A-04 真机 UI 增量
+
+- `25091RP04C` 真实 UI 完成 Host Key 变化、拒绝保留旧信任、再次拒绝和显式替换闭环；A-03 已有可追溯脱敏证据。
+- 同一真机使用临时 Ed25519 私钥连接用户测试主机并收到 `ANDROID_PRIVATE_KEY_ACCEPTED` 远端回显；A-04 仍只记录私钥正向增量，错误凭据、日志保密性和完整失败矩阵未通过。
+- 证据文件：[Android Host Key/私钥 CDP 证据](./evidence/2026-09-19-android-host-key-private-key-cdp.md)。
