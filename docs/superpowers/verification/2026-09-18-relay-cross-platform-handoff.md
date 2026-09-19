@@ -425,3 +425,34 @@
 | 工具环境 | Android 构建 | 本机默认环境缺少 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 且默认 Java 为 17；项目要求 SDK 和 JDK 21。 | 使用固定 JDK 21/SDK 入口重跑；必要时补充构建入口说明，不把环境错误归因于业务代码。 |
 
 本清单是“当前版本全量验收”的问题基线；修复阶段按分组合并，修复完成前不更新为通过，也不单项重新打包。
+
+## 2026-09-20 批次统一验收回填（`e1c6246`）
+
+本批次按“集中修复后统一构建、统一部署、一次全量回归”执行；没有针对单个问题反复打包。
+
+### Web / Server
+
+- Vitest：`161` 个文件通过、`1` 个跳过；`739` 个测试通过、`2` 个跳过。
+- Playwright Chromium E2E：`4/4` 通过。
+- `typecheck`、`lint`、`build`、`build:windows`：通过。
+
+### Windows 打包版
+
+- NSIS：`127,632,018` bytes，SHA-256 `6B362AD8438AE7EF30FA3E64C6219D92D8BF3A740263BFD5C7AF783D44ED926C`。
+- Portable：`113,553,206` bytes，SHA-256 `B1D9F17BB3BB9C29E4FF63407171465676A953DCC45A9BBF37CC9A67A0B390ED`。
+- 两个 PE 制品的 `Get-AuthenticodeSignature` 均为 `NotSigned`，签名仍是发布门禁。
+- 同一批次的 NSIS 解压版完成独立 smoke：Vault 创建、错误 Vault 密码拒绝、真实 Host Key 指纹核验、SSH 命令输入、SFTP 目录读取/过滤、重启后 Console 自动重连和继续输入均通过。
+
+### Android 真机
+
+- APK：`8,717,527` bytes，SHA-256 `15DD7B81D6B1C2859E4869E3ECC0AD70F574FF9A6983136A7159B1F18752A479`。
+- 使用 JDK 21、SDK、Gradle 9.3.1、offline、单 worker 完成编译；统一 Gradle 命令已执行 `testDebugUnitTest`、`connectedDebugAndroidTest`、`assembleDebug`。
+- 两台设备的 connected runner 均在安装阶段报告 `0 tests`；最终原因是设备侧 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`，不是测试断言失败。
+- 只对最终 APK 各尝试一次保留数据的 `adb install -r -g --no-streaming`：`2407FRK8EC` 成功，`25091RP04C` 仍被系统拒绝。没有卸载 Android 应用，也没有重复触发 25091 安装。
+- 复用 2407 已安装 APK，通过 ADB 转发的 WebView CDP 完成 Vault/Server、Host Key、真实 SSH 命令、SFTP 读取和返回 Console；移动终端视图中的桌面式 `.secure-pill-action` 不可见，锁定/解锁入口尚未形成可验收的移动端证据，应补充移动端可见入口或明确交互路径。
+
+### 当前阻塞与边界
+
+- 25091 的系统安装策略仍阻塞真机 APK/测试 APK 部署；需要设备侧解除安装限制后，再用当前 APK 做一次完整验收。
+- A-05～A-17 中的复制粘贴、断网切换、返回键/旋转/安全区、URI 即时释放、低内存基线和 Android→Web/Windows bundle 回传仍未闭环。
+- Windows 签名、升级迁移、持久制品来源和完整发布任务链仍未通过。上述项目保持“待执行/阻塞”，不因自动化或局部真机 smoke 变绿。

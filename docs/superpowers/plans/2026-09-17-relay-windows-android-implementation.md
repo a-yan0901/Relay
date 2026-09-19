@@ -285,3 +285,12 @@
 - 当前版本先完成一次完整自动化/打包验收：Web/Server `161/162` 文件、`739` 测试通过，Playwright `4/4`；Windows 当前打包版完成 Vault/错误密码/SSH/SFTP/重启自动恢复；Android JDK 21/SDK 修正后编译成功，`25091RP04C` 原生测试 `7/7`。
 - 已确认的问题不是“每发现一项就重新打包”：Android 2407 的 `0 tests`/`INSTALL_FAILED_USER_RESTRICTED` 是设备安装阻塞；Android A-01、A-05～A-17 的剩余项主要是当前 APK 的完整人工证据和若干 URI、bundle、生命周期/布局产品边界；Windows 剩余是签名、升级迁移、持久制品来源和完整发布任务链。
 - 后续执行顺序固定为：集中修复产品代码和自动化 → 统一生成 Web/Windows/Android 制品 → 两台设备一次部署 → 按 A-01～A-17 和 Windows 清单全量回归 → 汇总剩余阻塞。问题清单关闭前不单项重新打包。
+
+## 2026-09-20 批次统一执行结果（`e1c6246`）
+
+- Web/Server 全量自动化：Vitest `161` 个文件通过、`1` 个跳过；`739` 个测试通过、`2` 个跳过；Playwright `4/4`；typecheck、lint、build、build:windows 均通过。
+- Windows 当前制品：NSIS `127,632,018` bytes / SHA-256 `6B362AD8438AE7EF30FA3E64C6219D92D8BF3A740263BFD5C7AF783D44ED926C`；Portable `113,553,206` bytes / SHA-256 `B1D9F17BB3BB9C29E4FF63407171465676A953DCC45A9BBF37CC9A67A0B390ED`；签名均为 `NotSigned`。同一批次安装包 smoke 已覆盖真实 SSH/SFTP 和重启自动重连。
+- Android 当前 APK：`8,717,527` bytes / SHA-256 `15DD7B81D6B1C2859E4869E3ECC0AD70F574FF9A6983136A7159B1F18752A479`。统一 Gradle 命令编译阶段通过；connected runner 在两台设备均因 `INSTALL_FAILED_USER_RESTRICTED` 未进入测试用例。
+- Android 部署策略：不卸载应用；最终 APK 仅各尝试一次 `adb install -r -g --no-streaming`。2407 成功，25091 被系统拒绝；2407 复用已安装 APK 的 WebView CDP 真机 smoke 已通过 Vault/Host Key/SSH/SFTP 主链路。
+- 新增问题：移动终端布局中桌面式 Vault 锁定按钮不可见，锁定/解锁入口需要补充移动端交互；这不是 SSH 或 SFTP 连接失败。
+- 当前阻塞：25091 安装策略、移动端全量 A-01～A-17 人工证据、Android→Web/Windows bundle 回传、Windows 签名/升级/持久制品来源。问题关闭前不标记跨端整体完成。

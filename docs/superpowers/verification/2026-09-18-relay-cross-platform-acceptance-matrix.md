@@ -185,3 +185,16 @@
 - 当前 Windows NSIS `127,632,032` bytes / `7E9A2676AE6CE83BD4755ADBFD4AE1AEA20D82870CC59183E0012D4D7658DB18`，portable `113,553,207` bytes / `3405E9984EB764771A784E7500E5A886A4F65915AB54A0B2635EFF2BB915A52A`，均 `NotSigned`；当前 NSIS 解压版一次性打包 smoke 已覆盖 Vault、错误密码、SSH 输入、SFTP 列表/过滤和重启自动恢复。
 - 当前 Android APK `8,633,646` bytes / `0DF9842E67D91346C175B0CC104163D62CF626DD12CC40033AC8DB3C78614195`；JDK 21/SDK 指向修正后编译成功，`25091RP04C` connected instrumentation `7/7`。`2407FRK8EC` 记录 `0 tests` 后安装测试 APK 被 `INSTALL_FAILED_USER_RESTRICTED` 阻断，需解除设备限制后与 Android 全量清单一起重跑。
 - 批量修复范围：Android A-01、A-05～A-17 中的真机缺口和可修复产品边界；Windows 签名/升级/持久制品来源；Android 构建环境入口。修复阶段不按单问题反复打包，问题清单关闭后再统一部署验收。
+
+## 2026-09-20 最新批次验收状态（`e1c6246`）
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Web / Server 自动化 | 通过 | Vitest `161/162` 文件、`739/741` 测试通过；Playwright `4/4`；typecheck/lint/build/build:windows 通过。 |
+| Windows 安装包 | 部分通过 | NSIS/Portable 已生成并记录 SHA-256；同一批次独立 smoke 覆盖 Vault、错误密码、SSH、SFTP、重启自动重连；两个制品均 `NotSigned`。 |
+| Android APK 构建 | 通过 | JDK 21/SDK/Gradle 9.3.1 offline 单 worker；APK `8,717,527` bytes，SHA-256 `15DD7B81D6B1C2859E4869E3ECC0AD70F574FF9A6983136A7159B1F18752A479`。 |
+| Android 2407 真机 | 部分通过 | 复用已安装 APK 通过 WebView CDP 完成 Vault、Host Key、SSH 命令、SFTP 读取；移动终端锁定入口不可见，未宣称 A-01～A-17 全量通过。 |
+| Android 25091 真机 | 阻塞 | 最终 APK 的一次 `adb install -r -g --no-streaming` 仍为 `INSTALL_FAILED_USER_RESTRICTED`；不重复安装，待设备侧解除策略。 |
+| 跨端 bundle A-17 | 未闭环 | Android 新增 bundle round-trip 测试已编译，但本轮 connected instrumentation 未安装成功；Android→Web/Windows 实机回传仍缺证据。 |
+
+本轮遵循批量验收原则：先执行同一版本全量检查，集中记录问题，再统一构建/部署；后续不因单个缺陷单独卸载、重装或重新打包。
