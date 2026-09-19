@@ -477,5 +477,6 @@
 ## 29. 2026-09-20 Android 本地验证入口与部署约束
 
 - 新增根目录命令 `npm run test:android:local`（`apps/android` 的 `test:local`），固定执行 Web 构建、Capacitor 同步、`:app:testDebugUnitTest` 和 `:app:assembleDebugAndroidTest --offline --no-daemon --max-workers=1`。本次执行 `BUILD SUCCESSFUL`，Gradle `93` 个任务中 `18` 个执行、`75` 个复用缓存；Android JVM 测试报告为 `36/36` 通过。
+- 统一部署时使用 `npm run install:android:debug -- <serial> [apk-path]`；该命令采用 `adb push` + `pm install -r --user 0`，保留现有应用数据，避免 `adb install -g` 的权限授予路径，不执行卸载、`pm clear` 或自动重试。
 - 该入口明确不执行 `connectedDebugAndroidTest`、ADB、安装、卸载、`pm clear` 或其他设备数据操作；适用于本地快速回归，避免为单个问题重复授权和重装 Android 应用。
 - 当前交接仍受设备可达性限制：本机 `adb devices -l` 无设备，用户提供的测试主机没有 `adb`，已知无线 ADB 端点不可达。设备恢复后使用同一批次制品一次部署，再按 A-01～A-17 全量回填；本地测试通过不将真机项目自动标记为通过。

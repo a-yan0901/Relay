@@ -232,6 +232,7 @@
 | 项目 | 结果 | 证据与边界 |
 | --- | --- | --- |
 | 本地 Android 回归入口 | 通过 | 新增根目录 `npm run test:android:local`，执行 Web 构建、Capacitor 同步、`:app:testDebugUnitTest` 与 `:app:assembleDebugAndroidTest`；JDK 21/SDK、offline、单 worker 下 `BUILD SUCCESSFUL`，Gradle `93` 个任务中 `18` 个执行、`75` 个复用缓存，Android JVM 报告为 `36/36`。 |
+| 保留数据的 Android 部署入口 | 已定义，未执行 | 新增 `npm run install:android:debug -- <serial> [apk-path]`，使用 `adb push` + `pm install -r --user 0`，不调用 `-g`、卸载或 `pm clear`；仅在统一批次需要部署且设备在线时执行。 |
 | 设备数据保护 | 通过 | 入口不调用 `connectedDebugAndroidTest`、ADB、安装、卸载或清理应用数据；设备不可用时只做本地编译和测试 APK 构建，不改变真机状态。 |
 | Android 真机验收 | 阻塞 | 本机 ADB 当前无设备；用户提供的测试主机没有 `adb`；已知无线 ADB 端点当前不可达。上述本地结果不替代 A-01～A-17 的真机证据。 |
 

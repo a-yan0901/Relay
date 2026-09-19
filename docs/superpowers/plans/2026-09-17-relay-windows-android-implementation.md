@@ -316,4 +316,5 @@
 
 - 新增根目录 `npm run test:android:local`，转调 `apps/android` 的 `test:local`；入口只执行 Web 构建、Capacitor 同步、`:app:testDebugUnitTest` 和 `:app:assembleDebugAndroidTest`，并固定使用 offline、单 worker、无 daemon。
 - 已在 JDK 21/Android SDK 环境执行成功：Gradle `BUILD SUCCESSFUL`，`93` 个任务中 `18` 个执行、`75` 个复用缓存；生成的 Android JVM 测试报告为 `36/36` 通过。该入口不调用 `connectedDebugAndroidTest`、ADB、安装、卸载或清理应用数据，适合作为设备不可用时的快速回归入口。
+- 新增显式部署命令 `npm run install:android:debug -- <serial> [apk-path]`；它通过 `adb push` 后执行 `pm install -r --user 0`，保留应用数据，不申请 `-g` 运行时权限，不卸载、不 `pm clear`，并在结束后删除设备临时 APK。该命令只有在确认需要部署统一批次时才执行。
 - 当前仍不能用本地验证代替真机验收：本机 `adb devices -l` 无设备，用户提供的测试主机未安装 `adb`，已知无线 ADB 端点当前不可达。待设备恢复后，仍按“集中修复、统一构建、一次部署、全量回归”执行，不为单个问题重复卸载/重装。

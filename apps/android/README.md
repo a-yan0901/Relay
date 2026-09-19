@@ -9,8 +9,19 @@
 export ANDROID_HOME=/usr/lib/android-sdk
 export ANDROID_SDK_ROOT=/usr/lib/android-sdk
 npm run build:android:debug
+npm run test:android:local
 npm run build:android:release
 ```
+
+设备部署默认使用保留数据且不申请运行时权限的安装路径；设备序列号必须显式传入，命令不会卸载应用、清理数据或自动执行：
+
+```powershell
+npm run install:android:debug -- 25091RP04C
+# 可选：指定 APK 路径
+npm run install:android:debug -- 25091RP04C android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+该命令通过 `adb push`、`pm install -r --user 0` 安装，然后删除设备临时 APK；不使用 `adb install -g`，也不调用 `pm clear`。只有在确认设备在线且确实需要部署新批次时才执行。
 
 Windows 开发机建议显式固定 JDK 21 和 Android SDK，并复用已经缓存的 Gradle；不要让首次构建在错误的 Java 17 或缺少 `ANDROID_HOME` 的环境下反复初始化：
 
