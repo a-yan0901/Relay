@@ -1472,6 +1472,15 @@ button.transfer-path-button:hover, button.transfer-path-button:focus-visible { c
   .primary-nav { display: none; }
   .primary-nav-item { padding-inline: 7px; }
   .brand-lockup small, .secure-pill { display: none; }
+  .app-header:not(.app-header-embedded) .secure-pill {
+    display: flex;
+    font-size: 0;
+    gap: 2px;
+    justify-content: center;
+    min-width: 28px;
+    padding: 4px;
+  }
+  .app-header:not(.app-header-embedded) .secure-pill::after { content: '锁'; font-size: 10px; }
   .workspace-shell { display: block; }
   .host-pane, .host-list { min-width: 0; width: 100%; }
   .sidebar { min-height: 0; overflow-x: auto; padding: 0 0 18px; }

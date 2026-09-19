@@ -412,3 +412,10 @@
 - 在保留现有模拟器 Vault/Host 数据的前提下，通过现有 WebView 原生 bridge 将固定完整向量分成 `5` 个 `1 KiB` 分块写入 Android，并只完成导入预览，不调用 `apply`。
 - 预览结果为 `2 Host / 2 Group / 2 Identity`、`conflicts=0`；错误导出密码和篡改 `authTag` 均被拒绝。该操作没有改写模拟器 SQLite 数据，也没有卸载、清库、重复安装或新增授权。
 - 这补充了 Web/Windows→Android 的真实 bridge 预览证据，但仍不替代两台真机的实际应用、反向导入 UI、字段核对和 A-17 完整双向验收。
+
+## 2026-09-20 移动窄屏主工作区 Vault 锁入口
+
+- 复核移动端布局时发现：`max-width: 620px` 下通用 `.secure-pill` 会被隐藏，导致主工作区无法直接锁定 Vault；终端嵌入式 Console 锁入口不受影响。
+- 已为非嵌入式主工作区恢复紧凑的锁按钮（保留既有 `aria-label`/`title`，仅在窄屏改为图标化显示），并新增 CSS 回归测试覆盖显示状态和最小触控宽度。
+- TDD 证据：先以缺失选择器得到预期失败，再实现后定向测试 `2/2`、关联 Web DOM 测试 `20/20`，`npm run build:web` 与 `npm run lint` 均通过。
+- 本次只改 Web 样式与测试，未重新安装、卸载、清理或授权 Android；待真实设备可用时随下一次统一交接批次部署，不把单个 UI 修复拆成一次设备重装。

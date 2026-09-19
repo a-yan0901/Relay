@@ -585,3 +585,9 @@
 - 在现有 `emulator-5554` 上通过 WebView 原生 bridge 执行固定向量导入：共 `5` 个 `1 KiB` 分块，预览结果为 `2 Host / 2 Group / 2 Identity`、`conflicts=0`。
 - 错误导出密码和篡改 `payload.authTag` 均被拒绝；本轮只预览、未执行 `apply`，因此没有改写当前模拟器 Vault/Host 数据，也没有卸载、清库、重复安装或新增授权。
 - 该条补充 Web/Windows→Android 的真实 bridge 预览证据；两台真机的应用/字段核对、Android→Web 实际导入和 Windows 打包 UI 导入仍是 A-17 未完成边界。
+
+## 42. 2026-09-20 移动窄屏 Vault 锁入口修复
+
+- 发现并修复 `max-width: 620px` 下主工作区头部隐藏 Vault 锁按钮的问题；非嵌入式 `.secure-pill` 现在以紧凑图标按钮显示，既有 `aria-label`/`title` 不变，Console 嵌入式锁入口保持原样。
+- TDD 结果：缺少选择器时定向测试按预期失败；实现后 CSS 测试 `2/2`、关联 Web DOM 测试 `20/20`，`npm run build:web` 与 `npm run lint` 通过。
+- 交接策略：本轮不重新安装、卸载、清库或新增 Android 授权；实际设备验证纳入下一次统一部署与全量验收批次，避免为单个问题反复重装。
