@@ -397,3 +397,12 @@
 | A-11 真机闭环 | 未完成 | 仍需在真机确认任务结束立即释放、拒绝权限提示和分享路径；本轮 APK 未安装，未改变设备数据 |
 
 最新未部署 Debug APK：`8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`。
+
+### Windows 当前提交 CI 制品
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Windows package workflow | 通过 | GitHub Actions run `35475857178`；checkout、依赖、typecheck/lint、Electron runtime 准备、NSIS/Portable、manifest、artifact upload 全部成功 |
+| 当前提交制品 | 已上传 | `Relay-Windows-main-4eb33df7b193e9652857e0284b181623f208c67c`，`240,657,371` bytes，保留至 `2026-12-18` |
+| 产物哈希/签名复核 | 未完成 | Actions 下载接口要求 GitHub Web/API 登录；当前 SSH 凭据不足以下载 ZIP，因此不把本轮包标记为签名通过 |
+| Windows 发布门禁 | 未完成 | 真签名、旧版本升级/回滚、崩溃恢复多轮、完整安装包任务链仍需单独验收 |

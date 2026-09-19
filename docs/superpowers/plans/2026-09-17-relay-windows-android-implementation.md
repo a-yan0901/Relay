@@ -431,3 +431,9 @@
 - 修复：open/save 两条 Activity 回调统一使用 `releaseUriGrantIfOperationFailed`；executor 缺失、调用异常和失败响应立即撤销，Activity 与 application context 两条撤销路径均做 best-effort 防护。
 - TDD/验证：缺少 helper 时先红；新增 Android JVM `AndroidUriGrantGuardTest` 后 `2/2` 通过；`npm run test:android:local` 返回 `BUILD SUCCESSFUL`（93 tasks，23 executed，70 up-to-date）；TypeScript 全量 `162` 文件通过、`746` tests 通过、`2` skipped，`typecheck`、`lint` 通过。
 - 新 Debug APK 仅构建未部署：`8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`。这补强失败分支代码证据，但不替代真机 A-11 的即时 grant、拒绝权限和分享验证。
+
+## 2026-09-20 Windows CI 当前提交制品
+
+- GitHub Actions run `35475857178`（commit `4eb33df`）成功完成 Windows package workflow 的全部步骤：源码校验、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 和 artifact 上传。
+- artifact 为 `Relay-Windows-main-4eb33df7b193e9652857e0284b181623f208c67c`，大小 `240,657,371` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35475857178`。
+- 本轮未取得 artifact ZIP 的 Web/API 下载权限，因此不补写未经核实的当前包哈希或签名状态；真签名、升级/回滚、崩溃恢复多轮和完整发布任务链继续作为 Windows 阻塞项。

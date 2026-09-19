@@ -604,3 +604,9 @@
 - 已修复 open/save 两条回调：成功响应继续交给 source/file writer 负责后续释放；失败响应、executor 缺失和异常路径立即走统一的 Activity/application context best-effort revoke。
 - TDD/验证：新增 `AndroidUriGrantGuardTest`，`2/2` 通过；`npm run test:android:local` 构建成功；TypeScript 全量 `162` 文件、`746` tests 通过、`2` skipped，typecheck/lint 通过。
 - 最新 Debug APK：`8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`，仅构建未安装。本条仍不能把 A-11 标成真机通过，任务结束立即释放、权限拒绝和分享需设备证据。
+
+## 44. 2026-09-20 Windows CI 当前提交制品
+
+- GitHub Actions run `35475857178`（commit `4eb33df`）已成功完成 checkout、`npm ci`、源码校验、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 生成和 artifact 上传。
+- artifact 名称为 `Relay-Windows-main-4eb33df7b193e9652857e0284b181623f208c67c`，压缩包大小 `240,657,371` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35475857178`。
+- 当前 SSH 凭据可用于 Git 操作，但 Actions artifact 下载接口要求 GitHub Web/API 登录；本轮未伪造或猜测包内哈希/签名字段。Windows 真签名、旧版本升级/回滚、崩溃恢复多轮和完整安装包任务链仍保持未完成。
