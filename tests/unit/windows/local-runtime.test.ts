@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 
 import { createWindowsLocalRuntime, type WindowsLocalRuntimeHandle } from '../../../apps/windows/local-runtime.js';
 import type { SshAdapterPort, SshChannel } from '../../../src/server/ssh/types.js';
+
+const FULL_VECTOR = JSON.parse(readFileSync(new URL('../../fixtures/vault-bundle-v1-full-vector.json', import.meta.url), 'utf8')) as {
+  exportPassword: string;
+  bundle: string;
+  expected: { hosts: number; groups: number; identities: number; terminalProfiles: number; tags: string[]; privateKeyHost: string; groupHost: string };
+};
 
 const request = async (runtime: WindowsLocalRuntimeHandle, requestId: string, operation: string, payload: unknown) => {
   const response = await runtime.router.dispatch({ version: 1, requestId, operation, payload });
@@ -112,5 +119,83 @@ describe('Windows local runtime', () => {
 
     await request(runtime, 'bundle-release', 'imports.releaseVaultBundle', { bundleId: started.bundleId });
     await expect(request(runtime, 'bundle-read-expired', 'imports.readVaultBundleChunk', { bundleId: started.bundleId, cursor: 0 })).rejects.toThrow('VAULT_BUNDLE_PREVIEW_EXPIRED');
+  });
+
+  it('imports the fixed full vector through Windows IPC without losing inherited fields', async () => {
+    runtime = createWindowsLocalRuntime({ dataDir: ':memory:' });
+    await request(runtime, 'setup-full-vector', 'vault.setup', { masterPassword: 'test-password' });
+
+    const preview = await request(runtime, 'preview-full-vector', 'imports.previewVaultImport', {
+      exportPassword: FULL_VECTOR.exportPassword,
+      bundle: FULL_VECTOR.bundle
+    }) as { previewId: string; hostCount: number; groupCount: number; identityCount: number; conflicts: unknown[] };
+    expect(preview).toMatchObject({
+      hostCount: FULL_VECTOR.expected.hosts,
+      groupCount: FULL_VECTOR.expected.groups,
+      identityCount: FULL_VECTOR.expected.identities,
+      conflicts: []
+    });
+
+    const applied = await request(runtime, 'apply-full-vector', 'imports.applyVaultImport', {
+      previewId: preview.previewId,
+      resolution: { hostConflicts: 'skip', groupConflicts: 'reuse', identityConflicts: 'reuse' }
+    });
+    expect(applied).toMatchObject({
+      importedHosts: FULL_VECTOR.expected.hosts,
+      importedGroups: FULL_VECTOR.expected.groups,
+      importedIdentities: FULL_VECTOR.expected.identities
+    });
+
+    const hosts = await request(runtime, 'list-full-vector-hosts', 'hosts.list', {}) as Array<Record<string, unknown>>;
+    const groups = await request(runtime, 'list-full-vector-groups', 'groups.list', {}) as Array<Record<string, unknown>>;
+    const identities = await request(runtime, 'list-full-vector-identities', 'identities.list', {}) as Array<Record<string, unknown>>;
+    const profiles = await request(runtime, 'list-full-vector-profiles', 'terminalProfiles.list', {}) as Array<Record<string, unknown>>;
+    const groupHost = hosts.find((host) => host.id === FULL_VECTOR.expected.groupHost);
+    const privateKeyHost = hosts.find((host) => host.id === FULL_VECTOR.expected.privateKeyHost);
+
+    expect(hosts).toHaveLength(FULL_VECTOR.expected.hosts);
+    expect(groups).toHaveLength(FULL_VECTOR.expected.groups);
+    expect(identities).toHaveLength(FULL_VECTOR.expected.identities);
+    expect(profiles.filter((profile) => profile.id === 'vector-terminal-profile')).toHaveLength(FULL_VECTOR.expected.terminalProfiles);
+    expect(groupHost).toMatchObject({
+      credentialSource: { type: 'group' },
+      tags: FULL_VECTOR.expected.tags,
+      groupId: 'vector-group-child',
+      terminalProfileId: 'vector-terminal-profile'
+    });
+    expect(privateKeyHost).toMatchObject({
+      authType: 'private_key',
+      credentialSource: { type: 'inline' },
+      jumpHostIds: [FULL_VECTOR.expected.groupHost],
+      tags: ['key host']
+    });
+    expect(groups.find((group) => group.id === 'vector-group-root')).toMatchObject({
+      defaultIdentityId: 'vector-identity-password',
+      connectionProfile: { keepaliveIntervalMs: 4_000 }
+    });
+    expect(identities.find((identity) => identity.id === 'vector-identity-key')).toMatchObject({ name: 'Vector Key', type: 'private_key' });
+  });
+
+  it('rejects a wrong password and tampered fixed vector without writing the desktop vault', async () => {
+    runtime = createWindowsLocalRuntime({ dataDir: ':memory:' });
+    await request(runtime, 'setup-full-vector-rejection', 'vault.setup', { masterPassword: 'test-password' });
+
+    await expect(request(runtime, 'preview-full-vector-wrong-password', 'imports.previewVaultImport', {
+      exportPassword: 'wrong-password',
+      bundle: FULL_VECTOR.bundle
+    })).rejects.toThrow('VAULT_BUNDLE_INVALID');
+
+    const tampered = JSON.parse(FULL_VECTOR.bundle) as { payload: { ciphertext: string } };
+    const ciphertext = Buffer.from(tampered.payload.ciphertext, 'base64');
+    ciphertext[0] ^= 1;
+    tampered.payload.ciphertext = ciphertext.toString('base64');
+    await expect(request(runtime, 'preview-full-vector-tampered', 'imports.previewVaultImport', {
+      exportPassword: FULL_VECTOR.exportPassword,
+      bundle: JSON.stringify(tampered)
+    })).rejects.toThrow('VAULT_BUNDLE_INVALID');
+
+    await expect(request(runtime, 'list-after-full-vector-rejection', 'hosts.list', {})).resolves.toEqual([]);
+    await expect(request(runtime, 'groups-after-full-vector-rejection', 'groups.list', {})).resolves.toEqual([]);
+    await expect(request(runtime, 'identities-after-full-vector-rejection', 'identities.list', {})).resolves.toEqual([]);
   });
 });

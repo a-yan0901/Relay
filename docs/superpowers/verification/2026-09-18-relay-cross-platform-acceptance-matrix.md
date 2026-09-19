@@ -102,3 +102,10 @@
 
 - `dist/releases/nsis/win-unpacked/Relay.exe` 可启动真实打包渲染页 `Relay SSH Workspace`，preload IPC 可调用，`vault.status` 返回 `locked`；本轮未解锁或写入现有桌面 Vault。
 - Windows `local-runtime`、main/preload 与 Server 固定 bundle 定向测试共 4 个文件、20 个测试通过。该证据只覆盖启动/IPC/本地 runtime 和固定向量回归，Windows 完整 SSH/SFTP/Vault 任务链、升级迁移、签名及持久制品来源仍保持未完成。
+
+## 2026-09-19 Windows 固定 bundle 回归与 Android 安装重试
+
+- Windows IPC 固定向量现已覆盖 preview/apply 的计数、字段继承、终端 profile、Group/Inline 凭据来源、jump host，以及错误密码和篡改 bundle 的无写入回滚；期间修复了共享 Host metadata 映射遗漏 `terminalProfileId` 的问题。
+- Windows `local-runtime` 定向测试 6/6 通过；全量 Vitest 为 161/162 个测试文件通过（1 个跳过），734/736 个测试通过（2 个跳过）。这只证明本地 runtime/共享映射，不扩大为 Windows 打包版完整任务链通过。
+- 对 `25091RP04C`（`192.168.1.3:46545`）再次执行安装：设备在线，APK 传输成功，但 `adb install -r -g --no-streaming` 再次返回 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`；本轮仍为安装阻塞，不能记录为 APK 已安装或 connected tests 通过。
+- `2407FRK8EC`（`192.168.1.2:40019`）当前连接仍被目标端主动拒绝（10061），没有新增该设备安装证据。

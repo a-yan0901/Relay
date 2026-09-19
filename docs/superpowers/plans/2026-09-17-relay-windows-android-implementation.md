@@ -196,3 +196,10 @@
 
 - 从 `dist/releases/nsis/win-unpacked/Relay.exe` 启动打包版，真实渲染页标题为 `Relay SSH Workspace`，桌面 preload IPC 可用；调用 `vault.status` 返回 `locked`。本次只读取锁定页和状态，没有解锁或写入现有桌面 Vault。
 - Windows `local-runtime`、main/preload 与 Server 固定 bundle 定向测试共 4 个文件、20 个测试通过；这补充了 Windows 启动/IPC/本地 runtime 的自动化证据，但不替代打包后完整 SSH/SFTP/Vault 任务链、升级迁移、签名和持久制品来源验收。
+
+## 2026-09-19 Windows 固定 bundle 回归与 Android 安装重试
+
+- 按 TDD 为 Windows IPC 增加固定 `vault-bundle-v1-full-vector.json` 的 preview/apply 回归，覆盖 2 个 Host、2 个 Group、2 个 Identity、终端 profile、标签、PEM 私钥、Group Identity 继承、jump host 及错误密码/篡改回滚。测试先暴露共享 `toHostMetadata` 映射遗漏 `terminalProfileId` 的真实缺陷，已补齐最小映射修复。
+- `tests/unit/windows/local-runtime.test.ts` 定向结果为 6/6 通过；全量 Vitest 结果为 161 个测试文件通过、1 个跳过，734 个测试通过、2 个跳过。全量运行中的 jsdom Canvas/跨文档导航提示为既有测试环境提示，未形成失败。
+- 本轮再次向在线设备 `192.168.1.3:46545`（`25091RP04C`）触发安装；设备连接和 APK 推送均成功，随后 `adb install -r -g --no-streaming` 返回 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`，安装仍未完成，不能把本轮记为真机安装或 connected instrumentation 通过。
+- `2407FRK8EC`（`192.168.1.2:40019`）仍由目标端主动拒绝连接（Windows socket 10061），未执行到安装阶段；两台设备的安装/测试状态继续分开记录。

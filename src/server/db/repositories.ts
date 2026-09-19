@@ -470,6 +470,7 @@ const toHostMetadata = (row: HostMetadataSqlRow): HostMetadata => ({
   jumpHostIds: parseJumpHostIds(row.jump_host_ids_json),
   connectionProfile: parseConnectionProfile(row.connection_profile_json),
   connectionProfileOverrides: parseConnectionProfileOverrides(row.connection_profile_overrides_json),
+  terminalProfileId: row.terminal_profile_id,
   isFavorite: row.is_favorite === 1,
   lastConnectedAt: row.last_connected_at,
   createdAt: row.created_at,

@@ -320,3 +320,10 @@
 
 - 从 `dist/releases/nsis/win-unpacked/Relay.exe` 启动打包版，真实渲染页标题为 `Relay SSH Workspace`，桌面 preload IPC 可用；调用 `vault.status` 返回 `locked`。本次只读取锁定页和状态，没有解锁或写入现有桌面 Vault。
 - Windows `local-runtime`、main/preload 与 Server 固定 bundle 定向测试共 4 个文件、20 个测试通过；这补充了 Windows 启动/IPC/本地 runtime 的自动化证据，但不替代打包后完整 SSH/SFTP/Vault 任务链、升级迁移、签名和持久制品来源验收。
+
+## 18. 2026-09-19 Windows 固定 bundle 回归与 Android 安装重试
+
+- Windows IPC 已用固定 `vault-bundle-v1-full-vector.json` 完成 preview/apply 回归：2 Host、2 Group、2 Identity、1 个导入 terminal profile，以及标签、PEM 私钥、Group Identity 继承、jump host 和错误/篡改无写入回滚均由测试断言覆盖。测试发现并修复共享 `toHostMetadata` 丢失 `terminalProfileId` 的字段映射问题。
+- `tests/unit/windows/local-runtime.test.ts` 6/6 通过；全量 Vitest 为 161 个文件通过、1 个跳过，734 个测试通过、2 个跳过。该结果不替代打包版 UI 的完整 SSH/SFTP/Vault 验收。
+- 本轮对 `25091RP04C`（`192.168.1.3:46545`）再次触发最新 Debug APK 安装；APK 推送完成，但安装返回 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`，因此没有新增安装成功或 connected instrumentation 证据。
+- `2407FRK8EC`（`192.168.1.2:40019`）仍返回 Windows socket 10061、`device not found`，未进入安装阶段。责任人仍需在设备侧解除 25091 的 MIUI 安装授权，并在 2407 端恢复无线调试后再执行真机回归。
