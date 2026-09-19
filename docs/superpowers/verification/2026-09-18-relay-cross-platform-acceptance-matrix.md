@@ -121,3 +121,10 @@
 
 - 最新 NSIS 解压版在独立 `userData` 中经真实 renderer/preload IPC 连接 `106.14.61.92:22` 的 `t2` 主机；Host Key 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5k` 显式 trust 后 Shell 为 `connected`，固定合成命令标记获得真实回显。
 - 同一打包版 Host 经 `files.listPage` 读取远端 `/` 返回 16 项和下一页 cursor，关闭 Shell 后锁定 Vault，状态为 `locked`。这证明打包版真实密码认证、Host Key 首次信任、Shell 输入和 SFTP 分页链路；不扩大为私钥、指纹变更拒绝或完整传输矩阵通过。
+
+## 2026-09-19 双真机安装与 connected instrumentation 回填
+
+- 当前 Debug APK：`8,633,755` bytes，SHA-256 `068A16E94F09EA90C97F609DD456BDEE0874F830FC57668C364A8C997DB18C89`。
+- `2407FRK8EC`（Android 16/API 36）通过恢复后的 mDNS ADB 通道安装成功，`:app:connectedDebugAndroidTest` 为 `7/7` 通过。
+- `25091RP04C`（Android 16/API 36）通过 `192.168.1.3:46545` 安装成功，`:app:connectedDebugAndroidTest` 为 `7/7` 通过。
+- 这次回填只证明安装和自动化原生测试门槛已恢复；Host Key 变更、私钥认证、网络切换、完整 SFTP 失败矩阵、生命周期/低内存/秘密边界和 A-17 仍以矩阵原状态为准。

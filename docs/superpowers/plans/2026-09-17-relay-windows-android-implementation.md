@@ -216,3 +216,11 @@
 - 用最新 NSIS 解压目录的 `Relay.exe` 和独立 `userData`，通过真实 renderer/preload IPC 连接用户提供的 `106.14.61.92:22`、账号 `t2` 主机；首次 Host Key 指纹为 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5k`，显式 trust 后 Shell 状态为 `connected`。
 - Shell 通过 native IPC 写入固定合成标记并收到真实远端回显；同一 Host 再经 `files.listPage` 读取 `/`，返回 16 项并带分页 cursor，随后关闭 Shell、锁定 Vault，`vault.status` 返回 `locked`。本次密码仅通过临时进程环境变量传入，没有写入脚本、仓库或日志。
 - 该证据补上 Windows 打包版真实密码认证、Host Key 首次信任、终端输入和 SFTP 分页链路；私钥认证、Host Key 变更拒绝、完整上传下载/失败矩阵、升级迁移、签名和持久制品来源仍未完成。
+
+## 2026-09-19 双真机重试：安装与 connected instrumentation
+
+- 当前 Debug APK 为 `8,633,755` bytes，SHA-256 为 `068A16E94F09EA90C97F609DD456BDEE0874F830FC57668C364A8C997DB18C89`。
+- `2407FRK8EC`（Android 16/API 36）通过 mDNS ADB serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp` 重新触发安装，`adb install -r -g --no-streaming` 返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`，Gradle `BUILD SUCCESSFUL`。
+- `25091RP04C`（Android 16/API 36）通过 `192.168.1.3:46545` 重新触发安装，`adb install -r -g --no-streaming` 返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`，Gradle `BUILD SUCCESSFUL`。
+- 本轮证明此前的 `INSTALL_FAILED_USER_RESTRICTED` 已不再阻塞这两台设备的当前 APK 安装和 connected instrumentation；2407 使用恢复后的 mDNS 通道，不把旧的 `192.168.1.2:40019` 拒绝状态当作当前设备结论。
+- 该结果只回填“当前 APK 可安装且 Android 原生测试可在两台真机执行”；A-03、A-04、A-06～A-08、A-10～A-17 的完整人工验收仍按任务书保持未完成。

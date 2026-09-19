@@ -341,3 +341,10 @@
 - 最新 NSIS 解压版使用独立 `userData`，经真实 renderer/preload IPC 连接用户提供的 `106.14.61.92:22`、账号 `t2` 主机；Host Key 指纹为 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5k`，显式信任后 Shell 状态为 `connected`。
 - 通过 native IPC 写入固定合成命令标记并收到真实远端回显；同一 Host 的 `files.listPage` 读取 `/` 返回 16 项并带 cursor；随后关闭 Shell 并锁定 Vault，状态为 `locked`。密码只通过临时进程环境变量传入，未写入脚本、仓库或日志。
 - 该证据补上 Windows 打包版真实密码认证、首次 Host Key 信任、终端输入和 SFTP 分页；A-03 的指纹变化拒绝、A-04 私钥路径、完整 A-10 传输矩阵、升级迁移、签名和持久制品来源仍待执行。
+
+## 21. 2026-09-19 双真机重新安装与原生测试复核
+
+- 当前 Debug APK 为 `8,633,755` bytes，SHA-256 `068A16E94F09EA90C97F609DD456BDEE0874F830FC57668C364A8C997DB18C89`。
+- `2407FRK8EC`（Android 16/API 36）使用 mDNS ADB serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp`，重新安装返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`。
+- `25091RP04C`（Android 16/API 36）使用 `192.168.1.3:46545`，重新安装返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`。
+- 之前记录的 `INSTALL_FAILED_USER_RESTRICTED` 作为历史阻塞保留，但不再是本轮两台设备的状态。此回填不把 A-03、A-04、A-06～A-08、A-10～A-17 标记为通过；这些仍需按本任务书补齐人工操作和证据。
