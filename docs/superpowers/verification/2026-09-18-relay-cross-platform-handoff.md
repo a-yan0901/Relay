@@ -508,3 +508,9 @@
 - 根因是干净 `npm ci` 后 Electron 包没有自动生成 `node_modules/electron/dist`，而 `package:windows` 显式使用该路径。新增 `apps/windows/ensure-electron.mjs` 与 `prepare:windows-electron`：缺失时调用 Electron 官方 `install.js`，CI 在打包前显式执行，`package:windows` 也自带该准备步骤。
 - 本机在清理依赖后直接执行 `npm run package:windows` 已完成 NSIS/Portable 打包；该结果只证明修复后的本地打包链路，待新 Actions run 成功并上传 manifest 后，才能补齐 Windows 持久制品来源证据。
 - 本批次未触发 Android 安装、卸载或清理数据；Android A-01～A-17、Windows 签名/升级/完整发布任务链边界保持不变。
+
+## 35. 2026-09-20 Windows CI 修复后复跑通过
+
+- GitHub Actions run `35466675429`（提交 `28b43e7`）已通过；`npm ci`、typecheck、lint、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 生成和 artifact 上传均成功。
+- artifact 名称为 `Relay-Windows-main-28b43e7eb39d1d5b2e71121750faec2c94bd80fc`，压缩包大小 `240,657,050` bytes，保留至 `2026-12-18`；run 页面：`https://github.com/a-yan0901/Relay/actions/runs/35466675429`。
+- 该条只关闭 Windows CI 和持久制品来源证据；artifact 的 Authenticode 状态仍为 `NotSigned`，Windows 签名、真实升级/回滚、崩溃恢复和完整安装包任务链仍未通过。Android 本批次仍未安装、卸载或清理数据。

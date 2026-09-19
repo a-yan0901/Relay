@@ -346,3 +346,9 @@
 - Windows runner 的失败原因为 `npm ci` 后 `node_modules/electron/dist` 不存在，而 `package:windows` 强制把 `electron-builder` 的 `electronDist` 指向该目录；这不是业务代码或 native module 编译失败。
 - 新增 `apps/windows/ensure-electron.mjs` 和 `prepare:windows-electron`，在缺失时调用 Electron 官方 `install.js`，并在 CI 打包前显式执行；`package:windows` 自身也包含该准备步骤，保证本地干净环境和 CI 行为一致。
 - 本机执行“清依赖后直接 `npm run package:windows`”已成功生成 NSIS/Portable；因此修复已通过本地真实打包，但 GitHub Actions 修复后的新 run/持久制品仍待本次提交触发后确认。
+
+## 2026-09-20 Windows CI 修复后复跑通过
+
+- GitHub Actions run `35466675429`（提交 `28b43e7`）通过：`npm ci`、typecheck、lint、Electron runtime 准备、NSIS/Portable 打包、manifest 生成和 artifact 上传均成功。
+- 持久 artifact：`Relay-Windows-main-28b43e7eb39d1d5b2e71121750faec2c94bd80fc`，压缩包大小 `240,657,050` bytes，未过期，保留至 `2026-12-18`；run 页面为 `https://github.com/a-yan0901/Relay/actions/runs/35466675429`。
+- 该证据关闭“Windows CI 可追溯制品来源”代码与流程问题，但 manifest 中的 `NotSigned` 不等于签名通过；真实签名、旧版本升级/回滚、崩溃恢复和完整打包任务链仍保持发布门禁未完成。

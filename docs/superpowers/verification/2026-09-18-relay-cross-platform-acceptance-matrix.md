@@ -276,3 +276,11 @@
 | Windows Actions 首次真实运行 | 失败，根因已定位 | run `35465104633` 的 checkout、`npm ci`、typecheck、lint 通过；`Build Windows packages` 因 `node_modules/electron/dist` 缺失失败。 |
 | Electron runtime 准备 | 已修复，待 CI 复跑 | 新增 `apps/windows/ensure-electron.mjs`、`prepare:windows-electron`，CI 和 `package:windows` 均显式调用 Electron 官方安装脚本；本机清依赖后直接 `npm run package:windows` 已成功。 |
 | Windows 持久制品 / 签名 | 未闭环 | 修复后的 GitHub Actions run 尚未完成；即使重新生成制品，`NotSigned`、真实升级迁移和完整发布任务链仍需单独验收。 |
+
+## 2026-09-20 Windows CI 修复后复跑通过
+
+| 项目 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Windows CI 打包与 manifest | 通过 | run `35466675429`、提交 `28b43e7`：typecheck、lint、Electron runtime 准备、NSIS/Portable、manifest 和 artifact 上传均成功。 |
+| 持久 artifact | 通过 | `Relay-Windows-main-28b43e7eb39d1d5b2e71121750faec2c94bd80fc`，`240,657,050` bytes，保留至 `2026-12-18`；来源可由 run 页面追溯。 |
+| Windows 签名 / 升级发布门禁 | 未闭环 | artifact manifest 如实记录签名状态；`NotSigned` 仍不满足签名要求，真实旧版本升级/回滚、崩溃恢复和完整打包任务链仍需 Windows 安装环境证据。 |
