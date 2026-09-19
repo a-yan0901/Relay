@@ -23,7 +23,7 @@
 
 - Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 和 `npm run test:e2e -- --project=chromium`；标准全量回归为 161 个测试文件通过、1 个跳过，727 个测试通过、2 个跳过；E2E 4/4 通过，Playwright 共享数据目录固定单 worker。
 - Windows（历史预览记录，非本轮新产物）：源码 commit `75cc630` 上曾执行 `npm run build:windows` 和 `npm run package:windows:portable`；本机残留 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`，大小 457,281,531 bytes，签名状态为 `NotSigned`。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
-- Android：源码 commit `d3c4c62` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker 执行 `:app:testDebugUnitTest :app:assembleDebug`，并执行 `:app:connectedDebugAndroidTest`；三项均返回 `BUILD SUCCESSFUL`，connected test 在 `2407FRK8EC` 完成 2/2。APK 大小 8,633,367 bytes，SHA-256 为 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。该 APK 曾安装到两台 Android 16 真机；续验结束时 `25091RP04C` 仍安装，`2407FRK8EC` 因测试 runner 清理后受到 `INSTALL_FAILED_USER_RESTRICTED` 阻塞。两台真机对用户提供的 `106.14.61.92:22` 密码主机完成 Host Key trust、`/tmp` SFTP 列举（19 项/台）、终端 resize/写入/关闭，并连续 3 轮关闭/重开后输入 `whoami` 返回 `t2`；本轮还在真实 UI 中完成两台 Console 命令回显和 `25091RP04C` 的 `/`/`/tmp` 浏览。SFTP 上传下载取消、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
+- Android：源码 commit `d3c4c62` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker 执行 `:app:testDebugUnitTest :app:assembleDebug`，并执行 `:app:connectedDebugAndroidTest`；三项均返回 `BUILD SUCCESSFUL`，connected test 在 `2407FRK8EC` 完成 2/2。APK 大小 8,633,367 bytes，SHA-256 为 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。该 APK 当前已安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`；`2407FRK8EC` 曾因测试 runner 清理后出现 `INSTALL_FAILED_USER_RESTRICTED`，随后恢复安装并重新完成真实服务器 UI 登录。两台真机对用户提供的 `106.14.61.92:22` 密码主机完成 Host Key trust、`/tmp` SFTP 列举（19 项/台）、终端 resize/写入/关闭，并连续 3 轮关闭/重开后输入 `whoami` 返回 `t2`；手机重装后另有 `echo REAL_SERVER_2407_REINSTALLED` 真实回显，本轮还在真实 UI 中完成两台 Console 命令回显和 `25091RP04C` 的 `/`/`/tmp` 浏览。SFTP 上传下载取消、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
 
 - 说明：本地 in-process SSH fixture 只用于可重复的自动化回归；上述 Android 真机结论使用的是用户提供的 `106.14.61.92:22`，账号为 `t2`，密码未写入仓库。
 
@@ -51,5 +51,11 @@
 - 两台 Android 16 真机均使用用户提供的 `106.14.61.92:22`/`t2`，从 Console 的“需要重新打开”状态执行重新打开；`2407FRK8EC` 输入 `echo REAL_SERVER_2407`、`25091RP04C` 输入 `echo REAL_SERVER_25091` 均得到远端回显和 `t2` 提示符。该证据专门覆盖“状态点变绿但命令不可输入”的风险，不把绿色状态单独视为通过。
 - `25091RP04C` 真实 SFTP UI 浏览 `/` 得到 36 项，跳转 `/tmp` 得到 25 项；初次非用户手势文件选择器自动化没有形成传输任务，不能作为证据；随后真实系统选择器上传/下载均已完成 100%，其余大文件取消/重试/部分失败和 SAF URI 边界仍待补平台证据。
 - `25091RP04C` 的部分安全检查无秘密标记、无 app-private 标记、无 Relay/常用开发端口监听；APK manifest 的 `android:allowBackup` 为 `0`。这不能替代使用专用无敏感标记密码完成的完整 A-16 过程。
-- `2407FRK8EC` 的 connected instrumentation 2/2 已通过，但 runner 清理 APK 后设备拒绝 `adb install -r`（`INSTALL_FAILED_USER_RESTRICTED`）；需设备侧确认安装权限后才能恢复该设备的当前 APK 状态。该阻塞不改变已取得的 connected test 结果，也不应通过静默修改厂商安全设置规避。
+- `2407FRK8EC` 的 connected instrumentation 2/2 已通过；runner 清理 APK 后设备曾拒绝 `adb install -r`（`INSTALL_FAILED_USER_RESTRICTED`），随后安装权限恢复，`adb install -r --no-streaming` 返回 `Success`，并在真实服务器上完成首次指纹确认、登录和 `echo REAL_SERVER_2407_REINSTALLED` 回显。该历史阻塞不改变 connected test 结果，也不再是当前安装状态阻塞。
 - `25091RP04C` 已通过真实 MIUI 文件选择器上传一个 33,817-byte 文件到用户服务器 `/tmp`，并通过 Android DocumentsUI 保存对话框下载回本机；两次 Transfer Center 均显示 100%。根目录无写权限时的 0% 上传任务已取消。32 MiB/25% 取消、重试、部分失败和任务结束立即释放 URI 仍保持待验收；force-stop 后重启时 URI grant 已清空。
+
+## 2026-09-19 续验追加：手机重装后的真实服务器命令验证
+
+- 当前两台 Android 真机均在线且安装同一 Debug APK；`2407FRK8EC` 重装后重新创建/保存的 Host 指向用户提供的 `106.14.61.92:22`、账号 `t2`，首次连接显示真实 `ssh-ed25519` 指纹并在确认后建立 Shell。
+- 手机端修正 Host 独立凭据后，Console 实际执行 `echo REAL_SERVER_2407_REINSTALLED`，返回同名远端回显和 `t2` 提示符。该结果证明输入已送达真实测试主机，不以状态点变绿替代命令验证。
+- 本条不把本地 in-process SSH fixture 当作真机证据；密码仍未写入仓库、日志或文档。A-01～A-17 未覆盖的验收边界继续保持原状态。

@@ -119,7 +119,7 @@
 - 历史增量回归（Linux 旧工作树，已被本轮 Windows checkout 记录取代）：`npm run test:e2e -- --workers=1` 通过 4/4；`npm run package:windows:portable` 的旧包 SHA256 为 `91af49081e8a477a99fe5993ace1777797115f0b32355249cd31ebf4bb435478`，旧 Debug APK SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`。该条只保留历史溯源，不代表当前制品或设备结果。
 ## 当前设备交接状态（2026-09-19）
 
-- Android 代码、Kotlin 编译、JVM 单元测试、connected 测试（2/2）和 Debug APK 构建已完成；源码提交 `d3c4c62` 构建的 APK（SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`）曾重新安装并启动于两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`，`emulator-5554` 仅作为历史模拟器证据保留。两台真机已使用 `106.14.61.92:22` 的用户提供密码主机完成 Host Key trust、连接测试、`/tmp` SFTP 列举、终端 resize/写入/关闭，以及 3 轮关闭/重开后输入 `whoami` 返回 `t2`；完整 SFTP、私钥认证、Host Key 变更、网络切换、锁屏/进程回收、低内存和 A-01～A-17 其余项目仍未完成。续验结束时 `25091RP04C` 仍安装该 APK，`2407FRK8EC` 被 connected test runner 清理后重新安装受到设备侧 `INSTALL_FAILED_USER_RESTRICTED` 阻塞。
+- Android 代码、Kotlin 编译、JVM 单元测试、connected 测试（2/2）和 Debug APK 构建已完成；源码提交 `d3c4c62` 构建的 APK（SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`）已重新安装并启动于两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`，`emulator-5554` 仅作为历史模拟器证据保留。两台真机已使用 `106.14.61.92:22` 的用户提供密码主机完成 Host Key trust、连接测试、`/tmp` SFTP 列举、终端 resize/写入/关闭，以及 3 轮关闭/重开后输入 `whoami` 返回 `t2`；`2407FRK8EC` 在重装后又完成首次指纹确认、真实登录和 `echo REAL_SERVER_2407_REINSTALLED` 回显。完整 SFTP、私钥认证、Host Key 变更、网络切换、锁屏/进程回收、低内存和 A-01～A-17 其余项目仍未完成。此前 connected test runner 导致的 `INSTALL_FAILED_USER_RESTRICTED` 已在设备侧恢复安装后解除，不再是当前安装状态阻塞。
 - 之前的 AOSP 软件模拟器 `/dev/kvm` 阻塞记录仍保留为历史环境证据；当前真机 native smoke 已补充真实设备 SSH/SFTP 通路证据，但仍不应扩大解释为完整 Android UI 和生命周期验收。
 - Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由目标设备执行人继续回填。任务 4–14 仍保持未完成；任务 15 只是未来同步兼容性预留，不属于本期客户端发布门禁。
 - 历史 Windows x64 portable 预览文件曾在本机生成，但本轮 portable 重试未形成新的可交接产物；仍等待 Windows native ABI、升级迁移、安装/退出/重开和本地 SSH/SFTP 任务链验证，`npmRebuild=false` 的打包结果不能替代 native ABI 验收。
@@ -138,8 +138,14 @@
 
 - 真实服务器证据继续使用用户提供的 `106.14.61.92:22`、账号 `t2`；本地 in-process SSH fixture 只用于自动化回归。两台设备均从“需要重新打开”的 Console 状态重新打开 Host 后，分别在真实远端输入 `echo REAL_SERVER_2407` 和 `echo REAL_SERVER_25091`，均收到远端命令回显和 `t2` 提示符，证明绿色状态对应的 Console 已恢复实际输入通路，而不是只看状态点颜色。
 - `25091RP04C` 的真实 SFTP UI 已打开并浏览远端 `/`（36 项）和 `/tmp`（25 项）；初次通过非用户手势的 HTML 文件选择器自动化没有形成传输任务，不能作为证据。随后真实系统文件选择器和 DocumentsUI 的上传/下载 100% 证据见本节后续条目；32 MiB/25% 取消、重试、部分失败和完整 URI 交互仍保持待验收。
-- Android 原生验证环境使用已安装的 JDK 21、缓存 Gradle 9.3.1、单 worker 和离线模式：`:app:testDebugUnitTest :app:assembleDebug` 成功；`:app:connectedDebugAndroidTest` 在 `2407FRK8EC` 完成 2/2。测试 runner 随后清理了目标 APK，`adb install -r` 和 `--no-streaming` 均返回 `INSTALL_FAILED_USER_RESTRICTED`；下一步需在该设备上确认安装提示/厂商安装权限，不能通过改动应用代码替代。
+- Android 原生验证环境使用已安装的 JDK 21、缓存 Gradle 9.3.1、单 worker 和离线模式：`:app:testDebugUnitTest :app:assembleDebug` 成功；`:app:connectedDebugAndroidTest` 在 `2407FRK8EC` 完成 2/2。测试 runner 随后清理目标 APK，`adb install -r` 和 `--no-streaming` 曾返回 `INSTALL_FAILED_USER_RESTRICTED`；该历史阻塞随后已在设备侧恢复，重新安装返回 `Success`，并完成本任务书服务器的真实 UI 登录回显验证。
 - `25091RP04C` 的安全检查：普通 logcat 无 `relay-device-test-2026` 标记，app-private 数据无该标记，`ss -lntp` 未发现 Relay app 或 5173/3000/4173 监听；`aapt dump xmltree` 显示 APK `android:allowBackup` 为 `0`。这些是部分 A-16 证据，不替代带专用标记密码的完整日志/WebView/备份流程。
 - Web/Server 标准全量回归第一次出现 `sync-routes` 单测 5 秒超时，针对文件 13/13 通过后再次运行标准命令完整通过；该次复跑结果为 161 个测试文件通过、1 个跳过，727 个测试通过、2 个跳过，E2E 4/4。未修改超时阈值，也未把 `--isolate=false` 的污染结果当作验收证据。
 - Android 系统文件交互续验：`25091RP04C` 通过真实 MIUI 文件选择器选取本地 33,817-byte PNG，上传到用户服务器 `/tmp` 后 Transfer Center 显示 `已完成 · 100%`；再通过 Android DocumentsUI 保存对话框下载回本机，保存文件为 33,817 bytes，Transfer Center 同样显示 `已完成 · 100%`。在远端 `/` 无写权限时，上传任务保持 0% 并被取消，未产生目标文件。该证据仍未覆盖 32 MiB/25% 取消、重试和部分失败矩阵。
 - URI 边界：传输完成后当前 Activity 仍可观察到本轮选择产生的临时 URI grant；`force-stop` 后重启 Relay，`readUriPermissions/writeUriPermissions` 均清空，未形成持久化授权。A-11 的任务结束立即释放、拒绝权限提示和分享链路仍待单独验收，不能只凭进程重启后的清理判定通过。
+
+## 2026-09-19 续验追加：手机重装后真实主机验证
+
+- `2407FRK8EC` 已重新安装源码 `d3c4c62` 对应 Debug APK，`adb install -r --no-streaming` 返回 `Success`；应用启动后 Vault 和 Host 数据可用，说明该设备已恢复到可继续验收的安装状态。
+- 手机首次重新连接 `106.14.61.92:22` 时展示并确认真实 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`；修正端上 Host 独立凭据后建立远程 Ubuntu Shell，输入 `echo REAL_SERVER_2407_REINSTALLED` 得到同名远端回显和 `t2` 提示符。
+- 本条使用的是用户提供的测试服务器；密码未写入代码、日志或任务书。本条只更新手机当前安装和真实 SSH 输入证据，不改变 A-01～A-17 其余待执行门禁。

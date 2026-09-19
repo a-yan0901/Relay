@@ -25,7 +25,7 @@
 
 ### 真实 Android 设备补充证据（2026-09-19）
 
-- 设备：Xiaomi `2407FRK8EC`、Xiaomi `25091RP04C`，均为 Android 16/API 36、arm64-v8a；本轮开始时两台均重新安装同一 Debug APK（应用 ID `cn.ayan.relay`），安装返回 `Success`，并成功启动 `MainActivity`。connected instrumentation 结束后 runner 清理了 `2407FRK8EC` 的 APK，当前 `25091RP04C` 仍安装，`2407FRK8EC` 恢复安装返回 `INSTALL_FAILED_USER_RESTRICTED`。
+- 设备：Xiaomi `2407FRK8EC`、Xiaomi `25091RP04C`，均为 Android 16/API 36、arm64-v8a；本轮开始时两台均重新安装同一 Debug APK（应用 ID `cn.ayan.relay`），安装返回 `Success`，并成功启动 `MainActivity`。connected instrumentation 结束后 runner 清理了 `2407FRK8EC` 的 APK；该设备后续恢复安装权限，`adb install -r --no-streaming` 返回 `Success`，当前两台均安装同一 APK。
 - 制品：源码 `d3c4c62`，APK 8,633,367 bytes，SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。
 - 测试主机：明确使用用户提供的 `106.14.61.92:22`、账号 `t2` 和用户提供的密码；密码不写入仓库。两台设备均返回同一 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`，确认后连接成功。
 - UI 重开与输入回归：每台设备连续 3 轮执行关闭当前 Shell、重新打开 Host、等待 raw native `terminal.status=connected`、聚焦 Console 并输入 `whoami`；6/6 轮均成功返回 `t2`，Console 输入框均可聚焦，活动终端标签均显示 `status-dot-green`。
@@ -133,7 +133,7 @@
 | A-02 | 首次 Host Key 确认 | 首次连接明确展示指纹；确认后可连接，拒绝则不建立 Shell | 通过（真实主机密码路径）：两台 Android 16 真机在 `106.14.61.92:22` 展示 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`；点击“信任并连接”后均成功建立 Shell。旧模拟器 fixture 结果仅保留为历史回归证据。 |
 | A-03 | Host Key 变化 | 指纹变化硬失败，不得沿用旧信任记录自动放行 | 待执行 |
 | A-04 | 密码和私钥认证 | 两种已支持认证方式分别成功/失败可解释；私钥内容不出现在 UI 日志 | 待执行 |
-| A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行；两台真机连续 3 轮关闭/重开后输入 `whoami`，6/6 返回 `t2`；本轮再分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到远端回显。复制、粘贴确认、中文/长输入和底部布局仍待完整走查。 |
+| A-05 | Console 输入、输出、复制粘贴 | 中文/长输入不乱序；复制可用；粘贴有明确确认；底部最后一行完整可见 | 待执行；两台真机连续 3 轮关闭/重开后输入 `whoami`，6/6 返回 `t2`；本轮分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到远端回显，`2407FRK8EC` 重装后又输入 `echo REAL_SERVER_2407_REINSTALLED` 得到真实回显。复制、粘贴确认、中文/长输入和底部布局仍待完整走查。 |
 | A-06 | 断网后恢复 | 网络切换/短暂断开显示真实 `reconnecting` 或 `interrupted`；恢复后按交互约定重连，不伪造 connected | 待执行 |
 | A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行 |
 | A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | 待执行 |
@@ -249,8 +249,9 @@
 
 - 真实测试主机再次明确为用户提供的 `106.14.61.92:22`、账号 `t2`；本地 in-process SSH fixture 没有用于本轮真机结论。两台真机从“需要重新打开”的 Console 状态重新打开 Host 后，分别输入 `echo REAL_SERVER_2407` 和 `echo REAL_SERVER_25091`，均得到远端回显和 `t2` 提示符；这证明命令实际可输入，不以绿色状态点单独判定通过。
 - `25091RP04C` 已在真实 SFTP UI 浏览远端 `/`（36 项）并跳转 `/tmp`（25 项）。初次通过非用户手势的 HTML 文件选择器自动化没有形成传输任务，不能作为证据；随后真实 MIUI 文件选择器上传和 DocumentsUI 下载均完成 100%，但 A-10/A-11 的大文件取消、重试、部分失败、任务结束 URI 释放和分享仍不得回填为通过。
-- Android 验证使用 JDK 21、已缓存 Gradle 9.3.1、单 worker、离线模式；`:app:testDebugUnitTest :app:assembleDebug` 成功，`:app:connectedDebugAndroidTest` 在 `2407FRK8EC` 完成 2/2。connected test 结束后 runner 清理了目标 APK；该设备随后两次安装尝试均返回 `INSTALL_FAILED_USER_RESTRICTED`，当前需在设备端确认安装提示/厂商安装权限，不能静默改动设备安全设置。`25091RP04C` 当前仍安装 APK。
+- Android 验证使用 JDK 21、已缓存 Gradle 9.3.1、单 worker、离线模式；`:app:testDebugUnitTest :app:assembleDebug` 成功，`:app:connectedDebugAndroidTest` 在 `2407FRK8EC` 完成 2/2。connected test 结束后 runner 清理了目标 APK；`2407FRK8EC` 随后曾返回 `INSTALL_FAILED_USER_RESTRICTED`，恢复设备安装权限后 `adb install -r --no-streaming` 返回 `Success`，并完成真实服务器首次指纹确认、登录和命令回显。当前两台真机均安装 APK。
 - `25091RP04C` 部分 A-16 检查结果：普通 logcat 无 `relay-device-test-2026` 标记，`run-as` app-private 数据无该标记，`ss -lntp` 未发现 Relay app 或 5173/3000/4173 监听；`aapt dump xmltree` 显示 APK `android:allowBackup` 为 `0`。因未按 A-16 要求使用专用无敏感标记密码完成全流程，这些记录只算部分证据。
 - Web/Server 标准全量回归复跑通过：161 个测试文件通过、1 个跳过；727 个测试通过、2 个跳过；E2E 4/4。此前一次全量运行的 `sync-routes` 5 秒超时经针对文件 13/13 通过后复跑通过，未修改测试超时或把 `--isolate=false` 结果当作验收依据。
 - Android SFTP 系统交互续验：`25091RP04C` 的真实 MIUI 文件选择器上传到用户服务器 `/tmp` 和 DocumentsUI 下载均显示 100%，本机保存结果为 33,817 bytes；远端根目录无写权限路径的 0% 任务已取消。该结果不替代 A-10 的大文件取消/重试/部分失败矩阵。
 - URI 观察：传输完成后 Activity 内仍存在本轮 URI grant；`force-stop` 后重新启动 Relay 时 grants 已清空。由于尚未证明每个任务结束立即释放、拒绝权限和分享路径，A-11 继续保持待执行。
+- 手机重装后续验：`2407FRK8EC` 启动已安装 APK，使用用户提供的 `106.14.61.92:22`、账号 `t2` 建立真实 SSH Shell；确认指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI` 后，Console 执行 `echo REAL_SERVER_2407_REINSTALLED` 返回同名远端回显和 `t2` 提示符。该结果只更新安装和真实输入证据，不改变其余待执行门禁。
