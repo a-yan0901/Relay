@@ -496,3 +496,8 @@
 
 - 新增 `.github/workflows/windows-package.yml`，支持 `workflow_dispatch` 和 `v*` 标签；Windows runner 会执行 `npm ci`、typecheck、lint、`npm run package:windows`，生成 NSIS/Portable 和 `release-manifest.json`（大小、SHA-256、Authenticode 状态），并上传 90 天受控制品。
 - 当前只完成工作流定义和静态条款检查，尚未产生 GitHub Actions run、Release 附件或签名文件；因此 Windows 持久制品来源、签名和真实升级门禁仍保持未完成。
+
+## 33. 2026-09-20 Web/Server Chromium 端到端复验
+
+- 当前提交重新执行 `npm run test:e2e -- --project=chromium --workers=1`，Playwright `5/5` 通过，耗时 `43.1s`；E2E 配置中的 Web、Server、Cloud 构建服务均完成启动。
+- 本次复验未安装、卸载或清理 Android 应用数据，也未改变 Windows 制品；它只更新 Web/Server 自动化证据，不关闭 Android 真机 A-01～A-17 或 Windows 发布门禁。

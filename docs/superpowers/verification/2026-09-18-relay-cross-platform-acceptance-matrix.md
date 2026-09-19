@@ -261,3 +261,10 @@
 | --- | --- | --- |
 | Windows CI 打包流程 | 已实现，未执行 | 新增 `.github/workflows/windows-package.yml`，支持手动/`v*` 标签触发，在 Windows runner 上完成 `npm ci`、typecheck、lint、NSIS/Portable 打包，并上传带 SHA-256/Authenticode 状态的 manifest 和制品。 |
 | Windows 持久制品来源 | 未闭环 | 当前仅完成仓库内工作流定义和静态结构检查；尚无 GitHub Actions run、Release URL 或实际签名制品，仍不能勾选持久制品/签名发布门禁。 |
+
+## 2026-09-20 Web/Server Chromium 端到端复验
+
+| 范围 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Chromium E2E | 通过 | 当前提交重新执行 `npm run test:e2e -- --project=chromium --workers=1`，Playwright `5/5` 通过，耗时 `43.1s`；运行期间配置的 Web/Server/Cloud 构建服务均正常启动。 |
+| Android / Windows 发布门禁 | 未改变 | 该次只覆盖浏览器端到服务端链路，不替代 Android A-01～A-17 真机证据，也不替代 Windows 签名、持久制品和安装包升级证据。 |

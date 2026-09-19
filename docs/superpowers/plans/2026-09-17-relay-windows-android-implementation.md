@@ -333,3 +333,9 @@
 
 - 新增 `.github/workflows/windows-package.yml`：在 Windows runner 上执行 `npm ci`、typecheck、lint、`npm run package:windows`，生成 NSIS/Portable 后计算 SHA-256 和 Authenticode 状态，生成 `dist/releases/release-manifest.json` 并上传 90 天受控制品。
 - 工作流支持手动触发和 `v*` 标签触发；当前未在 GitHub Actions 上实际运行，因而只完成“可追溯制品流程”代码准备，不能替代真实 CI 产物、签名和安装包升级验收。
+
+## 2026-09-20 Web/Server Chromium 端到端复验
+
+- 在当前提交上重新执行 `npm run test:e2e -- --project=chromium --workers=1`，Playwright `5/5` 通过，耗时 `43.1s`。
+- 该次运行按仓库 E2E 配置启动并完成 Web、Server、Cloud 构建服务；仅有 Vite chunk size、`NO_COLOR/FORCE_COLOR` 等警告，没有测试失败或服务启动错误。
+- 本次只复验 Web/Server 浏览器链路，未触发 Android 安装、卸载、`pm clear` 或设备数据变更；Android 真机和 Windows 发布门禁边界保持不变。
