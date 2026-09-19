@@ -473,3 +473,9 @@
 - 证据：终端/操作 gateway 集成测试 `10/10`；`ACCOUNT_SYNC_E2E=true npm run test:e2e -- --project=chromium --workers=1 tests/e2e/account-sync.spec.ts` 为 `4/4`；全量 Vitest `162/163` 文件、`742/744` 测试；Chromium E2E `5/5`；typecheck、lint、build、build:windows 均通过。
 - 本批次未安装、卸载或重复安装 Android；遵循“尽量选择不需要授权的安装方式”的约束。固定 JDK 21/SDK、offline、单 worker 下 `:app:testDebugUnitTest` 为 `36/36`、`:app:assembleDebugAndroidTest` 编译成功；当前 Android 仍只保留已有设备状态，服务端和本地测试均不替代新 APK 真机验收。
 - 验收边界不变：A-04 完整失败矩阵、A-06 网络切换、A-08 软键盘/旋转/安全区、A-11 URI 即时释放、A-15 长时低内存、A-17 Android→Web/Windows 双向 bundle，以及 Windows 签名/升级/持久制品来源和完整发布任务链仍未闭环。
+
+## 29. 2026-09-20 Android 本地验证入口与部署约束
+
+- 新增根目录命令 `npm run test:android:local`（`apps/android` 的 `test:local`），固定执行 Web 构建、Capacitor 同步、`:app:testDebugUnitTest` 和 `:app:assembleDebugAndroidTest --offline --no-daemon --max-workers=1`。本次执行 `BUILD SUCCESSFUL`，Gradle `93` 个任务中 `18` 个执行、`75` 个复用缓存；Android JVM 测试报告为 `36/36` 通过。
+- 该入口明确不执行 `connectedDebugAndroidTest`、ADB、安装、卸载、`pm clear` 或其他设备数据操作；适用于本地快速回归，避免为单个问题重复授权和重装 Android 应用。
+- 当前交接仍受设备可达性限制：本机 `adb devices -l` 无设备，用户提供的测试主机没有 `adb`，已知无线 ADB 端点不可达。设备恢复后使用同一批次制品一次部署，再按 A-01～A-17 全量回填；本地测试通过不将真机项目自动标记为通过。

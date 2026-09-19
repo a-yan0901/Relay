@@ -19,6 +19,7 @@
     "package:windows": "npm run build:windows && electron-builder --win nsis --x64 --config.electronDist=node_modules/electron/dist --config.directories.output=dist/releases/nsis --publish never && electron-builder --win portable --x64 --config.electronDist=node_modules/electron/dist --config.directories.output=dist/releases/portable --publish never",
     "package:windows:portable": "npm run build:windows && electron-builder --win portable --x64 --config.electronDist=node_modules/electron/dist --config.npmRebuild=false --config.directories.output=dist/releases-portable-preview --config.compression=store --publish never",
     "build:android:debug": "npm --prefix apps/android run build:debug",
+    "test:android:local": "npm --prefix apps/android run test:local",
     "build:android:release": "npm --prefix apps/android run build:release",
     "build": "npm run build:web && npm run build:server && npm run build:cloud",
     "start": "node dist/server/index.js",

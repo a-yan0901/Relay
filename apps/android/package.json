@@ -6,6 +6,7 @@
     "web:build": "cd ../.. && npm run build:web",
     "sync": "npm run web:build && npx cap sync android",
     "build:debug": "npm run sync && node run-gradle.mjs :app:assembleDebug --no-daemon --max-workers=1 --console=plain",
+    "test:local": "npm run sync && node run-gradle.mjs :app:testDebugUnitTest :app:assembleDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain",
     "build:release": "npm run sync && npx cap build android --androidreleasetype AAB"
   }
 }

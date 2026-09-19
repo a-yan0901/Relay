@@ -226,3 +226,13 @@
 | A-01～A-17 | 未整体通过 | 本批次只关闭服务端账号隔离回归；Android A-04、A-06、A-08、A-11、A-15、A-17 等人工/跨端门禁保持原状态。 |
 
 本批次验证的是账号同步与 WebSocket owner 上下文，不替代 Android 真机清单、Windows 打包发布门禁或双向 bundle 交接。后续仍按问题分组集中修复，再统一构建、部署和全量验收。
+
+## 2026-09-20 Android 本地验证入口
+
+| 项目 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| 本地 Android 回归入口 | 通过 | 新增根目录 `npm run test:android:local`，执行 Web 构建、Capacitor 同步、`:app:testDebugUnitTest` 与 `:app:assembleDebugAndroidTest`；JDK 21/SDK、offline、单 worker 下 `BUILD SUCCESSFUL`，Gradle `93` 个任务中 `18` 个执行、`75` 个复用缓存，Android JVM 报告为 `36/36`。 |
+| 设备数据保护 | 通过 | 入口不调用 `connectedDebugAndroidTest`、ADB、安装、卸载或清理应用数据；设备不可用时只做本地编译和测试 APK 构建，不改变真机状态。 |
+| Android 真机验收 | 阻塞 | 本机 ADB 当前无设备；用户提供的测试主机没有 `adb`；已知无线 ADB 端点当前不可达。上述本地结果不替代 A-01～A-17 的真机证据。 |
+
+本入口用于提高离线回归效率；设备恢复后按批次统一部署和全量验收，不针对单个问题反复卸载、重装或重新授权。

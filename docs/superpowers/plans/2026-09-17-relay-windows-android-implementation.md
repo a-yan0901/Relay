@@ -311,3 +311,9 @@
 - TDD/回归证据：终端 gateway 账号 owner/operation owner 集成测试 `10/10` 通过；开启 `ACCOUNT_SYNC_E2E=true` 的账户同步 E2E `4/4` 通过。随后全量 Vitest `162/163` 文件（`162` 通过、`1` 跳过），`742/744` 测试通过；Chromium E2E `5/5`；`typecheck`、`lint`、`build`、`build:windows` 均通过。
 - 同批次补齐 ESLint 对 `apps/android/**/*.mjs` 的 Node 全局声明，避免跨平台 Gradle 启动脚本的 `process` 误报；不改变 Android 业务行为。
 - Android 仍遵循“不卸载、不反复安装”：本批次只做 ADB 只读状态检查，当前未部署新 APK；固定 JDK 21/SDK、offline、单 worker 下 `:app:testDebugUnitTest` 报告 `36/36` 通过，`:app:assembleDebugAndroidTest` 编译成功。Android A-04、A-06、A-08、A-11、A-15、A-17 以及 Windows 签名/升级/持久制品来源等门禁继续保持未完成。
+
+## 2026-09-20 Android 本地验证入口
+
+- 新增根目录 `npm run test:android:local`，转调 `apps/android` 的 `test:local`；入口只执行 Web 构建、Capacitor 同步、`:app:testDebugUnitTest` 和 `:app:assembleDebugAndroidTest`，并固定使用 offline、单 worker、无 daemon。
+- 已在 JDK 21/Android SDK 环境执行成功：Gradle `BUILD SUCCESSFUL`，`93` 个任务中 `18` 个执行、`75` 个复用缓存；生成的 Android JVM 测试报告为 `36/36` 通过。该入口不调用 `connectedDebugAndroidTest`、ADB、安装、卸载或清理应用数据，适合作为设备不可用时的快速回归入口。
+- 当前仍不能用本地验证代替真机验收：本机 `adb devices -l` 无设备，用户提供的测试主机未安装 `adb`，已知无线 ADB 端点当前不可达。待设备恢复后，仍按“集中修复、统一构建、一次部署、全量回归”执行，不为单个问题重复卸载/重装。
