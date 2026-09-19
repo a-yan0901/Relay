@@ -348,3 +348,9 @@
 - `2407FRK8EC`（Android 16/API 36）使用 mDNS ADB serial `adb-8DWSM7Y9IBCMPJSC-oak1zL._adb-tls-connect._tcp`，重新安装返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`。
 - `25091RP04C`（Android 16/API 36）使用 `192.168.1.3:46545`，重新安装返回 `Success`；`:app:connectedDebugAndroidTest` 完成 `7/7`。
 - 之前记录的 `INSTALL_FAILED_USER_RESTRICTED` 作为历史阻塞保留，但不再是本轮两台设备的状态。此回填不把 A-03、A-04、A-06～A-08、A-10～A-17 标记为通过；这些仍需按本任务书补齐人工操作和证据。
+
+## 22. 2026-09-19 Windows 认证边界回归
+
+- Windows 本地 runtime 已补齐私钥传递和 Host Key 变化拒绝回归：合成私钥/口令从 Vault 读取后到达 SSH adapter；已保存指纹变化并拒绝后返回 `HOST_KEY_MISMATCH`，不会降级为 `INTERNAL_ERROR`，也不会自动替换旧信任。
+- `tests/unit/windows/local-runtime.test.ts` 与 `tests/unit/server/host-key-policy.test.ts` 定向 `15/15` 通过；全量测试、类型检查、lint、Web/Server/Windows 构建均通过。
+- 修复版 NSIS 为 `127,632,446` bytes、SHA-256 `79B7E5306CCF919C57D892ACA2345B91ACB4CB2BBAEE21873F0CA07C395D08F2`；portable 为 `113,553,011` bytes、SHA-256 `2742E04BC86F3891755F3FCFB018349FD27DD6BEA6EE5BCD1B8039EB8720ED4E`；签名状态均为 `NotSigned`。这部分仍属于 Windows 自动化/打包证据，不替代真实 Windows UI 认证和升级验收。

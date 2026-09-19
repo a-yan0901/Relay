@@ -103,6 +103,103 @@ describe('Windows local runtime', () => {
     await request(runtime, 'close-1', 'sessions.close', { sessionId: 'session-1' });
   });
 
+  it('passes the stored private-key credential to the native SSH adapter', async () => {
+    let capturedAuth: unknown;
+    const channel = new EventEmitter() as SshChannel & EventEmitter;
+    channel.write = () => undefined;
+    channel.resize = () => undefined;
+    channel.close = () => { channel.emit('close'); };
+    const sshAdapter: SshAdapterPort = {
+      async connect(config, callbacks) {
+        capturedAuth = config.auth;
+        callbacks.onStatus?.('connected');
+        return channel;
+      },
+      async testConnection() { return { ok: true }; }
+    };
+    runtime = createWindowsLocalRuntime({ dataDir: ':memory:', sshAdapter });
+    await request(runtime, 'private-key-setup', 'vault.setup', { masterPassword: 'test-password' });
+    const privateKey = '-----BEGIN OPENSSH PRIVATE KEY-----\nfixture-only\n-----END OPENSSH PRIVATE KEY-----';
+    const host = await request(runtime, 'private-key-host', 'hosts.create', {
+      input: {
+        name: 'Private Key Host',
+        address: 'private-key.example.com',
+        port: 22,
+        username: 'ops',
+        auth: { type: 'private_key', privateKey, passphrase: 'fixture-passphrase' }
+      }
+    }) as { id: string };
+
+    await expect(request(runtime, 'private-key-open', 'sessions.openShell', {
+      request: { requestId: 'private-key-session', hostId: host.id, cols: 80, rows: 24 }
+    })).resolves.toMatchObject({ sessionId: 'private-key-session', hostId: host.id });
+    expect(capturedAuth).toEqual({ type: 'private_key', privateKey, passphrase: 'fixture-passphrase' });
+    await request(runtime, 'private-key-close', 'sessions.close', { sessionId: 'private-key-session' });
+  });
+
+  it('does not silently accept a changed trusted host key', async () => {
+    let connectionCount = 0;
+    let hostId = '';
+    const events: Array<{ kind: string; payload: unknown }> = [];
+    const makeChannel = (): SshChannel & EventEmitter => {
+      const channel = new EventEmitter() as SshChannel & EventEmitter;
+      channel.write = () => undefined;
+      channel.resize = () => undefined;
+      channel.close = () => { channel.emit('close'); };
+      return channel;
+    };
+    const sshAdapter: SshAdapterPort = {
+      async connect(_config, callbacks) {
+        connectionCount += 1;
+        const changed = connectionCount > 1;
+        const accepted = await callbacks.onHostKey({
+          algorithm: 'ssh-ed25519',
+          fingerprint: changed ? 'SHA256:changed' : 'SHA256:first',
+          address: 'changed-key.example.com',
+          port: 22,
+          hostId: hostId,
+          reason: changed ? 'changed' : 'first-seen'
+        });
+        if (!accepted) throw new Error('host key rejected');
+        callbacks.onStatus?.('connected');
+        return makeChannel();
+      },
+      async testConnection() { return { ok: true }; }
+    };
+    runtime = createWindowsLocalRuntime({ dataDir: ':memory:', sshAdapter });
+    runtime.subscribe((event) => events.push({ kind: event.kind, payload: event.payload }));
+    await request(runtime, 'changed-key-setup', 'vault.setup', { masterPassword: 'test-password' });
+    const host = await request(runtime, 'changed-key-host', 'hosts.create', {
+      input: { name: 'Changed Key Host', address: 'changed-key.example.com', port: 22, username: 'ops', auth: { type: 'password', password: 'fixture-password' } }
+    }) as { id: string };
+    hostId = host.id;
+
+    const firstOpen = runtime.router.dispatch({
+      version: 1,
+      requestId: 'changed-key-first-session',
+      operation: 'sessions.openShell',
+      payload: { request: { requestId: 'changed-key-first-session', hostId: host.id, cols: 80, rows: 24 } }
+    });
+    await vi.waitFor(() => expect(events.some((event) => event.kind === 'terminal.host-key' && (event.payload as { reason?: string }).reason === 'first-seen')).toBe(true));
+    await expect(request(runtime, 'changed-key-trust', 'sessions.hostKeyDecision', { sessionId: 'changed-key-first-session', decision: 'trust', fingerprint: 'SHA256:first' })).resolves.toMatchObject({ accepted: true });
+    await expect(firstOpen).resolves.toMatchObject({ ok: true, result: { sessionId: 'changed-key-first-session' } });
+    await request(runtime, 'changed-key-close-first', 'sessions.close', { sessionId: 'changed-key-first-session' });
+
+    const secondOpen = runtime.router.dispatch({
+      version: 1,
+      requestId: 'changed-key-second-session',
+      operation: 'sessions.openShell',
+      payload: { request: { requestId: 'changed-key-second-session', hostId: host.id, cols: 80, rows: 24 } }
+    });
+    await vi.waitFor(() => expect(events.some((event) => event.kind === 'terminal.host-key' && (event.payload as { reason?: string }).reason === 'changed')).toBe(true));
+    const changedChallenge = events.find((event) => event.kind === 'terminal.host-key' && (event.payload as { reason?: string }).reason === 'changed');
+    expect(changedChallenge?.payload).toMatchObject({ fingerprint: 'SHA256:changed', previous: { fingerprint: 'SHA256:first' } });
+    await expect(request(runtime, 'changed-key-reject', 'sessions.hostKeyDecision', { sessionId: 'changed-key-second-session', decision: 'reject', fingerprint: 'SHA256:changed' })).resolves.toMatchObject({ accepted: false });
+    await expect(secondOpen).resolves.toMatchObject({ ok: false, error: { code: 'HOST_KEY_MISMATCH' } });
+    expect(events).toContainEqual(expect.objectContaining({ kind: 'terminal.error', payload: expect.objectContaining({ code: 'HOST_KEY_MISMATCH' }) }));
+    expect(connectionCount).toBe(2);
+  });
+
   it('streams native file saves through a bounded writer handle', async () => {
     const writer = {
       write: vi.fn(async (_data: Uint8Array) => undefined),

@@ -128,3 +128,9 @@
 - `2407FRK8EC`（Android 16/API 36）通过恢复后的 mDNS ADB 通道安装成功，`:app:connectedDebugAndroidTest` 为 `7/7` 通过。
 - `25091RP04C`（Android 16/API 36）通过 `192.168.1.3:46545` 安装成功，`:app:connectedDebugAndroidTest` 为 `7/7` 通过。
 - 这次回填只证明安装和自动化原生测试门槛已恢复；Host Key 变更、私钥认证、网络切换、完整 SFTP 失败矩阵、生命周期/低内存/秘密边界和 A-17 仍以矩阵原状态为准。
+
+## 2026-09-19 Windows Host Key 与私钥认证边界回归
+
+- Windows runtime 新增回归：保存的合成私钥/口令确实进入 SSH adapter；已信任指纹变化并选择拒绝时，IPC 稳定返回 `HOST_KEY_MISMATCH`，而不是 `INTERNAL_ERROR`，旧指纹信任不被静默替换。
+- 定向测试 `15/15` 通过；全量 Vitest `161` 个文件、`737` 个测试通过，`typecheck`、`lint`、Web/Server/Windows 构建均通过。
+- 修复版 NSIS/portable 制品已重新生成并校验，但均为 `NotSigned`；Windows 真实 UI 私钥认证、真实 Host Key 变化和升级迁移仍保持 `🟡`，不提前标记为平台发布通过。

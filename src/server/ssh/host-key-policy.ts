@@ -146,7 +146,7 @@ export class HostKeyPolicy {
     const pending = this.pending;
     this.pending = null;
     if (decision === 'reject') {
-      this.mismatch = false;
+      this.mismatch = pending.challenge.reason === 'changed';
       pending.verify(false);
       return false;
     }
