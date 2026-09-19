@@ -406,3 +406,11 @@
 | 当前提交制品 | 已上传 | `Relay-Windows-main-4eb33df7b193e9652857e0284b181623f208c67c`，`240,657,371` bytes，保留至 `2026-12-18` |
 | 产物哈希/签名复核 | 未完成 | Actions 下载接口要求 GitHub Web/API 登录；当前 SSH 凭据不足以下载 ZIP，因此不把本轮包标记为签名通过 |
 | Windows 发布门禁 | 未完成 | 真签名、旧版本升级/回滚、崩溃恢复多轮、完整安装包任务链仍需单独验收 |
+
+### Android 数据保留部署短路
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 相同 APK 重复部署 | 已避免 | `install:android:debug` 先只读 `pm path`/设备端 SHA-256；哈希一致时跳过 `push` 和 `pm install` |
+| 新包部署路径 | 保持不变 | 未安装、哈希不同或读取失败时使用 `adb push` + `pm install -r --user 0`，不使用 `-g`、不卸载、不 `pm clear` |
+| 自动化验证 | 通过 | `android-install-policy.test.ts` `4/4`；`node --check`、策略 smoke、typecheck、lint、diff-check 通过；本轮未写设备 |

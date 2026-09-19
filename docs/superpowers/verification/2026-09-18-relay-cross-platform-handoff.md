@@ -610,3 +610,9 @@
 - GitHub Actions run `35475857178`（commit `4eb33df`）已成功完成 checkout、`npm ci`、源码校验、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 生成和 artifact 上传。
 - artifact 名称为 `Relay-Windows-main-4eb33df7b193e9652857e0284b181623f208c67c`，压缩包大小 `240,657,371` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35475857178`。
 - 当前 SSH 凭据可用于 Git 操作，但 Actions artifact 下载接口要求 GitHub Web/API 登录；本轮未伪造或猜测包内哈希/签名字段。Windows 真签名、旧版本升级/回滚、崩溃恢复多轮和完整安装包任务链仍保持未完成。
+
+## 45. 2026-09-20 Android 数据保留部署短路
+
+- `apps/android/install-debug.mjs` 现在先只读 `pm path` 和设备端 APK SHA-256；与本地 APK 完全一致时直接跳过 `adb push`/`pm install`，避免重复安装和再次触发设备授权。
+- 未安装、哈希不同、哈希读取失败或输出格式异常时，仍使用 `adb push` + `pm install -r --user 0`；不使用 `-g`，不卸载、不 `pm clear`。
+- TDD/验证：策略测试先因模块缺失失败，补实现后 `4/4` 通过；`node --check`、策略 smoke、`typecheck`、`lint`、`git diff --check` 通过。本轮未调用安装脚本、未改变模拟器或真机数据。

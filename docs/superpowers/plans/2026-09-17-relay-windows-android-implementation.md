@@ -437,3 +437,9 @@
 - GitHub Actions run `35475857178`（commit `4eb33df`）成功完成 Windows package workflow 的全部步骤：源码校验、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 和 artifact 上传。
 - artifact 为 `Relay-Windows-main-4eb33df7b193e9652857e0284b181623f208c67c`，大小 `240,657,371` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35475857178`。
 - 本轮未取得 artifact ZIP 的 Web/API 下载权限，因此不补写未经核实的当前包哈希或签名状态；真签名、升级/回滚、崩溃恢复多轮和完整发布任务链继续作为 Windows 阻塞项。
+
+## 2026-09-20 Android 数据保留部署短路
+
+- 为落实“不要每次卸载 Android 版本重装”，`apps/android/install-debug.mjs` 在部署前只读设备已有包的路径和 SHA-256；哈希一致则直接跳过 `adb push` 与安装。
+- 未安装、不同版本或设备无法安全返回哈希时，才执行原有 `adb push` + `pm install -r --user 0`，不使用 `-g`，也不卸载、不清库、不新增授权。
+- TDD/验证：缺少策略模块时先红，实现后 `android-install-policy.test.ts` `4/4`；`node --check`、策略 smoke、`npm run typecheck`、`npm run lint` 和 `git diff --check` 通过。本轮未触碰设备。
