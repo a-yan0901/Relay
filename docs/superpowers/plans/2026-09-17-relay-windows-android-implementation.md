@@ -279,3 +279,9 @@
 - 复查“重启后仍提示需要重新连接”的原因，确认问题不仅是 `autoConnect`，还包括恢复初始态和 native `needs-reopen` 事件向 app/UI 暴露了内部状态。
 - 已把 native 句柄失效恢复改为完全无感：内部标记保留用于诊断，外部状态只显示连接中/重连中；旧 socket/service instance 清理后立即创建新 Shell。只有自动重试耗尽或真实认证/Host Key 错误才显示用户可操作的错误。
 - 通过 Web 定向测试 `67/67`、Playwright 终端恢复 `3/3`、typecheck 和 lint；平台整体未完成门禁仍按验收矩阵维护，不因该修复提前标记 Android/Windows 全部验收通过。
+
+## 2026-09-19 当前版本全量验收基线与问题分组
+
+- 当前版本先完成一次完整自动化/打包验收：Web/Server `161/162` 文件、`739` 测试通过，Playwright `4/4`；Windows 当前打包版完成 Vault/错误密码/SSH/SFTP/重启自动恢复；Android JDK 21/SDK 修正后编译成功，`25091RP04C` 原生测试 `7/7`。
+- 已确认的问题不是“每发现一项就重新打包”：Android 2407 的 `0 tests`/`INSTALL_FAILED_USER_RESTRICTED` 是设备安装阻塞；Android A-01、A-05～A-17 的剩余项主要是当前 APK 的完整人工证据和若干 URI、bundle、生命周期/布局产品边界；Windows 剩余是签名、升级迁移、持久制品来源和完整发布任务链。
+- 后续执行顺序固定为：集中修复产品代码和自动化 → 统一生成 Web/Windows/Android 制品 → 两台设备一次部署 → 按 A-01～A-17 和 Windows 清单全量回归 → 汇总剩余阻塞。问题清单关闭前不单项重新打包。

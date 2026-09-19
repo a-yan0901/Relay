@@ -403,3 +403,25 @@
 - 复审发现自动恢复虽已创建新 Shell，但恢复初始态和 native `needs-reopen` 事件仍可能把内部状态短暂发布到标签/Quick Switcher。现已将该状态收敛为内部恢复标记：UI 与 app reducer 只接收 `connecting`/`reconnecting`，不再显示“此 Console 需要重新连接”，也不要求用户点击恢复。
 - `tests/unit/web/app-state.test.ts`、`tests/unit/web/terminal-session.test.ts`、TerminalPanel/Workspace 定向套件共 `67/67` 通过；`ssh-productivity.spec.ts` `3/3` 通过；`npm run typecheck` 与 `npm run lint` 通过。
 - 本项只改变恢复状态的可见性，不改变 Host Key、凭据错误、网络断开或自动重试耗尽时的真实错误入口；这些情况仍按原有安全边界显示明确错误。
+
+## 2026-09-19 当前版本全量验收问题清单
+
+本轮以源码 `10fb70f` 为当前版本，先完成全量自动化和一次打包版验收；在本清单关闭前不再为单个问题重复打包部署。
+
+### 已通过的当前版本门禁
+
+- Web/Server：Vitest `161/162` 个文件通过、`739` 个测试通过、`2` 个跳过；Playwright 全量 `4/4`；`typecheck`、`lint`、`build`、`build:windows` 通过。
+- Windows 当前 NSIS/portable 均生成成功：NSIS `127,632,032` bytes / SHA-256 `7E9A2676AE6CE83BD4755ADBFD4AE1AEA20D82870CC59183E0012D4D7658DB18`；portable `113,553,207` bytes / SHA-256 `3405E9984EB764771A784E7500E5A886A4F65915AB54A0B2635EFF2BB915A52A`。两者 PE 为 `MZ`，Authenticode 为 `NotSigned`。当前 NSIS 解压版已一次性完成 Vault、错误密码、真实 SSH 输入、SFTP `/tmp` 列表/过滤和重启自动恢复，`.terminal-recovery=0`。
+- Android：Web 资源已同步；在 JDK 21、Android SDK 正确指向后编译/打包成功，当前 APK `8,633,646` bytes / SHA-256 `0DF9842E67D91346C175B0CC104163D62CF626DD12CC40033AC8DB3C78614195`；`25091RP04C` connected instrumentation `7/7`。
+
+### 当前问题与阻塞
+
+| 分组 | 范围 | 当前问题 | 统一处理方式 |
+| --- | --- | --- | --- |
+| 设备阻塞 | Android 2407 | 本轮 Gradle 记录 `0 tests`，随后测试 APK 安装返回 `INSTALL_FAILED_USER_RESTRICTED`；不是产品测试失败，需在设备端解除安装限制后重跑。 | 先完成设备设置/ADB 稳定性处理，再与 Android 全量回归一起部署一次。 |
+| 产品验收 | Android A-01、A-05～A-15 | 当前 APK 尚未对两台设备完成本轮完整清单；复制/粘贴、中文/长输入、断网切换、返回栈、软键盘/旋转/安全区、SFTP 重试/部分失败、URI 即时释放/拒绝/分享、Vault 损坏包、锁屏/进程回收、grid/list 视觉、2 分钟低内存并发采样仍缺证据。 | 先集中修复可修复的 URI、bundle、恢复和 UI 边界；再用同一 APK 做 A-01～A-16 一次性回归。不能用单台设备或状态点替代另一台。 |
+| 跨端产品 | Android A-17 | 固定向量 Node→Android 解密/解析已有证据，但 Android→Web/Windows 导出回传、Windows 实机导入、冲突和旧数据不变性未闭环。 | 集中补 Android service/round-trip 自动化和 Web/Windows 规范化比较；最后用设备 UI 做一次正反向验收。 |
+| 发布门禁 | Windows | 当前打包版主链路已通过，但签名、升级迁移、持久制品来源和系统文件保存/完整任务链仍未通过。 | 集中处理发布配置/证书/升级脚本；完成后只重新生成一次发布制品并复验。 |
+| 工具环境 | Android 构建 | 本机默认环境缺少 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 且默认 Java 为 17；项目要求 SDK 和 JDK 21。 | 使用固定 JDK 21/SDK 入口重跑；必要时补充构建入口说明，不把环境错误归因于业务代码。 |
+
+本清单是“当前版本全量验收”的问题基线；修复阶段按分组合并，修复完成前不更新为通过，也不单项重新打包。

@@ -201,7 +201,7 @@ internal class AndroidLocalExecutor(
             }
             transfers.clear()
         }
-        uploadSources.clear()
+        releaseUploadSources(uploadSources.clear())
         synchronized(fileWriters) {
             fileWriters.values.forEach { it.cancel() }
             fileWriters.clear()
@@ -1571,6 +1571,7 @@ internal class AndroidLocalExecutor(
         if (uri.scheme != ContentResolver.SCHEME_CONTENT || uri.authority.isNullOrEmpty()) failNative("CAPABILITY_UNAVAILABLE")
         val grantFlags = normalizeUriGrantFlags(selectedGrantFlags, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         val persistable = takePersistableUriPermission(uri, grantFlags)
+        releaseUploadSources(uploadSources.expire())
         val metadata = try {
             appContext.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
                 if (!cursor.moveToFirst()) null else {
@@ -1844,9 +1845,18 @@ internal class AndroidLocalExecutor(
     private fun uploadFromSource(payload: JSONObject): JSONObject {
         requireUnlocked()
         val transfer = getTransferRecord(requiredText(payload, "transferId", 128))
-        val source = uploadSources.take(requiredText(payload, "sourceId", 128)) ?: failNative("TRANSFER_NOT_FOUND")
-        val uri = try { Uri.parse(source.uri) } catch (_: Exception) { failNative("PROTOCOL_INVALID_MESSAGE") }
-        if (uri.scheme != ContentResolver.SCHEME_CONTENT || uri.authority.isNullOrEmpty()) failNative("CAPABILITY_UNAVAILABLE")
+        releaseUploadSources(uploadSources.expire())
+        val source = uploadSources.takeForUse(requiredText(payload, "sourceId", 128)) ?: failNative("TRANSFER_NOT_FOUND")
+        val uri = try {
+            Uri.parse(source.uri)
+        } catch (_: Exception) {
+            releaseUploadSource(source)
+            failNative("PROTOCOL_INVALID_MESSAGE")
+        }
+        if (uri.scheme != ContentResolver.SCHEME_CONTENT || uri.authority.isNullOrEmpty()) {
+            releaseUploadSource(source)
+            failNative("CAPABILITY_UNAVAILABLE")
+        }
         val digest = MessageDigest.getInstance("SHA-256")
         val buffer = ByteArray(MAX_OUTPUT_CHUNK)
         var input: InputStream? = null
@@ -1952,7 +1962,7 @@ internal class AndroidLocalExecutor(
             try { sftp?.disconnect() } catch (_: Exception) { }
             try { connection?.close() } catch (_: Exception) { }
             try {
-                releaseUriPermission(uri, source.grantFlags, source.persistable)
+                releaseUploadSource(source)
             } catch (_: Exception) { }
         }
     }
@@ -1976,6 +1986,15 @@ internal class AndroidLocalExecutor(
         try {
             (revokeUriPermission ?: { target, grantFlags -> appContext.revokeUriPermission(target, grantFlags) })(uri, flags)
         } catch (_: Exception) { }
+    }
+
+    private fun releaseUploadSource(source: AndroidUploadSource) {
+        val uri = try { Uri.parse(source.uri) } catch (_: Exception) { return }
+        releaseUriPermission(uri, source.grantFlags, source.persistable)
+    }
+
+    private fun releaseUploadSources(sources: Iterable<AndroidUploadSource>) {
+        sources.forEach(::releaseUploadSource)
     }
 
     private fun checksumSnapshot(digest: MessageDigest): String {

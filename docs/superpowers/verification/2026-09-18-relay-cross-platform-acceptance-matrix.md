@@ -178,3 +178,10 @@
 
 - native Shell 失效后的 `needs-reopen` 现在只作为内部恢复标记；恢复初始态直接进入 `connecting`，收到 native 失效事件直接进入 `reconnecting` 并创建新 Shell，标签和 Quick Switcher 不再显示“此 Console 需要重新连接”。
 - Web 定向单测 `67/67`、Playwright `ssh-productivity.spec.ts` `3/3`、typecheck、lint 均通过。该项加强 A-05/A-13 的“重启后自动恢复且命令可输入”边界，但不替代 Android 第二台设备、网络切换和进程回收实测。
+
+## 2026-09-19 当前版本全量验收问题清单
+
+- 当前源码 `10fb70f` 的 Web/Server 全量 Vitest 为 `161/162` 文件通过、`739` 测试通过、`2` 跳过；Playwright `4/4`；typecheck、lint、build、build:windows 均通过。
+- 当前 Windows NSIS `127,632,032` bytes / `7E9A2676AE6CE83BD4755ADBFD4AE1AEA20D82870CC59183E0012D4D7658DB18`，portable `113,553,207` bytes / `3405E9984EB764771A784E7500E5A886A4F65915AB54A0B2635EFF2BB915A52A`，均 `NotSigned`；当前 NSIS 解压版一次性打包 smoke 已覆盖 Vault、错误密码、SSH 输入、SFTP 列表/过滤和重启自动恢复。
+- 当前 Android APK `8,633,646` bytes / `0DF9842E67D91346C175B0CC104163D62CF626DD12CC40033AC8DB3C78614195`；JDK 21/SDK 指向修正后编译成功，`25091RP04C` connected instrumentation `7/7`。`2407FRK8EC` 记录 `0 tests` 后安装测试 APK 被 `INSTALL_FAILED_USER_RESTRICTED` 阻断，需解除设备限制后与 Android 全量清单一起重跑。
+- 批量修复范围：Android A-01、A-05～A-17 中的真机缺口和可修复产品边界；Windows 签名/升级/持久制品来源；Android 构建环境入口。修复阶段不按单问题反复打包，问题清单关闭后再统一部署验收。

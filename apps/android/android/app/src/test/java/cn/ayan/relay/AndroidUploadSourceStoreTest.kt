@@ -40,4 +40,38 @@ class AndroidUploadSourceStoreTest {
         assertNull(store.take(source.sourceId))
         assertTrue(store.isEmpty())
     }
+
+    @Test
+    fun returnsExpiredSourcesSoTheirUriGrantsCanBeReleased() {
+        var now = 1_000L
+        val store = AndroidUploadSourceStore(now = { now }, ttlMs = 100L)
+        val source = store.put("content://picker/expired", "expired.bin", 12L, grantFlags = 1, persistable = true)
+
+        now += 101L
+
+        assertEquals(listOf(source), store.expire())
+        assertTrue(store.isEmpty())
+    }
+
+    @Test
+    fun takeForUseDoesNotDropAHandleAtTheExpiryBoundary() {
+        var now = 1_000L
+        val store = AndroidUploadSourceStore(now = { now }, ttlMs = 100L)
+        val source = store.put("content://picker/boundary", "boundary.bin", 12L)
+
+        now += 101L
+
+        assertEquals(source, store.takeForUse(source.sourceId))
+        assertTrue(store.isEmpty())
+    }
+
+    @Test
+    fun clearReturnsAllSourcesForProcessShutdownCleanup() {
+        val store = AndroidUploadSourceStore(now = { 1_000L })
+        val first = store.put("content://picker/first", "first.bin", 1L)
+        val second = store.put("content://picker/second", "second.bin", 2L)
+
+        assertEquals(listOf(first, second), store.clear())
+        assertTrue(store.isEmpty())
+    }
 }

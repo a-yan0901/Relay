@@ -12,9 +12,23 @@ npm run build:android:debug
 npm run build:android:release
 ```
 
+Windows 开发机建议显式固定 JDK 21 和 Android SDK，并复用已经缓存的 Gradle；不要让首次构建在错误的 Java 17 或缺少 `ANDROID_HOME` 的环境下反复初始化：
+
+```powershell
+$env:JAVA_HOME = 'C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot'
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+npx cap copy android # Web bundle 未变化时无需重新 build:web/cap sync
+cd android
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --offline --no-daemon --max-workers=1 --console=plain
+```
+
+如果 wrapper 分发包尚未缓存，先在有网络的构建机完成一次 Gradle wrapper 下载；后续验证优先复用同一 Gradle/JDK/SDK 组合，避免把工具链初始化时间误报为测试耗时。
+
 `build:android:debug` 使用单 worker、无 Gradle daemon 的 `assembleDebug`，适合低内存开发机；Debug APK 输出在 `android/app/build/outputs/apk/debug/app-debug.apk`。Release AAB 仍由 `build:android:release` 负责，签名和发布 ABI 需在发布机完成。
 
-当前环境已准备 JDK 21、Gradle wrapper、Android API 36 和 Build Tools 35.0.0；JSch 2.27.7 依赖可离线复用。Kotlin 编译和 Android 单元测试已通过，但仍没有 Android 真机/模拟器，因此 Keystore 实机行为、SSH/SFTP 真实连接、后台生命周期和安装任务不能宣称完成；不能用 Web Relay 服务代替 Android 独立客户端验证。
+当前环境已准备 JDK 21、Gradle wrapper、Android API 36 和 Build Tools 35.0.0；JSch 2.27.7 依赖可离线复用。Kotlin 编译和 Android 单元测试已通过；两台 Android 16 真机可用于本地验收，但设备安装限制、后台生命周期、网络切换和发布 ABI 仍必须按交接清单逐项回填，不能用 Web Relay 服务代替 Android 独立客户端验证。
 
 当前 Android native capability 已包含本地 Snippet 管理；Snippet 内容在 Android Vault 中按记录加密，WebView 只在用户打开编辑器时读取命令模板，不会读取主机凭据。
 

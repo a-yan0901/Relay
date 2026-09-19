@@ -42,9 +42,20 @@ internal class AndroidUploadSourceStore(
         return entries.remove(sourceId)?.source
     }
 
+    /** Consume a handle without dropping it at the expiry boundary. */
     @Synchronized
-    fun clear() {
+    fun takeForUse(sourceId: String): AndroidUploadSource? = entries.remove(sourceId)?.source
+
+    /** Remove expired handles and return them so callers can revoke URI grants. */
+    @Synchronized
+    fun expire(): List<AndroidUploadSource> = prune()
+
+    /** Remove all handles and return them so callers can revoke URI grants. */
+    @Synchronized
+    fun clear(): List<AndroidUploadSource> {
+        val sources = entries.values.map { it.source }
         entries.clear()
+        return sources
     }
 
     @Synchronized
@@ -56,8 +67,10 @@ internal class AndroidUploadSourceStore(
     @Synchronized
     fun isEmpty(): Boolean = size() == 0
 
-    private fun prune() {
+    private fun prune(): List<AndroidUploadSource> {
         val timestamp = now()
+        val expired = entries.entries.filter { it.value.expiresAt <= timestamp }.map { it.value.source }
         entries.entries.removeIf { it.value.expiresAt <= timestamp }
+        return expired
     }
 }
