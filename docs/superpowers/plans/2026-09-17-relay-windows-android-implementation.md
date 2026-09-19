@@ -318,3 +318,8 @@
 - 已在 JDK 21/Android SDK 环境执行成功：Gradle `BUILD SUCCESSFUL`，`93` 个任务中 `18` 个执行、`75` 个复用缓存；生成的 Android JVM 测试报告为 `36/36` 通过。该入口不调用 `connectedDebugAndroidTest`、ADB、安装、卸载或清理应用数据，适合作为设备不可用时的快速回归入口。
 - 新增显式部署命令 `npm run install:android:debug -- <serial> [apk-path]`；它通过 `adb push` 后执行 `pm install -r --user 0`，保留应用数据，不申请 `-g` 运行时权限，不卸载、不 `pm clear`，并在结束后删除设备临时 APK。该命令只有在确认需要部署统一批次时才执行。
 - 当前仍不能用本地验证代替真机验收：本机 `adb devices -l` 无设备，用户提供的测试主机未安装 `adb`，已知无线 ADB 端点当前不可达。待设备恢复后，仍按“集中修复、统一构建、一次部署、全量回归”执行，不为单个问题重复卸载/重装。
+
+## 2026-09-20 Windows 旧库启动迁移回归
+
+- 新增 Windows local runtime 回归：先创建缺少现代字段的旧版 `relay.sqlite`，再通过真实 `createWindowsLocalRuntime` 启动；启动迁移完成后，旧 Host、分组关系、显式连接配置和解析后的连接 profile 均保持可读。
+- `tests/unit/windows/local-runtime.test.ts` 定向套件 `11/11` 通过，新增跨 runtime 的分块导出→导入回归。该证据覆盖代码级启动迁移、数据保留和 Windows IPC bundle 往返，不等同于签名安装包从旧版本升级、回滚或崩溃恢复；后者仍需在 Windows 安装环境补验。

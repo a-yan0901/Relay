@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { createWindowsLocalRuntime, type WindowsLocalRuntimeHandle } from '../../../apps/windows/local-runtime.js';
+import { openDatabase } from '../../../src/server/db/database.js';
 import type { SshAdapterPort, SshChannel } from '../../../src/server/ssh/types.js';
 
 const FULL_VECTOR = JSON.parse(readFileSync(new URL('../../fixtures/vault-bundle-v1-full-vector.json', import.meta.url), 'utf8')) as {
@@ -66,6 +67,81 @@ describe('Windows local runtime', () => {
       await runtime?.close();
       runtime = undefined;
       await first?.close();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('runs the startup migration against a legacy desktop database before serving hosts', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'relay-windows-runtime-migration-'));
+    const databasePath = join(dataDir, 'relay.sqlite');
+    const legacyDatabase = openDatabase(databasePath);
+    legacyDatabase.exec(`
+      CREATE TABLE groups (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL DEFAULT 'default',
+        name TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (owner_id, name)
+      );
+      CREATE TABLE hosts (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL DEFAULT 'default',
+        name TEXT NOT NULL,
+        address TEXT NOT NULL,
+        port INTEGER NOT NULL DEFAULT 22 CHECK (port BETWEEN 1 AND 65535),
+        username TEXT NOT NULL,
+        auth_type TEXT NOT NULL CHECK (auth_type IN ('password', 'private_key')),
+        credential_ciphertext TEXT NOT NULL,
+        credential_version INTEGER NOT NULL DEFAULT 1,
+        host_key_algorithm TEXT,
+        host_key_fingerprint TEXT,
+        group_id TEXT REFERENCES groups(id) ON DELETE SET NULL,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        jump_host_ids_json TEXT NOT NULL DEFAULT '[]',
+        connection_profile_json TEXT NOT NULL,
+        is_favorite INTEGER NOT NULL DEFAULT 0 CHECK (is_favorite IN (0, 1)),
+        last_connected_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO groups (id, owner_id, name, sort_order, created_at, updated_at)
+        VALUES ('legacy-group', 'default', 'Legacy group', 0, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+      INSERT INTO hosts (
+        id, owner_id, name, address, port, username, auth_type, credential_ciphertext,
+        credential_version, group_id, connection_profile_json, created_at, updated_at
+      ) VALUES (
+        'legacy-host', 'default', 'Legacy host', 'legacy.example.com', 22, 'ops', 'password', 'legacy-ciphertext',
+        1, 'legacy-group', '{"keepaliveIntervalMs":12000,"keepaliveCountMax":7,"reconnect":{"enabled":true,"maxAttempts":2,"baseDelayMs":300,"maxDelayMs":2000}}',
+        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+      );
+    `);
+    legacyDatabase.close();
+
+    try {
+      runtime = createWindowsLocalRuntime({ dataDir });
+      await request(runtime, 'migration-setup', 'vault.setup', { masterPassword: 'migration-password' });
+      const hosts = await request(runtime, 'migration-host-list', 'hosts.list', {}) as Array<Record<string, unknown>>;
+      expect(hosts).toHaveLength(1);
+      expect(hosts[0]).toMatchObject({
+        id: 'legacy-host',
+        name: 'Legacy host',
+        groupId: 'legacy-group',
+        connectionProfileOverrides: {
+          keepaliveIntervalMs: 12_000,
+          keepaliveCountMax: 7,
+          reconnect: { enabled: true, maxAttempts: 2, baseDelayMs: 300, maxDelayMs: 2_000 }
+        },
+        resolvedConnectionProfile: {
+          keepaliveIntervalMs: 12_000,
+          keepaliveCountMax: 7,
+          reconnect: { enabled: true, maxAttempts: 2, baseDelayMs: 300, maxDelayMs: 2_000 }
+        }
+      });
+    } finally {
+      await runtime?.close();
+      runtime = undefined;
       await rm(dataDir, { recursive: true, force: true });
     }
   });
@@ -249,6 +325,49 @@ describe('Windows local runtime', () => {
 
     await request(runtime, 'bundle-release', 'imports.releaseVaultBundle', { bundleId: started.bundleId });
     await expect(request(runtime, 'bundle-read-expired', 'imports.readVaultBundleChunk', { bundleId: started.bundleId, cursor: 0 })).rejects.toThrow('VAULT_BUNDLE_PREVIEW_EXPIRED');
+  });
+
+  it('round-trips a chunked Windows export through a second local runtime', async () => {
+    const sourceDir = await mkdtemp(join(tmpdir(), 'relay-windows-bundle-source-'));
+    const targetDir = await mkdtemp(join(tmpdir(), 'relay-windows-bundle-target-'));
+    let source: WindowsLocalRuntimeHandle | undefined;
+    let target: WindowsLocalRuntimeHandle | undefined;
+    try {
+      source = createWindowsLocalRuntime({ dataDir: sourceDir });
+      await request(source, 'roundtrip-source-setup', 'vault.setup', { masterPassword: 'source-password' });
+      await request(source, 'roundtrip-source-host', 'hosts.create', {
+        input: { name: 'Chunk roundtrip host', address: 'roundtrip.example.com', port: 22, username: 'ops', auth: { type: 'password', password: 'roundtrip-secret' } }
+      });
+
+      const started = await request(source, 'roundtrip-export', 'imports.exportVaultBundle', { exportPassword: 'export-password' }) as { bundleId: string };
+      const chunks: string[] = [];
+      let cursor = 0;
+      for (;;) {
+        const part = await request(source, `roundtrip-read-${cursor}`, 'imports.readVaultBundleChunk', { bundleId: started.bundleId, cursor }) as { data: string; nextCursor: number; done: boolean };
+        chunks.push(Buffer.from(part.data, 'base64url').toString('utf8'));
+        if (part.done) break;
+        cursor = part.nextCursor;
+      }
+      const bundle = chunks.join('');
+      await request(source, 'roundtrip-release', 'imports.releaseVaultBundle', { bundleId: started.bundleId });
+
+      target = createWindowsLocalRuntime({ dataDir: targetDir });
+      await request(target, 'roundtrip-target-setup', 'vault.setup', { masterPassword: 'target-password' });
+      const preview = await request(target, 'roundtrip-preview', 'imports.previewVaultImport', { exportPassword: 'export-password', bundle }) as { previewId: string; hostCount: number; conflicts: unknown[] };
+      expect(preview).toMatchObject({ hostCount: 1, conflicts: [] });
+      await request(target, 'roundtrip-apply', 'imports.applyVaultImport', {
+        previewId: preview.previewId,
+        resolution: { hostConflicts: 'skip', groupConflicts: 'reuse', identityConflicts: 'reuse' }
+      });
+      await expect(request(target, 'roundtrip-host-list', 'hosts.list', {})).resolves.toEqual([
+        expect.objectContaining({ name: 'Chunk roundtrip host', address: 'roundtrip.example.com', username: 'ops' })
+      ]);
+    } finally {
+      await source?.close();
+      await target?.close();
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(targetDir, { recursive: true, force: true });
+    }
   });
 
   it('imports the fixed full vector through Windows IPC without losing inherited fields', async () => {

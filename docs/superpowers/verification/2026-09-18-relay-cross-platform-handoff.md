@@ -480,3 +480,8 @@
 - 统一部署时使用 `npm run install:android:debug -- <serial> [apk-path]`；该命令采用 `adb push` + `pm install -r --user 0`，保留现有应用数据，避免 `adb install -g` 的权限授予路径，不执行卸载、`pm clear` 或自动重试。
 - 该入口明确不执行 `connectedDebugAndroidTest`、ADB、安装、卸载、`pm clear` 或其他设备数据操作；适用于本地快速回归，避免为单个问题重复授权和重装 Android 应用。
 - 当前交接仍受设备可达性限制：本机 `adb devices -l` 无设备，用户提供的测试主机没有 `adb`，已知无线 ADB 端点不可达。设备恢复后使用同一批次制品一次部署，再按 A-01～A-17 全量回填；本地测试通过不将真机项目自动标记为通过。
+
+## 30. 2026-09-20 Windows 旧库启动迁移回归
+
+- `tests/unit/windows/local-runtime.test.ts` 新增旧版 SQLite 启动迁移和跨 runtime 分块 bundle 往返场景：旧库缺少现代 Host/Group 字段，`createWindowsLocalRuntime` 启动后自动执行 `migrate`，Vault 解锁后仍能读取旧 Host、分组关系、连接覆盖配置和解析后的 profile；定向套件 `11/11` 通过。
+- 该条只关闭 Windows 代码级启动迁移证据；签名安装包的真实升级、回滚、崩溃后数据保留和持久制品来源仍是发布门禁，待 Windows 安装环境补验。

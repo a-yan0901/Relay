@@ -237,3 +237,10 @@
 | Android 真机验收 | 阻塞 | 本机 ADB 当前无设备；用户提供的测试主机没有 `adb`；已知无线 ADB 端点当前不可达。上述本地结果不替代 A-01～A-17 的真机证据。 |
 
 本入口用于提高离线回归效率；设备恢复后按批次统一部署和全量验收，不针对单个问题反复卸载、重装或重新授权。
+
+## 2026-09-20 Windows 旧库启动迁移回归
+
+| 项目 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| Windows local runtime 旧库迁移与 bundle 往返 | 通过 | `tests/unit/windows/local-runtime.test.ts` 创建缺少现代字段的旧版 SQLite，再由真实 `createWindowsLocalRuntime` 启动并自动迁移；另以两个 local runtime 验证分块导出→导入；Host、分组和显式/解析连接 profile 保持可读，定向测试 `11/11`。 |
+| Windows 安装包升级 | 未闭环 | 代码级迁移已有证据，但签名安装包的旧版本安装 → 新版本升级 → 数据/配置保留 → 回滚/崩溃恢复仍需在 Windows 安装环境验证；不因单测标记 Windows 发布门禁通过。 |
