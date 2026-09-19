@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-19
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**APK 构建源码基线：** `d3c4c62`；**Windows portable 历史预览源码基线：** `75cc630`。后续重新构建必须以新的源码 commit、构建时间、工具链和制品哈希为准。
-**验收机器应检出：** Android 验收使用 `d3c4c62`；Windows root Electron UI smoke 使用本轮最新源码，Windows portable 验收必须使用与重新构建制品清单匹配的新源码 commit。
+**当前实现源码基线：** `bde17c4`（Android 原生上传代码提交为其父提交 `a241e72`，后续仅增加 Windows 本地 Electron 打包配置）。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `bde17c4`；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -13,9 +13,9 @@
 
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
-| Web | ✅ 自动化基线可复现 | 标准全量回归 161 个测试文件通过、1 个跳过；727 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
-| Windows | 🟡 root Electron 技术预览 | root Electron 真实服务器 UI smoke、IPC/native contract、`build:windows`；历史 portable SHA-256 已记录，但本轮没有新的可交接包 | Windows native ABI、安装/升级迁移、退出/重开、SSH/SFTP 任务链 |
-| Android | 🟡 已完成有限设备 SSH/UI 证据，不代表平台完成 | Kotlin 编译、JVM 单元测试、connected instrumentation 2/2、Debug APK 构建；源码 `d3c4c62` 的 APK 曾安装到两台 Android 16 真机，真实主机 UI 重开后两台均可输入命令；`25091RP04C` 已浏览真实 `/` 和 `/tmp` | SFTP 上传/下载/取消、私钥、Host Key 变更、URI、返回键、软键盘、锁屏/进程回收、网络切换、低内存和 A-01～A-17 其余项目；`2407FRK8EC` 当前安装恢复受设备侧限制 |
+| Web | ✅ 自动化基线可复现 | 标准全量回归 161 个测试文件通过、1 个跳过；731 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
+| Windows | 🟡 已有打包与安装证据，平台门禁未完成 | root Electron 真实服务器 UI smoke；`npm run package:windows` 已本地离线生成 NSIS/portable；Electron ABI 149 native load、NSIS 安装/启动/卸载通过 | 升级迁移、崩溃恢复、打包后完整 SSH/SFTP/Vault/UI 任务链、签名和持久制品来源 |
+| Android | 🟡 已完成有限设备 SSH/SFTP 证据，不代表平台完成 | Kotlin/JVM/connected instrumentation、Debug APK；当前 APK 已安装两台 Android 16 真机；2407 真实主机 32 MiB 原生 URI 上传、取消、暂停/继续和哈希校验通过，25091 完成系统选择器上传/下载 | Host Key 变更、私钥、网络切换、URI 立即释放、返回键、软键盘、锁屏/进程回收、低内存和 A-01～A-17 其余项目 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
@@ -25,8 +25,8 @@
 
 ### 真实 Android 设备补充证据（2026-09-19）
 
-- 设备：Xiaomi `2407FRK8EC`、Xiaomi `25091RP04C`，均为 Android 16/API 36、arm64-v8a；本轮开始时两台均重新安装同一 Debug APK（应用 ID `cn.ayan.relay`），安装返回 `Success`，并成功启动 `MainActivity`。connected instrumentation 结束后 runner 清理了 `2407FRK8EC` 的 APK；该设备后续恢复安装权限，`adb install -r --no-streaming` 返回 `Success`，当前两台均安装同一 APK。
-- 制品：源码 `d3c4c62`，APK 8,633,367 bytes，SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。
+- 设备：Xiaomi `2407FRK8EC`、Xiaomi `25091RP04C`，均为 Android 16/API 36、arm64-v8a；以下是本节早期设备回归记录。当前制品和安装状态以第 11 节为准。
+- 历史制品：源码 `d3c4c62`，APK 8,633,367 bytes，SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`；后续已由第 2 节记录的 `158F...ED045` APK 替代。
 - 测试主机：明确使用用户提供的 `106.14.61.92:22`、账号 `t2` 和用户提供的密码；密码不写入仓库。两台设备均返回同一 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`，确认后连接成功。
 - UI 重开与输入回归：每台设备连续 3 轮执行关闭当前 Shell、重新打开 Host、等待 raw native `terminal.status=connected`、聚焦 Console 并输入 `whoami`；6/6 轮均成功返回 `t2`，Console 输入框均可聚焦，活动终端标签均显示 `status-dot-green`。
 - native bridge smoke：两台设备均通过真实 JSch 连接读取 `/tmp`（每台返回 19 项），并完成终端 `resize`、写入测试命令和关闭会话；该证据证明真实设备到 SSH/SFTP 的原生通路可用。
@@ -42,9 +42,10 @@
 
 - 文件：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`
 - 应用 ID：`cn.ayan.relay`
-- 构建时间（文件时间，Asia/Shanghai）：`2026-09-19 00:37:47`
-- 大小：`8,633,367` bytes
-- SHA-256：`D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`
+- 应用代码基线：`a241e72`；Windows 打包配置后续提交为 `bde17c4`
+- 构建时间（文件时间，Asia/Shanghai）：`2026-09-19 13:45:27`
+- 大小：`8,633,755` bytes
+- SHA-256：`158F049680DBC0600D571F1A69FB835B84D2617C0CC677E69F5986FD010ED045`
 - 构建命令：
 
   ```powershell
@@ -62,16 +63,14 @@
 
   本轮 wrapper 声明 `8.14.3` 的发行版下载不可用，实际使用已缓存的 Gradle `9.3.1`；`testDebugUnitTest` 用时约 1 分 14 秒，`assembleDebug` 用时约 27 秒且 73 项任务均为 up-to-date；交接机须记录实际版本，不应把本轮描述成首次建立 Gradle classpath。
 
-### Windows portable 预览包
+### Windows x64 制品
 
-- 文件：`dist/releases-portable-preview/Relay-0.1.0-x64.exe`
-- 构建时间（文件时间，Asia/Shanghai）：`2026-09-18 19:19:34`
-- 大小：`457,281,531` bytes
-- SHA-256：`1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`
-- 构建命令（PowerShell）：`$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'; $env:npm_config_electron_mirror=$env:ELECTRON_MIRROR; npm run package:windows:portable`
-- 说明：该文件已在 Windows checkout 生成并完成 SHA-256 校验，签名状态为 `NotSigned`；打包使用 `npmRebuild=false`，不能替代 Windows native ABI、安装/升级、退出/重开和完整 SSH/SFTP 任务链验收。
+- 生成命令：`npm run package:windows`；脚本使用 `node_modules/electron/dist`，NSIS 与 portable 分别输出到 `dist/releases/nsis` 和 `dist/releases/portable`，不依赖外部 Electron 下载。
+- NSIS 文件：`dist/releases/nsis/Relay-0.1.0-x64.exe`；构建时间 `2026-09-19 14:47:08`；大小 `127,632,075` bytes；SHA-256 `979E3D6CECD611AE99F3DE3CA41D3E6A298A5906196B685B61318A5853FDF20F`；签名 `NotSigned`。
+- Portable 文件：`dist/releases/portable/Relay-0.1.0-x64.exe`；构建时间 `2026-09-19 14:50:42`；大小 `113,552,550` bytes；SHA-256 `82F8D40377037DF2392CFF2B20F7ED0E537C7011D118EEDFC99C01B37C0CAC7D`；签名 `NotSigned`。
+- Electron `44.4.1` ABI `149` 下 `argon2`、`better-sqlite3`、`cpu-features` 加载通过；NSIS 静默安装、启动存活 5 秒、静默卸载通过。当前仍未做升级迁移、崩溃恢复和打包后完整 SSH/SFTP/Vault/UI 任务链验收。
 
-上述文件当前只存在于本机 gitignored 生成目录，不会随仓库 clone/checkout 交付。本仓库未配置可追溯的 GitHub Release 附件、制品服务器或跨机器共享目录；交接执行人应通过受控的 `scp`、SFTP 或共享目录复制，并在目标机再次运行 `sha256sum` 比对上述 hash。最终签收前必须补一条持久制品来源（URL、Release 附件或共享目录路径）和最终源码 commit；若没有该来源，状态只能保持 🟡。
+上述文件当前只存在于本机 gitignored 生成目录，不会随仓库 clone/checkout 交付。本仓库未配置可追溯的 GitHub Release 附件、制品服务器或跨机器共享目录；交接执行人应通过受控的 `scp`、SFTP 或共享目录复制，并在目标机再次运行 SHA-256 比对上述 hash。最终签收前必须补一条持久制品来源（URL、Release 附件或共享目录路径）；若没有该来源，状态只能保持 🟡。
 
 以下是上一轮 Linux 构建记录中的工具链信息，不代表当前 Windows checkout 已具备同样环境，也不等同于已经锁定的产物源码 commit：
 
@@ -138,7 +137,7 @@
 | A-07 | Android 返回键 | 先关闭最上层对话框/工作区/Console；根页面再交回系统退出 | 待执行 |
 | A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | 待执行 |
 | A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | 待执行；`25091RP04C` 已在真实主机 UI 浏览 `/`（36 项）和 `/tmp`（25 项），过滤、分页、滚动和安全区仍待完整走查。 |
-| A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行；`25091RP04C` 通过真实 MIUI 文件选择器上传 33,817-byte PNG 到用户服务器 `/tmp`，Transfer Center `已完成 · 100%`；再通过 Android DocumentsUI 下载回本机，保存文件 33,817 bytes 且 Transfer Center `已完成 · 100%`。远端 `/` 无写权限时任务 0% 后取消；32 MiB/25% 取消、重试、部分失败和临时文件断言仍待执行。 |
+| A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行；已有增量证据：`2407FRK8EC` 在真实主机完成 32 MiB 原生 URI 上传，远端大小/SHA-256 与源一致；约 35% 取消后既有完整目标保持不变且无 staging，暂停/继续从约 11 MiB 断点完成。`25091RP04C` 真实 MIUI 文件选择器上传 33,817-byte 文件、DocumentsUI 下载均 `已完成 · 100%`；远端 `/` 无写权限任务 0% 后取消。完整重试、部分失败和全矩阵仍待执行。 |
 | A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 待执行；真实系统文件选择与 DocumentsUI 保存已走通；传输完成后 Activity 内仍可观察到临时 URI grant，`force-stop` 后重启 Relay 才清空 `readUriPermissions/writeUriPermissions`。任务结束立即释放、拒绝权限提示和分享仍待执行。 |
 | A-12 | Vault 锁定和重开 | 锁定后秘密不可读取；正确解锁恢复；错误密码/损坏 bundle 不覆盖旧数据 | 待执行 |
 | A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行 |
@@ -236,8 +235,8 @@
 
 ### Windows 当前阻塞项
 
-- `npm run package:windows` 在本机缺少 Visual Studio/MSVC 时被 `node-gyp` native rebuild 阻塞；portable 打包重试还遇到外部 builder 下载 `ETIMEDOUT`。因此本次没有新的可交接 Windows installer/portable artifact，也没有签名、ABI、安装升级或卸载证据。
-- 现有 gitignored portable 文件如果时间早于本节记录，只能作为历史预览，不能回填为本次产物。后续交接必须在具备 MSVC 和稳定 builder 下载的 Windows 机器上重新构建，并记录源码 commit、生成时间、文件大小、SHA-256、签名状态和安装/升级结果。
+- 历史记录：当时本机缺少 Visual Studio/MSVC，`node-gyp` native rebuild 阻塞，portable 重试又遇到外部 builder 下载 `ETIMEDOUT`。该阻塞已通过安装 Build Tools、重建 native module，并把打包脚本固定到本地 Electron 分发目录解除；最终制品和证据见第 11 节。
+- 签名、升级迁移、崩溃恢复和打包后完整 SSH/SFTP/Vault/UI 任务链仍未完成，不能因为本次 installer/portable 生成成功而提前勾选 Windows 发布门禁。
 
 ### 下一步验收顺序
 
@@ -255,3 +254,22 @@
 - Android SFTP 系统交互续验：`25091RP04C` 的真实 MIUI 文件选择器上传到用户服务器 `/tmp` 和 DocumentsUI 下载均显示 100%，本机保存结果为 33,817 bytes；远端根目录无写权限路径的 0% 任务已取消。该结果不替代 A-10 的大文件取消/重试/部分失败矩阵。
 - URI 观察：传输完成后 Activity 内仍存在本轮 URI grant；`force-stop` 后重新启动 Relay 时 grants 已清空。由于尚未证明每个任务结束立即释放、拒绝权限和分享路径，A-11 继续保持待执行。
 - 手机重装后续验：`2407FRK8EC` 启动已安装 APK，使用用户提供的 `106.14.61.92:22`、账号 `t2` 建立真实 SSH Shell；确认指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI` 后，Console 执行 `echo REAL_SERVER_2407_REINSTALLED` 返回同名远端回显和 `t2` 提示符。该结果只更新安装和真实输入证据，不改变其余待执行门禁。
+
+## 11. 2026-09-19 最终实现与制品复审（提交 `bde17c4`）
+
+### Android 原生 URI 上传
+
+- `ACTION_OPEN_DOCUMENT` 选择结果由 native store 持有 opaque handle；WebView 仅接收 `sourceId/name/size`，原生以 32 KiB 有界缓冲读取 URI，通过单条 SFTP 连接写入 `${target}.relay-part-${transferId}`，完成后 rename 到最终路径。
+- `2407FRK8EC` 对用户提供的 `106.14.61.92:22`、账号 `t2` 完成 32 MiB 上传：远端 `33,554,432` bytes，SHA-256 `83ee47245398adee79bd9c0a8bc57b821e92aba10f5f9ade8a5d1fae4d8c4302`，与设备源文件一致。
+- 取消测试在约 35% 进入 `已取消`，既有完整目标保持原大小和 SHA-256，staging 文件不存在；暂停测试在约 34% 进入 `已暂停，可继续`，点击继续重新选择同一源后从约 11 MiB 断点完成。A-10 仍不能整体标成通过，A-11 的 Activity 内立即释放、拒绝权限和分享仍待执行。
+
+### Windows 制品与打包效率
+
+- `npm run package:windows` 已在当前工作树成功完成；新增 `--config.electronDist=node_modules/electron/dist` 后不再访问外部 Electron 下载，NSIS/portable 输出目录分离，避免 artifact 覆盖。
+- NSIS：`127,632,075` bytes，SHA-256 `979E3D6CECD611AE99F3DE3CA41D3E6A298A5906196B685B61318A5853FDF20F`；portable：`113,552,550` bytes，SHA-256 `82F8D40377037DF2392CFF2B20F7ED0E537C7011D118EEDFC99C01B37C0CAC7D`；两者签名状态均为 `NotSigned`。
+- Electron ABI `149` 下 `argon2`、`better-sqlite3`、`cpu-features` 原生加载通过；NSIS 静默安装、启动进程存活 5 秒、静默卸载通过。升级迁移、崩溃恢复、签名和打包后完整任务链仍不是本轮通过项。
+
+### 最终自动化门禁
+
+- `npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows`、Android `:app:testDebugUnitTest :app:assembleDebug`、定向 Web/native 31 测试均通过；全量 `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 为 161 个文件通过、1 个跳过，731 个测试通过、2 个跳过。
+- 当前交接结论：代码和技术预览制品已可复现，真实服务器已验证 Android 原生大文件上传的成功/取消/暂停续传边界；A-03～A-09、A-11～A-17、Windows 升级/崩溃/打包后完整任务链、签名及持久制品来源仍保持未完成。

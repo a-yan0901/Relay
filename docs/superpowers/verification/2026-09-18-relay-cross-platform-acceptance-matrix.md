@@ -11,19 +11,19 @@
 | 首次 Host Key 确认、变更拒绝 | ✅ | 🟡 | 🟡 | Server/Windows/Android 状态机和定向测试；两台 Android 16 真机已在用户提供的 `106.14.61.92:22` 上完成同一真实指纹的 native trust 和建 Shell | Windows 实机连接、Android Host Key 变更拒绝 |
 | SSH 输入、复制/粘贴、断连重连 | ✅ | 🟡 | 🟡 | Web E2E、TerminalSession/Native socket 测试；两台 Android 16 真机在真实主机上连续 3 轮关闭/重开，均收到 raw `terminal.status=connected`，`whoami` 返回 `t2` 且 Console 可输入；本轮又分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到真实远端回显 | Windows 原生 ABI、Android 真机网络切换、复制/粘贴和完整 UI 走查 |
 | 多标签、分屏与移动单 pane | ✅ | 🟡 | 🟡 | Web 320/390px E2E；共享 runtime capability | Windows/Android UI 和生命周期走查 |
-| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；Android 真实主机证据包括两台设备 `/tmp` 各 19 项、本轮 `25091RP04C` 的 `/` 36 项和 `/tmp` 25 项；真实系统选择器上传与 DocumentsUI 下载均完成 100%，根目录无写权限路径已取消 0% 任务 | 两端真实 UI SFTP、32 MiB/25% 取消、重试、部分失败和 URI 任务边界 |
+| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；Android 真实主机证据包括两台设备 `/tmp` 各 19 项、本轮 `25091RP04C` 的 `/` 36 项和 `/tmp` 25 项；2407 真机 32 MiB 原生 URI 上传完成并校验哈希，取消保留既有目标且无 staging，暂停/继续从断点完成；25091 系统选择器上传与 DocumentsUI 下载均完成 100% | 两端真实 UI SFTP、重试/部分失败、完整 URI 任务边界和低内存 |
 | SFTP 单层滚动、终端最后一行可见 | ✅ | 🟡 | 🟡 | Web 窄视口几何断言 | Windows 窗口和 Android 软键盘/安全区 |
 | Vault 锁定、重开、任务恢复状态 | ✅ | 🟡 | 🟡 | Web/Windows/Android 本地实现与 JVM/DOM 测试 | 崩溃、重启、锁屏/进程回收 |
 | 主题、字号、grid/list 偏好持久化 | ✅ | 🟡 | 🟡 | Web E2E 主题持久化与第三方 `data-theme` 隔离 | 两端重启后视觉走查 |
 | Vault bundle v1 正反向导入导出 | ✅ | 🟡 | 🟡 | shared/native bundle、分块、错误输入测试；Android 已有 Node V1 加密 envelope 固定向量 | [交接任务书 A-17](./2026-09-18-relay-cross-platform-handoff.md) 的 Web↔Windows↔Android 完整 payload 固定向量实测 |
 | 原生安全边界：无 HTTP/cookie、IPC/bridge allowlist | ✅ | 🟡 | 🟡 | Windows policy/IPC 测试；Android bridge schema/JVM 测试 | 目标设备检查端口、日志、备份和 URI |
-| 低内存边界与产物 | ✅ | 🟡 | 🟡 | Web/Server/Windows 构建；portable PE；Debug APK ZIP；单 worker 构建 | 目标平台 RSS/ABI/签名测量，且制品来源/源码 commit 必须可追溯 |
+| 低内存边界与产物 | ✅ | 🟡 | 🟡 | Web/Server/Windows 构建；NSIS/portable PE；Electron ABI 149 native load；Debug APK；单 worker 构建 | 目标平台 RSS/低内存、签名和持久制品来源；Android 设备内存采样 |
 
 ## 当前可复现证据
 
 - Web/Server/Cloud：`npm run build`、`npm run typecheck`、`npm run lint`、`npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot` 和 `npm run test:e2e -- --project=chromium`；标准全量回归为 161 个测试文件通过、1 个跳过，727 个测试通过、2 个跳过；E2E 4/4 通过，Playwright 共享数据目录固定单 worker。
 - Windows（历史预览记录，非本轮新产物）：源码 commit `75cc630` 上曾执行 `npm run build:windows` 和 `npm run package:windows:portable`；本机残留 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`，大小 457,281,531 bytes，签名状态为 `NotSigned`。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
-- Android：源码 commit `d3c4c62` 上设置 `JAVA_HOME`、`ANDROID_HOME`/`ANDROID_SDK_ROOT`，以 JDK 21 + Gradle 9.3.1、单 worker 执行 `:app:testDebugUnitTest :app:assembleDebug`，并执行 `:app:connectedDebugAndroidTest`；三项均返回 `BUILD SUCCESSFUL`，connected test 在 `2407FRK8EC` 完成 2/2。APK 大小 8,633,367 bytes，SHA-256 为 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`。该 APK 当前已安装到两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`；`2407FRK8EC` 曾因测试 runner 清理后出现 `INSTALL_FAILED_USER_RESTRICTED`，随后恢复安装并重新完成真实服务器 UI 登录。两台真机对用户提供的 `106.14.61.92:22` 密码主机完成 Host Key trust、`/tmp` SFTP 列举（19 项/台）、终端 resize/写入/关闭，并连续 3 轮关闭/重开后输入 `whoami` 返回 `t2`；手机重装后另有 `echo REAL_SERVER_2407_REINSTALLED` 真实回显，本轮还在真实 UI 中完成两台 Console 命令回显和 `25091RP04C` 的 `/`/`/tmp` 浏览。SFTP 上传下载取消、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
+- Android（历史设备回归记录）：源码 commit `d3c4c62` 的 APK 大小 8,633,367 bytes，SHA-256 为 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`；本条的真机 SSH/SFTP 结果继续有效，但当前 APK 制品以交接任务书第 2 节的 `158F...ED045` 为准。两台真机对用户提供的 `106.14.61.92:22` 密码主机完成 Host Key trust、`/tmp` SFTP 列举（19 项/台）、终端 resize/写入/关闭，并连续 3 轮关闭/重开后输入 `whoami` 返回 `t2`；手机重装后另有 `echo REAL_SERVER_2407_REINSTALLED` 真实回显，真实 UI 中完成两台 Console 命令回显和 `25091RP04C` 的 `/`/`/tmp` 浏览。SFTP 完整任务矩阵、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
 
 - 说明：本地 in-process SSH fixture 只用于可重复的自动化回归；上述 Android 真机结论使用的是用户提供的 `106.14.61.92:22`，账号为 `t2`，密码未写入仓库。
 
@@ -43,8 +43,8 @@
 
 ### 仍不能勾选的边界
 
-- 上述是 root Electron 开发运行时的真实服务器 UI smoke，不是签名安装包验收。`package:windows` 因缺少 Visual Studio/MSVC 的 `node-gyp` native rebuild 阻塞；portable 重试还受到外部 builder 下载超时影响。旧的 gitignored portable 文件不得当作本轮新产物或 ABI 证据。
-- Windows 安装/升级/退出重开、native ABI、SFTP UI、低内存和完整任务链仍保持 `🟡`；Android 的 A-01～A-17 仍按交接任务书逐项维护，不因 Windows smoke 自动变更状态。
+- 上述 root Electron smoke 记录形成时，`package:windows` 还受 MSVC 和外部 Electron 下载阻塞；该历史阻塞已在最终复审中解除。当前 NSIS/portable 制品、ABI 和安装证据以本文末节为准，仍不是签名发布验收。
+- Windows 升级/退出重开、打包后 SFTP/Vault UI、低内存和完整任务链仍保持 `🟡`；Android 的 A-01～A-17 仍按交接任务书逐项维护。
 
 ## 2026-09-19 续验增量：Android 真实 UI 与安全边界
 
@@ -59,3 +59,10 @@
 - 当前两台 Android 真机均在线且安装同一 Debug APK；`2407FRK8EC` 重装后重新创建/保存的 Host 指向用户提供的 `106.14.61.92:22`、账号 `t2`，首次连接显示真实 `ssh-ed25519` 指纹并在确认后建立 Shell。
 - 手机端修正 Host 独立凭据后，Console 实际执行 `echo REAL_SERVER_2407_REINSTALLED`，返回同名远端回显和 `t2` 提示符。该结果证明输入已送达真实测试主机，不以状态点变绿替代命令验证。
 - 本条不把本地 in-process SSH fixture 当作真机证据；密码仍未写入仓库、日志或文档。A-01～A-17 未覆盖的验收边界继续保持原状态。
+
+## 2026-09-19 最终实现与发布复审（提交 `bde17c4`）
+
+- Android 原生上传链路已补齐：系统选择器返回的 URI 保留在 native store，WebView 只拿到 opaque `sourceId`，原生以 32 KiB 缓冲通过单条 SFTP 连接写入 `.relay-part-<transferId>`，完成后原子 rename；取消/失败清理 staging，既有最终目标不被覆盖。
+- `2407FRK8EC` 在用户提供的 `106.14.61.92:22`、账号 `t2` 上完成 32 MiB 上传，远端大小 `33,554,432` bytes、SHA-256 `83ee47245398adee79bd9c0a8bc57b821e92aba10f5f9ade8a5d1fae4d8c4302`；取消约 35% 后保留既有完整目标且无 staging，暂停/继续从约 11 MiB 断点完成。该结果是 A-10 的实机增量证据，未把整个 A-10/A-11 标成通过。
+- Windows `package:windows` 已固定使用本地 `node_modules/electron/dist`，避免 Electron 下载超时，并将 NSIS/portable 分目录输出。当前制品：NSIS `127,632,075` bytes / SHA-256 `979E3D6CECD611AE99F3DE3CA41D3E6A298A5906196B685B61318A5853FDF20F`；portable `113,552,550` bytes / SHA-256 `82F8D40377037DF2392CFF2B20F7ED0E537C7011D118EEDFC99C01B37C0CAC7D`；均为 `NotSigned`。Electron ABI 149 的 `argon2`、`better-sqlite3`、`cpu-features` 加载通过，NSIS 安装/启动/卸载通过。
+- 当前自动化门禁：`npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows`、Android `:app:testDebugUnitTest :app:assembleDebug`、定向 Web/native 31 测试和全量 Web/Server 731 测试通过（161 文件通过、1 跳过；2 测试跳过）。剩余门禁仍包括 Android A-03～A-09、A-11～A-17、Windows 升级迁移/崩溃恢复/打包后完整任务链，以及签名和持久制品来源。

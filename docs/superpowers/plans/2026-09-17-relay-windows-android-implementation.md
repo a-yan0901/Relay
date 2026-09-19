@@ -33,13 +33,13 @@
 | 3 手机布局与输入 | 🟡 返回键、移动工具条、SFTP 布局和过滤已实现 | DOM 测试、Web 构建 | 真机软键盘、安全区、最后一行和滚动走查 |
 | 4 Android SSH 可行性 | 🟡 JSch 候选和执行器已接入 | Kotlin 编译、Android JVM 测试；两台 Android 16 真机已完成用户指定密码主机的认证、Host Key 信任、PTY 基础操作和 SFTP 连接 smoke；2026-09-19 又在该真实主机上完成 3 轮关闭/重开/输入回归 | 私钥、ProxyJump、Host Key 变更、完整 SFTP 资源释放和异常边界 |
 | 5 Vault bundle v1 | 🟡 Android 端格式/加解密/冲突应用已实现 | bundle 定向测试、分块边界测试 | Web↔Windows↔Android 固定向量正反向实测 |
-| 6 Electron shell | 🟡 shell、preload、导航和打包配置已实现 | Windows TS/构建、IPC 测试 | Windows 安装包启动和窗口行为 |
-| 7 Windows 本地 runtime | 🟡 SQLite/Vault/SSH/SFTP/IPC 闭环代码已实现 | `build:windows`、IPC/服务端定向测试 | Windows 原生 ABI、升级迁移、崩溃恢复和任务链 |
-| 8 Windows 系统能力 | 🟡 文件句柄、剪贴板、确认、偏好已接入 | 受影响 TypeScript/DOM 测试 | Windows 实机安装/退出/重开/无监听检查 |
-| 9 Android bridge | 🟡 有界帧、事件代际/序列、队列和文件流已实现 | Android JVM、native bridge/core 定向测试；两台真机已完成 native invoke、终端 resize/写入/关闭和 SFTP list smoke；2026-09-19 每台连续 3 轮重开后均收到 raw `terminal.status=connected` 且输入可达远端 | 真机乱序、取消、进程回收和大文件 |
+| 6 Electron shell | 🟡 shell、preload、导航和打包配置已实现 | Windows TS/构建、IPC 测试；`npm run package:windows` 已用本地 Electron 目录产出 NSIS/portable，NSIS 安装、启动、卸载通过 | Windows 升级迁移和窗口行为 |
+| 7 Windows 本地 runtime | 🟡 SQLite/Vault/SSH/SFTP/IPC 闭环代码已实现 | `build:windows`、IPC/服务端定向测试；Electron ABI 149 下 `argon2`、`better-sqlite3`、`cpu-features` 原生加载通过 | 升级迁移、崩溃恢复和打包后完整任务链 |
+| 8 Windows 系统能力 | 🟡 文件句柄、剪贴板、确认、偏好已接入 | 受影响 TypeScript/DOM 测试；root Electron 真实主机 UI smoke，NSIS 安装/启动/卸载通过 | 打包后 SFTP/Vault/文件能力、退出重开和无监听检查 |
+| 9 Android bridge | 🟡 有界帧、事件代际/序列、队列和文件流已实现 | Android JVM、native bridge/core 定向测试；两台真机已完成 native invoke、终端 resize/写入/关闭、SFTP list；2407 真机完成 32 MiB 原生 URI 流式上传、取消和暂停/继续 | 真机乱序、进程回收、URI 立即释放和低内存 |
 | 10 Android 本地数据/Vault | 🟡 本地 store、Keystore、Vault、模板和导入导出已实现 | Android JVM/编译；第二台真机已创建测试 Vault 并保存真实测试 Host | 锁屏、重启、备份排除和秘密不入 WebView 实测 |
 | 11 Android SSH Shell | 🟡 Shell、Host Key、ProxyJump、重连代码已实现 | Kotlin 编译/JVM 测试；两台 Android 16 真机已完成密码认证、首次 Host Key 信任、PTY resize、写入和关闭；在真实主机上连续 3 轮关闭/重开后 `whoami` 均返回 `t2` | 私钥、网络切换、后台/前台、Host Key 变更和完整认证走查 |
-| 12 Android SFTP/批量任务 | 🟡 SFTP、任务持久化、分页和有界传输已实现 | Android JVM、跨端分页/服务测试；两台真机读取真实主机 `/tmp`，每台返回 19 项 | 真机 UI 浏览、上传下载、重试、取消和部分失败 |
+| 12 Android SFTP/批量任务 | 🟡 SFTP、任务持久化、分页和有界传输已实现 | Android JVM、跨端分页/服务测试；两台真机读取真实主机 `/tmp`，每台返回 19 项；2407 真机 32 MiB 上传完成并校验 SHA-256，取消保留既有目标且清理 staging，暂停/继续从断点完成 | 真机 UI 完整上传下载、重试、部分失败和 URI 任务边界 |
 | 13 Android 生命周期/UI | 🟡 返回键、移动 UI、恢复语义已实现 | DOM、Android 编译 | 真机旋转、锁屏、软键盘和进程回收 |
 | 14 三端统一回归 | ⏳ 尚未达到完成条件 | 已有本地 contract/定向验证 | Windows + Android 实机及发布检查 |
 | 15 同步兼容性预留 | 🟡 可选 account/devices/sync ports 和本地优先边界已保留 | shared schema/能力边界 | 形成独立云同步 M4 计划；本期不实现云同步 |
@@ -119,20 +119,20 @@
 - 历史增量回归（Linux 旧工作树，已被本轮 Windows checkout 记录取代）：`npm run test:e2e -- --workers=1` 通过 4/4；`npm run package:windows:portable` 的旧包 SHA256 为 `91af49081e8a477a99fe5993ace1777797115f0b32355249cd31ebf4bb435478`，旧 Debug APK SHA256 为 `8978bb8d9d4a8a4d0298456cb9dbc169c72ea760ee3fdb0fd8e5d65b61302a6a`。该条只保留历史溯源，不代表当前制品或设备结果。
 ## 当前设备交接状态（2026-09-19）
 
-- Android 代码、Kotlin 编译、JVM 单元测试、connected 测试（2/2）和 Debug APK 构建已完成；源码提交 `d3c4c62` 构建的 APK（SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`）已重新安装并启动于两台 Android 16 真机 `2407FRK8EC`、`25091RP04C`，`emulator-5554` 仅作为历史模拟器证据保留。两台真机已使用 `106.14.61.92:22` 的用户提供密码主机完成 Host Key trust、连接测试、`/tmp` SFTP 列举、终端 resize/写入/关闭，以及 3 轮关闭/重开后输入 `whoami` 返回 `t2`；`2407FRK8EC` 在重装后又完成首次指纹确认、真实登录和 `echo REAL_SERVER_2407_REINSTALLED` 回显。完整 SFTP、私钥认证、Host Key 变更、网络切换、锁屏/进程回收、低内存和 A-01～A-17 其余项目仍未完成。此前 connected test runner 导致的 `INSTALL_FAILED_USER_RESTRICTED` 已在设备侧恢复安装后解除，不再是当前安装状态阻塞。
+- Android 代码、Kotlin 编译、JVM 单元测试、connected 测试（2/2）和 Debug APK 构建已完成；本条早期设备回归使用源码提交 `d3c4c62` 的 APK（SHA-256 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`），当前 APK 制品以本文末节的 `158F...ED045` 为准。两台 Android 16 真机 `2407FRK8EC`、`25091RP04C` 已使用 `106.14.61.92:22` 的用户提供密码主机完成 Host Key trust、连接测试、`/tmp` SFTP 列举、终端 resize/写入/关闭，以及 3 轮关闭/重开后输入 `whoami` 返回 `t2`；`2407FRK8EC` 在重装后又完成首次指纹确认、真实登录和 `echo REAL_SERVER_2407_REINSTALLED` 回显。完整 SFTP、私钥认证、Host Key 变更、网络切换、锁屏/进程回收、低内存和 A-01～A-17 其余项目仍未完成。
 - 之前的 AOSP 软件模拟器 `/dev/kvm` 阻塞记录仍保留为历史环境证据；当前真机 native smoke 已补充真实设备 SSH/SFTP 通路证据，但仍不应扩大解释为完整 Android UI 和生命周期验收。
 - Android APK 已交接到 [跨端验收交接任务书](../verification/2026-09-18-relay-cross-platform-handoff.md)，由目标设备执行人继续回填。任务 4–14 仍保持未完成；任务 15 只是未来同步兼容性预留，不属于本期客户端发布门禁。
-- 历史 Windows x64 portable 预览文件曾在本机生成，但本轮 portable 重试未形成新的可交接产物；仍等待 Windows native ABI、升级迁移、安装/退出/重开和本地 SSH/SFTP 任务链验证，`npmRebuild=false` 的打包结果不能替代 native ABI 验收。
+- Windows 当前已用提交 `bde17c4` 工作树执行 `npm run package:windows`，分别生成 NSIS/portable 制品；Electron ABI 149 下 `argon2`、`better-sqlite3`、`cpu-features` 加载和 NSIS 安装/启动/卸载已通过。升级迁移、崩溃恢复、签名及打包后完整 SSH/SFTP/Vault/UI 任务链仍未验收。
 - APK 和 portable 包当前只存在于本机 gitignored 生成目录，不会随 `git clone` 或 `git checkout` 出现；当前没有可追溯的 Release 附件、制品服务器或共享目录作为持久来源。最终签收前必须登记可访问的制品来源，并记录源码 commit、工具链版本和 SHA-256。
 
-当前最重要的发布阻塞项是实际 Electron Windows 安装/ABI/升级验证，以及交接机器上的 Android SSH 库/Keystore/URI/生命周期验证和剩余本地能力；在这些完成前，代码只能称为可测试的跨端基础设施与原生执行器增量，不能称为两个平台客户端已交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。
+当前最重要的发布阻塞项是 Windows 升级/崩溃/完整任务链/签名与持久制品来源，以及交接机器上的 Android URI 立即释放、生命周期、低内存和 A-03～A-17 剩余能力；在这些完成前，代码只能称为可测试的跨端基础设施与技术预览，不能称为两个平台客户端已完整交付。云同步仍按本计划作为后续独立能力，不在本增量中模拟或宣称完成。
 
 ## 2026-09-19 增量复审：Windows UI 与真实测试主机
 
 - Windows root Electron UI 已使用本机 `npm run build:windows` 产物启动，并连接用户提供的真实 SSH 主机 `106.14.61.92:22`（账号 `t2`；密码未写入仓库）。UI 已完成 Host Key 已信任后的 Shell 打开、终端输入 `echo WINDOWS_UI_STABLE`、关闭 Console、重新打开 Host、再次输入 `echo WINDOWS_UI_REOPEN_STABLE`；两次均收到远端 `t2` 提示符和命令回显，生命周期诊断中没有重复打开循环或 `SSH_CONNECTION_FAILED`。
 - 本轮修复了四个 Windows/native 生命周期问题：Electron file URL 使用相对 renderer 资源；sandbox preload 内置 `zod`；Windows preload 串行化 `sessions.close` 与下一次 `sessions.openShell`；原生 Shell 使用唯一 request ID、在 `sessions.openShell` 完成前不发送 resize，并将 clean close 的 service instance 统一为 `desktop-local`。
 - 受影响的 native/Windows 定向回归为 7 个测试文件、30 个测试全部通过；`npm run typecheck`、`npm run lint`、`npm run build:windows` 全部通过。续验后的标准全量 Web/Server 回归为 161 个测试文件通过、1 个跳过，727 个测试通过、2 个跳过；Playwright E2E 为 4/4。
-- `npm run package:windows` 当前仍被本机缺少 Visual Studio/MSVC 阻塞，`node-gyp` 无法找到 Visual Studio；portable 打包重试又受到外部 builder 下载 `ETIMEDOUT` 影响。因此本轮只确认了可运行的 root Electron UI 和 source build，不宣称 Windows 安装包、native ABI、升级迁移或签名已验收。仓库中已有的 portable 预览文件若时间早于本记录，只能作为旧产物，不能作为本轮构建结果。
+- 历史阻塞记录：本机曾缺少 Visual Studio/MSVC，且 builder 曾因外部 Electron 下载 `ETIMEDOUT`；随后已安装 Build Tools、重建 native module，并将 `package:windows` 固定到本地 Electron 分发目录。最终 NSIS/portable 制品、ABI 和安装证据见本文末节；签名、升级迁移和完整任务链仍未验收。
 
 ## 2026-09-19 续验：Android 真机、Web/Server 与安全边界
 
@@ -146,6 +146,14 @@
 
 ## 2026-09-19 续验追加：手机重装后真实主机验证
 
-- `2407FRK8EC` 已重新安装源码 `d3c4c62` 对应 Debug APK，`adb install -r --no-streaming` 返回 `Success`；应用启动后 Vault 和 Host 数据可用，说明该设备已恢复到可继续验收的安装状态。
+- `2407FRK8EC` 已重新安装早期源码 `d3c4c62` 对应 Debug APK，`adb install -r --no-streaming` 返回 `Success`；该安装记录保留用于设备恢复溯源，当前安装以本文末节记录的 APK 为准。
 - 手机首次重新连接 `106.14.61.92:22` 时展示并确认真实 `ssh-ed25519` 指纹 `SHA256:DW4b509womrL6B4XC9tjbWFZsVNzPy6I1lBcFWiz5kI`；修正端上 Host 独立凭据后建立远程 Ubuntu Shell，输入 `echo REAL_SERVER_2407_REINSTALLED` 得到同名远端回显和 `t2` 提示符。
 - 本条使用的是用户提供的测试服务器；密码未写入代码、日志或任务书。本条只更新手机当前安装和真实 SSH 输入证据，不改变 A-01～A-17 其余待执行门禁。
+
+## 2026-09-19 最终实现与制品复审（提交 `bde17c4`）
+
+- Android 原生文件上传已从系统 `ACTION_OPEN_DOCUMENT` 选择器贯通到原生 JSch/SFTP：WebView 只收到不含文件字节的 `sourceId/name/size`，原生以 32 KiB 有界缓冲读取 `content://` URI，使用单条 SFTP 连接、`.relay-part-<transferId>` staging 和完成后 rename；暂停/取消/失败不会把半文件提交为最终目标。
+- 真实主机 `106.14.61.92:22`、账号 `t2` 上，`2407FRK8EC` 使用 32 MiB 设备文件完成上传；远端大小为 `33,554,432` bytes，SHA-256 为 `83ee47245398adee79bd9c0a8bc57b821e92aba10f5f9ade8a5d1fae4d8c4302`，源文件和远端一致。取消测试在约 35% 时进入 `已取消`，原有完整目标保持原大小/哈希且没有 staging；暂停后继续从约 11 MiB 断点完成并再次校验一致。该证据仍不替代 A-11 的任务结束立即释放 URI、权限拒绝和分享链路验收。
+- 两台 Android 16 真机 `2407FRK8EC`、`25091RP04C` 均安装当前 Debug APK；APK 大小 `8,633,755` bytes，SHA-256 `158F049680DBC0600D571F1A69FB835B84D2617C0CC677E69F5986FD010ED045`。构建使用 JDK 21、已缓存 Gradle 9.3.1、`--offline`、单 worker；`:app:testDebugUnitTest :app:assembleDebug` 成功。
+- Windows 打包脚本已显式使用 `node_modules/electron/dist`，`npm run package:windows` 不再尝试外部 Electron 下载，并分别生成 NSIS 与 portable 输出，避免两个 target 覆盖同一 artifact 名称。NSIS `127,632,075` bytes、SHA-256 `979E3D6CECD611AE99F3DE3CA41D3E6A298A5906196B685B61318A5853FDF20F`；portable `113,552,550` bytes、SHA-256 `82F8D40377037DF2392CFF2B20F7ED0E537C7011D118EEDFC99C01B37C0CAC7D`；两者均为 `NotSigned`。Electron ABI 149 下三个 native module 加载通过，NSIS 静默安装、启动存活 5 秒、静默卸载通过。
+- Web/Server 最终回归：`npm run typecheck`、`npm run lint`、`npm run build`、`npm run build:windows`、定向 Web/native 测试（4 文件、31 测试）和全量 `npm test -- --no-file-parallelism --maxWorkers=1 --reporter=dot`（161 文件通过、1 跳过；731 测试通过、2 跳过）均通过。仍未完成的是任务书 A-03～A-09、A-11～A-17 中明确列出的真实设备边界，以及 Windows 升级迁移/崩溃恢复/打包后完整任务链和持久制品来源。
