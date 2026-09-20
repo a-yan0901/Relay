@@ -449,3 +449,9 @@
 - 当前提交 `96de623` 的串行全量 Vitest 通过 `163` 个文件、跳过 `1` 个文件；`750` 个测试通过、`2` 个跳过，包含 Android 部署策略测试。
 - GitHub Actions run `35476843161` 成功完成源码校验、Electron runtime 准备、NSIS/Portable 打包、`release-manifest.json` 和 artifact 上传；artifact `Relay-Windows-main-96de6238285c1253c680836d315b595812b94436`，大小 `240,657,718` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35476843161`。
 - 该结果不扩大验收边界：Windows 签名、升级/回滚、崩溃恢复多轮、完整安装包任务链和两台 Android 真机 A-01～A-17 仍待目标环境证据。
+
+## 2026-09-20 Windows 定向回归与 CI 并发策略
+
+- 当前工作区 `npm test -- tests/unit/windows --no-file-parallelism --maxWorkers=1 --reporter=dot` 通过 `6` 个文件、`30` 个测试；`npm run build:windows` 的 Web/main/preload 构建全部成功。
+- Windows workflow 新增文档路径跳过和同分支取消旧 run 的并发策略，减少任务书更新和连续代码提交造成的重复打包；手动触发与 `v*` 标签触发保持可用。
+- 本轮仍未扩大 Windows 发布结论：真签名、升级/回滚、崩溃恢复多轮和完整安装包任务链继续待目标环境验证。

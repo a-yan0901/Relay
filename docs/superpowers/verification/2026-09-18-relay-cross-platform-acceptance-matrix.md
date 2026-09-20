@@ -423,3 +423,12 @@
 | Windows CI | 通过 | run `35476843161` 的依赖安装、源码校验、Electron runtime 准备、NSIS/Portable、manifest、artifact upload 全部成功 |
 | 当前 Windows 制品 | 已上传 | `Relay-Windows-main-96de6238285c1253c680836d315b595812b94436`，`240,657,718` bytes，保留至 `2026-12-18` |
 | 发布门禁 | 未完成 | 真签名、旧版本升级/回滚、崩溃恢复多轮、完整安装包任务链和 Android 真机 A-01～A-17 仍需补证据 |
+
+### Windows 当前工作区定向回归
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Windows unit/local-runtime | 通过 | `tests/unit/windows`：`6` 个文件、`30` 个测试全部通过 |
+| Windows desktop build | 通过 | `npm run build:windows` 的 Web、main、preload 均成功；仅有既有 chunk size 警告 |
+| Windows CI 效率策略 | 已实现 | 文档路径跳过打包；同分支新提交取消旧未完成 run；不改变 `workflow_dispatch`/`v*` 发布触发 |
+| Windows 发布门禁 | 未完成 | 签名、升级/回滚、崩溃恢复多轮和安装包完整任务链仍需目标 Windows 环境证据 |

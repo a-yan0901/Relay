@@ -623,3 +623,9 @@
 - GitHub Actions run `35476843161` 已成功完成 checkout、`npm ci`、typecheck/lint、Electron runtime 准备、NSIS/Portable 打包、manifest 生成和 artifact 上传。
 - artifact 为 `Relay-Windows-main-96de6238285c1253c680836d315b595812b94436`，大小 `240,657,718` bytes，保留至 `2026-12-18`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35476843161`。
 - 本条只确认当前提交的自动化回归和可追溯 Windows CI 制品；Windows 真签名、旧版本升级/回滚、崩溃恢复多轮和两台 Android 真机 A-01～A-17 仍未闭环。
+
+## 47. 2026-09-20 Windows 定向回归与 CI 并发策略
+
+- 当前工作区执行 Windows 定向 Vitest：`tests/unit/windows` 共 `6` 个文件、`30` 个测试全部通过。
+- `npm run build:windows` 通过 Web、Electron main 和 preload 三段构建；仅有既有 Vite chunk size 提示，无构建失败。
+- `.github/workflows/windows-package.yml` 已加入 `paths-ignore`（文档目录）和同分支 `concurrency.cancel-in-progress`；后续文档-only 提交不再重复打包，新代码提交只保留最新 Windows package run。
