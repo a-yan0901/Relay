@@ -649,3 +649,8 @@
 - 只读检查该进程树的 TCP `Listen` 状态为 `0`，未发现本地 HTTP/TCP 监听。
 - `sky.list_apps()` 仍返回 `Computer Use native pipe is unavailable`；重置 CUA REPL 后复试不变。因此当前阻塞是 CUA 原生任务实例/管道绑定，不是桌面应用未启动。
 - Windows 真实系统文件选择/保存对话框人工验收继续保持未完成，不使用其他 UI 自动化技术绕过该门禁。
+
+## 2026-09-20 跨端关键路径定向回归
+
+- 当前工作区定向执行 Web 终端恢复、服务端 Vault bundle、Windows local runtime、Windows native file services，共 `4` 个测试文件、`23/23` 个测试通过。
+- 该回归补强当前 Web/Server/Windows 代码路径证据；不扩大为 Android 真机 A-01～A-17、A-17 双向实机 bundle、Windows 原生系统对话框人工验收或正式签名通过。

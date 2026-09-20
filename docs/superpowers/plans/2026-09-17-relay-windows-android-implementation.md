@@ -631,3 +631,8 @@
 - 对该打包进程树执行只读监听检查：4 个 Relay 进程均无 `Listen` TCP 端口，未发现本地 HTTP/TCP 服务。
 - 直接调用 Windows 原生 `sky.list_apps()` 返回 `Computer Use native pipe is unavailable: failed to connect native pipe: 系统找不到指定的文件。`；重置 CUA REPL 后重试结果不变。
 - 该结果将阻塞定位收敛到 CUA 原生任务实例/管道绑定，而不是 Relay.exe 未启动或 Relay 业务崩溃；不使用 PowerShell UI 自动化替代 Computer Use。真实系统文件选择/保存对话框人工门禁待新的 Windows CUA 任务实例或人工走查后补证。
+
+## 2026-09-20 跨端关键路径定向回归
+
+- 在当前工作区执行 `npm test -- --run tests/unit/web/app-terminal-lifecycle.dom.test.tsx tests/unit/server/vault-bundle.test.ts tests/unit/windows/local-runtime.test.ts tests/unit/windows/native-file-services.test.ts --no-file-parallelism --maxWorkers=1 --reporter=dot`。
+- 结果为 `4` 个测试文件、`23` 个测试全部通过；该条补强 Web 自动恢复、服务端固定 bundle、Windows 本地 runtime 和原生文件服务的当前回归证据，不扩大为 Android 真机或 Windows 原生系统对话框人工通过。
