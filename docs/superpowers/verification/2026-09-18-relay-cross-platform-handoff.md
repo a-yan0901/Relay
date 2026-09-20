@@ -14,7 +14,7 @@
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
 | Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `164` 个文件通过、`1` 个跳过；`757` 个测试通过、`2` 个跳过；服务端定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
-| Windows | 🟡 打包与隔离恢复已复核，平台门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复、版本化 `0.0.9 → 0.1.0 → 0.0.9` 数据保留和 CI artifact 均有证据 | 签名、安装器崩溃恢复、打包后完整 SSH/SFTP/Vault/UI 任务链 |
+| Windows | 🟡 打包与隔离恢复已复核，平台门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复、版本化 `0.0.9 → 0.1.0 → 0.0.9` 数据保留、一次安装器中断恢复和 CI artifact 均有证据 | 签名、打包后完整 SSH/SFTP/Vault/UI 任务链 |
 | Android | ⛔ 当前真机批次不可验证 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `9D79…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态 | 两台真机 A-01～A-17、Host Key/私钥失败矩阵、网络/生命周期/URI/低内存和实机跨端回传 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
@@ -655,6 +655,8 @@
 
 ## 50. 2026-09-20 当前 NSIS 安装器隔离门禁
 
+- 对当前 NSIS 安装器执行一次隔离中断恢复：启动静默安装约 `500 ms` 后只终止该安装器 PID，此时临时安装目录没有完整 `Relay.exe`；随后同一目录重跑安装，退出码 `0`，`Relay.exe` 与卸载程序恢复，安装后进程存活 5 秒。
+- 复原后的临时安装静默卸载退出码 `0`，安装目录和临时 userData 均已清理。该条只关闭一次受控“安装器中断→重跑恢复”证据，签名和完整打包任务链仍未完成。
 - 对当前 `dist/releases/nsis/Relay-0.1.0-x64.exe` 使用临时安装目录执行静默安装，退出码 `0`；安装目录中的 `Relay.exe` 和卸载程序均存在。
 - 从临时安装目录启动 `Relay.exe --user-data-dir=<临时目录>`，进程存活 5 秒；随后静默卸载退出码 `0`，安装目录已删除，临时 userData 已清理。
 - 本条补齐当前 NSIS 安装/启动/卸载证据；签名、旧版本升级/回滚、安装器崩溃恢复和完整打包 SSH/SFTP/UI 任务链仍未完成。
