@@ -611,3 +611,10 @@
 - 在当前代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 上，对独立 AVD `emulator-5554`（`homeops-api35(AVD) - 15`）执行 `node run-gradle.mjs :app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`。
 - Gradle 最终 `BUILD SUCCESSFUL`；instrumentation `9/9` 通过、`0` skipped、`0` failed，耗时 `2m 16s`。该批次覆盖 Android full fixed bundle vector 的解密/解析、分块导入、错误密码、篡改回滚、冲突与无 partial write 等自动化路径。
 - Gradle connected runner 仅作用于独立 AVD；没有触碰用户手机/平板，没有新增运行时授权，也没有对真机执行卸载、清库或部署。该证据不替代 Android 真机 A-01～A-17、A-17 双向设备回传、低内存和生命周期人工验收。
+
+## 2026-09-20 Chromium E2E SSH 夹具随机密钥修复
+
+- 本轮 Chromium E2E 首次执行在 in-process SSH fixture 启动阶段偶发失败：`ssh2@1.17.0` 的 Ed25519 key generator 在公钥首字节为 `0x00` 时会生成 31-byte 公钥，随后 `Server` 报 `Cannot parse privateKey: Malformed OpenSSH private key`。用同一依赖循环生成并复现了该边界。
+- 按 TDD 先新增确定性回归用例（malformed key → parseable key），用例先因缺少 `createE2eHostKey` 失败；随后在测试夹具中加入最多 8 次生成并用 `utils.parseKey` 校验，回归变绿。生产/客户端代码未改动。
+- 修复后 Chromium E2E `5/5` 通过；全量 Vitest `168` 个文件通过、`1` 个跳过，`770` 个测试通过、`2` 个跳过；服务端定向 `45/203`、Android `test:android:local` 与 `build:android:debug` 均为 `BUILD SUCCESSFUL`；typecheck 与 lint 通过。
+- 本条只关闭自动化 SSH fixture 的随机失败，不改变 Android 手机/平板 A-01～A-17 延期、Windows Computer Use 原生对话框人工走查和正式 Authenticode 签名的外部门禁。

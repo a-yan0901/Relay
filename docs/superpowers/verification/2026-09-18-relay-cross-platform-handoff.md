@@ -788,3 +788,10 @@
 - 当前代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 在独立 AVD `emulator-5554`（`homeops-api35(AVD) - 15`）执行 `node run-gradle.mjs :app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`。
 - 最终结果：`9/9` instrumentation 通过、`0` skipped、`0` failed，Gradle `BUILD SUCCESSFUL`，耗时 `2m 16s`。覆盖 full fixed bundle vector 解密/解析、分块导入、错误密码、篡改回滚、冲突和无 partial write。
 - 交接边界：本条只更新独立模拟器自动化证据；没有触碰用户手机/平板，没有新增运行时授权，也没有对真机卸载、清库或部署。A-01～A-17、Android→Web/Windows 实际回传、低内存和生命周期仍需目标真机验收。
+
+## 2026-09-20 Chromium E2E SSH 夹具稳定性补充
+
+- 首次 Chromium 回归曾在启动 in-process SSH fixture 时因 `ssh2@1.17.0` 的 Ed25519 生成边界偶发返回 malformed OpenSSH private key；根因已用同版本依赖循环复现，不属于产品 SSH 逻辑。
+- 新增确定性回归用例并按 TDD 完成红绿验证；`createE2eHostKey` 对候选 key 调用 `utils.parseKey`，无效时重新生成，最多 8 次，再交给 `SshServer`。
+- 修复后当前提交全量 Vitest 为 `168` 文件通过、`1` 跳过，`770` 测试通过、`2` 跳过；Chromium E2E `5/5`，服务端 unit+integration `45/203`，typecheck/lint 均通过。Android 本地构建仍为 `BUILD SUCCESSFUL`。
+- 交接边界不变：Android 手机/平板 A-01～A-17 仍按用户要求延期；Windows Computer Use 原生系统文件对话框仍需 native CUA 新任务人工走查；正式签名仍需证书 secrets 和 `v*` 验证。

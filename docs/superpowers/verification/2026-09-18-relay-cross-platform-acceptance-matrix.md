@@ -624,3 +624,11 @@
 | Android full bundle vector 自动化 | 部分通过 | 覆盖固定向量解密/解析、分块导入、错误密码、篡改回滚、冲突和无 partial write；不等同于 Android 真机双向导入导出 |
 | 设备影响 | 仅独立 AVD | 未触碰手机/平板；没有新增运行时授权，也没有对真机卸载、清库或部署 |
 | Android 真机与 A-17 | 延期 | 仍等待手机和平板重新上线；恢复后按一次数据保留部署，再集中执行 A-01～A-17 与 Web/Windows↔Android 双向 bundle |
+
+## 2026-09-20 Chromium E2E SSH 夹具随机密钥修复
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| in-process SSH host key | 修复 | `ssh2@1.17.0` 的 Ed25519 生成器偶发产生不可解析的 31-byte 公钥；新增 `createE2eHostKey`，生成后用 `utils.parseKey` 校验，最多重试 8 次 |
+| 回归证据 | 通过 | 确定性 malformed-key 回归用例先红后绿；Chromium E2E `5/5`；全量 Vitest `168` 文件通过、`1` 跳过，`770` 测试通过、`2` 跳过；typecheck/lint 通过 |
+| 产品范围 | 未扩大 | 仅修改 E2E 测试夹具和测试；不改变 Web/Server/Windows/Android 运行时行为，也不替代 Android 真机、Windows 原生对话框或签名门禁 |

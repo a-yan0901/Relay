@@ -17,6 +17,21 @@ import type { E2eSshFixture } from './ssh-fixture.js';
 const FIXTURE_PASSWORD = 'webssh-e2e-password';
 const FIXTURE_USERNAME = 'fixture';
 const { Server: SshServer, utils } = ssh2;
+
+type E2eHostKeyPair = {
+  private: string;
+};
+
+export const createE2eHostKey = (
+  generateKeyPair: () => E2eHostKeyPair = () => utils.generateKeyPairSync('ed25519')
+): string => {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const candidate = generateKeyPair().private;
+    if (!(utils.parseKey(candidate) instanceof Error)) return candidate;
+  }
+  throw new Error('could not generate a parseable Ed25519 SSH host key');
+};
+
 const STATUS_CODE = {
   OK: 0,
   EOF: 1,
@@ -423,7 +438,7 @@ export const startInProcessE2eSshFixture = async (): Promise<E2eSshFixture> => {
   await writeFile(localKnownFilePath, 'fixture-known-file\n');
 
   const port = await findFreePort();
-  const hostKey = utils.generateKeyPairSync('ed25519').private;
+  const hostKey = createE2eHostKey();
   const clients = new Set<Connection>();
   const server = new SshServer({ hostKeys: [hostKey] }, (client) => {
     clients.add(client);
