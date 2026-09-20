@@ -65,6 +65,7 @@ export interface TerminalWorkspaceProps {
   onUploadSftp?: (hostId: string, file: File, path: string) => Promise<void>;
   onPickUploadSftp?: (hostId: string, path: string) => void | Promise<void>;
   onDownloadSftp?: (hostId: string, path: string, name: string) => Promise<void>;
+  onShareSftp?: (hostId: string, path: string, name: string) => Promise<void>;
   onCopyText?: (value: string) => Promise<void> | void;
   fileTransport?: Pick<FileTransport, 'list' | 'listPage' | 'createDirectory' | 'rename' | 'remove'>;
   transferJobs?: readonly TransferJob[];
@@ -149,6 +150,7 @@ export const TerminalWorkspace = ({
   onUploadSftp,
   onPickUploadSftp,
   onDownloadSftp,
+  onShareSftp,
   onCopyText,
   fileTransport,
   transferJobs = [],
@@ -739,6 +741,7 @@ export const TerminalWorkspace = ({
               onUploadFile={onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined}
               onPickUpload={onPickUploadSftp ? (path) => onPickUploadSftp(activeHostId, path) : undefined}
               onDownloadFile={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined}
+              onShareFile={onShareSftp ? (path, name) => onShareSftp(activeHostId, path, name) : undefined}
               localFilesEnabled={localFilesEnabled}
               mutationsEnabled={sftpMutationsEnabled}
               onCancelTransfer={onCancelTransfer}
@@ -751,7 +754,7 @@ export const TerminalWorkspace = ({
               onCopyText={onCopyText}
             />
             : onListSftp && <>
-              <SftpPanel hostId={activeHostId} remotePath={sftpPathByHostId[activeHostId] ?? '/'} onNavigate={handleRemotePathChange} onList={onListSftp} onListPage={onListSftpPage} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={localFilesEnabled && onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} onCopyText={onCopyText} />
+              <SftpPanel hostId={activeHostId} remotePath={sftpPathByHostId[activeHostId] ?? '/'} onNavigate={handleRemotePathChange} onList={onListSftp} onListPage={onListSftpPage} onCreateDirectory={onCreateDirectorySftp ? (path) => onCreateDirectorySftp(activeHostId, path) : undefined} onRename={onRenameSftp ? (from, to) => onRenameSftp(activeHostId, from, to) : undefined} onDelete={onDeleteSftp ? (path) => onDeleteSftp(activeHostId, path) : undefined} onUpload={localFilesEnabled && onUploadSftp ? (file, path) => onUploadSftp(activeHostId, file, path) : undefined} onDownload={onDownloadSftp ? (path, name) => onDownloadSftp(activeHostId, path, name) : undefined} onShare={onShareSftp ? (path, name) => onShareSftp(activeHostId, path, name) : undefined} onCopyText={onCopyText} />
               <TransferQueue jobs={transferJobs} onCancel={onCancelTransfer} onRetry={onRetryTransfer} />
             </>}
         </aside>

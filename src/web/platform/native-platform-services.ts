@@ -12,6 +12,7 @@ const SAFE_WRITER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 export interface NativePlatformServicesOptions {
   notifications?: boolean;
+  sharing?: boolean;
 }
 
 const webViewStorage = (name: 'localStorage' | 'sessionStorage'): StoragePort | undefined => {
@@ -39,6 +40,43 @@ const boundedClipboardText = (value: string): string => {
   if (value.length > MAX_CLIPBOARD_TEXT) throw new AppError('FILE_TOO_LARGE', '剪贴板内容超出限制');
   return value;
 };
+
+const createNativeFileWriter = (port: NativeOperationPort, operation: 'system.fileSave' | 'system.share'): FileWriterPort => ({
+  async open(request): Promise<FileWriter | null> {
+    const result = await port.invoke<unknown>(`${operation}.open`, request);
+    if (result === null) return null;
+    if (typeof result !== 'object' || result === null || Array.isArray(result) || typeof (result as { writerId?: unknown }).writerId !== 'string' || !SAFE_WRITER_ID.test((result as { writerId: string }).writerId)) {
+      throw new AppError('PROTOCOL_INVALID_MESSAGE');
+    }
+    const writerId = (result as { writerId: string }).writerId;
+    let closed = false;
+    const writer: FileWriter = {
+      async write(data: Uint8Array): Promise<void> {
+        if (closed) throw new AppError('CAPABILITY_UNAVAILABLE');
+        if (!(data instanceof Uint8Array) || data.byteLength > NATIVE_TRANSFER_CHUNK_BYTES) throw new AppError('FILE_TOO_LARGE');
+        await port.invoke(`${operation}.write`, { writerId, data: toBase64Url(data) });
+      },
+      async seek(position: number): Promise<void> {
+        if (closed || !Number.isSafeInteger(position) || position < 0) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+        await port.invoke(`${operation}.seek`, { writerId, position });
+      },
+      async close(): Promise<void> {
+        if (closed) return;
+        await port.invoke(`${operation}.close`, { writerId });
+        closed = true;
+      },
+      async cancel(): Promise<void> {
+        if (closed) return;
+        try {
+          await port.invoke(`${operation}.cancel`, { writerId }).catch(() => undefined);
+        } finally {
+          closed = true;
+        }
+      }
+    };
+    return writer;
+  }
+});
 
 export const createNativePlatformServices = (port: NativeOperationPort, options: NativePlatformServicesOptions = {}): PlatformServices => {
   const clipboard: ClipboardPort = {
@@ -73,42 +111,8 @@ export const createNativePlatformServices = (port: NativeOperationPort, options:
       await port.invoke('system.openExternal', { url: parsed.toString() });
     }
   };
-  const fileWriter: FileWriterPort = {
-    async open(request): Promise<FileWriter | null> {
-      const result = await port.invoke<unknown>('system.fileSave.open', request);
-      if (result === null) return null;
-      if (typeof result !== 'object' || result === null || Array.isArray(result) || typeof (result as { writerId?: unknown }).writerId !== 'string' || !SAFE_WRITER_ID.test((result as { writerId: string }).writerId)) {
-        throw new AppError('PROTOCOL_INVALID_MESSAGE');
-      }
-      const writerId = (result as { writerId: string }).writerId;
-      let closed = false;
-      const writer: FileWriter = {
-        async write(data: Uint8Array): Promise<void> {
-          if (closed) throw new AppError('CAPABILITY_UNAVAILABLE');
-          if (!(data instanceof Uint8Array) || data.byteLength > NATIVE_TRANSFER_CHUNK_BYTES) throw new AppError('FILE_TOO_LARGE');
-          await port.invoke('system.fileSave.write', { writerId, data: toBase64Url(data) });
-        },
-        async seek(position: number): Promise<void> {
-          if (closed || !Number.isSafeInteger(position) || position < 0) throw new AppError('PROTOCOL_INVALID_MESSAGE');
-          await port.invoke('system.fileSave.seek', { writerId, position });
-        },
-        async close(): Promise<void> {
-          if (closed) return;
-          await port.invoke('system.fileSave.close', { writerId });
-          closed = true;
-        },
-        async cancel(): Promise<void> {
-          if (closed) return;
-          try {
-            await port.invoke('system.fileSave.cancel', { writerId }).catch(() => undefined);
-          } finally {
-            closed = true;
-          }
-        }
-      };
-      return writer;
-    }
-  };
+  const fileWriter = createNativeFileWriter(port, 'system.fileSave');
+  const shareWriter = options.sharing ? createNativeFileWriter(port, 'system.share') : undefined;
   const fileSave: FileSavePort = {
     async save(request): Promise<void> {
       const writer = await fileWriter.open(request);
@@ -147,6 +151,7 @@ export const createNativePlatformServices = (port: NativeOperationPort, options:
     externalLinks,
     fileSave,
     fileWriter,
+    ...(shareWriter ? { shareWriter } : {}),
     ...(notifications ? { notifications } : {})
   };
 };

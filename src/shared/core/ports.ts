@@ -158,6 +158,8 @@ export interface PlatformServices {
   downloads?: DownloadPort;
   fileSave?: FileSavePort;
   fileWriter?: FileWriterPort;
+  /** User-triggered sharing of a single remote file, when the native shell provides it. */
+  shareWriter?: FileWriterPort;
   notifications?: NotificationPort;
 }
 

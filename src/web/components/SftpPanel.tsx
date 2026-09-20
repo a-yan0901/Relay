@@ -9,13 +9,13 @@ import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from '../context-menu';
 import { useContextMenu } from '../hooks/use-context-menu';
 
-type SftpAction = '读取' | '上传' | '下载' | '删除' | '新建目录' | '重命名';
+type SftpAction = '读取' | '上传' | '下载' | '分享' | '删除' | '新建目录' | '重命名';
 const SFTP_PAGE_SIZE = 128;
 const MAX_PAGE_HISTORY = 32;
 
 export const sftpErrorMessage = (error: unknown, action: SftpAction, path?: string): string => {
   if (error instanceof AppError) {
-    if (error.code === 'SFTP_PERMISSION_DENIED') return action === '读取'
+    if (error.code === 'SFTP_PERMISSION_DENIED') return action === '读取' || action === '下载' || action === '分享'
       ? `读取失败：${path ?? '当前目录'}没有访问权限，请检查权限后重试`
       : '当前目录没有写权限，请切换到可写目录（如 /tmp）';
     if (error.code === 'SFTP_NOT_FOUND') return `远程文件或目录不存在${path ? `：${path}` : ''}，请刷新后重试`;
@@ -40,6 +40,7 @@ export interface SftpPanelProps {
   onDelete?: (path: string) => Promise<void>;
   onUpload?: (file: File, path: string) => Promise<void>;
   onDownload?: (path: string, name: string) => Promise<void>;
+  onShare?: (path: string, name: string) => Promise<void>;
   onCopyText?: (value: string) => Promise<void> | void;
   onNavigate?: (path: string) => void;
 }
@@ -61,6 +62,7 @@ export const SftpPanel = ({
   onDelete,
   onUpload,
   onDownload,
+  onShare,
   onCopyText,
   onNavigate
 }: SftpPanelProps) => {
@@ -265,6 +267,16 @@ export const SftpPanel = ({
     }
   };
 
+  const share = async (entry: SftpEntry): Promise<void> => {
+    if (!onShare) return;
+    setError(null);
+    try {
+      await onShare(entry.path, entry.name);
+    } catch (shareError) {
+      setError(sftpErrorMessage(shareError, '分享'));
+    }
+  };
+
   const openRename = (entry: SftpEntry): void => {
     setRenameName(entry.name);
     setError(null);
@@ -282,6 +294,7 @@ export const SftpPanel = ({
       { id: 'enter-directory', label: '进入目录', disabled: fileContextEntry.type !== 'directory', onSelect: () => navigate(fileContextEntry) },
       { id: 'copy-remote-path', label: '复制远程路径', disabled: !onCopyText, onSelect: () => onCopyText?.(fileContextEntry.path) },
       { id: 'download-entry', label: '下载', disabled: fileContextEntry.type !== 'file' || !onDownload, onSelect: () => void download(fileContextEntry) },
+      { id: 'share-entry', label: '分享', disabled: fileContextEntry.type !== 'file' || !onShare, onSelect: () => void share(fileContextEntry) },
       { id: 'rename-entry', label: '重命名', disabled: !onRename, separatorBefore: true, onSelect: () => openRename(fileContextEntry) },
       { id: 'delete-entry', label: '删除', disabled: !onDelete, tone: 'danger', onSelect: () => openDelete([fileContextEntry.path]) }
     ]
@@ -313,6 +326,7 @@ export const SftpPanel = ({
           <button type="button" className="sftp-entry-name" aria-label={entry.type === 'directory' ? `打开目录 ${entry.name}` : entry.name} onClick={() => navigate(entry)} disabled={entry.type !== 'directory'}><span aria-hidden="true">{entry.type === 'directory' ? '▸' : '·'}</span>{entry.name}</button>
           <span className="sftp-entry-meta">{entry.type === 'directory' ? '目录' : `${entry.size} B`}</span>
           {entry.type === 'file' && onDownload && <button type="button" className="icon-button" aria-label={`下载 ${entry.name}`} title={`下载 ${entry.name}`} onClick={() => void download(entry)} disabled={busy}>↓</button>}
+          {entry.type === 'file' && onShare && <button type="button" className="icon-button" aria-label={`分享 ${entry.name}`} title={`分享 ${entry.name}`} onClick={() => void share(entry)} disabled={busy}>↗</button>}
           {onRename && <button type="button" className="icon-button" aria-label={`重命名 ${entry.name}`} title={`重命名 ${entry.name}`} onClick={() => openRename(entry)} disabled={busy}>✎</button>}
           {onDelete && <button type="button" className="icon-button" aria-label={`删除 ${entry.name}`} title={`删除 ${entry.name}`} onClick={() => openDelete([entry.path])} disabled={busy}>×</button>}
         </li>)}</ul>

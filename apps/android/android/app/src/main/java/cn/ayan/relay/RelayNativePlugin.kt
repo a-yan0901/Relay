@@ -61,6 +61,7 @@ class RelayNativePlugin : Plugin() {
             "system.confirm", "system.openExternal",
             "system.fileOpen.open",
             "system.fileSave.open", "system.fileSave.write", "system.fileSave.seek", "system.fileSave.close", "system.fileSave.cancel",
+            "system.share.open", "system.share.write", "system.share.close", "system.share.cancel",
             "connection.test",
             "hosts.list", "hosts.get", "hosts.listProfiles", "hosts.getProfile", "hosts.create", "hosts.update", "hosts.delete", "hosts.clearHostKey",
             "identities.list", "identities.get", "identities.create", "identities.update", "identities.delete",
@@ -349,7 +350,7 @@ class RelayNativePlugin : Plugin() {
             val message = payload.optString("message", "")
             if (message.isEmpty() || message.length > 4 * 1024 || message.any { it.code <= 0x1f || it.code == 0x7f }) return false
         }
-        if (operation == "system.fileSave.write") {
+        if (operation == "system.fileSave.write" || operation == "system.share.write") {
             val data = payload.optString("data", "")
             if (data.length > MAX_ENCODED_CHUNK_BYTES) return false
             val writerId = payload.optString("writerId", "")
@@ -370,10 +371,10 @@ class RelayNativePlugin : Plugin() {
             val writerId = payload.optString("writerId", "")
             if (!isSafeId(writerId) || payload.optLong("position", -1L) < 0L) return false
         }
-        if (operation == "system.fileSave.close" || operation == "system.fileSave.cancel") {
+        if (operation == "system.fileSave.close" || operation == "system.fileSave.cancel" || operation == "system.share.close" || operation == "system.share.cancel") {
             if (!isSafeId(payload.optString("writerId", ""))) return false
         }
-        if (operation == "system.fileSave.open") {
+        if (operation == "system.fileSave.open" || operation == "system.share.open") {
             val name = payload.optString("name", "")
             val mimeType = payload.optString("mimeType", "")
             if (name.isBlank() || name.length > 255 || name.contains('\u0000') || name.contains('/') || name.contains('\\')) return false

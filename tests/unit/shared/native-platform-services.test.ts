@@ -42,4 +42,26 @@ describe('native platform services', () => {
     const port: NativeOperationPort = { invoke: vi.fn(), subscribe: () => () => undefined };
     expect(createNativePlatformServices(port).notifications).toBeUndefined();
   });
+
+  it('keeps user-triggered sharing behind an explicit native shell capability', async () => {
+    const invoke = vi.fn(async <T,>(operation: string): Promise<T> => {
+      if (operation === 'system.share.open') return { writerId: 'share-1' } as T;
+      return undefined as T;
+    });
+    const port: NativeOperationPort = { invoke, subscribe: () => () => undefined };
+    const services = createNativePlatformServices(port, { sharing: true });
+
+    const writer = await services.shareWriter?.open({ name: 'release.apk', mimeType: 'application/vnd.android.package-archive' });
+    await writer?.write(new Uint8Array([1, 2, 3]));
+    await writer?.close();
+
+    expect(invoke).toHaveBeenCalledWith('system.share.open', { name: 'release.apk', mimeType: 'application/vnd.android.package-archive' });
+    expect(invoke).toHaveBeenCalledWith('system.share.write', { writerId: 'share-1', data: 'AQID' });
+    expect(invoke).toHaveBeenCalledWith('system.share.close', { writerId: 'share-1' });
+  });
+
+  it('does not advertise sharing without an explicit native shell capability', () => {
+    const port: NativeOperationPort = { invoke: vi.fn(), subscribe: () => () => undefined };
+    expect(createNativePlatformServices(port).shareWriter).toBeUndefined();
+  });
 });

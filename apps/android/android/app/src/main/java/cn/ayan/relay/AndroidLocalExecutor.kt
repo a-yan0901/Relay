@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import androidx.core.content.FileProvider
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -47,6 +48,11 @@ internal fun androidOperationExecutor(operation: String): AndroidOperationExecut
     operation == "sessions.openShell" || operation == "sessions.reconnect" -> AndroidOperationExecutor.CONNECTION
     else -> AndroidOperationExecutor.OPERATION
 }
+
+internal const val RELAY_SHARE_CACHE_TTL_MS = 60 * 60 * 1000L
+
+internal fun shouldDeleteShareCache(lastModifiedMs: Long, nowMs: Long, ttlMs: Long = RELAY_SHARE_CACHE_TTL_MS): Boolean =
+    lastModifiedMs <= nowMs - ttlMs
 
 /**
  * Android's local-mode executor. It is intentionally an adapter instead of a
@@ -66,6 +72,8 @@ internal class AndroidLocalExecutor(
         private const val MAX_TRANSFERS = 32
         private const val MAX_DOWNLOADS = 4
         private const val MAX_FILE_WRITERS = 4
+        private const val MAX_SHARE_WRITERS = 2
+        private const val SHARE_CACHE_DIR_NAME = "relay-share"
         private const val MAX_EXTERNAL_PREVIEWS = 4
         private const val EXTERNAL_PREVIEW_TTL_MS = 10 * 60 * 1000L
         private const val MAX_EXTERNAL_IMPORT_BYTES = 48 * 1024
@@ -101,6 +109,7 @@ internal class AndroidLocalExecutor(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PendingExternalPreview>?): Boolean = size > MAX_EXTERNAL_PREVIEWS
     })
     private val fileWriters = Collections.synchronizedMap(mutableMapOf<String, AndroidFileWriter>())
+    private val shareWriters = Collections.synchronizedMap(mutableMapOf<String, AndroidShareWriter>())
     private val sequence = AtomicLong(0)
     private val generation = AtomicLong(1)
     private val closed = AtomicBoolean(false)
@@ -115,6 +124,7 @@ internal class AndroidLocalExecutor(
     )
 
     init {
+        cleanupShareCache()
         store.markActiveCommandRunsInterrupted("SERVICE_RESTARTED", Instant.now().toString())
         store.listTransfers().forEach { record ->
             val restoredStatus = if (record.status == "running") "interrupted" else record.status
@@ -206,6 +216,10 @@ internal class AndroidLocalExecutor(
             fileWriters.values.forEach { it.cancel() }
             fileWriters.clear()
         }
+        synchronized(shareWriters) {
+            shareWriters.values.forEach { it.cancel() }
+            shareWriters.clear()
+        }
         bundleService.close()
         externalPreviews.clear()
         commandRunner.close()
@@ -266,6 +280,10 @@ internal class AndroidLocalExecutor(
         "system.fileSave.seek" -> seekFileWriter(payload)
         "system.fileSave.close" -> closeFileWriter(requiredText(payload, "writerId", 128), cancel = false)
         "system.fileSave.cancel" -> closeFileWriter(requiredText(payload, "writerId", 128), cancel = true)
+        "system.share.open" -> openShareWriter(payload)
+        "system.share.write" -> writeShareWriter(payload)
+        "system.share.close" -> closeShareWriter(requiredText(payload, "writerId", 128), cancel = false)
+        "system.share.cancel" -> closeShareWriter(requiredText(payload, "writerId", 128), cancel = true)
         "connection.test" -> connectionTest(requiredText(payload, "hostId", 128))
         "hosts.list" -> hostsList(payload)
         "hosts.get" -> hostMetadata(requireHost(requiredText(payload, "id", 128)))
@@ -1658,6 +1676,69 @@ internal class AndroidLocalExecutor(
         return JSONObject()
     }
 
+    private fun shareCacheDirectory(): File = File(appContext.cacheDir, SHARE_CACHE_DIR_NAME)
+
+    private fun cleanupShareCache() {
+        val root = shareCacheDirectory()
+        if (!root.isDirectory) return
+        val now = System.currentTimeMillis()
+        root.listFiles()?.forEach { entry ->
+            if (shouldDeleteShareCache(entry.lastModified(), now)) entry.deleteRecursively()
+        }
+    }
+
+    private fun openShareWriter(payload: JSONObject): JSONObject {
+        val name = AndroidNativeValidation.requireFileName(requiredText(payload, "name", 255))
+        val mimeType = AndroidNativeValidation.requireMimeType(requiredText(payload, "mimeType", 128))
+        cleanupShareCache()
+        val root = shareCacheDirectory()
+        if ((!root.exists() && !root.mkdirs()) || !root.isDirectory) failNative("CAPABILITY_UNAVAILABLE")
+        val shareDirectory = File(root, UUID.randomUUID().toString())
+        if (!shareDirectory.mkdirs()) failNative("CAPABILITY_UNAVAILABLE")
+        val tempFile = File(shareDirectory, name)
+        val writer = try {
+            AndroidShareWriter(appContext, tempFile, mimeType, name)
+        } catch (_: Exception) {
+            shareDirectory.deleteRecursively()
+            failNative("CAPABILITY_UNAVAILABLE")
+        }
+        val writerId = UUID.randomUUID().toString()
+        synchronized(shareWriters) {
+            if (shareWriters.size >= MAX_SHARE_WRITERS) {
+                writer.cancel()
+                failNative("OPERATION_INTERRUPTED")
+            }
+            shareWriters[writerId] = writer
+        }
+        return JSONObject().put("writerId", writerId).put("name", name)
+    }
+
+    private fun shareWriter(id: String): AndroidShareWriter {
+        AndroidNativeValidation.requireSafeId(id)
+        return shareWriters[id] ?: failNative("OPERATION_INTERRUPTED")
+    }
+
+    private fun writeShareWriter(payload: JSONObject): JSONObject {
+        val writer = shareWriter(requiredText(payload, "writerId", 128))
+        val bytes = decodeChunk(payload.optString("data", ""))
+        try {
+            writer.write(bytes)
+        } finally {
+            bytes.fill(0)
+        }
+        return JSONObject()
+    }
+
+    private fun closeShareWriter(id: String, cancel: Boolean): JSONObject {
+        val writer = shareWriters[id] ?: return JSONObject()
+        try {
+            if (cancel) writer.cancel() else writer.close()
+        } finally {
+            shareWriters.remove(id)
+        }
+        return JSONObject()
+    }
+
     private fun filesList(payload: JSONObject): JSONArray {
         val host = requireHost(requiredText(payload, "hostId", 128))
         val path = AndroidNativeValidation.normalizeRemotePath(requiredText(payload, "path", 4096))
@@ -2621,6 +2702,63 @@ internal class AndroidLocalExecutor(
             closed = true
             tempFile.delete()
             releasePermissionOnce()
+        }
+    }
+
+    private class AndroidShareWriter(
+        private val context: Context,
+        private val tempFile: File,
+        private val mimeType: String,
+        private val displayName: String
+    ) {
+        private val output = FileOutputStream(tempFile)
+        private var closed = false
+
+        @Synchronized
+        fun write(bytes: ByteArray) {
+            if (closed) throw NativeVaultFailure("OPERATION_INTERRUPTED")
+            try {
+                output.write(bytes)
+                output.flush()
+            } catch (_: Exception) {
+                throw NativeVaultFailure("SFTP_TRANSFER_FAILED")
+            }
+        }
+
+        @Synchronized
+        fun close() {
+            if (closed) return
+            try {
+                output.flush()
+                output.close()
+                val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = mimeType
+                    putExtra(Intent.EXTRA_STREAM, contentUri)
+                    putExtra(Intent.EXTRA_TITLE, displayName)
+                    clipData = ClipData.newRawUri(displayName, contentUri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                val chooser = Intent.createChooser(sendIntent, null).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(chooser)
+                closed = true
+            } catch (error: NativeVaultFailure) {
+                tempFile.parentFile?.deleteRecursively()
+                throw error
+            } catch (_: Exception) {
+                tempFile.parentFile?.deleteRecursively()
+                throw NativeVaultFailure("CAPABILITY_UNAVAILABLE")
+            }
+        }
+
+        @Synchronized
+        fun cancel() {
+            if (closed) return
+            try { output.close() } catch (_: Exception) { }
+            closed = true
+            tempFile.parentFile?.deleteRecursively()
         }
     }
 

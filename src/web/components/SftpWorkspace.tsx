@@ -19,6 +19,7 @@ export interface SftpWorkspaceProps {
   onUploadFile?: (file: File, path: string) => Promise<void>;
   onPickUpload?: (path: string) => void | Promise<void>;
   onDownloadFile?: (path: string, name: string) => Promise<void>;
+  onShareFile?: (path: string, name: string) => Promise<void>;
   onCopyText?: (value: string) => Promise<void> | void;
   /** Whether this client can open a local file picker/drop target. */
   localFilesEnabled?: boolean;
@@ -43,6 +44,7 @@ export const SftpWorkspace = ({
   onUploadFile,
   onPickUpload,
   onDownloadFile,
+  onShareFile,
   onCopyText,
   localFilesEnabled = true,
   mutationsEnabled = true,
@@ -110,6 +112,7 @@ export const SftpWorkspace = ({
             onRename={mutationsEnabled ? rename : undefined}
             onDelete={mutationsEnabled ? remove : undefined}
             onDownload={onDownloadFile}
+            onShare={onShareFile}
             onCopyText={onCopyText}
             onNavigate={onRemotePathChange}
           />

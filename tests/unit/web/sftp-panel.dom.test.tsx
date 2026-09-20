@@ -88,6 +88,20 @@ describe('SftpPanel', () => {
     expect(onDownload).toHaveBeenCalledWith('/app.log', 'app.log');
   });
 
+  it('offers user-triggered sharing for files when the platform provides it', async () => {
+    const user = userEvent.setup();
+    const onList = vi.fn(async () => [{ name: 'app.log', path: '/app.log', type: 'file' as const, size: 12, mode: 0o644, modifiedAt: null }]);
+    const onShare = vi.fn(async () => {});
+    render(<SftpPanel hostId="host-1" onList={onList} onShare={onShare} />);
+
+    expect(await screen.findByText('app.log')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '分享 app.log' }));
+    expect(onShare).toHaveBeenCalledWith('/app.log', 'app.log');
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'app.log' }), { clientX: 180, clientY: 140 });
+    expect(screen.getByRole('menuitem', { name: '分享' })).toBeInTheDocument();
+  });
+
   it('explains when an upload directory is not writable', async () => {
     const user = userEvent.setup();
     const onList = vi.fn(async () => []);

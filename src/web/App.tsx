@@ -996,6 +996,12 @@ export const App = ({ runtime }: AppProps) => {
       : null;
   };
 
+  const openShareWriter = async (name: string): Promise<DownloadWriter | null> => {
+    return runtime.platformServices?.shareWriter
+      ? runtime.platformServices.shareWriter.open({ name, mimeType: 'application/octet-stream' })
+      : null;
+  };
+
   const saveDownloadStream = async (transferId: string, stream: AsyncIterable<Uint8Array>, name: string, offset: number, preparedWriter?: DownloadWriter | null): Promise<void> => {
     let writer: DownloadWriter | null | undefined = preparedWriter ?? downloadWritersRef.current.get(transferId);
     if (!writer) {
@@ -1094,6 +1100,23 @@ export const App = ({ runtime }: AppProps) => {
     } catch (error) {
       const latest = await refreshTransferJob(job.id);
       if (latest?.status === 'paused') return;
+      throw error;
+    }
+  };
+
+  const handleShareSftp = async (hostId: string, sourcePath: string, name: string): Promise<void> => {
+    const writer = await openShareWriter(name);
+    if (!writer) throw new AppError('CAPABILITY_UNAVAILABLE', '当前客户端不支持系统分享');
+    let job: TransferJob | null = null;
+    try {
+      job = await runtime.files.createTransfer({ kind: 'download', hostId, sourcePath, targetPath: name });
+      updateTransferJob(job);
+      updateTransferJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
+      await saveDownloadStream(job.id, await runtime.files.download(job.id), name, 0, writer);
+      await refreshTransferJob(job.id);
+    } catch (error) {
+      await writer.cancel?.();
+      if (job) await refreshTransferJob(job.id);
       throw error;
     }
   };
@@ -1620,6 +1643,7 @@ export const App = ({ runtime }: AppProps) => {
             onUploadSftp={capabilities.supports('sftp.transfer') && capabilities.supports('sftp.local-files') ? handleUploadSftp : undefined}
             onPickUploadSftp={capabilities.supports('sftp.transfer') && capabilities.supports('sftp.local-files') && runtime.files.pickUploadSource && runtime.files.uploadFromSource ? handlePickUploadSftp : undefined}
             onDownloadSftp={capabilities.supports('sftp.transfer') ? handleDownloadSftp : undefined}
+            onShareSftp={capabilities.supports('sftp.transfer') && runtime.platformServices?.shareWriter ? handleShareSftp : undefined}
             onCopyText={handleCopyText}
             transferJobs={capabilities.supports('sftp.transfer') ? transferJobs : []}
             onCancelTransfer={capabilities.supports('sftp.transfer') ? handleCancelTransfer : undefined}
