@@ -26,7 +26,7 @@
 
 复选框只表示该任务已经通过计划中的最终验收门禁；下表单独记录当前实现进度，避免把“代码已落地”误读成“真实平台已交付”。
 
-最新设备和制品状态以文档末尾的 2026-09-20 交接增量为准：代码验证基线为 `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4`，当前 Debug APK SHA-256 为 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；Android 当前只有独立模拟器，Windows 本轮重新产出 NSIS/Portable 制品并复核 hash。早期两台真机、旧 CI artifact 和旧制品记录保留为历史证据，不自动扩展到当前 APK 或发布门禁。
+最新设备和制品状态以文档末尾的 2026-09-20 交接增量为准：代码验证基线为 `88985d1296b272144621417a518052085b45a344`，当前 Debug APK SHA-256 为 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`；Android 当前只有独立模拟器，Windows 本轮重新产出 NSIS/Portable 制品并复核 hash。早期两台真机、旧 CI artifact 和旧制品记录保留为历史证据，不自动扩展到当前 APK 或发布门禁。
 
 | 任务 | 当前状态 | 已有证据 | 剩余门禁 |
 | --- | --- | --- | --- |
@@ -675,3 +675,10 @@
 - 修复后统一先解析返回 URI，再以实际 READ/WRITE mode（无 mode 时使用 open/save fallback）执行 `revokeUriGrant`；成功选择仍由传输/写入生命周期负责释放，失败、取消、executor 不可用和 writer close/cancel 路径均保留回收逻辑。
 - 新 Debug APK：`8,655,856` bytes，SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`。本轮只验证独立 AVD，没有安装、卸载、清库或新增手机/平板授权。
 - Android 平台对 Activity 临时 grant 的存续仍需真机观察；本修复不把“调用 revoke”误记为“所有厂商立即清除”。A-11 真机 URI 生命周期及任务书中的分享路径仍未验收，手机/平板按用户要求继续延期。
+
+## 2026-09-20 当前提交统一本地门禁复验（88985d1）
+
+- 在当前提交 `88985d1296b272144621417a518052085b45a344` 执行 `npm run verify:cross-platform:local`，typecheck、lint、全量 Vitest、Web/Server/Cloud build、Chromium E2E、Windows NSIS/Portable 打包、Android JVM/AndroidTest 编译和 Debug APK 构建全部成功；全量 Vitest `168` 个文件通过、`1` 个跳过，`770` 个测试通过、`2` 个跳过；Chromium `5/5`。
+- Android 本地门禁 JVM `40/40`，AndroidTest APK 编译成功；Debug APK `8,655,856` bytes / SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`。
+- Windows 本轮制品：NSIS `127,709,761` bytes / SHA-256 `1E37BA6F24561AF0A17C536A4AE497EDF1D8A1B7E109424F96AA92043F49AB3A`；Portable `113,688,948` bytes / SHA-256 `28398162D5B523B710C0E051E45185293C1405705D5194EF87F02ECDE855C982`；两者 `Get-AuthenticodeSignature=NotSigned`。
+- 本轮验证入口不调用 `adb`，没有安装/卸载/清理 Android 设备；真机 A-01～A-17、Windows 原生系统对话框人工走查、正式签名以及 A-11 分享路径仍不标记完成。

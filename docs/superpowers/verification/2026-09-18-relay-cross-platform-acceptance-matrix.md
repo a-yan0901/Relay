@@ -27,7 +27,7 @@
 
 - 说明：本地 in-process SSH fixture 只用于可重复的自动化回归；上述 Android 真机结论使用的是用户提供的 `106.14.61.92:22`，账号为 `t2`，密码未写入仓库。
 
-- 当前批次口径：本矩阵后续增量中的历史真机/旧制品记录不代表当前设备状态；最新状态为仅 `emulator-5554` 在线、Android instrumentation 历史回归 `9/9`、当前 Debug APK SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`，两台真机未上线。Windows 当前制品及三轮隔离恢复、CI artifact 见本文件末尾最新批次。
+- 当前批次口径：本矩阵后续增量中的历史真机/旧制品记录不代表当前设备状态；最新状态为仅 `emulator-5554` 在线、当前 Debug APK SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`，两台真机未上线。Windows 当前制品及三轮隔离恢复、CI artifact 见本文件末尾最新批次。
 
 ## 任务状态与门禁边界
 
@@ -694,3 +694,12 @@
 | Android 回归 | 通过 | `AndroidUriGrantGuardTest` `4/4`；`npm run test:android:local` 的 Android JVM `40/40`、AndroidTest APK 编译；独立 AVD instrumentation `9/9`；`npm run build:android:debug` 成功 |
 | 新 Debug APK | 已生成 | `8,655,856` bytes；SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059` |
 | 真机/分享边界 | 未完成 | 本轮未触碰手机和平板；A-11 真机 URI 生命周期仍待目标设备，任务书中的分享路径当前没有已定义的 CoreRuntime/原生实现，不宣称已验收 |
+
+## 2026-09-20 当前提交统一本地门禁复验（88985d1）
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Web/Server/Cloud 自动化 | 通过 | `npm run verify:cross-platform:local` 的 typecheck、lint、全量 Vitest `168` 文件/`770` 测试、Web/Server/Cloud build、Chromium E2E `5/5` 全部成功 |
+| Windows 本地制品 | 通过构建，发布未完成 | NSIS `127,709,761` bytes / SHA-256 `1E37BA6F24561AF0A17C536A4AE497EDF1D8A1B7E109424F96AA92043F49AB3A`；Portable `113,688,948` bytes / SHA-256 `28398162D5B523B710C0E051E45185293C1405705D5194EF87F02ECDE855C982`；均 `NotSigned` |
+| Android 本地门禁 | 通过构建 | JVM `40/40`、AndroidTest APK 编译、Debug APK 构建成功；APK SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`；不替代真机 |
+| 外部平台边界 | 未完成 | 本轮不调用 `adb`；Android 真机 A-01～A-17、Windows 原生系统文件对话框人工走查、正式签名和 A-11 分享路径继续保持未完成 |

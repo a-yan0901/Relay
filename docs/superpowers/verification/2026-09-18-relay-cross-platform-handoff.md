@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-20
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**当前仓库交接基线：** `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4`；该基线包含此前的 Windows 原生文件选择/流式上传、桌面通知 IPC 和统一跨端本地验证入口，并补齐了 Chromium SSH fixture 的随机密钥回归。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
+**当前仓库交接基线：** `88985d1296b272144621417a518052085b45a344`；该基线包含此前的 Windows 原生文件选择/流式上传、桌面通知 IPC、统一跨端本地验证入口、Chromium SSH fixture 修复，以及 Android 取消/拒绝结果 URI grant 回收防御修复。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `88985d1296b272144621417a518052085b45a344`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -15,7 +15,7 @@
 | --- | --- | --- | --- |
 | Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `168` 个文件通过、`1` 个跳过；`770` 个测试通过、`2` 个跳过；服务端 unit+integration 定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
 | Windows | 🟡 打包与隔离恢复已复核，平台发布门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复、版本化 `0.0.9 → 0.1.0 → 0.0.9` 数据保留、一次安装器中断恢复、CI artifact、真实目标 SSH/SFTP、原生 fileOpen/fileSave 流和通知 IPC 均有证据 | 真签名、真实系统文件选择/保存对话框人工走查和发布门禁 |
-| Android | ⏸️ 真机测试按用户要求延期 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `2436C5…` 已复核；模拟器已完成 Android↔Web 实际 bundle 双向回环；手机和平板未上线，历史两台真机证据不扩展到当前制品；本轮不安装、不卸载、不清库 | 用户提供真机后一次数据保留部署，再集中执行 A-01～A-17、低内存和实机跨端回传 |
+| Android | ⏸️ 真机测试按用户要求延期 | 当前只有独立 `emulator-5554`；最新统一本地门禁 Android JVM `40/40`、AndroidTest 编译和 instrumentation `9/9` 均通过；当前 Debug APK SHA-256 `0E227344…`；模拟器已完成 Android↔Web 实际 bundle 双向回环；手机和平板未上线，历史两台真机证据不扩展到当前制品；本轮不安装、不卸载、不清库 | 用户提供真机后一次数据保留部署，再集中执行 A-01～A-17、低内存和实机跨端回传 |
 | Vault bundle v1 | 🟡 模拟器双向实际回环已证实，完整发布验收未完成 | Android 已通过 Node V1 envelope 解密向量；模拟器 Android→Web、Web→Android 及 Android→Web 回环均有实际 bridge/服务端证据，包含字段核对和错误输入不变性 | A-17：两台真机、Windows 打包 UI 导入、完整固定向量字段/冲突矩阵和正式发布边界 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
@@ -851,3 +851,10 @@
 - TDD/回归证据：定向 `AndroidUriGrantGuardTest` `4/4`；`npm run test:android:local` 的 Android JVM `40/40`，AndroidTest APK 编译成功；独立模拟器 instrumentation `9/9`；`npm run build:android:debug` `BUILD SUCCESSFUL`。
 - 交接 APK：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，`8,655,856` bytes，SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`。
 - 交接边界：本轮仅验证独立 AVD，没有操作手机/平板、没有安装/卸载/清库或新增真机授权。A-11 真机 URI 生命周期仍待目标设备；任务书中的分享路径目前没有已定义的 CoreRuntime/原生实现，不把它记为已完成。
+
+## 2026-09-20 当前提交统一本地门禁复验（88985d1）
+
+- 在当前提交 `88985d1296b272144621417a518052085b45a344` 执行 `npm run verify:cross-platform:local`，typecheck、lint、全量 Vitest、Web/Server/Cloud build、Chromium E2E、Windows NSIS/Portable 打包、Android JVM/AndroidTest 编译和 Debug APK 构建全部成功；Vitest `168` 个文件通过、`1` 个跳过，`770` 个测试通过、`2` 个跳过；Chromium `5/5`。
+- Android JVM `40/40`，AndroidTest APK 编译成功；Debug APK：`8,655,856` bytes，SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`。
+- Windows NSIS：`127,709,761` bytes，SHA-256 `1E37BA6F24561AF0A17C536A4AE497EDF1D8A1B7E109424F96AA92043F49AB3A`；Portable：`113,688,948` bytes，SHA-256 `28398162D5B523B710C0E051E45185293C1405705D5194EF87F02ECDE855C982`；两者 `Get-AuthenticodeSignature=NotSigned`。
+- 本轮没有调用 `adb`，没有安装/卸载/清理手机或平板；真机 A-01～A-17、Windows 原生系统文件对话框人工走查、正式 Authenticode 签名和 A-11 分享路径仍未完成。
