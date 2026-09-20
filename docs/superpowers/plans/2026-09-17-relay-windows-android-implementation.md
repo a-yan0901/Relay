@@ -548,6 +548,12 @@
 - TDD/验证：签名清单 helper 与 workflow wiring 定向测试先红后绿，`4/4` 通过；helper `node --check`、`npm run typecheck`、`npm run lint` 和串行全量 Vitest `165` 文件通过/`1` 跳过、`763` 测试通过/`2` 跳过。
 - 当前没有签名证书 secrets，未伪造签名或宣称签名发布通过；真实 `v*` 制品仍等待证书配置。Android 手机/平板继续按用户要求延期。
 
+## 2026-09-20 Windows CI 签名门禁变更后复验
+
+- GitHub Actions run `35487282654`（commit `825888a`）已成功完成：依赖安装、typecheck/lint、Electron runtime 准备、NSIS/Portable 打包、release manifest 生成和 artifact 上传。
+- 持久 artifact 为 `Relay-Windows-main-825888ac8292801bb36a71234f6be10032f9e73d`，大小 `240,661,455` bytes，保留至 `2026-12-19`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35487282654`。
+- 本次是 `main` 技术预览，签名配置和签名校验按条件跳过；这证明 workflow wiring 不影响未签名预览打包，不证明正式标签签名通过。正式 `v*` 仍需证书 secrets 和 `Valid` Authenticode 结果。
+
 ## 2026-09-20 Windows 打包版系统剪贴板回环
 
 - 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe` 和隔离临时 userData，通过真实 Electron preload `relayDesktop.invoke` 调用 `system.clipboard.writeText` 写入合成标记，再调用 `system.clipboard.readText` 读回。

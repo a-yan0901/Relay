@@ -541,3 +541,11 @@
 | 签名清单校验 | 自动门禁已补齐 | `apps/windows/verify-release-manifest.mjs` 要求每个 NSIS/Portable manifest entry 的 `signatureStatus=Valid` 且存在 signer，校验失败不会进入 artifact 上传 |
 | 当前签名状态 | 未通过 | 当前没有证书 secrets，未生成真实签名包；`main` 技术预览仍可记录 `NotSigned`，正式 `v*` 发布会 fail closed |
 | 自动化验证 | 通过 | 签名 helper/workflow wiring `4/4`，`node --check`、typecheck、lint 和全量 Vitest `165/166` 文件（`763` 通过、`2` 跳过）通过 |
+
+## 2026-09-20 Windows CI 签名门禁变更后复验
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| `main` 技术预览 workflow | 通过 | Actions run `35487282654`（commit `825888a`）完成源码校验、Electron 准备、NSIS/Portable 打包、manifest 和 artifact 上传 |
+| 持久 artifact | 已生成 | `Relay-Windows-main-825888ac8292801bb36a71234f6be10032f9e73d`，`240,661,455` bytes，保留至 `2026-12-19`；[Actions run](https://github.com/a-yan0901/Relay/actions/runs/35487282654) |
+| 正式标签签名 | 未执行/未通过 | 本次为 `main`，签名配置与校验按条件跳过；没有证书 secrets，不能把该 artifact 视为签名发布 |

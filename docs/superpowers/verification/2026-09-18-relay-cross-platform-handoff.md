@@ -728,3 +728,9 @@
 - 新增 `apps/windows/verify-release-manifest.mjs`，在 artifact 上传前读取 `release-manifest.json`，要求所有 NSIS/Portable 制品 `signatureStatus=Valid` 且 signer 非空；主分支技术预览不强制签名。
 - 定向签名测试先红后绿，最终 `4/4`；`node --check`、typecheck、lint 和全量 Vitest `165` 文件通过、`1` 跳过，`763` 测试通过、`2` 跳过。
 - 当前未配置证书 secrets，因此没有把 `NotSigned` 制品标为发布通过；待证书配置后再触发 `v*`，完成真实 Authenticode 制品验收。Android 手机/平板仍按用户要求延期。
+
+## 61. 2026-09-20 Windows CI 签名门禁变更后复验
+
+- GitHub Actions run `35487282654`（commit `825888a`）已成功完成依赖安装、源码校验、Electron runtime 准备、NSIS/Portable 打包、release manifest 生成和 artifact 上传。
+- artifact：`Relay-Windows-main-825888ac8292801bb36a71234f6be10032f9e73d`，大小 `240,661,455` bytes，保留至 `2026-12-19`；run 页面：`https://github.com/a-yan0901/Relay/actions/runs/35487282654`。
+- 该 run 使用 `main`，所以 `Configure Windows release signing` 与 `Enforce signed version-tag release` 均为预期的 `skipped`；它证明主分支预览流程正常，不证明 `v*` 真实签名发布。证书 secrets 配置后仍需触发一次标签 run。
