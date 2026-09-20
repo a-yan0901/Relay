@@ -53,11 +53,15 @@ export const DESKTOP_IPC_OPERATIONS = [
   'system.clipboard.writeText',
   'system.confirm',
   'system.openExternal',
+  'system.fileOpen.open',
   'system.fileSave.open',
   'system.fileSave.write',
   'system.fileSave.seek',
   'system.fileSave.close',
   'system.fileSave.cancel',
+  'system.notifications.permission',
+  'system.notifications.requestPermission',
+  'system.notifications.notify',
   'connection.test',
   'hosts.list',
   'hosts.get',
@@ -103,6 +107,8 @@ export const DESKTOP_IPC_OPERATIONS = [
   'files.listTransfers',
   'files.getTransfer',
   'files.upload',
+  'files.uploadFromSource',
+  'files.releaseUploadSource',
   'files.download',
   'files.pauseTransfer',
   'files.cancelTransfer',
@@ -150,6 +156,7 @@ const operationPayloadSchemas: Record<DesktopIpcOperation, z.ZodTypeAny> = {
       return false;
     }
   }, 'external URL is not allowed') }).strict(),
+  'system.fileOpen.open': emptyPayload,
   'system.fileSave.open': z.object({
     name: z.string().min(1).max(255).refine((value) => !value.includes('\0') && !/[\\/]/u.test(value), 'invalid file name'),
     mimeType: z.string().min(1).max(128).regex(/^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/u)
@@ -158,6 +165,13 @@ const operationPayloadSchemas: Record<DesktopIpcOperation, z.ZodTypeAny> = {
   'system.fileSave.seek': z.object({ writerId: safeId, position: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }).strict(),
   'system.fileSave.close': writerIdPayload,
   'system.fileSave.cancel': writerIdPayload,
+  'system.notifications.permission': emptyPayload,
+  'system.notifications.requestPermission': emptyPayload,
+  'system.notifications.notify': z.object({
+    title: z.string().min(1).max(256),
+    body: z.string().max(4 * 1024),
+    tag: z.string().max(128).optional()
+  }).strict(),
   'connection.test': z.object({ hostId: safeId }).strict(),
   'hosts.list': z.object({ query: boundedText.optional(), groupId: safeId.nullable().optional(), favorite: z.boolean().optional(), tags: z.array(boundedText).max(32).optional() }).strict(),
   'hosts.get': idPayload,
@@ -203,6 +217,8 @@ const operationPayloadSchemas: Record<DesktopIpcOperation, z.ZodTypeAny> = {
   'files.listTransfers': emptyPayload,
   'files.getTransfer': transferIdPayload,
   'files.upload': z.object({ transferId: safeId, data: z.string().max(48 * 1024), resume: transferResume, nextChecksum: z.string().regex(/^[a-f0-9]{64}$/iu), final: z.boolean() }).strict(),
+  'files.uploadFromSource': z.object({ transferId: safeId, sourceId: safeId, resume: transferResume.optional() }).strict(),
+  'files.releaseUploadSource': z.object({ sourceId: safeId }).strict(),
   'files.download': z.object({ transferId: safeId, resume: transferResume.optional(), offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional() }).strict(),
   'files.pauseTransfer': transferIdPayload,
   'files.cancelTransfer': transferIdPayload,

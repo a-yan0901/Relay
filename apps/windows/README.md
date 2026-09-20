@@ -1,6 +1,6 @@
 # Relay Windows client boundary
 
-`electron-main.ts`、`electron-preload.ts`、`application.ts` 和 `local-runtime.ts` 组成桌面客户端：renderer 只拿到 `relayDesktop.invoke/subscribe`，本地 SQLite/Vault/ssh2/SFTP 在 main 侧运行，不启动 Fastify、不监听 HTTP、不使用 Web cookie。文件下载使用 main 侧临时文件和系统保存对话框，按块写入，不在 renderer 聚合完整文件。
+`electron-main.ts`、`electron-preload.ts`、`application.ts` 和 `local-runtime.ts` 组成桌面客户端：renderer 只拿到 `relayDesktop.invoke/subscribe`，本地 SQLite/Vault/ssh2/SFTP 在 main 侧运行，不启动 Fastify、不监听 HTTP、不使用 Web cookie。文件上传通过 main 侧系统选择对话框返回不透明 sourceId，再由主进程以 32 KiB 流读取；文件下载使用 main 侧临时文件和系统保存对话框，按块写入，不在 renderer 聚合完整文件。桌面通知同样只通过 allowlist IPC 暴露。
 
 本地开发命令：
 

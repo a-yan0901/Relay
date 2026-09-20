@@ -1,10 +1,11 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron';
-import { open as openFile, rename as renameFile, unlink as unlinkFile } from 'node:fs/promises';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification as ElectronNotification, shell } from 'electron';
+import { createReadStream } from 'node:fs';
+import { open as openFile, rename as renameFile, stat, unlink as unlinkFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { createWindowsDesktopApplication, type WindowsDesktopApplication } from './application.js';
-import type { WindowsLocalFileWriter } from './local-runtime.js';
+import type { WindowsLocalFileSource, WindowsLocalFileWriter } from './local-runtime.js';
 import { type DesktopWindowFactory, type DesktopWindowLike } from './main.js';
 
 let application: WindowsDesktopApplication | null = null;
@@ -109,6 +110,38 @@ const createFileWriter = async (request: { name: string; mimeType: string }): Pr
   };
 };
 
+const createFileSource = async (): Promise<WindowsLocalFileSource | null> => {
+  if (!activeWindow || activeWindow.isDestroyed()) return null;
+  const result = await dialog.showOpenDialog(activeWindow, {
+    title: '选择上传文件',
+    buttonLabel: '选择',
+    properties: ['openFile']
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+
+  const filePath = result.filePaths[0];
+  const fileInfo = await stat(filePath);
+  if (!fileInfo.isFile()) return null;
+  let stream: ReturnType<typeof createReadStream> | null = null;
+  let closed = false;
+  return {
+    name: basename(filePath),
+    size: fileInfo.size,
+    stream(): AsyncIterable<Uint8Array> {
+      if (closed) throw new Error('file source is closed');
+      stream = createReadStream(filePath, { highWaterMark: 32 * 1024 });
+      return stream;
+    },
+    async close(): Promise<void> {
+      closed = true;
+      stream?.destroy();
+      stream = null;
+    }
+  };
+};
+
+const notificationPermission = (): 'granted' | 'denied' => ElectronNotification.isSupported() ? 'granted' : 'denied';
+
 const createApplication = async (): Promise<void> => {
   const rendererFile = join(app.getAppPath(), 'dist', 'web', 'index.html');
   const preloadPath = join(app.getAppPath(), 'dist', 'windows', 'electron-preload.cjs');
@@ -136,6 +169,15 @@ const createApplication = async (): Promise<void> => {
         return result.response === 0;
       },
       openExternal: (url) => shell.openExternal(url),
+      fileOpen: { open: createFileSource },
+      notifications: {
+        permission: notificationPermission,
+        requestPermission: notificationPermission,
+        notify: (request) => {
+          if (notificationPermission() !== 'granted') throw new Error('desktop notifications are unavailable');
+          new ElectronNotification({ title: request.title, body: request.body }).show();
+        }
+      },
       fileSave: { open: createFileWriter }
     }
   });

@@ -10,7 +10,7 @@ export const createPlatformRuntime = (): CoreRuntime => {
     platform: native.platform,
     port: native.port,
     capabilities: native.platform === 'android' ? ANDROID_LOCAL_CAPABILITIES : undefined,
-    platformServices: createNativePlatformServices(native.port)
+    platformServices: createNativePlatformServices(native.port, { notifications: native.platform === 'desktop' })
   });
   return webAdapters;
 };

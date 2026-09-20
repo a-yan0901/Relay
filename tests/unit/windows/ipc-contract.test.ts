@@ -46,6 +46,9 @@ describe('Windows desktop IPC contract', () => {
     expect(encodeDesktopIpcRequest({ version: 1, requestId: 'request-8', operation: 'system.fileSave.write', payload: { writerId: 'writer-1', data: 'AQID' } })).toMatchObject({ operation: 'system.fileSave.write' });
     expect(() => parseDesktopIpcRequest({ version: 1, requestId: 'request-9', operation: 'system.fileSave.open', payload: { name: 'C:\\secret.txt', mimeType: 'text/plain' } })).toThrow('invalid desktop IPC request');
     expect(encodeDesktopIpcRequest({ version: 1, requestId: 'request-10', operation: 'files.listPage', payload: { hostId: 'host-1', path: '/', limit: 128, filter: 'log' } })).toMatchObject({ operation: 'files.listPage' });
+    expect(encodeDesktopIpcRequest({ version: 1, requestId: 'request-11', operation: 'system.fileOpen.open', payload: {} })).toMatchObject({ operation: 'system.fileOpen.open' });
+    expect(encodeDesktopIpcRequest({ version: 1, requestId: 'request-12', operation: 'system.notifications.permission', payload: {} })).toMatchObject({ operation: 'system.notifications.permission' });
+    expect(encodeDesktopIpcRequest({ version: 1, requestId: 'request-13', operation: 'system.notifications.notify', payload: { title: 'Relay', body: '完成', tag: 'task-1' } })).toMatchObject({ operation: 'system.notifications.notify' });
   });
 
   it('rejects local filesystem paths and unknown handler registration', () => {

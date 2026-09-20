@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../../src/shared/errors.js';
 import type { NativeEventFrame } from '../../src/shared/native/bridge.js';
 import type { ConnectionProfile, GroupNode, HostListFilter, TransferResumeRequest, WorkspaceState } from '../../src/shared/core/models.js';
+import type { NotificationPermission, NotificationRequest } from '../../src/shared/core/ports.js';
 import { connectionDiagnosticToOperationDiagnostic } from '../../src/shared/core/state-machines.js';
 import { resolveConnectionConfiguration } from '../../src/shared/core/connection-resolution.js';
 import type { HostCredentialInput, HostMetadata, StoredHostCredential } from '../../src/shared/validation.js';
@@ -45,6 +46,7 @@ const LOCAL_EVENT_CHUNK_BYTES = 32 * 1024;
 const LOCAL_MAX_DOWNLOAD_STREAMS = 4;
 const LOCAL_MAX_RETAINED_SESSION_REQUESTS = 32;
 const LOCAL_MAX_FILE_WRITERS = 4;
+const LOCAL_MAX_FILE_SOURCES = 4;
 const LOCAL_BUNDLE_CHUNK_BYTES = 32 * 1024;
 const LOCAL_MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
 const LOCAL_BUNDLE_TTL_MS = 10 * 60 * 1000;
@@ -56,9 +58,24 @@ export interface WindowsLocalSystemServices {
   };
   confirm?: (message: string) => boolean | Promise<boolean>;
   openExternal?: (url: string) => void | Promise<void>;
+  fileOpen?: {
+    open(): Promise<WindowsLocalFileSource | null>;
+  };
   fileSave?: {
     open(request: { name: string; mimeType: string }): Promise<WindowsLocalFileWriter | null>;
   };
+  notifications?: {
+    permission(): NotificationPermission | Promise<NotificationPermission>;
+    requestPermission(): NotificationPermission | Promise<NotificationPermission>;
+    notify(request: NotificationRequest): void | Promise<void>;
+  };
+}
+
+export interface WindowsLocalFileSource {
+  name: string;
+  size: number | null;
+  stream(): AsyncIterable<Uint8Array>;
+  close(): Promise<void>;
 }
 
 export interface WindowsLocalFileWriter {
@@ -279,6 +296,7 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
   const pendingShells = new Map<string, PendingShell>();
   const sessionPolicies = new Map<string, Map<string, HostKeyPolicy>>();
   const downloads = new Map<string, DownloadState>();
+  const fileSources = new Map<string, WindowsLocalFileSource>();
   const fileWriters = new Map<string, WindowsLocalFileWriter>();
   const bundleExports = new Map<string, LocalBundleExport>();
   const bundleImports = new Map<string, LocalBundleImport>();
@@ -668,6 +686,24 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new AppError('CAPABILITY_UNAVAILABLE');
       await openExternal(parsed.toString());
     });
+    router.register('system.fileOpen.open', async () => {
+      const fileOpen = options.systemServices?.fileOpen;
+      if (!fileOpen) throw new AppError('CAPABILITY_UNAVAILABLE');
+      if (fileSources.size >= LOCAL_MAX_FILE_SOURCES) throw new AppError('SFTP_TRANSFER_FAILED', '同时选择的文件过多，请稍后重试');
+      const source = await fileOpen.open();
+      if (!source) return null;
+      if (typeof source.name !== 'string' || source.name.length < 1 || source.name.length > 255 || source.name.includes('\0') || /[\\/]/u.test(source.name)) {
+        await source.close().catch(() => undefined);
+        throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      }
+      if (source.size !== null && (!Number.isSafeInteger(source.size) || source.size < 0)) {
+        await source.close().catch(() => undefined);
+        throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      }
+      const sourceId = randomUUID();
+      fileSources.set(sourceId, source);
+      return { sourceId, name: source.name, size: source.size };
+    });
     router.register('system.fileSave.open', async (payload) => {
       const fileSave = options.systemServices?.fileSave;
       if (!fileSave || !isRecord(payload) || typeof payload.name !== 'string' || typeof payload.mimeType !== 'string') throw new AppError('CAPABILITY_UNAVAILABLE');
@@ -710,6 +746,29 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       if (!writer) return;
       fileWriters.delete(writerId);
       await writer.cancel();
+    });
+    router.register('system.notifications.permission', async () => {
+      const notifications = options.systemServices?.notifications;
+      if (!notifications) throw new AppError('CAPABILITY_UNAVAILABLE');
+      const permission = await notifications.permission();
+      if (permission !== 'default' && permission !== 'granted' && permission !== 'denied') throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      return { permission };
+    });
+    router.register('system.notifications.requestPermission', async () => {
+      const notifications = options.systemServices?.notifications;
+      if (!notifications) throw new AppError('CAPABILITY_UNAVAILABLE');
+      const permission = await notifications.requestPermission();
+      if (permission !== 'default' && permission !== 'granted' && permission !== 'denied') throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      return { permission };
+    });
+    router.register('system.notifications.notify', async (payload) => {
+      const notifications = options.systemServices?.notifications;
+      if (!notifications || !isRecord(payload) || typeof payload.title !== 'string' || typeof payload.body !== 'string') throw new AppError('CAPABILITY_UNAVAILABLE');
+      await notifications.notify({
+        title: payload.title,
+        body: payload.body,
+        ...(typeof payload.tag === 'string' ? { tag: payload.tag } : {})
+      });
     });
     router.register('vault.status', async () => ({ phase: appConfigRepository.get() === null ? 'uninitialized' : activeSessionId && sessionStore.get(activeSessionId) ? 'unlocked' : 'locked' }));
     router.register('vault.setup', async (payload) => {
@@ -855,6 +914,26 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       const job = await transferManager.consumeUploadChunk(text(payload.transferId), (async function* () { yield data; })(), (updated) => emit('transfer.progress', { job: updated }, { transferId: updated.id }), record.vaultKey, resume, payload.nextChecksum, payload.final);
       return job;
     }));
+    router.register('files.uploadFromSource', (payload) => withSession(async (record) => {
+      if (!isRecord(payload)) throw new AppError('TRANSFER_RESUME_INVALID');
+      const sourceId = text(payload.sourceId);
+      const source = fileSources.get(sourceId);
+      if (!source) throw new AppError('CAPABILITY_UNAVAILABLE');
+      fileSources.delete(sourceId);
+      try {
+        return await transferManager.consumeUpload(text(payload.transferId), source.stream(), (updated) => emit('transfer.progress', { job: updated }, { transferId: updated.id }), record.vaultKey, payload.resume as TransferResumeRequest | undefined);
+      } finally {
+        await source.close().catch(() => undefined);
+      }
+    }));
+    router.register('files.releaseUploadSource', async (payload) => {
+      if (!isRecord(payload)) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+      const sourceId = text(payload.sourceId);
+      const source = fileSources.get(sourceId);
+      if (!source) return;
+      fileSources.delete(sourceId);
+      await source.close();
+    });
     router.register('files.download', (payload) => withSession(async (record) => {
       if (!isRecord(payload)) throw new AppError('TRANSFER_NOT_FOUND');
       const id = text(payload.transferId);
@@ -1003,6 +1082,8 @@ export const createWindowsLocalRuntime = (options: WindowsLocalRuntimeOptions): 
       sessions.clear();
       for (const state of downloads.values()) await state.iterator.return?.();
       downloads.clear();
+      for (const source of fileSources.values()) await source.close().catch(() => undefined);
+      fileSources.clear();
       for (const writer of fileWriters.values()) await writer.cancel().catch(() => undefined);
       fileWriters.clear();
       bundleExports.clear();

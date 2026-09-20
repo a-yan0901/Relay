@@ -298,6 +298,38 @@ describe('Windows local runtime', () => {
     expect(writer.cancel).not.toHaveBeenCalled();
   });
 
+  it('keeps native file selection and desktop notifications behind bounded IPC', async () => {
+    const source = {
+      name: 'selected.bin',
+      size: 3,
+      stream: vi.fn(async function* () { yield new Uint8Array([1, 2, 3]); }),
+      close: vi.fn(async () => undefined)
+    };
+    const open = vi.fn(async () => source);
+    const notifications = {
+      permission: vi.fn(async () => 'granted' as const),
+      requestPermission: vi.fn(async () => 'granted' as const),
+      notify: vi.fn(async (_request: { title: string; body: string; tag?: string }) => undefined)
+    };
+    runtime = createWindowsLocalRuntime({ dataDir: ':memory:', systemServices: { fileOpen: { open }, notifications } });
+    await request(runtime, 'setup-native-services', 'vault.setup', { masterPassword: 'test-password' });
+
+    const opened = await request(runtime, 'source-open', 'system.fileOpen.open', {}) as { sourceId: string; name: string; size: number };
+    expect(opened).toMatchObject({ name: 'selected.bin', size: 3 });
+    await request(runtime, 'source-release', 'files.releaseUploadSource', { sourceId: opened.sourceId });
+    await expect(request(runtime, 'source-release-again', 'files.releaseUploadSource', { sourceId: opened.sourceId })).resolves.toBeUndefined();
+
+    await expect(request(runtime, 'notification-permission', 'system.notifications.permission', {})).resolves.toEqual({ permission: 'granted' });
+    await expect(request(runtime, 'notification-request', 'system.notifications.requestPermission', {})).resolves.toEqual({ permission: 'granted' });
+    await request(runtime, 'notification-send', 'system.notifications.notify', { title: 'Relay', body: '完成', tag: 'task-1' });
+
+    expect(open).toHaveBeenCalledOnce();
+    expect(source.close).toHaveBeenCalledOnce();
+    expect(notifications.permission).toHaveBeenCalledOnce();
+    expect(notifications.requestPermission).toHaveBeenCalledOnce();
+    expect(notifications.notify).toHaveBeenCalledWith({ title: 'Relay', body: '完成', tag: 'task-1' });
+  });
+
   it('chunks portable vault bundles across the bounded desktop IPC frame', async () => {
     runtime = createWindowsLocalRuntime({ dataDir: ':memory:' });
     await request(runtime, 'setup-bundle', 'vault.setup', { masterPassword: 'test-password' });

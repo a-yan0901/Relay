@@ -1,11 +1,18 @@
-import type { ClipboardPort, DialogPort, ExternalLinkPort, FileSavePort, FileWriter, FileWriterPort, PlatformServices, StoragePort } from '../../shared/core/ports.js';
+import type { ClipboardPort, DialogPort, ExternalLinkPort, FileSavePort, FileWriter, FileWriterPort, NotificationPermission, NotificationPort, PlatformServices, StoragePort } from '../../shared/core/ports.js';
 import { AppError } from '../../shared/errors.js';
 import { NATIVE_TRANSFER_CHUNK_BYTES, type NativeOperationPort } from '../../shared/native/core-runtime.js';
 
 const MAX_CLIPBOARD_TEXT = 64 * 1024;
 const MAX_DIALOG_TEXT = 4 * 1024;
+const MAX_NOTIFICATION_TITLE = 256;
+const MAX_NOTIFICATION_BODY = 4 * 1024;
+const MAX_NOTIFICATION_TAG = 128;
 
 const SAFE_WRITER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+
+export interface NativePlatformServicesOptions {
+  notifications?: boolean;
+}
 
 const webViewStorage = (name: 'localStorage' | 'sessionStorage'): StoragePort | undefined => {
   try {
@@ -33,7 +40,7 @@ const boundedClipboardText = (value: string): string => {
   return value;
 };
 
-export const createNativePlatformServices = (port: NativeOperationPort): PlatformServices => {
+export const createNativePlatformServices = (port: NativeOperationPort, options: NativePlatformServicesOptions = {}): PlatformServices => {
   const clipboard: ClipboardPort = {
     canRead: true,
     canWrite: true,
@@ -117,5 +124,29 @@ export const createNativePlatformServices = (port: NativeOperationPort): Platfor
       }
     }
   };
-  return { preferences: webViewStorage('localStorage'), session: webViewStorage('sessionStorage'), clipboard, dialogs, externalLinks, fileSave, fileWriter };
+  const readPermission = async (operation: 'system.notifications.permission' | 'system.notifications.requestPermission'): Promise<NotificationPermission> => {
+    const value = await port.invoke<unknown>(operation, {});
+    if (value !== 'default' && value !== 'granted' && value !== 'denied' && (typeof value !== 'object' || value === null || Array.isArray(value) || !('permission' in value))) throw new AppError('PROTOCOL_INVALID_MESSAGE');
+    const permission = typeof value === 'string' ? value : (value as { permission?: unknown }).permission;
+    if (permission !== 'default' && permission !== 'granted' && permission !== 'denied') throw new AppError('PROTOCOL_INVALID_MESSAGE');
+    return permission;
+  };
+  const notifications: NotificationPort | undefined = options.notifications ? {
+    permission: () => readPermission('system.notifications.permission'),
+    requestPermission: () => readPermission('system.notifications.requestPermission'),
+    async notify(request): Promise<void> {
+      if (request.title.length > MAX_NOTIFICATION_TITLE || request.body.length > MAX_NOTIFICATION_BODY || request.tag !== undefined && request.tag.length > MAX_NOTIFICATION_TAG) throw new AppError('FILE_TOO_LARGE');
+      await port.invoke('system.notifications.notify', request);
+    }
+  } : undefined;
+  return {
+    preferences: webViewStorage('localStorage'),
+    session: webViewStorage('sessionStorage'),
+    clipboard,
+    dialogs,
+    externalLinks,
+    fileSave,
+    fileWriter,
+    ...(notifications ? { notifications } : {})
+  };
 };
