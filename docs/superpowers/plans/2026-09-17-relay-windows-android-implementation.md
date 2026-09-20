@@ -655,3 +655,9 @@
 - 在保留数据的 `emulator-5554` 上再次从 Android 原生 Vault 导出当前 3 个 Host 的 bundle：`5,341` bytes，单 chunk，SHA-256 `781612886b301064b12e2947dc55e1f875928a6da780a34079ee86eea3c1f99a`。
 - 在新的独立内存 Web/Server Vault 中完成预览和应用，计数均为 `3 hosts / 2 groups / 2 identities`；逐字段核对 `Web CDP Handoff Host` 的名称、地址、端口、用户名和 `password` 认证类型。
 - 该回环把模拟器 Android↔Web 实际交接证据串成可复核闭环，但不替代两台真机 A-01～A-17、Windows 打包 UI 导入、原生系统对话框人工走查和正式签名。
+
+## 2026-09-20 Android→Windows local runtime 回环复核
+
+- 从保留数据的 `emulator-5554` 原生 Vault 导出当前 bundle：`5,341` bytes，单 chunk，SHA-256 `94b7b840292be1f9d35b2355b26cec6816680b79720da0143e0131dddd7efe40`。
+- 在隔离 `createWindowsLocalRuntime({ dataDir: ':memory:' })` 中，错误密码和篡改 ciphertext 均返回 `VAULT_BUNDLE_INVALID`，拒绝后 hosts/groups/identities 仍为 `0/0/0`；正确预览/应用为 `3/2/2`。
+- 导入后核对 `Web CDP Handoff Host` 的名称、地址、端口、用户名和 `password` 认证类型；Terminal Profile 边界为 `5` 个内置 Profile 加 `1` 个自定义 `vector-terminal-profile`。这补齐 Android→Windows local runtime 的当前三实体回环，不替代 Windows 打包 UI 导入。
