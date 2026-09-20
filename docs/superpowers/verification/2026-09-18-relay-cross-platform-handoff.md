@@ -673,3 +673,9 @@
 - 关闭进程并重新启动后，应用先按安全策略保持 Vault locked；测试只输入 Vault 主密码，不触发卸载、清库或手工“重新连接”。解锁后终端自动恢复绿色连接，Host Key 对话框不再出现，SFTP 文件再次读取成功。
 - Playwright Electron 结果：`title=Relay SSH Workspace`、`restarted=true`、`autoReconnected=true`、`sftpFile=fixture-known.txt`。临时 userData、fixture 和测试进程已清理。
 - 这条证据关闭的是当前解压打包版的本地 fixture 任务链和重启自动恢复回归；它不替代目标服务器上的完整打包 UI 复验、Windows 真签名或发布门禁。Android 本轮没有安装、卸载、`pm clear`、重复授权或数据改写。
+
+## 53. 2026-09-20 Windows 打包版本地监听边界
+
+- 启动当前 `dist/releases/nsis/win-unpacked/Relay.exe`，传入隔离临时 `--user-data-dir`，等待 5 秒后检查主进程及其 3 个子进程。
+- 进程树在检查时仍存活；`Get-NetTCPConnection -State Listen` 对该进程树返回 `listenerCount=0`，未发现 Fastify、HTTP 或其他本地 TCP 监听。
+- 临时 userData 和测试进程已清理。本条只补齐 Windows 无本地监听安全边界，不关闭真签名、持久制品或完整目标服务器任务链门禁；Android 本轮仍未触碰设备数据。

@@ -500,3 +500,9 @@
 - 关闭打包版进程后重新启动，应用按安全边界先保持 Vault locked；测试只输入 Vault 主密码，不点击任何“重新连接”动作，随后终端自动恢复为绿色连接状态，Host Key 对话框不再出现，并再次读到 `fixture-known.txt`。
 - Playwright Electron 输出：`title=Relay SSH Workspace`、`restarted=true`、`autoReconnected=true`、`sftpFile=fixture-known.txt`。临时 fixture、userData 和测试进程均已清理。
 - 本条证明打包版在“进程重启后需要解锁 Vault”这一安全前提下可以自动重建 Console/SSH 会话；不把本地 fixture 扩大为真实发布签名或目标服务器的完整打包验收，Windows 签名和发布门禁仍未完成。
+
+## 2026-09-20 Windows 打包版本地监听边界
+
+- 启动当前 `dist/releases/nsis/win-unpacked/Relay.exe`，使用隔离临时 `--user-data-dir`，等待 5 秒后检查主进程及其 3 个子进程的监听端口。
+- 进程树在 5 秒后仍存活；`Get-NetTCPConnection -State Listen` 对该进程树返回 `listenerCount=0`，证明打包版没有启动 Fastify、HTTP 或其他本地 TCP 监听。
+- 临时 userData 和测试进程已清理；该证据补齐 Windows 安全边界检查，但不替代签名和完整发布任务链门禁。

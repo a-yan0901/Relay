@@ -487,3 +487,12 @@
 | 发布门禁 | 未完成 | 本条不替代真实签名；真实目标服务器的打包 UI 全链路仍需单独补证，当前 NSIS/Portable 仍为 `NotSigned` |
 
 - 本条验证的用户可感知边界是：重启后因 Vault 安全策略需要输入一次 Vault 密码，但 SSH Console 会自动重建，不再要求用户手动执行“重新连接”。
+
+### Windows 打包版本地监听边界
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 打包版启动稳定性 | 通过 | 当前 `dist/releases/nsis/win-unpacked/Relay.exe` 使用隔离 `--user-data-dir` 启动，5 秒后主进程及 3 个子进程仍存活 |
+| 本地 TCP/HTTP 监听 | 通过 | 对该进程树执行 `Get-NetTCPConnection -State Listen`，`listenerCount=0`；未启动 Fastify 或其他本地监听 |
+| 临时数据清理 | 通过 | 临时 userData 和测试进程已清理 |
+| 发布门禁 | 未完成 | 本条只关闭本地监听边界，不替代 Windows 真签名、持久制品和完整目标服务器任务链 |
