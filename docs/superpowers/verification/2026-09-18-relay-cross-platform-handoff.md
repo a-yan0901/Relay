@@ -801,3 +801,10 @@
 - 交接基线为 `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4`。重新执行 `npm run verify:cross-platform:local`，typecheck、lint、全量 Vitest、Web/Server/Cloud build、Chromium E2E、Windows NSIS/Portable 打包、Android JVM/AndroidTest 编译和 Debug APK 构建均通过；Vitest `168` 个文件通过、`1` 个跳过，`770` 个测试通过、`2` 个跳过；Chromium `5/5`；Gradle `BUILD SUCCESSFUL`。
 - 当前本地制品已重新计算：Debug APK `8,655,856` bytes / SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,749` bytes / SHA-256 `C2A63887DFAEB3166A6788F5AA54CDF4265B0201842FAAD6694D46C3AAD67E7B`；Portable `113,688,941` bytes / SHA-256 `6BC4E6C61ACBDEF1F323F30AAE209B593FBF258E464D2319896FEF0B2E152A6A`。NSIS/Portable 均为 `NotSigned`。
 - 本轮没有调用 `adb`，没有安装、卸载、`pm clear` 或新增 Android 运行时授权；该证据只收口当前提交的可自动化本地门禁。Android 真机 A-01～A-17、A-17 双向实机 bundle、Windows 原生系统文件对话框人工走查和正式签名仍未完成。
+
+## 2026-09-20 Windows Computer Use 原生通道复核
+
+- 当前会话目标为 Windows；启动已有 `dist/releases/nsis/win-unpacked/Relay.exe` 后，进程树正常，但 `cua.getState()` 仍返回空的应用/浏览器清单。
+- 对该打包进程树执行只读监听检查：4 个 Relay 进程均无 `Listen` TCP 端口，未发现本地 HTTP/TCP 服务。
+- 直接调用 Windows 原生 `sky.list_apps()` 返回 `Computer Use native pipe is unavailable: failed to connect native pipe: 系统找不到指定的文件。`；重置 CUA REPL 后结果不变。
+- 因此真实系统文件选择/保存对话框仍为外部门禁，不能用 Relay.exe 未启动解释，也不以 PowerShell UI 自动化替代 CUA。需要新的 Windows CUA 任务实例或人工走查后补回填。

@@ -642,3 +642,10 @@
 | Android 本地门禁 | 通过 | `npm run test:android:local` 与 `npm run build:android:debug` 均 `BUILD SUCCESSFUL`；JVM/AndroidTest 编译阶段完成；APK `8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820` |
 | Windows 本地制品 | 已复核 | NSIS `127,709,749` bytes / SHA-256 `C2A63887DFAEB3166A6788F5AA54CDF4265B0201842FAAD6694D46C3AAD67E7B`；Portable `113,688,941` bytes / SHA-256 `6BC4E6C61ACBDEF1F323F30AAE209B593FBF258E464D2319896FEF0B2E152A6A`；均 `NotSigned` |
 | 外部发布边界 | 未完成 | 不替代 Android 真机 A-01～A-17、A-17 双向实机 bundle、Windows 原生文件选择/保存对话框人工走查或正式 `v*` Authenticode 签名 |
+
+## 2026-09-20 Windows Computer Use 原生通道复核
+
+- 启动已有 `dist/releases/nsis/win-unpacked/Relay.exe` 后进程树正常，但 Computer Use 的 `cua.getState()` 仍返回空应用/浏览器清单。
+- 只读检查该进程树的 TCP `Listen` 状态为 `0`，未发现本地 HTTP/TCP 监听。
+- `sky.list_apps()` 仍返回 `Computer Use native pipe is unavailable`；重置 CUA REPL 后复试不变。因此当前阻塞是 CUA 原生任务实例/管道绑定，不是桌面应用未启动。
+- Windows 真实系统文件选择/保存对话框人工验收继续保持未完成，不使用其他 UI 自动化技术绕过该门禁。
