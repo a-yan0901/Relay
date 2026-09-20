@@ -584,4 +584,5 @@
 |---|---|---|
 | Web Chromium 验收 | 通过 | `npm run test:e2e -- --project=chromium --workers=1`：`5/5` 通过，覆盖 Vault/Host/终端、320px 离线、SFTP/批量任务、布局恢复和断线自动重连 |
 | Web/Server/Cloud 构建 | 通过 | `npm run build` 中 `build:web`、`build:server`、`build:cloud` 均成功；只有既有 Vite chunk size warning |
+| Server 定向回归 | 通过 | 串行 `npm test -- --run tests/unit/server ...`：`31` 个测试文件、`145` 个测试全部通过 |
 | 跨端边界 | 未改变 | 本轮不替代 Windows 原生系统对话框/签名或 Android 真机 A-01～A-17、A-17 双向 bundle 验收 |

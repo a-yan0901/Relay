@@ -759,4 +759,5 @@
 
 - 当前提交 `npm run test:e2e -- --project=chromium --workers=1` 通过 `5/5`，覆盖 Vault/Host/终端、320px 离线路径、SFTP/批量任务、布局持久化和断线自动重连。
 - 当前提交 `npm run build` 成功完成 `build:web`、`build:server`、`build:cloud`；Vite 仅报告既有 chunk size warning，无构建错误。
+- 服务端定向回归通过：串行 `npm test -- --run tests/unit/server --testTimeout=15000 --hookTimeout=15000 --no-file-parallelism --maxWorkers=1 --reporter=dot` 为 `31` 个测试文件、`145` 个测试全部通过。
 - 本条关闭当前 Web/独立服务端自动化构建与浏览器验收复核，不扩大 Windows 原生系统对话框/签名或 Android 真机 A-01～A-17、A-17 双向 bundle 的结论。
