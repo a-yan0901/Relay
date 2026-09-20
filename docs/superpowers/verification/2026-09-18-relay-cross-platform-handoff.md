@@ -629,3 +629,11 @@
 - 当前工作区执行 Windows 定向 Vitest：`tests/unit/windows` 共 `6` 个文件、`30` 个测试全部通过。
 - `npm run build:windows` 通过 Web、Electron main 和 preload 三段构建；仅有既有 Vite chunk size 提示，无构建失败。
 - `.github/workflows/windows-package.yml` 已加入 `paths-ignore`（文档目录）和同分支 `concurrency.cancel-in-progress`；后续文档-only 提交不再重复打包，新代码提交只保留最新 Windows package run。
+
+## 48. 2026-09-20 Android 当前构建与集中 instrumentation 交接
+
+- 当前 Debug APK 使用 session-only JDK 21/Android SDK、offline、单 worker 构建成功：`8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`。
+- 目前只有独立 AVD `emulator-5554` 在线；手机和平板没有出现在 `adb devices -l`，mDNS 为空，已知无线 ADB 端点不可达。本条不把模拟器证据写入两台真机 A-01～A-17 的结果列。
+- 设备端先发现旧 APK 哈希 `73716…` 与当前 APK 不同，按 `install-debug.mjs` 的策略执行一次 `adb push` + `pm install -r --user 0`；没有显式卸载、`pm clear`、`-g` 或新增运行时授权。
+- 在独立模拟器集中执行 `:app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`，`9/9` 通过、`0` 跳过、`0` 失败，Gradle `BUILD SUCCESSFUL`；固定向量分块导入测试实际执行通过。该 runner 结束后清理了目标包，随后只为恢复模拟器已知基线再次通过同一数据保留入口部署当前 APK，最终设备端哈希已复核与本地一致。
+- 后续设备策略：优先 `npm run test:android:local` 做代码回归；真机恢复后一次构建、一次数据保留部署、一次全量清单回归，不为单个问题拆分安装。A-01～A-17、真实设备生命周期/URI grant 证据和 A-17 跨端实机交接仍未完成。

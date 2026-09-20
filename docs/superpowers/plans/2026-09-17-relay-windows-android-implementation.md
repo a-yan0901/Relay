@@ -455,3 +455,11 @@
 - 当前工作区 `npm test -- tests/unit/windows --no-file-parallelism --maxWorkers=1 --reporter=dot` 通过 `6` 个文件、`30` 个测试；`npm run build:windows` 的 Web/main/preload 构建全部成功。
 - Windows workflow 新增文档路径跳过和同分支取消旧 run 的并发策略，减少任务书更新和连续代码提交造成的重复打包；手动触发与 `v*` 标签触发保持可用。
 - 本轮仍未扩大 Windows 发布结论：真签名、升级/回滚、崩溃恢复多轮和完整安装包任务链继续待目标环境验证。
+
+## 2026-09-20 Android 当前构建与模拟器集中回归
+
+- 使用 session-only JDK 21、Android SDK、offline、单 worker 完成当前 Debug APK 构建；APK 为 `8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`。
+- 本机当前只有独立 AVD `emulator-5554` 在线；用户的手机和平板未出现在 `adb devices -l`，mDNS 列表为空，已知无线 ADB 端点仍不可达，因此本批次不回填真机 A-01～A-17。
+- 先以部署策略比较设备端旧 APK `73716…` 与当前 APK `9D79…`，按设计执行了一次 `adb push` + `pm install -r --user 0`；未执行 `adb uninstall`、`pm clear`，未使用 `-g`，未新增运行时授权。
+- 在该模拟器上集中执行 `:app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`：`9/9` 通过、`0` 跳过、`0` 失败，Gradle `BUILD SUCCESSFUL`。测试 runner 结束时清理了目标包；为恢复已知测试基线，随后仅再次使用同一数据保留部署入口恢复当前 APK，最终设备端哈希与本地一致。
+- 后续 Android 验收不再为单个问题调用 connected runner；优先使用 `npm run test:android:local`，真机恢复后统一构建、一次部署、再按 A-01～A-17 全量回归。上述模拟器结果不替代两台真机的安装保留数据和人工验收。

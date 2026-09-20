@@ -432,3 +432,13 @@
 | Windows desktop build | 通过 | `npm run build:windows` 的 Web、main、preload 均成功；仅有既有 chunk size 警告 |
 | Windows CI 效率策略 | 已实现 | 文档路径跳过打包；同分支新提交取消旧未完成 run；不改变 `workflow_dispatch`/`v*` 发布触发 |
 | Windows 发布门禁 | 未完成 | 签名、升级/回滚、崩溃恢复多轮和安装包完整任务链仍需目标 Windows 环境证据 |
+
+## 2026-09-20 Android 当前构建与集中 instrumentation 回归
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 当前 Debug APK | 通过构建 | `8,655,609` bytes；SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`；JDK 21/Android SDK、offline、单 worker |
+| 独立模拟器 instrumentation | 通过（不替代真机） | `emulator-5554` / `homeops-api35` 执行 `:app:connectedDebugAndroidTest`，`9/9` 通过、`0` 跳过、`0` 失败，Gradle `BUILD SUCCESSFUL`；固定向量 chunked import→preview→apply 测试实际执行通过 |
+| 数据保留部署策略 | 通过 | 旧包哈希 `73716…` 与当前 `9D79…` 不同，因此集中回归前只执行一次 `adb push` + `pm install -r --user 0`；未主动卸载、未 `pm clear`、未使用 `-g`、未新增授权 |
+| connected runner 生命周期边界 | 已记录 | runner 结束后清理了模拟器目标包；随后只恢复一次当前 APK，最终设备端哈希与本地一致。后续不再用该 runner 作为逐问题回归入口 |
+| 两台 Android 真机 | 未完成/阻塞 | 当前 `adb devices -l` 只有 `emulator-5554`，mDNS 为空，已知无线 ADB 端点拒绝连接；不得用模拟器结果替代手机/平板 A-01～A-17 |
