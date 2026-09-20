@@ -742,3 +742,9 @@
 - `npm run build:windows`、`npm run package:windows` 和串行全量 Vitest 均通过：`166` 文件通过、`1` 跳过，`767` 测试通过、`2` 跳过。
 - 当前本机 NSIS `127,709,747` bytes / SHA-256 `8708A397E24E93071EBF6C52D9D64FCFD783581D197EB21DAA0901252E013F90`；Portable `113,688,951` bytes / SHA-256 `2509BD35B8406C3554F1472B17F501FC57FD3EE2545544FA63D0257859166E9F`；均为 `NotSigned`。
 - 这补齐代码级取消/清理/原子落盘证据，但不关闭真实系统文件对话框人工走查；Android 手机/平板仍按用户要求延期。
+
+## 63. 2026-09-20 Windows 文件服务变更后的 CI 复验
+
+- GitHub Actions run `35488521654`（commit `5ba089f`）已成功完成依赖安装、源码校验、Electron runtime 准备、NSIS/Portable 打包、release manifest 生成和 artifact 上传。
+- artifact：`Relay-Windows-main-5ba089f9574956e7945105536158934005115bd7`，大小 `240,662,745` bytes，保留至 `2026-12-19`；run 页面：`https://github.com/a-yan0901/Relay/actions/runs/35488521654`。
+- 本次为 `main` 技术预览，签名配置和签名校验按条件跳过；CI 证明新文件服务已进入可追溯 Windows 制品链，不替代真实系统文件对话框人工走查和正式签名发布。

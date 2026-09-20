@@ -561,6 +561,12 @@
 - `npm run build:windows` 和 `npm run package:windows` 通过；当前 NSIS `127,709,747` bytes / SHA-256 `8708A397E24E93071EBF6C52D9D64FCFD783581D197EB21DAA0901252E013F90`，Portable `113,688,951` bytes / SHA-256 `2509BD35B8406C3554F1472B17F501FC57FD3EE2545544FA63D0257859166E9F`，两者 `NotSigned`。
 - 全量 Vitest `166` 个文件通过、`1` 个跳过；`767` 个测试通过、`2` 个跳过。该条增强代码级证据，但不替代真实系统文件对话框人工取消/确认；Android 真机仍按用户要求延期。
 
+## 2026-09-20 Windows 文件服务变更后的 CI 复验
+
+- GitHub Actions run `35488521654`（commit `5ba089f`）成功完成依赖安装、typecheck/lint、Electron 准备、NSIS/Portable 打包、release manifest 和 artifact 上传。
+- 持久 artifact 为 `Relay-Windows-main-5ba089f9574956e7945105536158934005115bd7`，大小 `240,662,745` bytes，保留至 `2026-12-19`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35488521654`。
+- 本次为 `main` 技术预览，签名步骤按条件跳过；该 CI 结果证明抽取后的文件服务进入 Windows 打包链并可追溯，不证明真实系统对话框人工验收或正式签名发布。
+
 ## 2026-09-20 Windows 打包版系统剪贴板回环
 
 - 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe` 和隔离临时 userData，通过真实 Electron preload `relayDesktop.invoke` 调用 `system.clipboard.writeText` 写入合成标记，再调用 `system.clipboard.readText` 读回。

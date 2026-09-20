@@ -560,3 +560,11 @@
 | 原生保存原子提交 | 通过（代码级） | writer close 先关闭 partial，再替换目标；临时文件行为测试通过 |
 | 当前 Windows 制品 | 已复核 | NSIS `127,709,747` bytes / `8708A397E24E93071EBF6C52D9D64FCFD783581D197EB21DAA0901252E013F90`；Portable `113,688,951` bytes / `2509BD35B8406C3554F1472B17F501FC57FD3EE2545544FA63D0257859166E9F`；均 `NotSigned` |
 | 真正系统窗口 | 未完成 | 代码级测试不能替代 Windows 系统文件选择/保存对话框人工取消/确认；Computer Use 服务仍不可用 |
+
+## 2026-09-20 Windows 文件服务变更后的 CI 复验
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Windows CI 打包 | 通过 | run `35488521654`（commit `5ba089f`）完成源码校验、Electron 准备、NSIS/Portable 打包、manifest 和 artifact 上传 |
+| 持久 artifact | 已生成 | `Relay-Windows-main-5ba089f9574956e7945105536158934005115bd7`，`240,662,745` bytes，保留至 `2026-12-19`；[Actions run](https://github.com/a-yan0901/Relay/actions/runs/35488521654) |
+| 签名/人工系统窗口 | 未完成 | `main` run 的签名步骤按条件跳过；当前仍无证书 secrets，且 Computer Use 原生窗口服务不可用 |
