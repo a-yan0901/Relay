@@ -455,7 +455,8 @@
 | 隔离 userData 多轮恢复 | 通过（解压版） | 当前 `Relay.exe` 使用临时 `--user-data-dir` 连续 3 轮启动/强制终止/重启；每轮均恢复 `Packaged Recovery Host`，窗口标题均为 `Relay SSH Workspace` |
 | 当前 NSIS 制品 | 已复核 | `127,707,203` bytes；SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408` |
 | 当前 Portable 制品 | 已复核 | `113,685,227` bytes；SHA-256 `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06` |
-| Windows 发布门禁 | 未完成 | 两个制品均 `NotSigned`；真实签名、旧版本安装包升级/回滚、安装器崩溃恢复及完整打包 SSH/SFTP/UI 任务链仍需目标环境证据 |
+| 版本化 NSIS 升级/回滚 | 通过（隔离安装目录） | 旧包 `0.0.9` 安装 → 当前包 `0.1.0` 覆盖升级 → 旧包 `0.0.9` 回滚均退出码 `0`；同一 userData 中 `Versioned Upgrade Host` 三个版本均可解锁读回 |
+| Windows 发布门禁 | 未完成 | 两个制品均 `NotSigned`；真实签名、安装器崩溃恢复及完整打包 SSH/SFTP/UI 任务链仍需目标环境证据 |
 
 ### 当前 NSIS 安装器隔离门禁
 

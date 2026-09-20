@@ -472,6 +472,9 @@
 
 ## 2026-09-20 Windows 打包版多轮崩溃恢复回归
 
+- 新增可追溯版本化 NSIS 回归：使用当前源码和 `--config.extraMetadata.version=0.0.9` 生成旧包 `Relay-0.0.9-x64.exe`，大小 `127,707,297` bytes，SHA-256 `81F53795BFFEE6D82DA2896E844BCAF09C8E52EE3ECD732F0B9172DBD2F6132E`；当前包 `0.1.0` 为 `127,707,203` bytes，SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`。两包均如实为 `NotSigned`。
+- 旧包临时安装退出码 `0`，Playwright Electron 读取版本 `0.0.9` 并写入 `Versioned Upgrade Host`；当前包覆盖安装退出码 `0`，读取版本 `0.1.0` 后成功解锁并读回该 Host；再安装旧包回滚退出码 `0`，版本 `0.0.9` 仍成功读回同一 Host。临时安装目录和 userData 已清理。
+- 该条关闭“可追溯版本化安装→升级→回滚的数据保留”本机证据；签名、安装器崩溃恢复、持久发布制品来源及完整打包 SSH/SFTP/Vault/UI 任务链仍未通过。
 - 针对当前 NSIS 解压版 `dist/releases/nsis/win-unpacked/Relay.exe`（NSIS `127,707,203` bytes / SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`），使用 Playwright Electron 和隔离临时 `--user-data-dir` 连续执行 3 轮启动、Host 创建/读取、强制终止、重启。
 - 三轮窗口标题均为 `Relay SSH Workspace`，已保存的 `Packaged Recovery Host` 每轮均可读回；临时 userData 在 `finally` 清理，未接触本机现有 Relay 数据。
 - 当前 NSIS/Portable 制品元数据已复核：NSIS `127,707,203` bytes / `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`，Portable `113,685,227` bytes / `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06`；两者 `Get-AuthenticodeSignature=NotSigned`，签名发布门禁仍未完成。

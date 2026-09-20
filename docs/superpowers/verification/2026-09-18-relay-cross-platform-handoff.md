@@ -14,7 +14,7 @@
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
 | Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `164` 个文件通过、`1` 个跳过；`757` 个测试通过、`2` 个跳过；服务端定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
-| Windows | 🟡 打包与隔离恢复已复核，平台门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复和 CI artifact 均有证据 | 签名、旧版本升级/回滚、安装器崩溃恢复、打包后完整 SSH/SFTP/Vault/UI 任务链 |
+| Windows | 🟡 打包与隔离恢复已复核，平台门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复、版本化 `0.0.9 → 0.1.0 → 0.0.9` 数据保留和 CI artifact 均有证据 | 签名、安装器崩溃恢复、打包后完整 SSH/SFTP/Vault/UI 任务链 |
 | Android | ⛔ 当前真机批次不可验证 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `9D79…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态 | 两台真机 A-01～A-17、Host Key/私钥失败矩阵、网络/生命周期/URI/低内存和实机跨端回传 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
@@ -645,6 +645,9 @@
 
 ## 49. 2026-09-20 Windows 打包版多轮崩溃恢复交接
 
+- 已补齐可追溯版本化 NSIS 证据：旧包 `Relay-0.0.9-x64.exe` 大小 `127,707,297` bytes、SHA-256 `81F53795BFFEE6D82DA2896E844BCAF09C8E52EE3ECD732F0B9172DBD2F6132E`；当前包 `Relay-0.1.0-x64.exe` 大小 `127,707,203` bytes、SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`；两者均为 `NotSigned`。
+- 临时 NSIS 安装流程为：旧包安装退出码 `0` 并写入 `Versioned Upgrade Host`；当前包覆盖安装退出码 `0`，版本 `0.1.0` 解锁后读回 Host；旧包回滚退出码 `0`，版本 `0.0.9` 再次读回 Host。Playwright Electron 已核对 `0.0.9 → 0.1.0 → 0.0.9`，临时安装目录和 userData 均已清理。
+- 该条只关闭“版本化升级/回滚数据保留”本机证据；签名、安装器崩溃恢复、持久发布制品来源和完整打包 SSH/SFTP/Vault/UI 任务链仍保持未完成。
 - 当前 NSIS 解压版 `dist/releases/nsis/win-unpacked/Relay.exe`（`127,707,203` bytes，SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`）使用隔离临时 `--user-data-dir` 连续执行 3 轮启动、Host 创建/读取、强制终止和重启。
 - 三轮均输出窗口标题 `Relay SSH Workspace`，每轮均恢复 `Packaged Recovery Host`；临时 userData 已清理，未读写本机现有 Relay 数据。
 - 当前 Portable 制品为 `113,685,227` bytes，SHA-256 `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06`。NSIS/Portable 的 `Get-AuthenticodeSignature` 均为 `NotSigned`。
