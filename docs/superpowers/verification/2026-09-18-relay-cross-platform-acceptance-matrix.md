@@ -496,3 +496,14 @@
 | 本地 TCP/HTTP 监听 | 通过 | 对该进程树执行 `Get-NetTCPConnection -State Listen`，`listenerCount=0`；未启动 Fastify 或其他本地监听 |
 | 临时数据清理 | 通过 | 临时 userData 和测试进程已清理 |
 | 发布门禁 | 未完成 | 本条只关闭本地监听边界，不替代 Windows 真签名、持久制品和完整目标服务器任务链 |
+
+### Windows 打包版真实服务器 SSH/SFTP 任务链
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 真实 SSH/Host Key | 通过 | 当前打包版使用隔离 userData 连接用户指定的 `106.14.61.92:22` / `t2`，完成 Host Key 指纹展示与信任；凭据未写入仓库或输出 |
+| 真实 Shell | 通过 | 远端执行 `PACKAGED_REAL_SERVER_OK` 并在打包版 Console 收到回显 |
+| 真实 SFTP | 通过（读取） | 打开打包版 SFTP 并读取真实目标 `/tmp`，返回 `36` 项 |
+| 重启后自动恢复 | 通过 | 复用同一临时 userData 重启，用户只解锁 Vault；终端恢复绿色连接，无“此 Console 需要重新连接”提示 |
+| 打包版文件上传/下载 | 未覆盖 | Windows 原生文件选择/保存需要单独的系统文件交互走查，本轮只验证真实 SFTP 读取 |
+| 发布门禁 | 未完成 | Windows 制品仍为 `NotSigned`；签名和文件传输完整矩阵仍待补证 |

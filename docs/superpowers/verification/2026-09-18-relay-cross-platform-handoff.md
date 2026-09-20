@@ -679,3 +679,10 @@
 - 启动当前 `dist/releases/nsis/win-unpacked/Relay.exe`，传入隔离临时 `--user-data-dir`，等待 5 秒后检查主进程及其 3 个子进程。
 - 进程树在检查时仍存活；`Get-NetTCPConnection -State Listen` 对该进程树返回 `listenerCount=0`，未发现 Fastify、HTTP 或其他本地 TCP 监听。
 - 临时 userData 和测试进程已清理。本条只补齐 Windows 无本地监听安全边界，不关闭真签名、持久制品或完整目标服务器任务链门禁；Android 本轮仍未触碰设备数据。
+
+## 54. 2026-09-20 Windows 打包版真实服务器 SSH/SFTP 交接
+
+- 当前 `dist/releases/nsis/win-unpacked/Relay.exe` 在隔离临时 `--user-data-dir` 中连接用户指定的 `106.14.61.92:22` / `t2`；密码仅通过临时进程环境变量传入，未写入脚本、仓库或输出。
+- 真实 Host Key 指纹展示/信任、Shell 命令 `PACKAGED_REAL_SERVER_OK` 和 SFTP `/tmp` 读取均通过，目录返回 `36` 项。
+- 关闭后以同一临时 userData 重启，测试只输入 Vault 主密码；终端自动恢复绿色连接，没有出现“此 Console 需要重新连接”，结果为 `title=Relay SSH Workspace`、`restarted=true`、`autoReconnected=true`、`sftpEntries=36`。
+- 临时 userData、测试 Host 和进程均已清理。本条关闭真实目标服务器的打包版 SSH/SFTP 读取与重启恢复证据；Windows 真签名以及打包版文件上传/下载的系统文件交互仍未完成。Android 本轮没有安装、卸载、`pm clear`、重复授权或数据改写。
