@@ -442,3 +442,12 @@
 | 数据保留部署策略 | 通过 | 旧包哈希 `73716…` 与当前 `9D79…` 不同，因此集中回归前只执行一次 `adb push` + `pm install -r --user 0`；未主动卸载、未 `pm clear`、未使用 `-g`、未新增授权 |
 | connected runner 生命周期边界 | 已记录 | runner 结束后清理了模拟器目标包；随后只恢复一次当前 APK，最终设备端哈希与本地一致。后续不再用该 runner 作为逐问题回归入口 |
 | 两台 Android 真机 | 未完成/阻塞 | 当前 `adb devices -l` 只有 `emulator-5554`，mDNS 为空，已知无线 ADB 端点拒绝连接；不得用模拟器结果替代手机/平板 A-01～A-17 |
+
+## 2026-09-20 Windows 打包版多轮崩溃恢复回归
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 隔离 userData 多轮恢复 | 通过（解压版） | 当前 `Relay.exe` 使用临时 `--user-data-dir` 连续 3 轮启动/强制终止/重启；每轮均恢复 `Packaged Recovery Host`，窗口标题均为 `Relay SSH Workspace` |
+| 当前 NSIS 制品 | 已复核 | `127,707,203` bytes；SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408` |
+| 当前 Portable 制品 | 已复核 | `113,685,227` bytes；SHA-256 `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06` |
+| Windows 发布门禁 | 未完成 | 两个制品均 `NotSigned`；真实签名、旧版本安装包升级/回滚、安装器崩溃恢复及完整打包 SSH/SFTP/UI 任务链仍需目标环境证据 |

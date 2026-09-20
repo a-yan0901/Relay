@@ -637,3 +637,10 @@
 - 设备端先发现旧 APK 哈希 `73716…` 与当前 APK 不同，按 `install-debug.mjs` 的策略执行一次 `adb push` + `pm install -r --user 0`；没有显式卸载、`pm clear`、`-g` 或新增运行时授权。
 - 在独立模拟器集中执行 `:app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`，`9/9` 通过、`0` 跳过、`0` 失败，Gradle `BUILD SUCCESSFUL`；固定向量分块导入测试实际执行通过。该 runner 结束后清理了目标包，随后只为恢复模拟器已知基线再次通过同一数据保留入口部署当前 APK，最终设备端哈希已复核与本地一致。
 - 后续设备策略：优先 `npm run test:android:local` 做代码回归；真机恢复后一次构建、一次数据保留部署、一次全量清单回归，不为单个问题拆分安装。A-01～A-17、真实设备生命周期/URI grant 证据和 A-17 跨端实机交接仍未完成。
+
+## 49. 2026-09-20 Windows 打包版多轮崩溃恢复交接
+
+- 当前 NSIS 解压版 `dist/releases/nsis/win-unpacked/Relay.exe`（`127,707,203` bytes，SHA-256 `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`）使用隔离临时 `--user-data-dir` 连续执行 3 轮启动、Host 创建/读取、强制终止和重启。
+- 三轮均输出窗口标题 `Relay SSH Workspace`，每轮均恢复 `Packaged Recovery Host`；临时 userData 已清理，未读写本机现有 Relay 数据。
+- 当前 Portable 制品为 `113,685,227` bytes，SHA-256 `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06`。NSIS/Portable 的 `Get-AuthenticodeSignature` 均为 `NotSigned`。
+- 本条只补强解压版多轮本地恢复；Windows 签名、旧版本安装包升级/回滚、安装器崩溃恢复和完整打包 SSH/SFTP/UI 任务链仍未完成。
