@@ -535,6 +535,12 @@
 - Android 手机和平板 A-01～A-17 按用户要求延期，等待真机重新上线；本轮不安装、不卸载、不清库、不新增授权。恢复后一次数据保留部署，再集中完成清单回归，不为单个问题反复重装。
 - 本轮剩余可执行项：Windows 真实系统文件选择/保存对话框人工取消/确认走查、Windows 证书签名；Android 真机和 A-17 实机双向字段核对等待设备。Web/Server 自动化和 Windows 代码/打包门槛已通过当前门禁。
 
+## 2026-09-20 Windows 原生系统对话框人工走查环境结论
+
+- 按本机可控窗口验证流程尝试启动当前 Windows 打包版并选择目标窗口，但 Computer Use 的 `sky` RPC 返回 `Trusted RPC service is not configured: sky`，当前没有可控的原生应用窗口。
+- 因此本次没有打开文件选择/保存对话框、没有选择或上传文件、没有落盘文件，也没有改变 Relay 用户数据；Android 手机和平板仍按用户要求未安装、未卸载、未清库、未新增授权。
+- Ruling：不使用 PowerShell UI 自动化绕过 Computer Use 环境限制；真实系统对话框的取消/确认门禁继续保持未完成。若错误地把 IPC/单测当成人工门禁，代价是遗漏系统对话框实际行为；待 Computer Use 可用或人工在目标 Windows 主机走查后再关闭。
+
 ## 2026-09-20 Windows 打包版系统剪贴板回环
 
 - 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe` 和隔离临时 userData，通过真实 Electron preload `relayDesktop.invoke` 调用 `system.clipboard.writeText` 写入合成标记，再调用 `system.clipboard.readText` 读回。

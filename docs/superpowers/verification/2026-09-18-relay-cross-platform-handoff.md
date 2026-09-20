@@ -714,3 +714,10 @@
 - 当前 Windows 制品：NSIS `127,709,267` bytes / SHA-256 `F757EFC65B364464B372003C039444CB5E1099CACA83AE0CC4DCFAA45F8FF1DE`；Portable `113,688,516` bytes / SHA-256 `4C0A52BB2B7741A0A947282FF7C47F0CDF89B55F3C21673624B76465196AFAFA`；两者 `Get-AuthenticodeSignature=NotSigned`。
 - 打包版 preload→main 通知 IPC smoke 已返回 `permission=granted`、`requestPermission=granted` 并成功发送合成通知；真实文件选择/保存对话框仍需人工走查，不能用代码存在替代用户取消/确认路径证据。
 - Android 真机 A-01～A-17 按用户要求延期，等待手机和平板重新上线；设备恢复后只执行一次当前 APK 的数据保留部署，再按清单集中测试和集中修复，不为单个问题反复重装。
+
+## 59. 2026-09-20 Windows 原生系统对话框人工走查尝试
+
+- 尝试按交接边界启动当前 Windows 打包版并执行一次文件选择/保存对话框人工取消/确认检查时，Computer Use 的 `sky` RPC 返回 `Trusted RPC service is not configured: sky`，没有可控原生应用窗口。
+- 本次没有打开对话框、选择文件、上传文件或保存文件，也没有改变 Relay 用户数据；不把该项记录为通过。
+- 不采用 PowerShell UI 自动化回退，以免绕过 Windows Computer Use 的安全边界。待 Computer Use 服务可用或目标 Windows 主机人工走查后，补回“取消不创建传输、确认进入流式传输/保存”的证据。
+- Android 手机和平板仍按用户要求延期，保持不安装、不卸载、不清库、不新增授权。

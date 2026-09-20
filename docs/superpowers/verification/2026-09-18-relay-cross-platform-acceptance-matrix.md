@@ -524,3 +524,11 @@
 | 当前制品 | 已复核 | APK `8,655,856` bytes / `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,267` bytes / `F757EFC65B364464B372003C039444CB5E1099CACA83AE0CC4DCFAA45F8FF1DE`；Portable `113,688,516` bytes / `4C0A52BB2B7741A0A947282FF7C47F0CDF89B55F3C21673624B76465196AFAFA` |
 | Android 手机/平板 | 按用户要求延期 | 等待真机重新上线；本轮不安装、不卸载、不清库、不新增授权。恢复后一次数据保留部署，再集中执行 A-01～A-17，不为单个问题反复重装 |
 | Windows 发布剩余边界 | 未完成 | 当前制品 `NotSigned`；真实系统文件选择/保存对话框人工取消/确认、证书签名仍需补证 |
+
+## 2026-09-20 Windows 原生系统对话框走查尝试
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 原生文件选择/保存对话框人工取消/确认 | 未执行 | Computer Use 的 `sky` RPC 返回 `Trusted RPC service is not configured: sky`，没有可控原生窗口；未打开对话框、未选择文件、未上传/保存、未改变 Relay 数据 |
+| 回退方式 | 不采用 | 不使用 PowerShell UI 自动化绕过 Windows Computer Use 安全边界；现有 IPC allowlist、source 生命周期、32 KiB 流和自动化测试仍只证明代码路径 |
+| Android 设备状态 | 按用户要求延期 | 手机/平板 A-01～A-17 不安装、不卸载、不清库、不新增授权，待设备重新上线后统一部署和全量验收 |
