@@ -795,3 +795,9 @@
 - 新增确定性回归用例并按 TDD 完成红绿验证；`createE2eHostKey` 对候选 key 调用 `utils.parseKey`，无效时重新生成，最多 8 次，再交给 `SshServer`。
 - 修复后当前提交全量 Vitest 为 `168` 文件通过、`1` 跳过，`770` 测试通过、`2` 跳过；Chromium E2E `5/5`，服务端 unit+integration `45/203`，typecheck/lint 均通过。Android 本地构建仍为 `BUILD SUCCESSFUL`。
 - 交接边界不变：Android 手机/平板 A-01～A-17 仍按用户要求延期；Windows Computer Use 原生系统文件对话框仍需 native CUA 新任务人工走查；正式签名仍需证书 secrets 和 `v*` 验证。
+
+## 2026-09-20 当前提交统一跨端门禁复验（4afba05）
+
+- 交接基线为 `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4`。重新执行 `npm run verify:cross-platform:local`，typecheck、lint、全量 Vitest、Web/Server/Cloud build、Chromium E2E、Windows NSIS/Portable 打包、Android JVM/AndroidTest 编译和 Debug APK 构建均通过；Vitest `168` 个文件通过、`1` 个跳过，`770` 个测试通过、`2` 个跳过；Chromium `5/5`；Gradle `BUILD SUCCESSFUL`。
+- 当前本地制品已重新计算：Debug APK `8,655,856` bytes / SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,749` bytes / SHA-256 `C2A63887DFAEB3166A6788F5AA54CDF4265B0201842FAAD6694D46C3AAD67E7B`；Portable `113,688,941` bytes / SHA-256 `6BC4E6C61ACBDEF1F323F30AAE209B593FBF258E464D2319896FEF0B2E152A6A`。NSIS/Portable 均为 `NotSigned`。
+- 本轮没有调用 `adb`，没有安装、卸载、`pm clear` 或新增 Android 运行时授权；该证据只收口当前提交的可自动化本地门禁。Android 真机 A-01～A-17、A-17 双向实机 bundle、Windows 原生系统文件对话框人工走查和正式签名仍未完成。

@@ -632,3 +632,13 @@
 | in-process SSH host key | 修复 | `ssh2@1.17.0` 的 Ed25519 生成器偶发产生不可解析的 31-byte 公钥；新增 `createE2eHostKey`，生成后用 `utils.parseKey` 校验，最多重试 8 次 |
 | 回归证据 | 通过 | 确定性 malformed-key 回归用例先红后绿；Chromium E2E `5/5`；全量 Vitest `168` 文件通过、`1` 跳过，`770` 测试通过、`2` 跳过；typecheck/lint 通过 |
 | 产品范围 | 未扩大 | 仅修改 E2E 测试夹具和测试；不改变 Web/Server/Windows/Android 运行时行为，也不替代 Android 真机、Windows 原生对话框或签名门禁 |
+
+## 2026-09-20 当前提交统一跨端门禁复验（4afba05）
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 统一本地入口 | 通过 | 在 `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4` 执行 `npm run verify:cross-platform:local`，失败即停；typecheck、lint、全量 Vitest、Web/Server/Cloud build、Chromium、Windows 打包和 Android 本地构建全部完成 |
+| 自动化回归 | 通过 | Vitest `168` 个文件通过、`1` 个跳过；`770` 个测试通过、`2` 个跳过；Chromium `5/5` |
+| Android 本地门禁 | 通过 | `npm run test:android:local` 与 `npm run build:android:debug` 均 `BUILD SUCCESSFUL`；JVM/AndroidTest 编译阶段完成；APK `8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820` |
+| Windows 本地制品 | 已复核 | NSIS `127,709,749` bytes / SHA-256 `C2A63887DFAEB3166A6788F5AA54CDF4265B0201842FAAD6694D46C3AAD67E7B`；Portable `113,688,941` bytes / SHA-256 `6BC4E6C61ACBDEF1F323F30AAE209B593FBF258E464D2319896FEF0B2E152A6A`；均 `NotSigned` |
+| 外部发布边界 | 未完成 | 不替代 Android 真机 A-01～A-17、A-17 双向实机 bundle、Windows 原生文件选择/保存对话框人工走查或正式 `v*` Authenticode 签名 |

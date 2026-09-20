@@ -618,3 +618,9 @@
 - 按 TDD 先新增确定性回归用例（malformed key → parseable key），用例先因缺少 `createE2eHostKey` 失败；随后在测试夹具中加入最多 8 次生成并用 `utils.parseKey` 校验，回归变绿。生产/客户端代码未改动。
 - 修复后 Chromium E2E `5/5` 通过；全量 Vitest `168` 个文件通过、`1` 个跳过，`770` 个测试通过、`2` 个跳过；服务端定向 `45/203`、Android `test:android:local` 与 `build:android:debug` 均为 `BUILD SUCCESSFUL`；typecheck 与 lint 通过。
 - 本条只关闭自动化 SSH fixture 的随机失败，不改变 Android 手机/平板 A-01～A-17 延期、Windows Computer Use 原生对话框人工走查和正式 Authenticode 签名的外部门禁。
+
+## 2026-09-20 当前提交统一跨端门禁复验（4afba05）
+
+- 在当前提交 `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4` 重新执行 `npm run verify:cross-platform:local`，按固定顺序通过 `typecheck`、`lint`、全量 Vitest、Web/Server/Cloud build、Chromium E2E、Windows NSIS/Portable 打包、Android JVM/AndroidTest 编译和 Debug APK 构建；Vitest `168` 个文件通过、`1` 个跳过，`770` 个测试通过、`2` 个跳过；Chromium `5/5`；Gradle 两个阶段均 `BUILD SUCCESSFUL`。
+- 本轮新生成并复核的制品：Debug APK `8,655,856` bytes / SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,749` bytes / SHA-256 `C2A63887DFAEB3166A6788F5AA54CDF4265B0201842FAAD6694D46C3AAD67E7B`；Portable `113,688,941` bytes / SHA-256 `6BC4E6C61ACBDEF1F323F30AAE209B593FBF258E464D2319896FEF0B2E152A6A`。Windows 两个制品的 Authenticode 状态均为 `NotSigned`。
+- 该条更新当前提交的本地自动化证据，不扩大为 Android 手机/平板 A-01～A-17、A-17 双向实机 bundle、Windows 原生系统文件对话框人工走查或正式签名发布通过；三项仍是外部门禁。
