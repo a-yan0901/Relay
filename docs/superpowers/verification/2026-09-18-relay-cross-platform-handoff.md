@@ -1,10 +1,10 @@
 # Relay 跨端验收交接任务书
 
-**交接日期：** 2026-09-19
+**交接日期：** 2026-09-20
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**当前实现源码基线：** `8815e4b`（包含 Android URI revoke best-effort 修正、Windows fixed bundle metadata 修复、IPC 回归和 runtime 重启回归；本次文档/真实主机续验在其后续交接提交中）。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `8815e4b` 及本文件后续交接提交；生成物必须以本文件记录的文件名、大小、SHA-256 和工具链复核。
+**当前仓库交接基线：** `ea082e6`；其中最后一个业务代码提交为 `96de623`，其后的 `7cc32f4`、`8c1d403`、`aba6ff0`、`ea082e6` 为工作流/验证文档交接。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `ea082e6`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -13,13 +13,15 @@
 
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
-| Web | ✅ 自动化基线可复现 | 标准全量回归 161 个测试文件通过、1 个跳过；731 个测试通过、2 个跳过；typecheck、lint、build、E2E 4/4 | 无本次交接阻塞项 |
-| Windows | 🟡 已有打包与安装证据，平台门禁未完成 | root Electron 真实服务器 UI smoke；`npm run package:windows` 已本地离线生成 NSIS/portable；Electron ABI 149 native load、NSIS 安装/启动/卸载通过 | 升级迁移、崩溃恢复、打包后完整 SSH/SFTP/Vault/UI 任务链、签名和持久制品来源 |
-| Android | 🟡 已完成有限设备 SSH/SFTP 证据，不代表平台完成 | Kotlin/JVM/connected instrumentation、Debug APK；当前 APK 已安装两台 Android 16 真机；2407 真实主机 32 MiB 原生 URI 上传、取消、暂停/继续和哈希校验通过，25091 完成系统选择器上传/下载；本轮补齐 Android 内置主题同步，并在两台真机验证 Everforest Dark/16px 经 force-stop、重启、解锁后仍保持 | Host Key 变更、私钥、网络切换、URI 立即释放、返回键、软键盘、锁屏/进程回收、grid/list、低内存和 A-01～A-17 其余项目 |
+| Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `163` 个文件通过、`1` 个跳过；`750` 个测试通过、`2` 个跳过；服务端定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
+| Windows | 🟡 打包与隔离恢复已复核，平台门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复和 CI artifact 均有证据 | 签名、旧版本升级/回滚、安装器崩溃恢复、打包后完整 SSH/SFTP/Vault/UI 任务链 |
+| Android | ⛔ 当前真机批次不可验证 | 当前只有独立 `emulator-5554`；JVM `36/36`、模拟器 instrumentation `9/9`、Debug APK `9D79…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态 | 两台真机 A-01～A-17、Host Key/私钥失败矩阵、网络/生命周期/URI/低内存和实机跨端回传 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
-本机历史上有一次 AOSP 软件模拟器因缺少 `/dev/kvm` 处于 `adb offline` 后退出；`emulator-5554` 的 fixture 结果仅作为历史可重复回归证据，不作为本次真实主机验收结论。当前交接以两台 Android 16 真机和用户提供的 SSH 主机为准。
+本次最新交接以 `emulator-5554` 的自动化证据和当前仓库基线为准；两台 Android 16 真机当前不在 ADB 列表，不能把历史真机记录扩展到当前 APK。用户提供的 SSH 主机仍是后续真机回归的目标环境。
+
+后文早期真实设备段落是历史证据；第 48 节是当前 Android 设备状态，第 49 节是当前 Windows 多轮恢复状态，二者优先于早期“当前 APK 已安装两台真机”等摘要。
 
 历史模拟器验证：`adb devices` 曾返回 `emulator-5554 device`；旧 APK `8F307F...` 在本地 in-process `ssh2` fixture 上完成 Host Key 展示、信任和 Shell 建立。该证据仅用于自动化回归溯源，不替代真实服务器证据。
 
