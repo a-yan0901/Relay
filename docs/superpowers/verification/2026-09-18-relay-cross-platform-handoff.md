@@ -15,8 +15,8 @@
 | --- | --- | --- | --- |
 | Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `168` 个文件通过、`1` 个跳过；`770` 个测试通过、`2` 个跳过；服务端 unit+integration 定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
 | Windows | 🟡 打包与隔离恢复已复核，平台发布门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复、版本化 `0.0.9 → 0.1.0 → 0.0.9` 数据保留、一次安装器中断恢复、CI artifact、真实目标 SSH/SFTP、原生 fileOpen/fileSave 流和通知 IPC 均有证据 | 真签名、真实系统文件选择/保存对话框人工走查和发布门禁 |
-| Android | ⏸️ 真机测试按用户要求延期 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `2436C5…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态；本轮不安装、不卸载、不清库 | 用户提供真机后一次数据保留部署，再集中执行 A-01～A-17、低内存和实机跨端回传 |
-| Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
+| Android | ⏸️ 真机测试按用户要求延期 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `2436C5…` 已复核；模拟器已完成 Android↔Web 实际 bundle 双向回环；手机和平板未上线，历史两台真机证据不扩展到当前制品；本轮不安装、不卸载、不清库 | 用户提供真机后一次数据保留部署，再集中执行 A-01～A-17、低内存和实机跨端回传 |
+| Vault bundle v1 | 🟡 模拟器双向实际回环已证实，完整发布验收未完成 | Android 已通过 Node V1 envelope 解密向量；模拟器 Android→Web、Web→Android 及 Android→Web 回环均有实际 bridge/服务端证据，包含字段核对和错误输入不变性 | A-17：两台真机、Windows 打包 UI 导入、完整固定向量字段/冲突矩阵和正式发布边界 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
 本次最新交接以 `emulator-5554` 的自动化证据和 `4afba05` 当前仓库基线为准；两台 Android 16 真机当前不在 ADB 列表，不能把历史真机记录扩展到当前 APK。用户提供的 SSH 主机仍是后续真机回归的目标环境。
@@ -146,7 +146,7 @@
 | A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | 待执行；新增部分证据：两台 Android 16 真机均在真实 APK 上选中 `Everforest Dark`、字号 `16px`，随后 `force-stop`、重启并解锁；两台均再次显示 Everforest、字号 16，`relay.ui.preferences.v1` 保持 `theme=everforest-dark,fontSize=16`。本轮未完成 grid/list 和完整视觉走查，故不标记整体通过。证据：[Android 偏好重启 CDP 证据](./evidence/2026-09-19-android-preferences-restart-cdp.md) |
 | A-15 | 低内存行为 | 大目录/大文件操作不明显失控；取消/退出后资源释放；无持续增长的输出/文件缓冲 | 待执行；`25091RP04C` 大目录分页期间采样 PSS `270,324 KB`，返回 Server 后 30 秒采样降至 `251,874 KB`，未观察到 OOM/ANR；当前还缺少按任务书要求的 2 分钟基线、同时进行 32 MiB 传输的每 5 秒采样和完整 `dumpsys meminfo` 摘要，因此不回填为通过。 |
 | A-16 | 秘密和网络边界 | 普通 logcat、WebView 持久化和系统备份中不出现密码/私钥/Vault 明文；客户端不要求本地 HTTP 监听 | 部分证据；`25091RP04C` 使用合成哨兵复核时，关闭 Capacitor verbose bridge 日志后 logcat、`localStorage`、`sessionStorage`、IndexedDB 均无匹配；app manifest `allowBackup=0`，且未发现 Relay/5173/3000/4173 监听。系统备份导出/恢复、长时间日志审计仍待执行。证据：[Android 私密字段日志边界](./evidence/2026-09-19-android-secret-log-boundary.md)。 |
-| A-17 | Vault bundle v1 跨端固定向量 | Web/Windows 导出 → Android 预览/应用 → Android 导出 → Web/Windows 导入；字段、计数、错误密码/篡改和原数据不变性均符合固定向量 | 待执行 |
+| A-17 | Vault bundle v1 跨端固定向量 | Web/Windows 导出 → Android 预览/应用 → Android 导出 → Web/Windows 导入；字段、计数、错误密码/篡改和原数据不变性均符合固定向量 | 待执行；独立模拟器已完成 Web→Android→Web 实际回环：Android 导出 `5,341` bytes、单 chunk、SHA-256 `781612886b301064b12e2947dc55e1f875928a6da780a34079ee86eea3c1f99a`；Web 预览/应用为 `3/2/2`，并核对合成 Host 字段。两台真机和 Windows 打包 UI 仍待验收。 |
 
 ## 6. 客观操作与判定标准
 
@@ -826,3 +826,9 @@
 - 独立内存 Web/Server 创建合成 Host 并实际导出加密 bundle：`1,401` bytes，SHA-256 `68707bbd0998a62e88bab13bd7e39bc96e171c8f5266593a5d0da62ef61ed9ec`。
 - 通过 `emulator-5554` WebView CDP 调用 Android 原生 bridge，预览得到 `1` Host、应用 `1` Host；Android 原生 Host 数量从 `2` 增至 `3`，并确认新 Host 存在。
 - 与上一条 Android→Web 证据合并后，模拟器 Android↔Web 实际 bundle 双向交接已可复核；这不替代 Android 两台真机 A-01～A-17、Windows 打包 UI 导入、原生系统对话框人工走查或正式 Authenticode 签名。
+
+## 2026-09-20 Android→Web 回环复核
+
+- 在保留数据的 `emulator-5554` 上从 Android 原生 Vault 导出当前 3 个 Host 的加密 bundle：`5,341` bytes，单 chunk，SHA-256 `781612886b301064b12e2947dc55e1f875928a6da780a34079ee86eea3c1f99a`。
+- 在新的独立内存 Web/Server Vault 中完成预览和应用，计数均为 `3 hosts / 2 groups / 2 identities`；逐字段核对 `Web CDP Handoff Host` 的名称、地址、端口、用户名和 `password` 认证类型。
+- 该回环使模拟器 Android↔Web 的实际交接证据闭合；A-17 仍不标记通过，两台真机、Windows 打包 UI 导入、原生系统对话框人工走查和正式 Authenticode 仍未完成。

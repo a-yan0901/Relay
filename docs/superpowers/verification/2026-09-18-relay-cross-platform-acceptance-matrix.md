@@ -15,7 +15,7 @@
 | SFTP 单层滚动、终端最后一行可见 | ✅ | 🟡 | 🟡 | Web 窄视口几何断言 | Windows 窗口和 Android 软键盘/安全区 |
 | Vault 锁定、重开、任务恢复状态 | ✅ | 🟡 | 🟡 | Web/Windows/Android 本地实现与 JVM/DOM 测试 | 崩溃、重启、锁屏/进程回收 |
 | 主题、字号、grid/list 偏好持久化 | ✅ | 🟡 | 🟡 | Web E2E 主题持久化与第三方 `data-theme` 隔离；Android 两台 Android 16 真机选择 Everforest/16px 后 force-stop、重启、解锁仍保持 | Windows 重启后视觉走查；Android grid/list、旋转、软键盘与完整视觉走查 |
-| Vault bundle v1 正反向导入导出 | ✅ | 🟡 | 🟡 | shared/native bundle、分块、错误输入测试；Android 已有 Node V1 加密 envelope 固定向量 | [交接任务书 A-17](./2026-09-18-relay-cross-platform-handoff.md) 的 Web↔Windows↔Android 完整 payload 固定向量实测 |
+| Vault bundle v1 正反向导入导出 | ✅ | 🟡 | 🟡 | shared/native bundle、分块、错误输入测试；独立模拟器已完成 Android↔Web 实际加密 bundle 双向回环并核对 Host/Group/Identity 字段 | [交接任务书 A-17](./2026-09-18-relay-cross-platform-handoff.md) 的两台真机、Windows 打包 UI 和完整固定向量验收 |
 | 原生安全边界：无 HTTP/cookie、IPC/bridge allowlist | ✅ | 🟡 | 🟡 | Windows policy/IPC 测试；fileOpen 只返回 sourceId、文件流留在 main；通知仅受 allowlist IPC 暴露；Android bridge schema/JVM 测试 | Windows 签名与人工系统对话框；目标设备检查端口、日志、备份和 URI |
 | 低内存边界与产物 | ✅ | 🟡 | 🟡 | Web/Server/Windows 构建；NSIS/portable PE；Electron ABI 149 native load；Debug APK；单 worker 构建 | 目标平台 RSS/低内存、签名和持久制品来源；Android 设备内存采样 |
 
@@ -31,7 +31,7 @@
 
 ## 任务状态与门禁边界
 
-- 当前仍未完成：任务 4–14；其中任务 5 的完整跨端 bundle v1 固定向量由[交接任务书 A-17](./2026-09-18-relay-cross-platform-handoff.md)执行，未通过前不能勾选任务 5、10 或 14。
+- 当前仍未完成：任务 4–14；任务 5 已取得独立模拟器 Android↔Web 实际回环证据，但 A-17 的两台真机、Windows 打包 UI 和完整发布边界仍未通过，因此不能勾选任务 5、10 或 14。
 - 任务 15 仍是 🟡 的未来同步兼容性预留，但不属于本期 Windows/Android 客户端发布门禁；本期只要求云服务缺席时本地功能不受影响。
 - 矩阵不把 Web 浏览器验证、portable 生成或 APK 安装/启动 smoke 视为 Windows/Android 完整验收；Android 交接机器应按任务书逐项回填结果，不以“能安装 APK”替代 SSH、SFTP、Vault、生命周期和低内存边界验证。
 
@@ -667,3 +667,9 @@
 - 独立内存 Web/Server 创建合成 Host 并实际导出加密 bundle：`1,401` bytes，SHA-256 `68707bbd0998a62e88bab13bd7e39bc96e171c8f5266593a5d0da62ef61ed9ec`。
 - 经 `emulator-5554` WebView CDP 调用 Android 原生 bridge，预览为 `1` Host、应用为 `1` Host；Android 原生 Host 从 `2` 增至 `3`，并核对新 Host 存在。
 - A-17 更新：模拟器 Android↔Web 实际 bundle 双向路径均已有证据；真机清单、Windows 打包 UI 导入、Windows 原生对话框和正式 Authenticode 仍未完成。
+
+## 2026-09-20 Android→Web 回环复核
+
+- 保留数据的 `emulator-5554` 从 Android 原生 Vault 导出当前 3 个 Host 的加密 bundle：`5,341` bytes，单 chunk，SHA-256 `781612886b301064b12e2947dc55e1f875928a6da780a34079ee86eea3c1f99a`。
+- 新的独立内存 Web/Server 目标完成预览/应用，计数均为 `3 hosts / 2 groups / 2 identities`；`Web CDP Handoff Host` 的名称、地址、端口、用户名和 `password` 认证类型字段核对通过。
+- 该证据只提升模拟器 Android↔Web 的实际回环状态，不把 A-17 标记为通过；两台真机、Windows 打包 UI 导入、原生系统对话框和正式 Authenticode 仍为未完成门禁。

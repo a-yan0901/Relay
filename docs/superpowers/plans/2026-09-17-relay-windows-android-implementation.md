@@ -34,7 +34,7 @@
 | 2 浏览器调用抽离 | 🟡 平台 ports、系统能力和下载边界已抽离 | Web/native TypeScript、定向 ESLint/DOM 测试 | 完整跨端路径审计 |
 | 3 手机布局与输入 | 🟡 返回键、移动工具条、SFTP 布局和过滤已实现 | DOM 测试、Web 构建 | 真机软键盘、安全区、最后一行和滚动走查 |
 | 4 Android SSH 可行性 | 🟡 JSch 候选和执行器已接入 | Kotlin 编译、Android JVM 测试；两台 Android 16 真机已完成用户指定密码主机的认证、Host Key 信任、PTY 基础操作和 SFTP 连接 smoke；2026-09-19 又在该真实主机上完成 3 轮关闭/重开/输入回归 | 私钥、ProxyJump、Host Key 变更、完整 SFTP 资源释放和异常边界 |
-| 5 Vault bundle v1 | 🟡 Android 端格式/加解密/冲突应用已实现 | bundle 定向测试、分块边界测试 | Web↔Windows↔Android 固定向量正反向实测 |
+| 5 Vault bundle v1 | 🟡 Android 端格式/加解密/冲突应用已实现 | bundle 定向测试、分块边界测试；独立模拟器已完成 Web↔Android 实际加密 bundle 双向回环并核对 Host 字段 | 两台真机 A-17、Windows 打包 UI 导入和正式发布门禁 |
 | 6 Electron shell | 🟡 shell、preload、导航和打包配置已实现 | Windows TS/构建、IPC 测试；`npm run package:windows` 已用本地 Electron 目录产出 NSIS/portable，NSIS 安装、启动、卸载通过 | Windows 升级迁移和窗口行为 |
 | 7 Windows 本地 runtime | 🟡 SQLite/Vault/SSH/SFTP/IPC 闭环代码已实现 | `build:windows`、IPC/服务端定向测试；Electron ABI 149 下 `argon2`、`better-sqlite3`、`cpu-features` 原生加载通过；当前打包版已在真实目标主机完成 Vault/Host Key/Shell/SFTP 与重启恢复；fileOpen source 流和 release 生命周期已接入 | Windows 签名和真实系统文件选择/保存对话框人工走查 |
 | 8 Windows 系统能力 | 🟡 文件句柄、剪贴板、确认、偏好、通知已接入 | 受影响 TypeScript/DOM 测试；打包版真实主机 UI、NSIS 安装/启动/卸载、无本地监听、原生 fileSave writer 上传/下载和通知 IPC smoke 通过 | 真实系统文件选择/保存对话框取消/确认、签名和完整发布矩阵 |
@@ -649,3 +649,9 @@
 - 在独立内存 Web/Server 中创建合成 Host 并实际导出加密 bundle：`1,401` bytes，SHA-256 `68707bbd0998a62e88bab13bd7e39bc96e171c8f5266593a5d0da62ef61ed9ec`。
 - 通过同一 `emulator-5554` 的 WebView CDP 调用 Android 原生 bridge，导出 bundle 预览为 `1` Host，应用为 `1` Host；Android 原生 Host 数量从 `2` 增至 `3`，并确认新 Host 存在。
 - 该条与上一条 Android→Web 证据合并后，模拟器上的加密 bundle 双向交接均有实际 bridge/服务端证据；不替代两台真机 A-01～A-17、Windows 打包 UI 导入或正式发布门禁。
+
+## 2026-09-20 Android→Web 回环复核
+
+- 在保留数据的 `emulator-5554` 上再次从 Android 原生 Vault 导出当前 3 个 Host 的 bundle：`5,341` bytes，单 chunk，SHA-256 `781612886b301064b12e2947dc55e1f875928a6da780a34079ee86eea3c1f99a`。
+- 在新的独立内存 Web/Server Vault 中完成预览和应用，计数均为 `3 hosts / 2 groups / 2 identities`；逐字段核对 `Web CDP Handoff Host` 的名称、地址、端口、用户名和 `password` 认证类型。
+- 该回环把模拟器 Android↔Web 实际交接证据串成可复核闭环，但不替代两台真机 A-01～A-17、Windows 打包 UI 导入、原生系统对话框人工走查和正式签名。
