@@ -21,9 +21,9 @@
 
 ## 当前可复现证据
 
-- Web/Server/Cloud：当前代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 的串行全量 Vitest 为 `167` 个测试文件通过、`1` 个跳过，`769` 个测试通过、`2` 个跳过；服务端 unit+integration 定向回归为 `45` 个文件、`203` 个测试；`typecheck`、`lint`、`build` 和 Chromium E2E `5/5` 通过。
+- Web/Server/Cloud：当前代码基线 `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4` 的串行全量 Vitest 为 `168` 个测试文件通过、`1` 个跳过，`770` 个测试通过、`2` 个跳过；服务端 unit+integration 定向回归为 `45` 个文件、`203` 个测试；`typecheck`、`lint`、`build` 和 Chromium E2E `5/5` 通过。
 - Windows（历史预览记录，非本轮新产物）：源码 commit `75cc630` 上曾执行 `npm run build:windows` 和 `npm run package:windows:portable`；本机残留 `dist/releases-portable-preview/Relay-0.1.0-x64.exe`，SHA-256 `1A7B61C6DD7C846BD0CC924A05FA812032A83691CE7D76ECAC2106413359D04C`，大小 457,281,531 bytes，签名状态为 `NotSigned`。`npmRebuild=false` 的预览包不能替代 Windows native ABI、安装/升级和完整任务链验收。
-- Android（历史设备回归记录）：源码 commit `d3c4c62` 的 APK 大小 8,633,367 bytes，SHA-256 为 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`；本条的真机 SSH/SFTP 结果继续有效，但当前 APK 制品以交接任务书第 2 节的 `158F...ED045` 为准。两台真机对用户提供的 `106.14.61.92:22` 密码主机完成 Host Key trust、`/tmp` SFTP 列举（19 项/台）、终端 resize/写入/关闭，并连续 3 轮关闭/重开后输入 `whoami` 返回 `t2`；手机重装后另有 `echo REAL_SERVER_2407_REINSTALLED` 真实回显，真实 UI 中完成两台 Console 命令回显和 `25091RP04C` 的 `/`/`/tmp` 浏览。SFTP 完整任务矩阵、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
+- Android（历史设备回归记录）：源码 commit `d3c4c62` 的 APK 大小 8,633,367 bytes，SHA-256 为 `D740E4D58BAA208E38D2F1DE51B86C6973745EF8C718D48C255FEBAF9D6B9BA8`；本条的真机 SSH/SFTP 结果继续有效，但不代表当前 APK 安装状态。当前 APK 为 `4afba05` 工作区生成的 `8,655,856` bytes、SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`。两台真机对用户提供的 `106.14.61.92:22` 密码主机完成 Host Key trust、`/tmp` SFTP 列举（19 项/台）、终端 resize/写入/关闭，并连续 3 轮关闭/重开后输入 `whoami` 返回 `t2`；手机重装后另有 `echo REAL_SERVER_2407_REINSTALLED` 真实回显，真实 UI 中完成两台 Console 命令回显和 `25091RP04C` 的 `/`/`/tmp` 浏览。SFTP 完整任务矩阵、私钥、变更 Host Key、生命周期、网络切换和其余 A-01～A-17 仍需设备验收。构建工具链和制品溯源要求记录在交接任务书中。
 
 - 说明：本地 in-process SSH fixture 只用于可重复的自动化回归；上述 Android 真机结论使用的是用户提供的 `106.14.61.92:22`，账号为 `t2`，密码未写入仓库。
 

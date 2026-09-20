@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-20
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**当前仓库交接基线：** `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`；本提交包含 Windows 原生文件选择/流式上传、桌面通知 IPC 和统一跨端本地验证入口。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
+**当前仓库交接基线：** `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4`；该基线包含此前的 Windows 原生文件选择/流式上传、桌面通知 IPC 和统一跨端本地验证入口，并补齐了 Chromium SSH fixture 的随机密钥回归。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `4afba05c13063be5bfb5b57be945f1fe4e6ec7e4`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -13,13 +13,13 @@
 
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
-| Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `167` 个文件通过、`1` 个跳过；`769` 个测试通过、`2` 个跳过；服务端 unit+integration 定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
+| Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `168` 个文件通过、`1` 个跳过；`770` 个测试通过、`2` 个跳过；服务端 unit+integration 定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
 | Windows | 🟡 打包与隔离恢复已复核，平台发布门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复、版本化 `0.0.9 → 0.1.0 → 0.0.9` 数据保留、一次安装器中断恢复、CI artifact、真实目标 SSH/SFTP、原生 fileOpen/fileSave 流和通知 IPC 均有证据 | 真签名、真实系统文件选择/保存对话框人工走查和发布门禁 |
 | Android | ⏸️ 真机测试按用户要求延期 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `2436C5…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态；本轮不安装、不卸载、不清库 | 用户提供真机后一次数据保留部署，再集中执行 A-01～A-17、低内存和实机跨端回传 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
-本次最新交接以 `emulator-5554` 的自动化证据和当前仓库基线为准；两台 Android 16 真机当前不在 ADB 列表，不能把历史真机记录扩展到当前 APK。用户提供的 SSH 主机仍是后续真机回归的目标环境。
+本次最新交接以 `emulator-5554` 的自动化证据和 `4afba05` 当前仓库基线为准；两台 Android 16 真机当前不在 ADB 列表，不能把历史真机记录扩展到当前 APK。用户提供的 SSH 主机仍是后续真机回归的目标环境。
 
 后文早期真实设备段落是历史证据；第 48 节是当前 Android 设备状态，第 49 节是当前 Windows 多轮恢复状态，二者优先于早期“当前 APK 已安装两台真机”等摘要。
 
@@ -44,10 +44,10 @@
 
 - 文件：`apps/android/android/app/build/outputs/apk/debug/app-debug.apk`
 - 应用 ID：`cn.ayan.relay`
-- 应用代码基线：本次 Android 内置主题同步修订（随本次文档修订提交）
-- 构建时间（文件时间，Asia/Shanghai）：`2026-09-19 20:52:24`
-- 大小：`8,633,755` bytes
-- SHA-256：`561351D1B83050CD3F60D358675366E4379BF7AC146D290440C601300314AA9B`
+- 应用代码基线：`4afba05` 工作区；本次代码提交只修复 E2E fixture，Android 运行时代码与当前 APK 一致
+- 构建时间（文件时间，Asia/Shanghai）：`2026-09-20 11:05:41`
+- 大小：`8,655,856` bytes
+- SHA-256：`2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`
 - 构建命令：
 
   ```powershell
@@ -68,8 +68,8 @@
 ### Windows x64 制品
 
 - 生成命令：`npm run package:windows`；脚本使用 `node_modules/electron/dist`，NSIS 与 portable 分别输出到 `dist/releases/nsis` 和 `dist/releases/portable`，不依赖外部 Electron 下载。
-- NSIS 文件：`dist/releases/nsis/Relay-0.1.0-x64.exe`；构建时间 `2026-09-19 14:47:08`；大小 `127,632,075` bytes；SHA-256 `979E3D6CECD611AE99F3DE3CA41D3E6A298A5906196B685B61318A5853FDF20F`；签名 `NotSigned`。
-- Portable 文件：`dist/releases/portable/Relay-0.1.0-x64.exe`；构建时间 `2026-09-19 14:50:42`；大小 `113,552,550` bytes；SHA-256 `82F8D40377037DF2392CFF2B20F7ED0E537C7011D118EEDFC99C01B37C0CAC7D`；签名 `NotSigned`。
+- NSIS 文件：`dist/releases/nsis/Relay-0.1.0-x64.exe`；构建时间 `2026-09-20 16:59:16`；大小 `127,709,749` bytes；SHA-256 `C2A63887DFAEB3166A6788F5AA54CDF4265B0201842FAAD6694D46C3AAD67E7B`；签名 `NotSigned`。
+- Portable 文件：`dist/releases/portable/Relay-0.1.0-x64.exe`；构建时间 `2026-09-20 17:04:51`；大小 `113,688,941` bytes；SHA-256 `6BC4E6C61ACBDEF1F323F30AAE209B593FBF258E464D2319896FEF0B2E152A6A`；签名 `NotSigned`。
 - Electron `44.4.1` ABI `149` 下 `argon2`、`better-sqlite3`、`cpu-features` 加载通过；NSIS 静默安装、启动存活 5 秒、静默卸载通过。当前仍未做升级迁移、崩溃恢复和打包后完整 SSH/SFTP/Vault/UI 任务链验收。
 
 上述文件当前只存在于本机 gitignored 生成目录，不会随仓库 clone/checkout 交付。本仓库未配置可追溯的 GitHub Release 附件、制品服务器或跨机器共享目录；交接执行人应通过受控的 `scp`、SFTP 或共享目录复制，并在目标机再次运行 SHA-256 比对上述 hash。最终签收前必须补一条持久制品来源（URL、Release 附件或共享目录路径）；若没有该来源，状态只能保持 🟡。
