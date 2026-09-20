@@ -682,3 +682,12 @@
 - Android 本地门禁 JVM `40/40`，AndroidTest APK 编译成功；Debug APK `8,655,856` bytes / SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`。
 - Windows 本轮制品：NSIS `127,709,761` bytes / SHA-256 `1E37BA6F24561AF0A17C536A4AE497EDF1D8A1B7E109424F96AA92043F49AB3A`；Portable `113,688,948` bytes / SHA-256 `28398162D5B523B710C0E051E45185293C1405705D5194EF87F02ECDE855C982`；两者 `Get-AuthenticodeSignature=NotSigned`。
 - 本轮验证入口不调用 `adb`，没有安装/卸载/清理 Android 设备；真机 A-01～A-17、Windows 原生系统对话框人工走查、正式签名以及 A-11 分享路径仍不标记完成。
+
+## 2026-09-20 A-11 系统分享链路实现与本地回归（提交 `716a552`）
+
+- Web 共享层新增可选 `PlatformServices.shareWriter`；SFTP 远端文件只在原生 shell 显式提供该能力时显示“分享”入口，浏览器和 Windows 不广告 Android Sharesheet 能力。分享复用既有 32 KiB 流式下载和 transfer 状态，不把远端绝对路径暴露给平台层。
+- Android bridge 新增受限 `system.share.open/write/close/cancel`；原生使用 `cache/relay-share/<随机目录>/<安全文件名>` 临时文件，关闭时经 `FileProvider` 发出只读 `ACTION_SEND` chooser，取消/失败立即递归清理；已关闭分享文件保留 1 小时，executor 启动时回收过期缓存，最多 2 个并发分享 writer。
+- TDD 证据：Web 原生 writer、SFTP 分享按钮/右键菜单先红后绿；Android `AndroidShareCacheTest` 先因缺少 TTL helper 失败，随后与现有 JVM 套件合计 `41/41` 通过。未新增服务端协议或 HTTP 路径。
+- 本地统一本地门禁在该代码树完成：Vitest `168` 个文件通过、`1` 个跳过，`773` 个测试通过、`2` 个跳过；typecheck、lint、Web/Server/Cloud build、Chromium `5/5`、Windows NSIS/Portable、Android JVM/AndroidTest 编译和 Debug APK 均成功。
+- 当前未部署 Debug APK。产物：APK `8,656,201` bytes / SHA-256 `3D1E41AB976D344A1C0AFB7A360520C4C326C0C1A5FF270E24B4F92D31D7DA53`；NSIS `127,709,814` bytes / SHA-256 `9D2C242122FF5A62554D03B402C908B83FFCFD30C32087585553AB2AEFC9BE57`；Portable `113,689,162` bytes / SHA-256 `ACAF5FEDD0978C478BCAA04553DF2415DC425214CCD19848CA0FE4AE992010BB`。Windows 两个制品均 `NotSigned`。
+- A-11 仍不是完成：手机/平板未触碰，尚缺真机系统分享面板、接收端读取、厂商拒绝提示，以及任务结束后 Activity-owned URI grant 的即时释放证据；恢复设备后按一次数据保留部署和全量清单回归，不为分享单项反复重装。

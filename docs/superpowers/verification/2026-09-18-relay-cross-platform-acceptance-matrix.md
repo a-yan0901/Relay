@@ -703,3 +703,13 @@
 | Windows 本地制品 | 通过构建，发布未完成 | NSIS `127,709,761` bytes / SHA-256 `1E37BA6F24561AF0A17C536A4AE497EDF1D8A1B7E109424F96AA92043F49AB3A`；Portable `113,688,948` bytes / SHA-256 `28398162D5B523B710C0E051E45185293C1405705D5194EF87F02ECDE855C982`；均 `NotSigned` |
 | Android 本地门禁 | 通过构建 | JVM `40/40`、AndroidTest APK 编译、Debug APK 构建成功；APK SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`；不替代真机 |
 | 外部平台边界 | 未完成 | 本轮不调用 `adb`；Android 真机 A-01～A-17、Windows 原生系统文件对话框人工走查、正式签名和 A-11 分享路径继续保持未完成 |
+
+## 2026-09-20 A-11 分享链路代码收口（提交 `716a552`）
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Web/原生共享端口 | 自动化通过 | `PlatformServices.shareWriter` 为可选能力；native writer 测试覆盖 `system.share.open/write/close`、32 KiB bounded writer 和未显式开启时不广告；SFTP DOM 覆盖文件按钮和右键“分享”入口。 |
+| Android 分享实现 | 代码/构建通过 | `system.share.open/write/close/cancel` 纳入 bridge allowlist；app-private cache 临时文件通过 `FileProvider` 以只读 URI 启动系统 chooser；取消/失败清理，启动时清理超过 1 小时的分享缓存，最多 2 个 writer。Android JVM `41/41`、AndroidTest 编译、Debug APK 构建通过。 |
+| 跨端统一本地门禁 | 通过 | Vitest `168` 文件通过、`1` 跳过，`773` 测试通过、`2` 跳过；typecheck、lint、Web/Server/Cloud build、Chromium `5/5`、Windows NSIS/Portable 和 Android 本地门禁均成功。 |
+| 当前产物 | 已生成，未部署 | APK `8,656,201` bytes / SHA-256 `3D1E41AB976D344A1C0AFB7A360520C4C326C0C1A5FF270E24B4F92D31D7DA53`；NSIS `127,709,814` bytes / SHA-256 `9D2C242122FF5A62554D03B402C908B83FFCFD30C32087585553AB2AEFC9BE57`；Portable `113,689,162` bytes / SHA-256 `ACAF5FEDD0978C478BCAA04553DF2415DC425214CCD19848CA0FE4AE992010BB`；Windows 均 `NotSigned`。 |
+| A-11 真机闭环 | 未完成（🟡） | 手机/平板本轮按要求延期；尚缺 Sharesheet 接收端、权限拒绝提示和 Activity-owned URI grant 即时释放证据，不以本地代码/模拟器构建代替真机验收。 |

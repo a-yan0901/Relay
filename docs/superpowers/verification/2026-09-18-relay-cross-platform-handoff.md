@@ -140,7 +140,7 @@
 | A-08 | 软键盘、旋转和安全区 | 输入框不被键盘遮挡；横竖屏无横向溢出；旋转后工作区状态可恢复 | 待执行 |
 | A-09 | SFTP 全屏浏览 | 文件列表可完整浏览；单层纵向滚动；快速过滤按 name 实时模糊匹配；大目录可继续翻页 | 待执行；`25091RP04C` 已在真实主机 UI 浏览 `/`（36 项）和 `/tmp`，输入过滤 `relay-native` 后当前页收敛为 1 项；又在真实主机创建 300 个一次性 1-byte 测试条目，Android UI 分页读取为 `128 + 128 + 44`，随后已从真实主机删除并确认测试目录不存在。完整滚动、触控安全区和旋转仍待走查。 |
 | A-10 | SFTP 读写任务 | 上传、下载、取消、重试、部分失败均有明确结果；临时文件失败不会提交半文件 | 待执行；已有增量证据：`2407FRK8EC` 在真实主机完成 32 MiB 原生 URI 上传，远端大小/SHA-256 与源一致；约 35% 取消后既有完整目标保持不变且无 staging，暂停/继续从约 11 MiB 断点完成。`25091RP04C` 又将 `/tmp/relay-native-32m.bin` 下载到 `Download/relay-native-32m.bin`，大小 `33,554,432` bytes、SHA-256 与远端一致，Transfer Center `已完成 · 100%`；小文件系统选择器上传/下载也已完成，远端 `/` 无写权限任务 0% 后取消。完整重试、部分失败和全矩阵仍待执行。 |
-| A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 待执行；真实系统文件选择与 DocumentsUI 保存已走通；传输完成后 Activity 内仍可观察到临时 URI grant，`force-stop` 后重启 Relay 才清空 `readUriPermissions/writeUriPermissions`。任务结束立即释放、拒绝权限提示和分享仍待执行。 |
+| A-11 | SFTP URI 和分享 | 使用系统文件选择/保存/分享；任务结束释放 URI 权限；拒绝权限有可理解提示 | 部分完成（🟡）；系统文件选择/保存和失败分支 URI 回收已有实现与自动化证据。本轮提交 `716a552` 新增 Android `system.share.*` allowlist、app-private cache 临时文件、FileProvider 只读 URI、系统 Sharesheet 和取消/失败清理；分享缓存按 1 小时 TTL 在 executor 启动时回收。真机仍需验证 Sharesheet、接收端读取、厂商拒绝提示和 URI grant 即时释放，不能标记 A-11 完成。 |
 | A-12 | Vault 锁定和重开 | 锁定后秘密不可读取；正确解锁恢复；错误密码/损坏 bundle 不覆盖旧数据 | 待执行 |
 | A-13 | App 重启、锁屏、进程回收 | 本地数据仍在；旧 SSH descriptor 不被伪装复用；恢复后显示真实 `needs-reopen`、`interrupted` 或可重连状态 | 待执行；`25091RP04C` force-stop/重启后 Host 与 Vault 数据仍在，旧 Console 显示“需要重新连接”，重新打开后建立新 Shell；锁屏、旋转和完整进程回收证据仍待执行。 |
 | A-14 | 主题和界面偏好 | 用户选定主题、字号、grid/list 等偏好重启后保持；未选择时使用默认主题 | 待执行；新增部分证据：两台 Android 16 真机均在真实 APK 上选中 `Everforest Dark`、字号 `16px`，随后 `force-stop`、重启并解锁；两台均再次显示 Everforest、字号 16，`relay.ui.preferences.v1` 保持 `theme=everforest-dark,fontSize=16`。本轮未完成 grid/list 和完整视觉走查，故不标记整体通过。证据：[Android 偏好重启 CDP 证据](./evidence/2026-09-19-android-preferences-restart-cdp.md) |
@@ -858,3 +858,11 @@
 - Android JVM `40/40`，AndroidTest APK 编译成功；Debug APK：`8,655,856` bytes，SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`。
 - Windows NSIS：`127,709,761` bytes，SHA-256 `1E37BA6F24561AF0A17C536A4AE497EDF1D8A1B7E109424F96AA92043F49AB3A`；Portable：`113,688,948` bytes，SHA-256 `28398162D5B523B710C0E051E45185293C1405705D5194EF87F02ECDE855C982`；两者 `Get-AuthenticodeSignature=NotSigned`。
 - 本轮没有调用 `adb`，没有安装/卸载/清理手机或平板；真机 A-01～A-17、Windows 原生系统文件对话框人工走查、正式 Authenticode 签名和 A-11 分享路径仍未完成。
+
+## 2026-09-20 A-11 系统分享实现交接（提交 `716a552`）
+
+- 交接代码范围：Web `PlatformServices.shareWriter` → SFTP 文件分享入口 → 原生 `system.share.open/write/close/cancel`。仅用户主动点击单个远端文件时下载并分享；不支持的 Web/Windows shell 不显示入口。
+- Android 文件交接语义：32 KiB 分块写入 app-private `cache/relay-share`，关闭时经已有 `${applicationId}.fileprovider` 发送只读 `ACTION_SEND` chooser；取消、传输失败或 chooser 启动失败删除临时目录；成功发起后保留至 1 小时 TTL，应用启动时清理过期缓存。接收端可通过 URI 读取，不暴露远端路径。
+- 自动化结果：Web 分享协议/DOM 测试与 Android TTL 测试先红后绿；Android JVM `41/41`，AndroidTest 编译成功；统一本地门禁 Vitest `168/168` 文件、`773` 通过、`2` 跳过，Chromium `5/5`，Web/Server/Cloud、Windows 打包和 Android Debug 构建成功。
+- 当前 Debug APK：`8,656,201` bytes，SHA-256 `3D1E41AB976D344A1C0AFB7A360520C4C326C0C1A5FF270E24B4F92D31D7DA53`；NSIS：`127,709,814` bytes，SHA-256 `9D2C242122FF5A62554D03B402C908B83FFCFD30C32087585553AB2AEFC9BE57`；Portable：`113,689,162` bytes，SHA-256 `ACAF5FEDD0978C478BCAA04553DF2415DC425214CCD19848CA0FE4AE992010BB`；Windows 两个制品均未签名。
+- 验收边界：本轮没有部署或触碰手机/平板；A-11 仍需实机打开系统分享面板、选择接收端、验证接收端读取、拒绝提示和 URI grant 释放。Windows CUA 原生窗口为空、系统文件对话框人工走查和正式签名仍是外部阻塞项。
