@@ -525,3 +525,8 @@
 - 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe`、隔离临时 userData 和用户指定的真实 `106.14.61.92:22` / `t2` 主机，通过 Windows 打包版拖放入口上传一次性文件 `relay-packaged-delete-<timestamp>.txt`。
 - 在 SFTP 列表点击该文件的删除按钮，确认弹层正常出现；点击“确认删除”后第 2 次 500 ms 轮询时列表项消失，弹层关闭且没有错误提示，证明删除调用已完成并触发目录刷新。
 - 使用独立 SFTP `stat` 对同一精确远端路径复核，返回 `SSH_FX_NO_SUCH_FILE=2`（`remote-after-delete=absent`）；临时 userData、测试进程和残留远端标记均已清理。该条关闭打包版删除确认/刷新证据；真实系统文件选择/保存对话框人工交互、Windows 真签名和 Android 真机门禁仍待补验。
+
+## 2026-09-20 Windows 打包版系统剪贴板回环
+
+- 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe` 和隔离临时 userData，通过真实 Electron preload `relayDesktop.invoke` 调用 `system.clipboard.writeText` 写入合成标记，再调用 `system.clipboard.readText` 读回。
+- 回环结果为 `clipboard-roundtrip=true`；测试结束前再次写入空字符串清理系统剪贴板，临时 userData 和测试进程已清理。该条补齐 Windows 打包版主进程/预加载/系统剪贴板 IPC 证据；通知、真实系统文件对话框人工交互、签名和 Android 真机门禁仍待补验。

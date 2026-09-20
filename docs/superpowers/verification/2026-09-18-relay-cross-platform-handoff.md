@@ -699,3 +699,8 @@
 - 删除按钮打开“删除远程文件？”确认弹层；确认后第 2 次 500 ms 轮询时列表项消失、弹层关闭、无错误提示。
 - 独立 SFTP `stat` 对同一路径返回 `SSH_FX_NO_SUCH_FILE=2`，记录为 `remote-after-delete=absent`；临时远端标记、userData 和测试进程均已清理。
 - 本条关闭打包版删除确认和远端删除刷新证据；Windows 真实系统文件选择/保存对话框人工交互、真签名与 Android 两台真机 A-01～A-17 仍未闭环。
+
+## 57. 2026-09-20 Windows 打包版系统剪贴板回环交接
+
+- 使用当前打包版 `Relay.exe` 与隔离临时 userData，通过真实 Electron preload→main IPC 调用 `system.clipboard.writeText` 写入合成标记，再调用 `system.clipboard.readText` 读回，结果为 `clipboard-roundtrip=true`。
+- 测试结束前写入空字符串清理系统剪贴板，临时 userData 和测试进程均已清理。本条补齐 Windows 剪贴板 IPC 证据；通知、真实系统文件选择/保存对话框人工交互、Windows 真签名和 Android 两台真机 A-01～A-17 仍未闭环。
