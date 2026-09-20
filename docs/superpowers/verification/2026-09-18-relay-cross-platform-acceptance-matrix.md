@@ -679,3 +679,9 @@
 - `emulator-5554` 原生 Vault 导出当前 bundle：`5,341` bytes，单 chunk，SHA-256 `94b7b840292be1f9d35b2355b26cec6816680b79720da0143e0131dddd7efe40`。
 - 隔离 Windows local runtime 对错误密码和篡改 ciphertext 均返回 `VAULT_BUNDLE_INVALID`，拒绝后数据为 `0/0/0`；正确预览/应用为 `3 hosts / 2 groups / 2 identities`。
 - Host 字段核对通过；Profile 边界为 `5` 个内置 Profile 加 `1` 个自定义 Profile，未发生内置 Profile 重复导入。该证据不替代 Windows 打包 UI 导入、两台真机或正式签名。
+
+## 2026-09-20 Windows local runtime→Android 回环复核
+
+- 隔离 Windows local runtime 通过 bounded IPC 导出合成 Host bundle：`1,429` bytes，单 chunk，SHA-256 `2ceed64a6752b9515511085cf927695c1da1c0d8b543fa9ed393f40d99ef1811`。
+- Android 原生 bridge 对错误密码和篡改 ciphertext 均 `VAULT_BUNDLE_INVALID`，拒绝后 Host 数量保持 `3`；正确预览/应用为 `1` Host，增至 `4`，并核对新 Host 字段。
+- 该证据补齐模拟器 Windows local runtime↔Android 实际双向路径；Windows 打包 UI、两台真机、原生系统对话框和正式签名仍未完成。

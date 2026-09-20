@@ -838,3 +838,9 @@
 - 从保留数据的 `emulator-5554` 原生 Vault 导出当前 bundle：`5,341` bytes，单 chunk，SHA-256 `94b7b840292be1f9d35b2355b26cec6816680b79720da0143e0131dddd7efe40`。
 - 隔离 `createWindowsLocalRuntime({ dataDir: ':memory:' })` 对错误密码和篡改 ciphertext 均返回 `VAULT_BUNDLE_INVALID`，拒绝后 hosts/groups/identities 保持 `0/0/0`；正确预览/应用为 `3/2/2`。
 - `Web CDP Handoff Host` 的名称、地址、端口、用户名和 `password` 认证类型核对通过；Profile 为 `5` 个内置加 `1` 个自定义 `vector-terminal-profile`，无重复导入。该证据补齐 Android→Windows local runtime 当前回环，但不替代 Windows 打包 UI 导入、两台真机和正式签名。
+
+## 2026-09-20 Windows local runtime→Android 回环复核
+
+- 隔离 Windows local runtime 通过 bounded IPC 导出合成 Host bundle：`1,429` bytes，单 chunk，SHA-256 `2ceed64a6752b9515511085cf927695c1da1c0d8b543fa9ed393f40d99ef1811`。
+- Android 原生 bridge 对错误密码和篡改 ciphertext 均返回 `VAULT_BUNDLE_INVALID`，拒绝后 Host 数量保持 `3`；正确预览/应用为 `1` Host，数量增至 `4`，并核对名称、地址、端口、用户名和 `password` 认证类型。
+- 该条补齐模拟器 Windows local runtime→Android 实际回传；A-17 仍不标记通过，Windows 打包 UI 导入、两台真机、原生系统对话框人工走查和正式 Authenticode 仍未完成。
