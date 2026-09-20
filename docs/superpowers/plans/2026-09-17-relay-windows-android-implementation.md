@@ -577,3 +577,8 @@
 - 在当前提交上执行 `npm run test:android:local`，Gradle `BUILD SUCCESSFUL`；Android JVM 单元测试结果为 `38/38` 通过，另完成 `assembleDebugAndroidTest` 编译。该入口不调用 `adb`、不安装、不卸载、不清理应用数据，也不申请新授权。
 - 随后执行 `npm run build:android:debug`，Gradle `BUILD SUCCESSFUL`；当前 Debug APK 为 `apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，大小 `8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`。
 - 本轮只证明当前共享 Web 资源、Android 原生编译和 AndroidTest 编译未受 Windows 文件服务变更影响；不把本地编译结果扩展为真机 A-01～A-17 或 A-17 双向 bundle 验收。手机和平板继续按用户要求延期，恢复后执行一次数据保留部署，再集中全量回归。
+
+## 2026-09-20 Web/Server 当前提交复验
+
+- 当前提交执行 `npm run test:e2e -- --project=chromium --workers=1`，Chromium `5/5` 通过，覆盖 Vault/Host/终端、320px 离线路径、SFTP/批量任务、布局持久化和断线自动重连。
+- 当前提交执行 `npm run build`，`build:web`、`build:server`、`build:cloud` 均成功；仅有既有 Vite chunk size warning，没有构建错误。该结果继续支持 Web 与独立服务端交付，但不替代 Windows 原生窗口、签名和 Android 真机门禁。

@@ -754,3 +754,9 @@
 - 当前提交执行 `npm run test:android:local` 成功：Android JVM 单元测试 `38/38` 通过，并完成 `assembleDebugAndroidTest` 编译。
 - 当前提交执行 `npm run build:android:debug` 成功；Debug APK `apps/android/android/app/build/outputs/apk/debug/app-debug.apk` 为 `8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`。
 - 本轮只做本地编译/回归，没有调用 `adb`，没有安装、卸载、`pm clear` 或新增运行时授权；该结果不替代两台真机 A-01～A-17 和 A-17 双向 bundle 实机验收。设备恢复后按“单次数据保留部署→集中全量测试→集中修复”执行。
+
+## 2026-09-20 Web/Server 当前提交复验
+
+- 当前提交 `npm run test:e2e -- --project=chromium --workers=1` 通过 `5/5`，覆盖 Vault/Host/终端、320px 离线路径、SFTP/批量任务、布局持久化和断线自动重连。
+- 当前提交 `npm run build` 成功完成 `build:web`、`build:server`、`build:cloud`；Vite 仅报告既有 chunk size warning，无构建错误。
+- 本条关闭当前 Web/独立服务端自动化构建与浏览器验收复核，不扩大 Windows 原生系统对话框/签名或 Android 真机 A-01～A-17、A-17 双向 bundle 的结论。

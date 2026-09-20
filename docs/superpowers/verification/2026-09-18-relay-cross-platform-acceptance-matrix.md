@@ -577,3 +577,11 @@
 | 当前 Debug APK | 已生成 | `apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，`8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820` |
 | 设备影响范围 | 未触碰设备 | 本轮未调用 `adb`，未安装、卸载、`pm clear` 或新增运行时授权；不能替代 Android 真机 A-01～A-17 |
 | 后续 Android 交接 | 延期 | 手机和平板重新上线后，一次数据保留部署，再按清单集中测试和集中修复；A-17 双向 bundle 实机核对继续未完成 |
+
+## 2026-09-20 Web/Server 当前提交复验
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Web Chromium 验收 | 通过 | `npm run test:e2e -- --project=chromium --workers=1`：`5/5` 通过，覆盖 Vault/Host/终端、320px 离线、SFTP/批量任务、布局恢复和断线自动重连 |
+| Web/Server/Cloud 构建 | 通过 | `npm run build` 中 `build:web`、`build:server`、`build:cloud` 均成功；只有既有 Vite chunk size warning |
+| 跨端边界 | 未改变 | 本轮不替代 Windows 原生系统对话框/签名或 Android 真机 A-01～A-17、A-17 双向 bundle 验收 |
