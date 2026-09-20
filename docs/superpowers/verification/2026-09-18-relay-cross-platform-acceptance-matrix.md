@@ -532,3 +532,12 @@
 | 原生文件选择/保存对话框人工取消/确认 | 未执行 | Computer Use 的 `sky` RPC 返回 `Trusted RPC service is not configured: sky`，没有可控原生窗口；未打开对话框、未选择文件、未上传/保存、未改变 Relay 数据 |
 | 回退方式 | 不采用 | 不使用 PowerShell UI 自动化绕过 Windows Computer Use 安全边界；现有 IPC allowlist、source 生命周期、32 KiB 流和自动化测试仍只证明代码路径 |
 | Android 设备状态 | 按用户要求延期 | 手机/平板 A-01～A-17 不安装、不卸载、不清库、不新增授权，待设备重新上线后统一部署和全量验收 |
+
+## 2026-09-20 Windows 标签签名发布门禁
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 签名配置注入 | 代码已补齐 | `v*` 标签只读取 `WINDOWS_CSC_LINK`、`WINDOWS_CSC_KEY_PASSWORD` secrets，并注入当前 job 的 `CSC_LINK`/`CSC_KEY_PASSWORD`；缺失或含换行时在打包前失败 |
+| 签名清单校验 | 自动门禁已补齐 | `apps/windows/verify-release-manifest.mjs` 要求每个 NSIS/Portable manifest entry 的 `signatureStatus=Valid` 且存在 signer，校验失败不会进入 artifact 上传 |
+| 当前签名状态 | 未通过 | 当前没有证书 secrets，未生成真实签名包；`main` 技术预览仍可记录 `NotSigned`，正式 `v*` 发布会 fail closed |
+| 自动化验证 | 通过 | 签名 helper/workflow wiring `4/4`，`node --check`、typecheck、lint 和全量 Vitest `165/166` 文件（`763` 通过、`2` 跳过）通过 |

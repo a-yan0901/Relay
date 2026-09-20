@@ -45,6 +45,26 @@ jobs:
       - name: Prepare Electron distribution
         run: npm run prepare:windows-electron
 
+      - name: Configure Windows release signing
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          WINDOWS_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          WINDOWS_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CSC_LINK)) {
+            throw 'Missing WINDOWS_CSC_LINK repository secret for a version-tag release.'
+          }
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CSC_KEY_PASSWORD)) {
+            throw 'Missing WINDOWS_CSC_KEY_PASSWORD repository secret for a version-tag release.'
+          }
+          if ($env:WINDOWS_CSC_LINK -match '[\r\n]' -or $env:WINDOWS_CSC_KEY_PASSWORD -match '[\r\n]') {
+            throw 'Windows signing secrets must not contain newline characters.'
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "CSC_LINK=$env:WINDOWS_CSC_LINK"
+          Add-Content -Path $env:GITHUB_ENV -Value "CSC_KEY_PASSWORD=$env:WINDOWS_CSC_KEY_PASSWORD"
+
       - name: Build Windows packages
         run: npm run package:windows
 
@@ -79,6 +99,10 @@ jobs:
           }
           $manifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 'dist/releases/release-manifest.json'
           Get-Content -Raw 'dist/releases/release-manifest.json'
+
+      - name: Enforce signed version-tag release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node apps/windows/verify-release-manifest.mjs dist/releases/release-manifest.json
 
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4

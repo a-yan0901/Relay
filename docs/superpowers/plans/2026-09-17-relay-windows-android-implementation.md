@@ -541,6 +541,13 @@
 - 因此本次没有打开文件选择/保存对话框、没有选择或上传文件、没有落盘文件，也没有改变 Relay 用户数据；Android 手机和平板仍按用户要求未安装、未卸载、未清库、未新增授权。
 - Ruling：不使用 PowerShell UI 自动化绕过 Computer Use 环境限制；真实系统对话框的取消/确认门禁继续保持未完成。若错误地把 IPC/单测当成人工门禁，代价是遗漏系统对话框实际行为；待 Computer Use 可用或人工在目标 Windows 主机走查后再关闭。
 
+## 2026-09-20 Windows 标签发布签名门禁
+
+- Windows CI 新增正式标签签名配置：`v*` 标签必须提供 `WINDOWS_CSC_LINK` 与 `WINDOWS_CSC_KEY_PASSWORD` secrets，并只在当前 job 中注入 electron-builder 使用的 `CSC_LINK`/`CSC_KEY_PASSWORD` 环境变量；主分支技术预览仍允许 `NotSigned`。
+- 新增 `apps/windows/verify-release-manifest.mjs`，正式标签上传前要求 NSIS/Portable 清单中的每个制品 `signatureStatus=Valid` 且存在 signer；缺少证书、签名无效或未签名时在上传前失败关闭。
+- TDD/验证：签名清单 helper 与 workflow wiring 定向测试先红后绿，`4/4` 通过；helper `node --check`、`npm run typecheck`、`npm run lint` 和串行全量 Vitest `165` 文件通过/`1` 跳过、`763` 测试通过/`2` 跳过。
+- 当前没有签名证书 secrets，未伪造签名或宣称签名发布通过；真实 `v*` 制品仍等待证书配置。Android 手机/平板继续按用户要求延期。
+
 ## 2026-09-20 Windows 打包版系统剪贴板回环
 
 - 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe` 和隔离临时 userData，通过真实 Electron preload `relayDesktop.invoke` 调用 `system.clipboard.writeText` 写入合成标记，再调用 `system.clipboard.readText` 读回。

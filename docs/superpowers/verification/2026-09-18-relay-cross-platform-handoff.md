@@ -721,3 +721,10 @@
 - 本次没有打开对话框、选择文件、上传文件或保存文件，也没有改变 Relay 用户数据；不把该项记录为通过。
 - 不采用 PowerShell UI 自动化回退，以免绕过 Windows Computer Use 的安全边界。待 Computer Use 服务可用或目标 Windows 主机人工走查后，补回“取消不创建传输、确认进入流式传输/保存”的证据。
 - Android 手机和平板仍按用户要求延期，保持不安装、不卸载、不清库、不新增授权。
+
+## 60. 2026-09-20 Windows 标签发布签名门禁
+
+- `.github/workflows/windows-package.yml` 已增加正式标签的签名配置：`v*` 运行必须拥有 `WINDOWS_CSC_LINK` 与 `WINDOWS_CSC_KEY_PASSWORD` secrets；两者只写入当前 job 的 `CSC_LINK`/`CSC_KEY_PASSWORD` 环境变量，缺失或含换行会在打包前失败。
+- 新增 `apps/windows/verify-release-manifest.mjs`，在 artifact 上传前读取 `release-manifest.json`，要求所有 NSIS/Portable 制品 `signatureStatus=Valid` 且 signer 非空；主分支技术预览不强制签名。
+- 定向签名测试先红后绿，最终 `4/4`；`node --check`、typecheck、lint 和全量 Vitest `165` 文件通过、`1` 跳过，`763` 测试通过、`2` 跳过。
+- 当前未配置证书 secrets，因此没有把 `NotSigned` 制品标为发布通过；待证书配置后再触发 `v*`，完成真实 Authenticode 制品验收。Android 手机/平板仍按用户要求延期。
