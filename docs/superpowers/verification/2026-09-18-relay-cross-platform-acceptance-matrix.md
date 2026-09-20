@@ -476,3 +476,14 @@
 | 当前 NSIS 替换后数据读取 | 通过（跨制品） | 当前 NSIS 临时安装包复用同一 userData，解锁后成功读回 Host；窗口标题为 `Relay SSH Workspace` |
 | 临时安装卸载 | 通过 | 静默卸载退出码 `0`，安装目录和 userData 均清理 |
 | 版本化升级/回滚 | 通过 | 见上方版本化 NSIS 回归：`0.0.9 → 0.1.0 → 0.0.9`，同一 userData 的 Host 三次均可读回 |
+
+## 2026-09-20 Windows 打包版 SSH/SFTP 任务链与重启自动恢复
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 首次 Vault/Host/Host Key/Shell/SFTP | 通过（隔离 fixture） | 当前 `dist/releases/nsis/win-unpacked/Relay.exe` 通过本地 in-process SSH/SFTP fixture 完成 Vault、Host、首次 Host Key 信任、Shell 标记 `PACKAGED_TASK_CHAIN_OK` 和 SFTP 文件 `fixture-known.txt` |
+| 进程重启后的 Console 恢复 | 通过（隔离 fixture） | 重启后只解锁 Vault；终端自动恢复绿色连接，无需用户点击重新连接，Host Key 对话框不再出现，SFTP 文件再次读取成功 |
+| 打包版结果 | 通过 | Playwright Electron 输出 `title=Relay SSH Workspace`、`restarted=true`、`autoReconnected=true`、`sftpFile=fixture-known.txt`；临时 userData/fixture 已清理 |
+| 发布门禁 | 未完成 | 本条不替代真实签名；真实目标服务器的打包 UI 全链路仍需单独补证，当前 NSIS/Portable 仍为 `NotSigned` |
+
+- 本条验证的用户可感知边界是：重启后因 Vault 安全策略需要输入一次 Vault 密码，但 SSH Console 会自动重建，不再要求用户手动执行“重新连接”。

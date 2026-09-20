@@ -493,3 +493,10 @@
 - 使用早期解压版 `dist/releases/win-unpacked/Relay.exe` 在隔离 userData 中创建合成 `Upgrade Preservation Host`；随后安装当前 NSIS 包到临时安装目录，并复用同一 userData 启动当前包。
 - 当前 NSIS 包解锁后成功读回该 Host，窗口标题为 `Relay SSH Workspace`；随后静默卸载退出码 `0`，安装目录和 userData 均清理。
 - 该证据证明旧解压制品到当前 NSIS 制品的数据保留路径可运行；由于没有可追溯的旧版本 NSIS 安装包和不同版本号，本条不关闭真正的旧版本安装→升级→回滚门禁。
+
+## 2026-09-20 Windows 打包版 SSH/SFTP 任务链与重启自动恢复
+
+- 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe` 和隔离临时 `--user-data-dir`，以本地 in-process SSH/SFTP fixture 执行完整的首次任务链：创建/解锁 Vault、保存 Host、首次 Host Key 信任、打开 Shell 并写入 `PACKAGED_TASK_CHAIN_OK`，再通过 SFTP 读取 `fixture-known.txt`。
+- 关闭打包版进程后重新启动，应用按安全边界先保持 Vault locked；测试只输入 Vault 主密码，不点击任何“重新连接”动作，随后终端自动恢复为绿色连接状态，Host Key 对话框不再出现，并再次读到 `fixture-known.txt`。
+- Playwright Electron 输出：`title=Relay SSH Workspace`、`restarted=true`、`autoReconnected=true`、`sftpFile=fixture-known.txt`。临时 fixture、userData 和测试进程均已清理。
+- 本条证明打包版在“进程重启后需要解锁 Vault”这一安全前提下可以自动重建 Console/SSH 会话；不把本地 fixture 扩大为真实发布签名或目标服务器的完整打包验收，Windows 签名和发布门禁仍未完成。

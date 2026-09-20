@@ -666,3 +666,10 @@
 - 早期解压版 `dist/releases/win-unpacked/Relay.exe` 在隔离 userData 中创建合成 `Upgrade Preservation Host`；当前 NSIS 包安装到临时目录后复用同一 userData，解锁后成功读回该 Host。
 - 当前 NSIS 临时安装包随后静默卸载退出码为 `0`，安装目录和 userData 均已清理；全过程未接触本机现有 Relay 数据。
 - 该条补充跨制品数据保留证据，但没有可追溯的旧版本 NSIS 安装包和不同版本号，不能替代真正的旧版本安装→升级→回滚验收。
+
+## 52. 2026-09-20 Windows 打包版完整任务链与 Console 自动恢复
+
+- 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe`、隔离临时 `--user-data-dir` 和本地 in-process SSH/SFTP fixture，完成首次打包版任务链：Vault 创建/解锁、Host 保存、首次 Host Key 信任、Shell 执行 `PACKAGED_TASK_CHAIN_OK`、SFTP 读取 `fixture-known.txt`。
+- 关闭进程并重新启动后，应用先按安全策略保持 Vault locked；测试只输入 Vault 主密码，不触发卸载、清库或手工“重新连接”。解锁后终端自动恢复绿色连接，Host Key 对话框不再出现，SFTP 文件再次读取成功。
+- Playwright Electron 结果：`title=Relay SSH Workspace`、`restarted=true`、`autoReconnected=true`、`sftpFile=fixture-known.txt`。临时 userData、fixture 和测试进程已清理。
+- 这条证据关闭的是当前解压打包版的本地 fixture 任务链和重启自动恢复回归；它不替代目标服务器上的完整打包 UI 复验、Windows 真签名或发布门禁。Android 本轮没有安装、卸载、`pm clear`、重复授权或数据改写。
