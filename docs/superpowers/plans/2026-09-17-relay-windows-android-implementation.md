@@ -460,6 +460,10 @@
 
 ## 2026-09-20 Android 当前构建与模拟器集中回归
 
+- Android 构建入口已在提交 `f24283a` 补齐环境自发现：Windows/macOS/Linux 按标准位置探测 Android SDK，失效的 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 自动回退；同时选择可执行的 Java 21，旧或失效的 `JAVA_HOME` 不再阻塞 Gradle。实现不写入机器绝对路径。
+- TDD 回归覆盖有效 SDK、失效 SDK 回退、环境变量设置和 Java 21 选择；新增环境单测最终为 `7/7`。`npm run test:android:local` 在无手工环境变量的新 shell 中 `BUILD SUCCESSFUL`，JVM 报告 `38/38`；`npm run build:android:debug` 同样在无手工环境变量的新 shell 中 `BUILD SUCCESSFUL`（73 tasks，18 executed，55 up-to-date）。
+- 本轮最终全量 Web Vitest 为 `164` 个文件通过、`1` 个跳过，`757` 个测试通过、`2` 个跳过；`typecheck`、`lint` 均通过。Android APK 仍为 `8,655,609` bytes / SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`。
+- 以上只验证构建入口和自动化回归；本轮没有再次安装、卸载、`pm clear` 或新增 Android 授权，真机恢复后仍按一次构建、一次数据保留部署、一次 A-01～A-17 全量验收执行。
 - 使用 session-only JDK 21、Android SDK、offline、单 worker 完成当前 Debug APK 构建；APK 为 `8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`。
 - 本机当前只有独立 AVD `emulator-5554` 在线；用户的手机和平板未出现在 `adb devices -l`，mDNS 列表为空，已知无线 ADB 端点仍不可达，因此本批次不回填真机 A-01～A-17。
 - 先以部署策略比较设备端旧 APK `73716…` 与当前 APK `9D79…`，按设计执行了一次 `adb push` + `pm install -r --user 0`；未执行 `adb uninstall`、`pm clear`，未使用 `-g`，未新增运行时授权。

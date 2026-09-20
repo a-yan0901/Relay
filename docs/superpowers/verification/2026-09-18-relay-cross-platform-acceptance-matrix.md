@@ -437,6 +437,9 @@
 
 ## 2026-09-20 Android 当前构建与集中 instrumentation 回归
 
+- Android Gradle 环境入口已在提交 `f24283a` 补齐自动探测：标准 SDK 路径、失效 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 回退和 Java 21 选择均有单测；不依赖仓库内机器绝对路径。
+- 环境单测 `7/7`、`npm run test:android:local`（JVM `38/38`，AndroidTest APK 编译）和无手工环境变量的 `npm run build:android:debug` 均通过；全量 Vitest `164` 文件通过、`757` 测试通过，另有 `1` 文件/`2` 测试按既有标记跳过。
+- 当前 APK `8,655,609` bytes / SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608` 未因本次环境修复发生变化；本轮不新增设备安装、卸载、`pm clear` 或运行时授权。
 | 验收项 | 本轮结果 | 证据与边界 |
 |---|---|---|
 | 当前 Debug APK | 通过构建 | `8,655,609` bytes；SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`；JDK 21/Android SDK、offline、单 worker |

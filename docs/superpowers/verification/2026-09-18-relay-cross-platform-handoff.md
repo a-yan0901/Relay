@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-20
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**当前仓库交接基线：** `ea082e6`；其中最后一个业务代码提交为 `96de623`，其后的 `7cc32f4`、`8c1d403`、`aba6ff0`、`ea082e6` 为工作流/验证文档交接。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `ea082e6`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
+**当前仓库交接基线：** `f24283a`；最后一个业务代码提交为 `f24283a`，其后的文档提交只更新验证交接。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `f24283a`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -13,9 +13,9 @@
 
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
-| Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `163` 个文件通过、`1` 个跳过；`750` 个测试通过、`2` 个跳过；服务端定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
+| Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `164` 个文件通过、`1` 个跳过；`757` 个测试通过、`2` 个跳过；服务端定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
 | Windows | 🟡 打包与隔离恢复已复核，平台门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复和 CI artifact 均有证据 | 签名、旧版本升级/回滚、安装器崩溃恢复、打包后完整 SSH/SFTP/Vault/UI 任务链 |
-| Android | ⛔ 当前真机批次不可验证 | 当前只有独立 `emulator-5554`；JVM `36/36`、模拟器 instrumentation `9/9`、Debug APK `9D79…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态 | 两台真机 A-01～A-17、Host Key/私钥失败矩阵、网络/生命周期/URI/低内存和实机跨端回传 |
+| Android | ⛔ 当前真机批次不可验证 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `9D79…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态 | 两台真机 A-01～A-17、Host Key/私钥失败矩阵、网络/生命周期/URI/低内存和实机跨端回传 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
@@ -634,6 +634,9 @@
 
 ## 48. 2026-09-20 Android 当前构建与集中 instrumentation 交接
 
+- Android Gradle 环境入口已在提交 `f24283a` 补齐自动探测：标准 SDK 路径、失效 `ANDROID_HOME`/`ANDROID_SDK_ROOT` 回退和 Java 21 选择均有单测；不依赖仓库内机器绝对路径。
+- 环境单测 `7/7`、`npm run test:android:local`（JVM `38/38`，AndroidTest APK 编译）和无手工环境变量的 `npm run build:android:debug` 均通过；全量 Vitest `164` 文件通过、`757` 测试通过，另有 `1` 文件/`2` 测试按既有标记跳过。
+- 当前 APK `8,655,609` bytes / SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608` 未因本次环境修复发生变化；本轮不新增设备安装、卸载、`pm clear` 或运行时授权。
 - 当前 Debug APK 使用 session-only JDK 21/Android SDK、offline、单 worker 构建成功：`8,655,609` bytes，SHA-256 `9D79BC8B7B9B63215E00655360C73C88FEB6A074DB1A14173842D4621A3DA608`。
 - 目前只有独立 AVD `emulator-5554` 在线；手机和平板没有出现在 `adb devices -l`，mDNS 为空，已知无线 ADB 端点不可达。本条不把模拟器证据写入两台真机 A-01～A-17 的结果列。
 - 设备端先发现旧 APK 哈希 `73716…` 与当前 APK 不同，按 `install-debug.mjs` 的策略执行一次 `adb push` + `pm install -r --user 0`；没有显式卸载、`pm clear`、`-g` 或新增运行时授权。
