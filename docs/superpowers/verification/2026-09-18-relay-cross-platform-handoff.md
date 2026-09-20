@@ -686,3 +686,9 @@
 - 真实 Host Key 指纹展示/信任、Shell 命令 `PACKAGED_REAL_SERVER_OK` 和 SFTP `/tmp` 读取均通过，目录返回 `36` 项。
 - 关闭后以同一临时 userData 重启，测试只输入 Vault 主密码；终端自动恢复绿色连接，没有出现“此 Console 需要重新连接”，结果为 `title=Relay SSH Workspace`、`restarted=true`、`autoReconnected=true`、`sftpEntries=36`。
 - 临时 userData、测试 Host 和进程均已清理。本条关闭真实目标服务器的打包版 SSH/SFTP 读取与重启恢复证据；Windows 真签名以及打包版文件上传/下载的系统文件交互仍未完成。Android 本轮没有安装、卸载、`pm clear`、重复授权或数据改写。
+
+## 55. 2026-09-20 Windows 打包版真实 SFTP 文件传输交接
+
+- 使用真实目标服务器和隔离打包版 userData，以拖放方式上传合成标记 `PACKAGED_REAL_TRANSFER_OK`；远端 `/tmp` 出现对应文件。
+- 通过打包版原生 `system.fileSave` writer 下载并落盘，临时文件 `26` bytes，SHA-256 `22D4B55FC8429C0905B92046FA5EC8C1746DF8034A2318E99F901710CD57CD94`，内容与上传标记一致，验证了 partial 文件写入后原子替换的路径。
+- 远端临时文件、临时 userData 和测试进程已清理。本条补齐打包版真实 SFTP 上传/下载与原生 writer 证据；真实系统文件选择/保存对话框人工交互、删除弹层、Windows 真签名和 Android 真机门禁仍未完成。

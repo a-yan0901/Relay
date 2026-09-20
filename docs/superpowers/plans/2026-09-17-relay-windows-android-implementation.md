@@ -37,7 +37,7 @@
 | 5 Vault bundle v1 | 🟡 Android 端格式/加解密/冲突应用已实现 | bundle 定向测试、分块边界测试 | Web↔Windows↔Android 固定向量正反向实测 |
 | 6 Electron shell | 🟡 shell、preload、导航和打包配置已实现 | Windows TS/构建、IPC 测试；`npm run package:windows` 已用本地 Electron 目录产出 NSIS/portable，NSIS 安装、启动、卸载通过 | Windows 升级迁移和窗口行为 |
 | 7 Windows 本地 runtime | 🟡 SQLite/Vault/SSH/SFTP/IPC 闭环代码已实现 | `build:windows`、IPC/服务端定向测试；Electron ABI 149 下 `argon2`、`better-sqlite3`、`cpu-features` 原生加载通过；当前打包版已在真实目标主机完成 Vault/Host Key/Shell/SFTP 与重启恢复 | Windows 签名和打包版文件传输完整矩阵 |
-| 8 Windows 系统能力 | 🟡 文件句柄、剪贴板、确认、偏好已接入 | 受影响 TypeScript/DOM 测试；打包版真实主机 UI、NSIS 安装/启动/卸载、无本地监听通过 | 打包版文件选择/保存、剪贴板/通知等完整系统能力走查 |
+| 8 Windows 系统能力 | 🟡 文件句柄、剪贴板、确认、偏好已接入 | 受影响 TypeScript/DOM 测试；打包版真实主机 UI、NSIS 安装/启动/卸载、无本地监听、原生文件 writer 上传/下载通过 | 真实系统文件选择/保存对话框、剪贴板/通知等完整系统能力走查 |
 | 9 Android bridge | 🟡 有界帧、事件代际/序列、队列和文件流已实现 | Android JVM、native bridge/core 定向测试；两台真机已完成 native invoke、终端 resize/写入/关闭、SFTP list；2407 真机完成 32 MiB 原生 URI 流式上传、取消和暂停/继续 | 真机乱序、进程回收、URI 立即释放和低内存 |
 | 10 Android 本地数据/Vault | 🟡 本地 store、Keystore、Vault、模板和导入导出已实现 | Android JVM/编译；第二台真机已创建测试 Vault 并保存真实测试 Host | 锁屏、重启、备份排除和秘密不入 WebView 实测 |
 | 11 Android SSH Shell | 🟡 Shell、Host Key、ProxyJump、重连代码已实现 | Kotlin 编译/JVM 测试；两台 Android 16 真机已完成密码认证、首次 Host Key 信任、PTY resize、写入和关闭；在真实主机上连续 3 轮关闭/重开后 `whoami` 均返回 `t2` | 私钥、网络切换、后台/前台、Host Key 变更和完整认证走查 |
@@ -513,3 +513,9 @@
 - 任务链完成真实 Host Key 指纹展示与信任、Shell 执行 `PACKAGED_REAL_SERVER_OK`、SFTP `/tmp` 列表读取（36 项）。
 - 关闭进程后使用同一临时 userData 重启，测试只解锁 Vault；Console 自动恢复绿色连接，无“此 Console 需要重新连接”提示。结果为 `title=Relay SSH Workspace`、`restarted=true`、`autoReconnected=true`、`sftpEntries=36`。
 - 临时 userData、目标测试 Host 和进程均已清理；本条关闭真实目标服务器的打包版 SSH/SFTP 读取与重启恢复证据，但 Windows 签名和打包版本地文件上传/下载完整矩阵仍未完成。
+
+## 2026-09-20 Windows 打包版真实 SFTP 文件传输
+
+- 在同一真实目标服务器的隔离打包版 userData 中，以拖放方式上传合成文件 `PACKAGED_REAL_TRANSFER_OK`；远端 `/tmp` 列表出现对应文件。
+- 通过打包版原生 `system.fileSave` writer 保存下载结果，临时本地文件大小 `26` bytes，SHA-256 为 `22D4B55FC8429C0905B92046FA5EC8C1746DF8034A2318E99F901710CD57CD94`，内容与上传标记完全一致；原子临时文件→目标文件路径已实际落盘。
+- 测试进程和 userData 已清理，远端临时文件按精确生成前缀清理。该条关闭打包版 SFTP 上传/下载和原生 writer 代码路径证据；真实操作系统文件选择/保存对话框的人工交互、删除弹层和签名门禁仍待补验。
