@@ -519,3 +519,9 @@
 - 在同一真实目标服务器的隔离打包版 userData 中，以拖放方式上传合成文件 `PACKAGED_REAL_TRANSFER_OK`；远端 `/tmp` 列表出现对应文件。
 - 通过打包版原生 `system.fileSave` writer 保存下载结果，临时本地文件大小 `26` bytes，SHA-256 为 `22D4B55FC8429C0905B92046FA5EC8C1746DF8034A2318E99F901710CD57CD94`，内容与上传标记完全一致；原子临时文件→目标文件路径已实际落盘。
 - 测试进程和 userData 已清理，远端临时文件按精确生成前缀清理。该条关闭打包版 SFTP 上传/下载和原生 writer 代码路径证据；真实操作系统文件选择/保存对话框的人工交互、删除弹层和签名门禁仍待补验。
+
+## 2026-09-20 Windows 打包版真实 SFTP 删除确认
+
+- 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe`、隔离临时 userData 和用户指定的真实 `106.14.61.92:22` / `t2` 主机，通过 Windows 打包版拖放入口上传一次性文件 `relay-packaged-delete-<timestamp>.txt`。
+- 在 SFTP 列表点击该文件的删除按钮，确认弹层正常出现；点击“确认删除”后第 2 次 500 ms 轮询时列表项消失，弹层关闭且没有错误提示，证明删除调用已完成并触发目录刷新。
+- 使用独立 SFTP `stat` 对同一精确远端路径复核，返回 `SSH_FX_NO_SUCH_FILE=2`（`remote-after-delete=absent`）；临时 userData、测试进程和残留远端标记均已清理。该条关闭打包版删除确认/刷新证据；真实系统文件选择/保存对话框人工交互、Windows 真签名和 Android 真机门禁仍待补验。
