@@ -599,3 +599,9 @@
 - 持久 artifact 为 `Relay-Windows-main-20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`，大小 `240,664,946` bytes，保留至 `2026-12-19`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35490701493`。该 artifact 是当前 Windows 技术预览的可追溯交接来源。
 - 当前本地制品：Debug APK `8,655,856` bytes / SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,748` bytes / SHA-256 `EBBB7171328904A5A6250E2AC130477DB5CF1DBF4746ACFADB8A068EE901F34`；Portable `113,688,946` bytes / SHA-256 `EE2DC352B0CFF300E697C3AA2E49F738CF6D726C8DD43D7E23575F981031A4EB`；Windows 两个本地制品均为 `NotSigned`。
 - 本轮收口的是可自动化 Web/Server/Windows/Android 本地门禁；Android 手机和平板真机 A-01～A-17 及 A-17 双向 bundle 按用户要求延期，恢复后一次数据保留部署，再集中全量回归。Windows 真实系统文件选择/保存对话框人工走查和正式 Authenticode 签名仍是外部门禁。
+
+## 2026-09-20 服务端 unit/integration 全量定向复验
+
+- 在当前代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 上重新执行 `npm test -- --run tests/unit/server tests/integration/server --testTimeout=15000 --hookTimeout=15000 --no-file-parallelism --maxWorkers=1 --reporter=dot`。
+- 结果为 `45` 个测试文件、`203` 个测试全部通过，耗时 `80.76s`；该结果覆盖服务端 unit 与 integration 两个目录，不再只引用 `31` 个 unit 文件/`145` 个测试的子集。
+- 本次只执行服务端测试，没有触碰 Android 设备、安装/卸载应用、`pm clear` 或新增授权；Web/Server/Cloud 构建、Chromium E2E 和其余跨端门禁仍以本文件最后的统一本地入口记录为准。

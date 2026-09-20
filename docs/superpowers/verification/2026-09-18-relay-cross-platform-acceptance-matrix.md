@@ -608,3 +608,10 @@
 | Windows GitHub Actions 制品 | 通过 | run `35490701493` 成功；artifact `Relay-Windows-main-20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`，`240,664,946` bytes，保留至 `2026-12-19`；[Actions run](https://github.com/a-yan0901/Relay/actions/runs/35490701493) |
 | Android 真机与 A-17 | 延期 | 手机和平板按用户要求等待重新提供；恢复后一次数据保留部署，再集中执行 A-01～A-17 和 Web/Windows↔Android 双向 bundle，不为单个问题反复重装 |
 | Windows 外部发布门禁 | 未完成 | 真实系统文件选择/保存对话框人工走查仍受 Computer Use 原生窗口不可用影响；正式 `v*` Authenticode 仍需配置证书 secrets 并通过签名清单 |
+
+## 2026-09-20 服务端 unit/integration 全量定向复验
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 服务端 unit + integration | 通过 | 在代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 上串行执行 `tests/unit/server tests/integration/server`，`45` 个测试文件、`203` 个测试全部通过，耗时 `80.76s` |
+| 设备影响 | 无 | 本轮只运行服务端测试，没有调用 `adb`，没有安装/卸载、`pm clear` 或新增 Android 授权 |
