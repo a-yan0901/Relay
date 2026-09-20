@@ -36,8 +36,8 @@
 | 4 Android SSH 可行性 | 🟡 JSch 候选和执行器已接入 | Kotlin 编译、Android JVM 测试；两台 Android 16 真机已完成用户指定密码主机的认证、Host Key 信任、PTY 基础操作和 SFTP 连接 smoke；2026-09-19 又在该真实主机上完成 3 轮关闭/重开/输入回归 | 私钥、ProxyJump、Host Key 变更、完整 SFTP 资源释放和异常边界 |
 | 5 Vault bundle v1 | 🟡 Android 端格式/加解密/冲突应用已实现 | bundle 定向测试、分块边界测试 | Web↔Windows↔Android 固定向量正反向实测 |
 | 6 Electron shell | 🟡 shell、preload、导航和打包配置已实现 | Windows TS/构建、IPC 测试；`npm run package:windows` 已用本地 Electron 目录产出 NSIS/portable，NSIS 安装、启动、卸载通过 | Windows 升级迁移和窗口行为 |
-| 7 Windows 本地 runtime | 🟡 SQLite/Vault/SSH/SFTP/IPC 闭环代码已实现 | `build:windows`、IPC/服务端定向测试；Electron ABI 149 下 `argon2`、`better-sqlite3`、`cpu-features` 原生加载通过；当前打包版已在真实目标主机完成 Vault/Host Key/Shell/SFTP 与重启恢复 | Windows 签名和打包版文件传输完整矩阵 |
-| 8 Windows 系统能力 | 🟡 文件句柄、剪贴板、确认、偏好已接入 | 受影响 TypeScript/DOM 测试；打包版真实主机 UI、NSIS 安装/启动/卸载、无本地监听、原生文件 writer 上传/下载通过 | 真实系统文件选择/保存对话框、剪贴板/通知等完整系统能力走查 |
+| 7 Windows 本地 runtime | 🟡 SQLite/Vault/SSH/SFTP/IPC 闭环代码已实现 | `build:windows`、IPC/服务端定向测试；Electron ABI 149 下 `argon2`、`better-sqlite3`、`cpu-features` 原生加载通过；当前打包版已在真实目标主机完成 Vault/Host Key/Shell/SFTP 与重启恢复；fileOpen source 流和 release 生命周期已接入 | Windows 签名和真实系统文件选择/保存对话框人工走查 |
+| 8 Windows 系统能力 | 🟡 文件句柄、剪贴板、确认、偏好、通知已接入 | 受影响 TypeScript/DOM 测试；打包版真实主机 UI、NSIS 安装/启动/卸载、无本地监听、原生 fileSave writer 上传/下载和通知 IPC smoke 通过 | 真实系统文件选择/保存对话框取消/确认、签名和完整发布矩阵 |
 | 9 Android bridge | 🟡 有界帧、事件代际/序列、队列和文件流已实现 | Android JVM、native bridge/core 定向测试；两台真机已完成 native invoke、终端 resize/写入/关闭、SFTP list；2407 真机完成 32 MiB 原生 URI 流式上传、取消和暂停/继续 | 真机乱序、进程回收、URI 立即释放和低内存 |
 | 10 Android 本地数据/Vault | 🟡 本地 store、Keystore、Vault、模板和导入导出已实现 | Android JVM/编译；第二台真机已创建测试 Vault 并保存真实测试 Host | 锁屏、重启、备份排除和秘密不入 WebView 实测 |
 | 11 Android SSH Shell | 🟡 Shell、Host Key、ProxyJump、重连代码已实现 | Kotlin 编译/JVM 测试；两台 Android 16 真机已完成密码认证、首次 Host Key 信任、PTY resize、写入和关闭；在真实主机上连续 3 轮关闭/重开后 `whoami` 均返回 `t2` | 私钥、网络切换、后台/前台、Host Key 变更和完整认证走查 |
@@ -525,6 +525,15 @@
 - 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe`、隔离临时 userData 和用户指定的真实 `106.14.61.92:22` / `t2` 主机，通过 Windows 打包版拖放入口上传一次性文件 `relay-packaged-delete-<timestamp>.txt`。
 - 在 SFTP 列表点击该文件的删除按钮，确认弹层正常出现；点击“确认删除”后第 2 次 500 ms 轮询时列表项消失，弹层关闭且没有错误提示，证明删除调用已完成并触发目录刷新。
 - 使用独立 SFTP `stat` 对同一精确远端路径复核，返回 `SSH_FX_NO_SUCH_FILE=2`（`remote-after-delete=absent`）；临时 userData、测试进程和残留远端标记均已清理。该条关闭打包版删除确认/刷新证据；真实系统文件选择/保存对话框人工交互、Windows 真签名和 Android 真机门禁仍待补验。
+
+## 2026-09-20 Windows 原生文件选择/通知收口与 Android 真机延期
+
+- Windows 新增受限 `system.fileOpen.open`、`files.uploadFromSource` 和 `files.releaseUploadSource`：文件路径只存在 main 侧，renderer 仅持有 sourceId/名称/大小；`createReadStream` 使用 32 KiB 高水位，source 数量上限为 4，runtime close、取消和失败均释放句柄。
+- Windows 新增受限桌面通知 IPC；Electron 以 `Notification.isSupported()` 返回权限并发送通知，Android 通过 `createNativePlatformServices(..., { notifications: false })` 不广告该能力，避免移动端显示不可用入口。
+- TDD/验证：IPC contract、local-runtime source 释放、native notification port、Android 不暴露通知能力均有回归；最终串行 Vitest `164` 文件通过/`1` 跳过，`759` 测试通过/`2` 跳过；`npm run lint`、`npm run typecheck`、`npm run build:android:debug`、`npm run package:windows` 通过。
+- 当前制品：Debug APK `8,655,856` bytes / SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,267` bytes / SHA-256 `F757EFC65B364464B372003C039444CB5E1099CACA83AE0CC4DCFAA45F8FF1DE`；Portable `113,688,516` bytes / SHA-256 `4C0A52BB2B7741A0A947282FF7C47F0CDF89B55F3C21673624B76465196AFAFA`；Windows 两个制品均为 `NotSigned`。
+- Android 手机和平板 A-01～A-17 按用户要求延期，等待真机重新上线；本轮不安装、不卸载、不清库、不新增授权。恢复后一次数据保留部署，再集中完成清单回归，不为单个问题反复重装。
+- 本轮剩余可执行项：Windows 真实系统文件选择/保存对话框人工取消/确认走查、Windows 证书签名；Android 真机和 A-17 实机双向字段核对等待设备。Web/Server 自动化和 Windows 代码/打包门槛已通过当前门禁。
 
 ## 2026-09-20 Windows 打包版系统剪贴板回环
 

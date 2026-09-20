@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-20
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**当前仓库交接基线：** `0f44340`；最后一个业务代码提交为 `f24283a`，`0f44340` 仅更新验证交接。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `0f44340`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
+**当前仓库交接基线：** `603db05`；本提交补齐 Windows 原生文件选择/流式上传和桌面通知 IPC。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `603db05`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -14,8 +14,8 @@
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
 | Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `164` 个文件通过、`1` 个跳过；`757` 个测试通过、`2` 个跳过；服务端定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
-| Windows | 🟡 打包与隔离恢复已复核，平台门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复、版本化 `0.0.9 → 0.1.0 → 0.0.9` 数据保留、一次安装器中断恢复和 CI artifact 均有证据 | 签名、打包后完整 SSH/SFTP/Vault/UI 任务链 |
-| Android | ⛔ 当前真机批次不可验证 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `9D79…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态 | 两台真机 A-01～A-17、Host Key/私钥失败矩阵、网络/生命周期/URI/低内存和实机跨端回传 |
+| Windows | 🟡 打包与隔离恢复已复核，平台发布门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复、版本化 `0.0.9 → 0.1.0 → 0.0.9` 数据保留、一次安装器中断恢复、CI artifact、真实目标 SSH/SFTP、原生 fileOpen/fileSave 流和通知 IPC 均有证据 | 真签名、真实系统文件选择/保存对话框人工走查和发布门禁 |
+| Android | ⏸️ 真机测试按用户要求延期 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `2436C5…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态；本轮不安装、不卸载、不清库 | 用户提供真机后一次数据保留部署，再集中执行 A-01～A-17、低内存和实机跨端回传 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
 | 云同步 | ⏸️ 不在本期客户端验收 | 可选 ports 和数据边界已保留 | 按独立云同步计划推进，不在本任务书中验证 |
 
@@ -704,3 +704,13 @@
 
 - 使用当前打包版 `Relay.exe` 与隔离临时 userData，通过真实 Electron preload→main IPC 调用 `system.clipboard.writeText` 写入合成标记，再调用 `system.clipboard.readText` 读回，结果为 `clipboard-roundtrip=true`。
 - 测试结束前写入空字符串清理系统剪贴板，临时 userData 和测试进程均已清理。本条补齐 Windows 剪贴板 IPC 证据；通知、真实系统文件选择/保存对话框人工交互、Windows 真签名和 Android 两台真机 A-01～A-17 仍未闭环。
+
+## 58. 2026-09-20 Windows 原生文件选择与桌面通知能力收口
+
+- Windows desktop IPC 新增 `system.fileOpen.open`、`files.uploadFromSource` 和 `files.releaseUploadSource`：renderer 只收到不透明 `sourceId`、文件名和大小；真实路径和字节流留在 main 进程，读取使用 32 KiB `createReadStream`，最多保留 4 个未释放 source，运行时关闭和取消均释放句柄。
+- Windows desktop IPC 新增 `system.notifications.permission`、`system.notifications.requestPermission` 和 `system.notifications.notify`；Electron 通过 `Notification.isSupported()` 映射权限，Android 不注入该 port，不会显示不支持的桌面通知入口。
+- TDD/回归：新增 IPC allowlist、source 释放、通知 port 和 Android 不暴露通知能力测试；最终串行全量 Vitest 为 `164` 个文件通过、`1` 个跳过，`759` 个测试通过、`2` 个跳过；`npm run lint`、`npm run typecheck`、`npm run build:android:debug`、`npm run package:windows` 均通过。
+- 当前未部署 Debug APK：`8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；本轮未安装、卸载、`pm clear` 或新增 Android 授权。
+- 当前 Windows 制品：NSIS `127,709,267` bytes / SHA-256 `F757EFC65B364464B372003C039444CB5E1099CACA83AE0CC4DCFAA45F8FF1DE`；Portable `113,688,516` bytes / SHA-256 `4C0A52BB2B7741A0A947282FF7C47F0CDF89B55F3C21673624B76465196AFAFA`；两者 `Get-AuthenticodeSignature=NotSigned`。
+- 打包版 preload→main 通知 IPC smoke 已返回 `permission=granted`、`requestPermission=granted` 并成功发送合成通知；真实文件选择/保存对话框仍需人工走查，不能用代码存在替代用户取消/确认路径证据。
+- Android 真机 A-01～A-17 按用户要求延期，等待手机和平板重新上线；设备恢复后只执行一次当前 APK 的数据保留部署，再按清单集中测试和集中修复，不为单个问题反复重装。

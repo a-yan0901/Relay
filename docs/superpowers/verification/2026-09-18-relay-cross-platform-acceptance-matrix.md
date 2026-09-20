@@ -11,12 +11,12 @@
 | 首次 Host Key 确认、变更拒绝 | ✅ | 🟡 | 🟡 | Server/Windows/Android 状态机和定向测试；两台 Android 16 真机已在用户提供的 `106.14.61.92:22` 上完成同一真实指纹的 native trust 和建 Shell | Windows 实机连接、Android Host Key 变更拒绝 |
 | SSH 输入、复制/粘贴、断连重连 | ✅ | 🟡 | 🟡 | Web E2E、TerminalSession/Native socket 测试；两台 Android 16 真机在真实主机上连续 3 轮关闭/重开，均收到 raw `terminal.status=connected`，`whoami` 返回 `t2` 且 Console 可输入；本轮又分别输入 `echo REAL_SERVER_2407`/`echo REAL_SERVER_25091` 得到真实远端回显 | Windows 原生 ABI、Android 真机网络切换、复制/粘贴和完整 UI 走查 |
 | 多标签、分屏与移动单 pane | ✅ | 🟡 | 🟡 | Web 320/390px E2E；共享 runtime capability | Windows/Android UI 和生命周期走查 |
-| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；Android 真实主机证据包括两台设备 `/tmp` 各 19 项、本轮 `25091RP04C` 的 `/` 36 项和 `/tmp` 25 项；2407 真机 32 MiB 原生 URI 上传完成并校验哈希，取消保留既有目标且无 staging，暂停/继续从断点完成；25091 系统选择器上传与 DocumentsUI 下载均完成 100% | 两端真实 UI SFTP、重试/部分失败、完整 URI 任务边界和低内存 |
+| SFTP 浏览、过滤、分页、变更、上传下载 | ✅ | 🟡 | 🟡 | Web E2E；服务端分页；native bridge/JVM contract；Windows 已补齐 fileOpen/fileSave 的受限 IPC 与原生流路径；Android 真实主机证据包括两台设备 `/tmp` 各 19 项、本轮 `25091RP04C` 的 `/` 36 项和 `/tmp` 25 项；2407 真机 32 MiB 原生 URI 上传完成并校验哈希，取消保留既有目标且无 staging，暂停/继续从断点完成；25091 系统选择器上传与 DocumentsUI 下载均完成 100% | Windows 真实系统文件选择/保存人工走查、重试/部分失败；Android 真机和完整 URI 任务边界、低内存 |
 | SFTP 单层滚动、终端最后一行可见 | ✅ | 🟡 | 🟡 | Web 窄视口几何断言 | Windows 窗口和 Android 软键盘/安全区 |
 | Vault 锁定、重开、任务恢复状态 | ✅ | 🟡 | 🟡 | Web/Windows/Android 本地实现与 JVM/DOM 测试 | 崩溃、重启、锁屏/进程回收 |
 | 主题、字号、grid/list 偏好持久化 | ✅ | 🟡 | 🟡 | Web E2E 主题持久化与第三方 `data-theme` 隔离；Android 两台 Android 16 真机选择 Everforest/16px 后 force-stop、重启、解锁仍保持 | Windows 重启后视觉走查；Android grid/list、旋转、软键盘与完整视觉走查 |
 | Vault bundle v1 正反向导入导出 | ✅ | 🟡 | 🟡 | shared/native bundle、分块、错误输入测试；Android 已有 Node V1 加密 envelope 固定向量 | [交接任务书 A-17](./2026-09-18-relay-cross-platform-handoff.md) 的 Web↔Windows↔Android 完整 payload 固定向量实测 |
-| 原生安全边界：无 HTTP/cookie、IPC/bridge allowlist | ✅ | 🟡 | 🟡 | Windows policy/IPC 测试；Android bridge schema/JVM 测试 | 目标设备检查端口、日志、备份和 URI |
+| 原生安全边界：无 HTTP/cookie、IPC/bridge allowlist | ✅ | 🟡 | 🟡 | Windows policy/IPC 测试；fileOpen 只返回 sourceId、文件流留在 main；通知仅受 allowlist IPC 暴露；Android bridge schema/JVM 测试 | Windows 签名与人工系统对话框；目标设备检查端口、日志、备份和 URI |
 | 低内存边界与产物 | ✅ | 🟡 | 🟡 | Web/Server/Windows 构建；NSIS/portable PE；Electron ABI 149 native load；Debug APK；单 worker 构建 | 目标平台 RSS/低内存、签名和持久制品来源；Android 设备内存采样 |
 
 ## 当前可复现证据
@@ -34,6 +34,8 @@
 - 当前仍未完成：任务 4–14；其中任务 5 的完整跨端 bundle v1 固定向量由[交接任务书 A-17](./2026-09-18-relay-cross-platform-handoff.md)执行，未通过前不能勾选任务 5、10 或 14。
 - 任务 15 仍是 🟡 的未来同步兼容性预留，但不属于本期 Windows/Android 客户端发布门禁；本期只要求云服务缺席时本地功能不受影响。
 - 矩阵不把 Web 浏览器验证、portable 生成或 APK 安装/启动 smoke 视为 Windows/Android 完整验收；Android 交接机器应按任务书逐项回填结果，不以“能安装 APK”替代 SSH、SFTP、Vault、生命周期和低内存边界验证。
+
+- 当前执行口径（2026-09-20）：Android 手机和平板 A-01～A-17 按用户要求延期，等待真机重新上线；本轮不安装、不卸载、不清库、不新增授权。Windows 可在本机继续完成的 fileOpen/fileSave 流和通知 IPC 已实现并通过代码/打包 smoke，真实系统文件选择/保存对话框仍需人工走查。
 
 ## 2026-09-19 复审增量：Windows 实际 UI 证据与打包边界
 
@@ -511,3 +513,14 @@
 | 打包版系统剪贴板 | 通过（真实 IPC） | 打包版 preload→main IPC 写入并读回合成标记，`clipboard-roundtrip=true`；结束时已清空剪贴板 |
 | 打包版文件管理剩余边界 | 未完成 | 真实系统文件选择/保存对话框人工交互和完整系统能力矩阵仍需补证 |
 | 发布门禁 | 未完成 | Windows 制品仍为 `NotSigned`；签名和文件传输完整矩阵仍待补证 |
+
+## 2026-09-20 Windows 原生文件选择/通知收口与 Android 真机延期
+
+| 验收项 | 本轮结果 | 证据与边界 |
+| --- | --- | --- |
+| Windows 原生文件选择上传 | 代码闭环 | `system.fileOpen.open` 只回传 sourceId/名称/大小；main 侧以 32 KiB 流读取，`files.uploadFromSource`/`files.releaseUploadSource` 负责传输和释放，IPC allowlist、source 释放和关闭清理均有测试 |
+| Windows 桌面通知 | 代码与打包 IPC smoke 通过 | Electron `Notification.isSupported()` 返回 `granted`，preload→main permission/request/notify 均成功；Android 不暴露该 port |
+| 当前全量代码门禁 | 通过 | `npm run lint`、`npm run typecheck`、串行 Vitest `164` 文件通过/`1` 跳过，`759` 测试通过/`2` 跳过；`npm run build:android:debug`、`npm run package:windows` 通过 |
+| 当前制品 | 已复核 | APK `8,655,856` bytes / `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,267` bytes / `F757EFC65B364464B372003C039444CB5E1099CACA83AE0CC4DCFAA45F8FF1DE`；Portable `113,688,516` bytes / `4C0A52BB2B7741A0A947282FF7C47F0CDF89B55F3C21673624B76465196AFAFA` |
+| Android 手机/平板 | 按用户要求延期 | 等待真机重新上线；本轮不安装、不卸载、不清库、不新增授权。恢复后一次数据保留部署，再集中执行 A-01～A-17，不为单个问题反复重装 |
+| Windows 发布剩余边界 | 未完成 | 当前制品 `NotSigned`；真实系统文件选择/保存对话框人工取消/确认、证书签名仍需补证 |
