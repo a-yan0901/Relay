@@ -652,3 +652,9 @@
 - 对当前 `dist/releases/nsis/Relay-0.1.0-x64.exe` 使用临时安装目录执行静默安装，退出码 `0`；安装目录中的 `Relay.exe` 和卸载程序均存在。
 - 从临时安装目录启动 `Relay.exe --user-data-dir=<临时目录>`，进程存活 5 秒；随后静默卸载退出码 `0`，安装目录已删除，临时 userData 已清理。
 - 本条补齐当前 NSIS 安装/启动/卸载证据；签名、旧版本升级/回滚、安装器崩溃恢复和完整打包 SSH/SFTP/UI 任务链仍未完成。
+
+## 51. 2026-09-20 跨制品数据保留替换交接
+
+- 早期解压版 `dist/releases/win-unpacked/Relay.exe` 在隔离 userData 中创建合成 `Upgrade Preservation Host`；当前 NSIS 包安装到临时目录后复用同一 userData，解锁后成功读回该 Host。
+- 当前 NSIS 临时安装包随后静默卸载退出码为 `0`，安装目录和 userData 均已清理；全过程未接触本机现有 Relay 数据。
+- 该条补充跨制品数据保留证据，但没有可追溯的旧版本 NSIS 安装包和不同版本号，不能替代真正的旧版本安装→升级→回滚验收。
