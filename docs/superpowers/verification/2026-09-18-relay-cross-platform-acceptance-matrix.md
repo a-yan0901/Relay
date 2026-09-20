@@ -685,3 +685,12 @@
 - 隔离 Windows local runtime 通过 bounded IPC 导出合成 Host bundle：`1,429` bytes，单 chunk，SHA-256 `2ceed64a6752b9515511085cf927695c1da1c0d8b543fa9ed393f40d99ef1811`。
 - Android 原生 bridge 对错误密码和篡改 ciphertext 均 `VAULT_BUNDLE_INVALID`，拒绝后 Host 数量保持 `3`；正确预览/应用为 `1` Host，增至 `4`，并核对新 Host 字段。
 - 该证据补齐模拟器 Windows local runtime↔Android 实际双向路径；Windows 打包 UI、两台真机、原生系统对话框和正式签名仍未完成。
+
+## 2026-09-20 Android SAF 取消结果 URI grant 防御修复
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 取消/拒绝结果的 URI grant 回收 | 自动化通过 | Activity 结果即使不是 `RESULT_OK` 但携带 URI，也会按实际 READ/WRITE mode 调用 `revokeUriGrant`；无 mode 时使用 open/save fallback |
+| Android 回归 | 通过 | `AndroidUriGrantGuardTest` `4/4`；`npm run test:android:local` 的 Android JVM `40/40`、AndroidTest APK 编译；独立 AVD instrumentation `9/9`；`npm run build:android:debug` 成功 |
+| 新 Debug APK | 已生成 | `8,655,856` bytes；SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059` |
+| 真机/分享边界 | 未完成 | 本轮未触碰手机和平板；A-11 真机 URI 生命周期仍待目标设备，任务书中的分享路径当前没有已定义的 CoreRuntime/原生实现，不宣称已验收 |

@@ -667,3 +667,11 @@
 - 隔离 Windows local runtime 通过 bounded IPC 导出合成 Host bundle：`1,429` bytes，单 chunk，SHA-256 `2ceed64a6752b9515511085cf927695c1da1c0d8b543fa9ed393f40d99ef1811`。
 - Android 原生 bridge 对错误密码和篡改 ciphertext 均返回 `VAULT_BUNDLE_INVALID`，拒绝后 Host 数量保持 `3`；正确预览/应用为 `1` Host，数量增至 `4`，并核对新 Host 的名称、地址、端口、用户名和 `password` 认证类型。
 - 该条补齐模拟器 Windows local runtime↔Android 的实际双向路径；不替代 Windows 打包 UI 导入、两台真机 A-01～A-17、原生系统对话框人工走查和正式签名。
+
+## 2026-09-20 Android SAF 取消结果 URI grant 防御修复
+
+- 根因：`fileOpenActivity`/`fileSaveActivity` 在 Activity 返回非 `RESULT_OK` 时先丢弃 `result.data?.data`，如果文件提供方在取消/拒绝结果中仍返回了 content URI，该 URI grant 就不会进入回收路径。
+- 按 TDD 新增取消态 URI 回收和 provider 未携带 mode flags 的回归守卫；定向 `AndroidUriGrantGuardTest` `4/4` 通过，`npm run test:android:local` 的 Android JVM `40/40` 通过、AndroidTest APK 编译成功，独立模拟器 instrumentation `9/9` 通过，`npm run build:android:debug` 成功。
+- 修复后统一先解析返回 URI，再以实际 READ/WRITE mode（无 mode 时使用 open/save fallback）执行 `revokeUriGrant`；成功选择仍由传输/写入生命周期负责释放，失败、取消、executor 不可用和 writer close/cancel 路径均保留回收逻辑。
+- 新 Debug APK：`8,655,856` bytes，SHA-256 `0E227344A3637916E216C36CC16260AF8CCE9F88417C2D14009399CD64230059`。本轮只验证独立 AVD，没有安装、卸载、清库或新增手机/平板授权。
+- Android 平台对 Activity 临时 grant 的存续仍需真机观察；本修复不把“调用 revoke”误记为“所有厂商立即清除”。A-11 真机 URI 生命周期及任务书中的分享路径仍未验收，手机/平板按用户要求继续延期。

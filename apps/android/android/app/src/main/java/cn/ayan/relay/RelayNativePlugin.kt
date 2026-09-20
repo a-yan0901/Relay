@@ -2,6 +2,7 @@ package cn.ayan.relay
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -19,6 +20,25 @@ internal fun releaseUriGrantIfOperationFailed(
     release: () -> Unit
 ) {
     if (!operationSucceeded) release()
+}
+
+internal data class AndroidUriGrant(val uri: Uri, val flags: Int)
+
+internal fun shouldRevokeActivityUriGrant(resultCode: Int, hasUri: Boolean): Boolean =
+    hasUri && resultCode != Activity.RESULT_OK
+
+internal fun grantFlagsFromActivityResult(modeFlags: Int, fallbackFlags: Int): Int {
+    val normalizedFlags = modeFlags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    return if (normalizedFlags == 0) fallbackFlags else normalizedFlags
+}
+
+internal fun uriGrantFromActivityResult(
+    data: Intent?,
+    fallbackFlags: Int
+): AndroidUriGrant? {
+    val uri = data?.data ?: return null
+    val grantFlags = grantFlagsFromActivityResult(data.flags, fallbackFlags)
+    return AndroidUriGrant(uri, grantFlags)
 }
 
 /**
@@ -244,14 +264,15 @@ class RelayNativePlugin : Plugin() {
     fun fileOpenActivity(call: PluginCall, result: ActivityResult) {
         fileOpenInFlight.set(false)
         val request = call.data
-        val uri = if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
-        if (uri == null) {
+        val selectedGrant = uriGrantFromActivityResult(result.data, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (shouldRevokeActivityUriGrant(result.resultCode, selectedGrant != null) || selectedGrant == null) {
+            selectedGrant?.let { revokeUriGrant(it.uri, it.flags) }
             call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE", "已取消文件选择"))
             return
         }
+        val uri = selectedGrant.uri
         val activeExecutor = executor
-        val modeFlags = (result.data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        val grantFlags = if (modeFlags == 0) Intent.FLAG_GRANT_READ_URI_PERMISSION else modeFlags
+        val grantFlags = selectedGrant.flags
         if (activeExecutor == null) {
             revokeUriGrant(uri, grantFlags)
             call.resolve(failureResponse(request, "SERVICE_RESTARTED"))
@@ -274,14 +295,18 @@ class RelayNativePlugin : Plugin() {
     fun fileSaveActivity(call: PluginCall, result: ActivityResult) {
         fileSaveInFlight.set(false)
         val request = call.data
-        val uri = if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
-        if (uri == null) {
+        val selectedGrant = uriGrantFromActivityResult(
+            result.data,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        if (shouldRevokeActivityUriGrant(result.resultCode, selectedGrant != null) || selectedGrant == null) {
+            selectedGrant?.let { revokeUriGrant(it.uri, it.flags) }
             call.resolve(failureResponse(request, "CAPABILITY_UNAVAILABLE", "已取消文件保存"))
             return
         }
+        val uri = selectedGrant.uri
         val activeExecutor = executor
-        val modeFlags = (result.data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        val grantFlags = if (modeFlags == 0) Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION else modeFlags
+        val grantFlags = selectedGrant.flags
         if (activeExecutor == null) {
             revokeUriGrant(uri, grantFlags)
             call.resolve(failureResponse(request, "SERVICE_RESTARTED"))
