@@ -820,3 +820,9 @@
 - Android 原生完成固定向量预览/应用（`2` hosts / `2` groups / `2` identities），并通过 chunked export 产生实际加密 bundle：`4,581` bytes，SHA-256 `c57903429fb5efe61c9a1a5b801f2a57b724d87a0afb143e7edabb8d21678231`。
 - 交接到独立内存 Web/Server 后，错误密码与篡改 ciphertext 均 HTTP `400` 且拒绝后仍为 `0/0/0`；正确预览、应用和最终 hosts/groups/identities 均为 `2/2/2`。
 - 这条证据完成 Android 模拟器→Web 的实际 bundle 回传交接；不替代 Android 真机 A-01～A-17、A-17 双向实机 bundle、Windows 原生系统文件对话框人工走查或正式 Authenticode 签名，后四项仍是验收边界。
+
+## 2026-09-20 Web→Android bundle 实际交接证据
+
+- 独立内存 Web/Server 创建合成 Host 并实际导出加密 bundle：`1,401` bytes，SHA-256 `68707bbd0998a62e88bab13bd7e39bc96e171c8f5266593a5d0da62ef61ed9ec`。
+- 通过 `emulator-5554` WebView CDP 调用 Android 原生 bridge，预览得到 `1` Host、应用 `1` Host；Android 原生 Host 数量从 `2` 增至 `3`，并确认新 Host 存在。
+- 与上一条 Android→Web 证据合并后，模拟器 Android↔Web 实际 bundle 双向交接已可复核；这不替代 Android 两台真机 A-01～A-17、Windows 打包 UI 导入、原生系统对话框人工走查或正式 Authenticode 签名。

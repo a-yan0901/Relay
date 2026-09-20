@@ -643,3 +643,9 @@
 - Android 原生 Vault 完成固定向量预览和应用（`2` hosts / `2` groups / `2` identities），随后通过原生 chunked export 实际导出加密 bundle：`4,581` bytes，SHA-256 `c57903429fb5efe61c9a1a5b801f2a57b724d87a0afb143e7edabb8d21678231`。
 - 将该 Android 实际导出 bundle 送入独立内存 Web/Server Vault：错误导出密码和篡改 ciphertext 各返回 HTTP `400`，拒绝后 hosts/groups/identities 仍为 `0/0/0`；正确预览和应用均为 `2/2/2`，最终服务端计数为 `2/2/2`。
 - 该证据闭合了模拟器 Android→Web 的实际加密 bundle 回传路径，但不替代 Android 真机 A-01～A-17、Windows 打包 UI 导入和原生系统文件对话框人工走查；这些外部门禁仍待补验。
+
+## 2026-09-20 Web→Android bundle 实际交接证据
+
+- 在独立内存 Web/Server 中创建合成 Host 并实际导出加密 bundle：`1,401` bytes，SHA-256 `68707bbd0998a62e88bab13bd7e39bc96e171c8f5266593a5d0da62ef61ed9ec`。
+- 通过同一 `emulator-5554` 的 WebView CDP 调用 Android 原生 bridge，导出 bundle 预览为 `1` Host，应用为 `1` Host；Android 原生 Host 数量从 `2` 增至 `3`，并确认新 Host 存在。
+- 该条与上一条 Android→Web 证据合并后，模拟器上的加密 bundle 双向交接均有实际 bridge/服务端证据；不替代两台真机 A-01～A-17、Windows 打包 UI 导入或正式发布门禁。
