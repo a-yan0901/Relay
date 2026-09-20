@@ -472,3 +472,9 @@
 - 三轮窗口标题均为 `Relay SSH Workspace`，已保存的 `Packaged Recovery Host` 每轮均可读回；临时 userData 在 `finally` 清理，未接触本机现有 Relay 数据。
 - 当前 NSIS/Portable 制品元数据已复核：NSIS `127,707,203` bytes / `DA35DD72C4EBDEF104C530516DD4F8A25E38D5A3E1D17C62EC1B04BDC649B408`，Portable `113,685,227` bytes / `B03FDFA48079B85F53D66AAF72A66ED0F187DC719D73A60E2B0733A586F19F06`；两者 `Get-AuthenticodeSignature=NotSigned`，签名发布门禁仍未完成。
 - 本条关闭“当前解压版多轮本地恢复”自动化证据，但不替代签名安装包旧版本升级/回滚、安装器崩溃恢复和完整打包 SSH/SFTP/UI 任务链验收。
+
+## 2026-09-20 当前 NSIS 安装器隔离门禁
+
+- 对当前 `dist/releases/nsis/Relay-0.1.0-x64.exe` 使用临时安装目录执行静默安装：退出码 `0`，安装目录中的 `Relay.exe` 和卸载程序均存在。
+- 从该安装目录启动 `Relay.exe --user-data-dir=<临时目录>`，进程存活 5 秒；随后静默卸载退出码 `0`，安装目录已删除，临时 userData 已清理。
+- 该条补齐当前 NSIS 安装/启动/卸载证据；不等同于旧版本升级/回滚、签名或安装器崩溃恢复门禁通过。
