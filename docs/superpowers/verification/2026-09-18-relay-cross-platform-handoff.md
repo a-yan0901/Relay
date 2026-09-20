@@ -734,3 +734,11 @@
 - GitHub Actions run `35487282654`（commit `825888a`）已成功完成依赖安装、源码校验、Electron runtime 准备、NSIS/Portable 打包、release manifest 生成和 artifact 上传。
 - artifact：`Relay-Windows-main-825888ac8292801bb36a71234f6be10032f9e73d`，大小 `240,661,455` bytes，保留至 `2026-12-19`；run 页面：`https://github.com/a-yan0901/Relay/actions/runs/35487282654`。
 - 该 run 使用 `main`，所以 `Configure Windows release signing` 与 `Enforce signed version-tag release` 均为预期的 `skipped`；它证明主分支预览流程正常，不证明 `v*` 真实签名发布。证书 secrets 配置后仍需触发一次标签 run。
+
+## 62. 2026-09-20 Windows 原生文件服务代码级复验
+
+- Electron main 的文件选择/保存实现已抽到 `apps/windows/native-file-services.ts`，通过注入的 dialog 接口保持 main 侧路径和流；renderer 不获得本地路径。
+- 新增测试：dialog 取消返回 null；真实临时文件 source 流读取；writer cancel 清理目标和 partial；writer close 原子提交。Windows 定向套件 `8` 文件、`39/39` 通过。
+- `npm run build:windows`、`npm run package:windows` 和串行全量 Vitest 均通过：`166` 文件通过、`1` 跳过，`767` 测试通过、`2` 跳过。
+- 当前本机 NSIS `127,709,747` bytes / SHA-256 `8708A397E24E93071EBF6C52D9D64FCFD783581D197EB21DAA0901252E013F90`；Portable `113,688,951` bytes / SHA-256 `2509BD35B8406C3554F1472B17F501FC57FD3EE2545544FA63D0257859166E9F`；均为 `NotSigned`。
+- 这补齐代码级取消/清理/原子落盘证据，但不关闭真实系统文件对话框人工走查；Android 手机/平板仍按用户要求延期。

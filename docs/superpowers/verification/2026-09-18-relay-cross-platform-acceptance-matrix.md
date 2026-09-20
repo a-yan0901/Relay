@@ -549,3 +549,14 @@
 | `main` 技术预览 workflow | 通过 | Actions run `35487282654`（commit `825888a`）完成源码校验、Electron 准备、NSIS/Portable 打包、manifest 和 artifact 上传 |
 | 持久 artifact | 已生成 | `Relay-Windows-main-825888ac8292801bb36a71234f6be10032f9e73d`，`240,661,455` bytes，保留至 `2026-12-19`；[Actions run](https://github.com/a-yan0901/Relay/actions/runs/35487282654) |
 | 正式标签签名 | 未执行/未通过 | 本次为 `main`，签名配置与校验按条件跳过；没有证书 secrets，不能把该 artifact 视为签名发布 |
+
+## 2026-09-20 Windows 原生文件服务代码级复验
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 原生选择取消 | 通过（代码级） | `createWindowsFileSource` 在 dialog canceled 时返回 null，不创建 source |
+| 原生 source 流 | 通过（代码级） | 临时真实文件经 `createReadStream` 以 32 KiB high-water mark 读取；renderer 元数据不含路径 |
+| 原生保存取消/清理 | 通过（代码级） | writer cancel 后目标文件和 `.relay-partial-*` 均不存在 |
+| 原生保存原子提交 | 通过（代码级） | writer close 先关闭 partial，再替换目标；临时文件行为测试通过 |
+| 当前 Windows 制品 | 已复核 | NSIS `127,709,747` bytes / `8708A397E24E93071EBF6C52D9D64FCFD783581D197EB21DAA0901252E013F90`；Portable `113,688,951` bytes / `2509BD35B8406C3554F1472B17F501FC57FD3EE2545544FA63D0257859166E9F`；均 `NotSigned` |
+| 真正系统窗口 | 未完成 | 代码级测试不能替代 Windows 系统文件选择/保存对话框人工取消/确认；Computer Use 服务仍不可用 |

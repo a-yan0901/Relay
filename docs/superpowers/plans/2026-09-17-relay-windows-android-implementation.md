@@ -554,6 +554,13 @@
 - 持久 artifact 为 `Relay-Windows-main-825888ac8292801bb36a71234f6be10032f9e73d`，大小 `240,661,455` bytes，保留至 `2026-12-19`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35487282654`。
 - 本次是 `main` 技术预览，签名配置和签名校验按条件跳过；这证明 workflow wiring 不影响未签名预览打包，不证明正式标签签名通过。正式 `v*` 仍需证书 secrets 和 `Valid` Authenticode 结果。
 
+## 2026-09-20 Windows 原生文件服务代码级复验
+
+- 将 Electron 文件选择/保存实现抽到 `apps/windows/native-file-services.ts`，由 Electron main 注入原生 dialog；renderer 仍只得到不透明 source/writer handle，不接触路径。
+- 新增行为测试覆盖：选择对话框取消不创建 source、真实临时文件以 32 KiB stream 读取、保存取消不残留目标/partial 文件、保存 close 通过 partial→rename 原子落盘；定向 Windows 套件 `8` 个文件、`39/39` 通过。
+- `npm run build:windows` 和 `npm run package:windows` 通过；当前 NSIS `127,709,747` bytes / SHA-256 `8708A397E24E93071EBF6C52D9D64FCFD783581D197EB21DAA0901252E013F90`，Portable `113,688,951` bytes / SHA-256 `2509BD35B8406C3554F1472B17F501FC57FD3EE2545544FA63D0257859166E9F`，两者 `NotSigned`。
+- 全量 Vitest `166` 个文件通过、`1` 个跳过；`767` 个测试通过、`2` 个跳过。该条增强代码级证据，但不替代真实系统文件对话框人工取消/确认；Android 真机仍按用户要求延期。
+
 ## 2026-09-20 Windows 打包版系统剪贴板回环
 
 - 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe` 和隔离临时 userData，通过真实 Electron preload `relayDesktop.invoke` 调用 `system.clipboard.writeText` 写入合成标记，再调用 `system.clipboard.readText` 读回。
