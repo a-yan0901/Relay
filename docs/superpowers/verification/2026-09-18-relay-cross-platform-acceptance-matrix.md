@@ -568,3 +568,12 @@
 | Windows CI 打包 | 通过 | run `35488521654`（commit `5ba089f`）完成源码校验、Electron 准备、NSIS/Portable 打包、manifest 和 artifact 上传 |
 | 持久 artifact | 已生成 | `Relay-Windows-main-5ba089f9574956e7945105536158934005115bd7`，`240,662,745` bytes，保留至 `2026-12-19`；[Actions run](https://github.com/a-yan0901/Relay/actions/runs/35488521654) |
 | 签名/人工系统窗口 | 未完成 | `main` run 的签名步骤按条件跳过；当前仍无证书 secrets，且 Computer Use 原生窗口服务不可用 |
+
+## 2026-09-20 Android 无真机本地回归复验
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Android JVM 回归 | 通过 | `npm run test:android:local` 成功；Android JVM 单元测试 `38/38` 通过，并完成 `assembleDebugAndroidTest` 编译 |
+| 当前 Debug APK | 已生成 | `apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，`8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820` |
+| 设备影响范围 | 未触碰设备 | 本轮未调用 `adb`，未安装、卸载、`pm clear` 或新增运行时授权；不能替代 Android 真机 A-01～A-17 |
+| 后续 Android 交接 | 延期 | 手机和平板重新上线后，一次数据保留部署，再按清单集中测试和集中修复；A-17 双向 bundle 实机核对继续未完成 |

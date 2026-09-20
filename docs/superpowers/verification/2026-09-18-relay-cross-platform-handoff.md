@@ -748,3 +748,9 @@
 - GitHub Actions run `35488521654`（commit `5ba089f`）已成功完成依赖安装、源码校验、Electron runtime 准备、NSIS/Portable 打包、release manifest 生成和 artifact 上传。
 - artifact：`Relay-Windows-main-5ba089f9574956e7945105536158934005115bd7`，大小 `240,662,745` bytes，保留至 `2026-12-19`；run 页面：`https://github.com/a-yan0901/Relay/actions/runs/35488521654`。
 - 本次为 `main` 技术预览，签名配置和签名校验按条件跳过；CI 证明新文件服务已进入可追溯 Windows 制品链，不替代真实系统文件对话框人工走查和正式签名发布。
+
+## 2026-09-20 Android 无真机本地回归复验
+
+- 当前提交执行 `npm run test:android:local` 成功：Android JVM 单元测试 `38/38` 通过，并完成 `assembleDebugAndroidTest` 编译。
+- 当前提交执行 `npm run build:android:debug` 成功；Debug APK `apps/android/android/app/build/outputs/apk/debug/app-debug.apk` 为 `8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`。
+- 本轮只做本地编译/回归，没有调用 `adb`，没有安装、卸载、`pm clear` 或新增运行时授权；该结果不替代两台真机 A-01～A-17 和 A-17 双向 bundle 实机验收。设备恢复后按“单次数据保留部署→集中全量测试→集中修复”执行。

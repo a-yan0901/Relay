@@ -571,3 +571,9 @@
 
 - 使用当前 `dist/releases/nsis/win-unpacked/Relay.exe` 和隔离临时 userData，通过真实 Electron preload `relayDesktop.invoke` 调用 `system.clipboard.writeText` 写入合成标记，再调用 `system.clipboard.readText` 读回。
 - 回环结果为 `clipboard-roundtrip=true`；测试结束前再次写入空字符串清理系统剪贴板，临时 userData 和测试进程已清理。该条补齐 Windows 打包版主进程/预加载/系统剪贴板 IPC 证据；通知、真实系统文件对话框人工交互、签名和 Android 真机门禁仍待补验。
+
+## 2026-09-20 Android 无真机本地回归复验
+
+- 在当前提交上执行 `npm run test:android:local`，Gradle `BUILD SUCCESSFUL`；Android JVM 单元测试结果为 `38/38` 通过，另完成 `assembleDebugAndroidTest` 编译。该入口不调用 `adb`、不安装、不卸载、不清理应用数据，也不申请新授权。
+- 随后执行 `npm run build:android:debug`，Gradle `BUILD SUCCESSFUL`；当前 Debug APK 为 `apps/android/android/app/build/outputs/apk/debug/app-debug.apk`，大小 `8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`。
+- 本轮只证明当前共享 Web 资源、Android 原生编译和 AndroidTest 编译未受 Windows 文件服务变更影响；不把本地编译结果扩展为真机 A-01～A-17 或 A-17 双向 bundle 验收。手机和平板继续按用户要求延期，恢复后执行一次数据保留部署，再集中全量回归。
