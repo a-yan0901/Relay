@@ -605,3 +605,9 @@
 - 在当前代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 上重新执行 `npm test -- --run tests/unit/server tests/integration/server --testTimeout=15000 --hookTimeout=15000 --no-file-parallelism --maxWorkers=1 --reporter=dot`。
 - 结果为 `45` 个测试文件、`203` 个测试全部通过，耗时 `80.76s`；该结果覆盖服务端 unit 与 integration 两个目录，不再只引用 `31` 个 unit 文件/`145` 个测试的子集。
 - 本次只执行服务端测试，没有触碰 Android 设备、安装/卸载应用、`pm clear` 或新增授权；Web/Server/Cloud 构建、Chromium E2E 和其余跨端门禁仍以本文件最后的统一本地入口记录为准。
+
+## 2026-09-20 独立模拟器 instrumentation 复验
+
+- 在当前代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 上，对独立 AVD `emulator-5554`（`homeops-api35(AVD) - 15`）执行 `node run-gradle.mjs :app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`。
+- Gradle 最终 `BUILD SUCCESSFUL`；instrumentation `9/9` 通过、`0` skipped、`0` failed，耗时 `2m 16s`。该批次覆盖 Android full fixed bundle vector 的解密/解析、分块导入、错误密码、篡改回滚、冲突与无 partial write 等自动化路径。
+- Gradle connected runner 仅作用于独立 AVD；没有触碰用户手机/平板，没有新增运行时授权，也没有对真机执行卸载、清库或部署。该证据不替代 Android 真机 A-01～A-17、A-17 双向设备回传、低内存和生命周期人工验收。

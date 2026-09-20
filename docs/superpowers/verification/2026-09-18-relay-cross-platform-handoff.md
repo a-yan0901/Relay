@@ -782,3 +782,9 @@
 - 当前代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 上执行：`npm test -- --run tests/unit/server tests/integration/server --testTimeout=15000 --hookTimeout=15000 --no-file-parallelism --maxWorkers=1 --reporter=dot`。
 - `45` 个测试文件、`203` 个测试全部通过，耗时 `80.76s`；这是服务端 unit 与 integration 的完整定向证据，不把 `31`/`145` 的 unit 子集当作服务端全量。
 - 本轮没有调用 `adb`，没有安装/卸载 Android 应用、`pm clear` 或新增授权；Android 真机 A-01～A-17 和 Windows 原生对话框/正式签名边界保持原状态。
+
+## 2026-09-20 独立模拟器 instrumentation 复验
+
+- 当前代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 在独立 AVD `emulator-5554`（`homeops-api35(AVD) - 15`）执行 `node run-gradle.mjs :app:connectedDebugAndroidTest --offline --no-daemon --max-workers=1 --console=plain`。
+- 最终结果：`9/9` instrumentation 通过、`0` skipped、`0` failed，Gradle `BUILD SUCCESSFUL`，耗时 `2m 16s`。覆盖 full fixed bundle vector 解密/解析、分块导入、错误密码、篡改回滚、冲突和无 partial write。
+- 交接边界：本条只更新独立模拟器自动化证据；没有触碰用户手机/平板，没有新增运行时授权，也没有对真机卸载、清库或部署。A-01～A-17、Android→Web/Windows 实际回传、低内存和生命周期仍需目标真机验收。

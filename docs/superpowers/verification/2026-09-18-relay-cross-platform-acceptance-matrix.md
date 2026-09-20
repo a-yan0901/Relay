@@ -615,3 +615,12 @@
 |---|---|---|
 | 服务端 unit + integration | 通过 | 在代码基线 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 上串行执行 `tests/unit/server tests/integration/server`，`45` 个测试文件、`203` 个测试全部通过，耗时 `80.76s` |
 | 设备影响 | 无 | 本轮只运行服务端测试，没有调用 `adb`，没有安装/卸载、`pm clear` 或新增 Android 授权 |
+
+## 2026-09-20 独立模拟器 instrumentation 复验
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| Android instrumentation | 通过 | `emulator-5554` / `homeops-api35(AVD) - 15` 执行 `:app:connectedDebugAndroidTest`；`9/9` 通过、`0` skipped、`0` failed，Gradle `BUILD SUCCESSFUL`，耗时 `2m 16s` |
+| Android full bundle vector 自动化 | 部分通过 | 覆盖固定向量解密/解析、分块导入、错误密码、篡改回滚、冲突和无 partial write；不等同于 Android 真机双向导入导出 |
+| 设备影响 | 仅独立 AVD | 未触碰手机/平板；没有新增运行时授权，也没有对真机卸载、清库或部署 |
+| Android 真机与 A-17 | 延期 | 仍等待手机和平板重新上线；恢复后按一次数据保留部署，再集中执行 A-01～A-17 与 Web/Windows↔Android 双向 bundle |
