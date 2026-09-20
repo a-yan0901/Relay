@@ -654,3 +654,10 @@
 
 - 当前工作区定向执行 Web 终端恢复、服务端 Vault bundle、Windows local runtime、Windows native file services，共 `4` 个测试文件、`23/23` 个测试通过。
 - 该回归补强当前 Web/Server/Windows 代码路径证据；不扩大为 Android 真机 A-01～A-17、A-17 双向实机 bundle、Windows 原生系统对话框人工验收或正式签名通过。
+
+## 2026-09-20 Android→Web bundle 实际交接证据
+
+- 独立 `emulator-5554` 使用当前 Debug APK（`8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`）经 WebView CDP 调用 Android 原生 bridge；本轮只使用固定合成向量，未操作手机/平板真机。
+- Android 原生预览/应用固定向量均为 `2` hosts / `2` groups / `2` identities，并经 chunked export 导出实际加密 bundle：`4,581` bytes，SHA-256 `c57903429fb5efe61c9a1a5b801f2a57b724d87a0afb143e7edabb8d21678231`。
+- Web/Server 独立内存目标对该 bundle 的错误密码和篡改 ciphertext 均返回 HTTP `400`，拒绝后数据保持 `0/0/0`；正确预览、应用和最终 hosts/groups/identities 计数均为 `2/2/2`。
+- 验收边界更新为：模拟器 Android→Web 实际回传已取得证据；Android 真机 A-01～A-17、A-17 双向实机 bundle、Windows 原生系统文件对话框人工走查和正式签名仍未完成。

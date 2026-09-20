@@ -636,3 +636,10 @@
 
 - 在当前工作区执行 `npm test -- --run tests/unit/web/app-terminal-lifecycle.dom.test.tsx tests/unit/server/vault-bundle.test.ts tests/unit/windows/local-runtime.test.ts tests/unit/windows/native-file-services.test.ts --no-file-parallelism --maxWorkers=1 --reporter=dot`。
 - 结果为 `4` 个测试文件、`23` 个测试全部通过；该条补强 Web 自动恢复、服务端固定 bundle、Windows 本地 runtime 和原生文件服务的当前回归证据，不扩大为 Android 真机或 Windows 原生系统对话框人工通过。
+
+## 2026-09-20 Android→Web bundle 实际交接证据
+
+- 在独立 `emulator-5554` 上使用当前 Debug APK（`8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`）的 WebView CDP，直接调用 Android 原生 `RelayNative` bridge；仅使用固定合成向量，不触碰手机/平板真机。
+- Android 原生 Vault 完成固定向量预览和应用（`2` hosts / `2` groups / `2` identities），随后通过原生 chunked export 实际导出加密 bundle：`4,581` bytes，SHA-256 `c57903429fb5efe61c9a1a5b801f2a57b724d87a0afb143e7edabb8d21678231`。
+- 将该 Android 实际导出 bundle 送入独立内存 Web/Server Vault：错误导出密码和篡改 ciphertext 各返回 HTTP `400`，拒绝后 hosts/groups/identities 仍为 `0/0/0`；正确预览和应用均为 `2/2/2`，最终服务端计数为 `2/2/2`。
+- 该证据闭合了模拟器 Android→Web 的实际加密 bundle 回传路径，但不替代 Android 真机 A-01～A-17、Windows 打包 UI 导入和原生系统文件对话框人工走查；这些外部门禁仍待补验。
