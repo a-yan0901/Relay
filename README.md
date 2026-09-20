@@ -95,6 +95,10 @@ ACCOUNT_SYNC_ENABLED=true DATA_DIR=.local-data NODE_ENV=test TRUSTED_ORIGINS=htt
 验证命令：
 
 ```bash
+# 串行执行当前环境可完成的 Web/Server/Windows/Android 本地门禁；
+# 不调用 adb，不安装、卸载或清理 Android 设备
+npm run verify:cross-platform:local
+
 npm run lint
 npm run typecheck
 npm test

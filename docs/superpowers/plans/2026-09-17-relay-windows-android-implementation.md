@@ -583,3 +583,11 @@
 - 当前提交执行 `npm run test:e2e -- --project=chromium --workers=1`，Chromium `5/5` 通过，覆盖 Vault/Host/终端、320px 离线路径、SFTP/批量任务、布局持久化和断线自动重连。
 - 当前提交执行 `npm run build`，`build:web`、`build:server`、`build:cloud` 均成功；仅有既有 Vite chunk size warning，没有构建错误。该结果继续支持 Web 与独立服务端交付，但不替代 Windows 原生窗口、签名和 Android 真机门禁。
 - 服务端定向回归 `npm test -- --run tests/unit/server --testTimeout=15000 --hookTimeout=15000 --no-file-parallelism --maxWorkers=1 --reporter=dot` 通过：`31` 个测试文件、`145` 个测试全部通过。
+
+## 2026-09-20 跨端本地串行验证入口
+
+- 新增根目录 `npm run verify:cross-platform:local`，以固定顺序串行执行 `typecheck`、`lint`、全量 Vitest、Web/Server/Cloud 构建、Chromium E2E、Windows NSIS/Portable 打包、Android JVM/AndroidTest 编译和 Debug APK 构建；失败即停，不调用 `adb`，不安装/卸载/清理 Android 设备。
+- TDD 先验证 runner 计划和 Windows `.cmd` 启动边界；Node 24 直接 `spawn('npm.cmd', ..., { shell: false })` 会返回 `EINVAL`，已改为显式 `cmd.exe /d /s /c`，回归测试 `2/2` 通过，新增 `scripts/**/*.mjs` 的 Node ESLint globals 配置。
+- 完整入口当前通过：全量 Vitest `167` 个文件通过、`1` 个跳过，`769` 个测试通过、`2` 个跳过；Chromium `5/5`；Android JVM `38/38` 且 AndroidTest 编译成功；Web/Server/Cloud 和 Windows 打包均成功。
+- 当前制品：Debug APK `8,655,856` bytes / SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,748` bytes / SHA-256 `EBBB7171328904A5A6250E2AC130477DB5CF1DBF4746ACFADB8A068EE901F34`；Portable `113,688,946` bytes / SHA-256 `EE2DC352B0CFF300E697C3AA2E49F738CF6D726C8DD43D7E23575F981031A4EB`；Windows 两个制品均为 `NotSigned`。
+- 该入口只收口可自动化的本地门禁，不替代 Android 真机 A-01～A-17、A-17 双向 bundle、Windows 原生文件对话框人工走查或正式 Authenticode 签名。

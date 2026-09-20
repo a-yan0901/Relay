@@ -586,3 +586,13 @@
 | Web/Server/Cloud 构建 | 通过 | `npm run build` 中 `build:web`、`build:server`、`build:cloud` 均成功；只有既有 Vite chunk size warning |
 | Server 定向回归 | 通过 | 串行 `npm test -- --run tests/unit/server ...`：`31` 个测试文件、`145` 个测试全部通过 |
 | 跨端边界 | 未改变 | 本轮不替代 Windows 原生系统对话框/签名或 Android 真机 A-01～A-17、A-17 双向 bundle 验收 |
+
+## 2026-09-20 跨端本地串行验证入口
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 统一本地入口 | 通过 | `npm run verify:cross-platform:local` 固定串行执行 typecheck、lint、全量 Vitest、Web/Server/Cloud 构建、Chromium、Windows 打包和 Android 本地构建；失败即停，不调用 `adb` |
+| 全量自动化 | 通过 | Vitest `167` 文件通过、`1` 跳过；`769` 测试通过、`2` 跳过；Chromium `5/5`；Android JVM `38/38`，AndroidTest 编译成功 |
+| 当前 Android 制品 | 已生成 | `8,655,856` bytes；SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820` |
+| 当前 Windows 制品 | 已生成 | NSIS `127,709,748` bytes / `EBBB7171328904A5A6250E2AC130477DB5CF1DBF4746ACFADB8A068EE901F34`；Portable `113,688,946` bytes / `EE2DC352B0CFF300E697C3AA2E49F738CF6D726C8DD43D7E23575F981031A4EB`；均 `NotSigned` |
+| 外部设备与发布边界 | 未完成 | 不替代 Android 真机 A-01～A-17、A-17 双向 bundle、Windows 原生文件对话框人工走查和正式签名 |

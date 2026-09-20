@@ -761,3 +761,11 @@
 - 当前提交 `npm run build` 成功完成 `build:web`、`build:server`、`build:cloud`；Vite 仅报告既有 chunk size warning，无构建错误。
 - 服务端定向回归通过：串行 `npm test -- --run tests/unit/server --testTimeout=15000 --hookTimeout=15000 --no-file-parallelism --maxWorkers=1 --reporter=dot` 为 `31` 个测试文件、`145` 个测试全部通过。
 - 本条关闭当前 Web/独立服务端自动化构建与浏览器验收复核，不扩大 Windows 原生系统对话框/签名或 Android 真机 A-01～A-17、A-17 双向 bundle 的结论。
+
+## 2026-09-20 跨端本地串行验证入口
+
+- 新增 `npm run verify:cross-platform:local`，固定串行执行当前环境可完成的 Web、Server、Windows 和 Android 本地门禁；失败即停，不调用 `adb`，不安装、卸载或清理 Android 设备。
+- Node 24 下 Windows `npm.cmd` 不能用 `spawn` 的 `shell:false` 直接启动（`EINVAL`）；runner 改用显式 `cmd.exe /d /s /c`，回归测试 `2/2` 通过，并补齐 `scripts/**/*.mjs` 的 Node ESLint globals。
+- 完整入口通过：Vitest `167` 个文件通过、`1` 个跳过，`769` 个测试通过、`2` 个跳过；Chromium `5/5`；Android JVM `38/38` 与 AndroidTest 编译成功；Web/Server/Cloud 和 Windows NSIS/Portable 打包成功。
+- 当前 Debug APK：`8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`。当前 NSIS：`127,709,748` bytes，SHA-256 `EBBB7171328904A5A6250E2AC130477DB5CF1DBF4746ACFADB8A068EE901F34`；Portable：`113,688,946` bytes，SHA-256 `EE2DC352B0CFF300E697C3AA2E49F738CF6D726C8DD43D7E23575F981031A4EB`；Windows 两者均 `NotSigned`。
+- 本入口只关闭可自动化本地门禁，不替代 Android 真机 A-01～A-17、A-17 双向 bundle、Windows 原生文件对话框人工走查或正式 Authenticode 签名。
