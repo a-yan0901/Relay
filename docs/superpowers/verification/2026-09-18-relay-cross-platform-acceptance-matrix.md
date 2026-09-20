@@ -596,3 +596,15 @@
 | 当前 Android 制品 | 已生成 | `8,655,856` bytes；SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820` |
 | 当前 Windows 制品 | 已生成 | NSIS `127,709,748` bytes / `EBBB7171328904A5A6250E2AC130477DB5CF1DBF4746ACFADB8A068EE901F34`；Portable `113,688,946` bytes / `EE2DC352B0CFF300E697C3AA2E49F738CF6D726C8DD43D7E23575F981031A4EB`；均 `NotSigned` |
 | 外部设备与发布边界 | 未完成 | 不替代 Android 真机 A-01～A-17、A-17 双向 bundle、Windows 原生文件对话框人工走查和正式签名 |
+
+## 2026-09-20 当前提交跨端门禁与 Windows CI
+
+| 验收项 | 本轮结果 | 证据与边界 |
+|---|---|---|
+| 统一本地验证入口 | 通过 | 提交 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 执行 `npm run verify:cross-platform:local`；失败即停，不调用 `adb`，不安装/卸载/清理 Android 设备 |
+| Web/Server/Cloud | 通过 | typecheck、lint、`npm run build`、Chromium E2E `5/5`；全量 Vitest `167` 个文件通过、`1` 个跳过，`769` 个测试通过、`2` 个跳过 |
+| Windows 本地门禁 | 通过 | Windows NSIS/Portable 打包成功；Windows 原生文件服务代码级回归仍为 `8` 个文件、`39/39`；本地制品均 `NotSigned` |
+| Android 本地门禁 | 通过 | `test:android:local` 的 JVM `38/38` 和 AndroidTest 编译成功；`build:android:debug` 成功；APK SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820` |
+| Windows GitHub Actions 制品 | 通过 | run `35490701493` 成功；artifact `Relay-Windows-main-20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`，`240,664,946` bytes，保留至 `2026-12-19`；[Actions run](https://github.com/a-yan0901/Relay/actions/runs/35490701493) |
+| Android 真机与 A-17 | 延期 | 手机和平板按用户要求等待重新提供；恢复后一次数据保留部署，再集中执行 A-01～A-17 和 Web/Windows↔Android 双向 bundle，不为单个问题反复重装 |
+| Windows 外部发布门禁 | 未完成 | 真实系统文件选择/保存对话框人工走查仍受 Computer Use 原生窗口不可用影响；正式 `v*` Authenticode 仍需配置证书 secrets 并通过签名清单 |

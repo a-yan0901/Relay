@@ -591,3 +591,11 @@
 - 完整入口当前通过：全量 Vitest `167` 个文件通过、`1` 个跳过，`769` 个测试通过、`2` 个跳过；Chromium `5/5`；Android JVM `38/38` 且 AndroidTest 编译成功；Web/Server/Cloud 和 Windows 打包均成功。
 - 当前制品：Debug APK `8,655,856` bytes / SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,748` bytes / SHA-256 `EBBB7171328904A5A6250E2AC130477DB5CF1DBF4746ACFADB8A068EE901F34`；Portable `113,688,946` bytes / SHA-256 `EE2DC352B0CFF300E697C3AA2E49F738CF6D726C8DD43D7E23575F981031A4EB`；Windows 两个制品均为 `NotSigned`。
 - 该入口只收口可自动化的本地门禁，不替代 Android 真机 A-01～A-17、A-17 双向 bundle、Windows 原生文件对话框人工走查或正式 Authenticode 签名。
+
+## 2026-09-20 跨端本地门禁与 Windows CI 交接收口
+
+- 当前提交 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6` 已完成统一本地入口 `npm run verify:cross-platform:local`：按固定顺序通过 typecheck、lint、全量 Vitest、Web/Server/Cloud build、Chromium E2E、Windows NSIS/Portable 打包、Android JVM/AndroidTest 编译和 Debug APK 构建。结果为 Vitest `167` 个文件通过、`1` 个跳过，`769` 个测试通过、`2` 个跳过；Chromium `5/5`；Android JVM `38/38`；Gradle 均 `BUILD SUCCESSFUL`。
+- GitHub Actions Windows package run `35490701493` 已成功完成，head SHA 为 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`；源码校验、依赖安装、Electron runtime 准备、Windows 打包、artifact manifest 和 artifact 上传均通过。主分支按设计跳过正式版本标签签名门禁，不代表 `v*` 正式签名发布通过。
+- 持久 artifact 为 `Relay-Windows-main-20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`，大小 `240,664,946` bytes，保留至 `2026-12-19`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35490701493`。该 artifact 是当前 Windows 技术预览的可追溯交接来源。
+- 当前本地制品：Debug APK `8,655,856` bytes / SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`；NSIS `127,709,748` bytes / SHA-256 `EBBB7171328904A5A6250E2AC130477DB5CF1DBF4746ACFADB8A068EE901F34`；Portable `113,688,946` bytes / SHA-256 `EE2DC352B0CFF300E697C3AA2E49F738CF6D726C8DD43D7E23575F981031A4EB`；Windows 两个本地制品均为 `NotSigned`。
+- 本轮收口的是可自动化 Web/Server/Windows/Android 本地门禁；Android 手机和平板真机 A-01～A-17 及 A-17 双向 bundle 按用户要求延期，恢复后一次数据保留部署，再集中全量回归。Windows 真实系统文件选择/保存对话框人工走查和正式 Authenticode 签名仍是外部门禁。

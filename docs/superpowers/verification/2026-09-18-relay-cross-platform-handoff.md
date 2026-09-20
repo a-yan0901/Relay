@@ -3,8 +3,8 @@
 **交接日期：** 2026-09-20
 **上一版交接文档基线：** `30c9b5b`（`main`）
 **本次文档修订：** 当前修订提交（以本文件所在 commit 为准）
-**当前仓库交接基线：** `603db05`；本提交补齐 Windows 原生文件选择/流式上传和桌面通知 IPC。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
-**验收机器应检出：** `603db05`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
+**当前仓库交接基线：** `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`；本提交包含 Windows 原生文件选择/流式上传、桌面通知 IPC 和统一跨端本地验证入口。旧 APK/portable 记录仍保留在历史续验段落，不作为当前制品。
+**验收机器应检出：** `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`；生成物必须以本文件最新交接段落记录的文件名、大小、SHA-256 和工具链复核。
 **适用范围：** Android 真机/可用模拟器验收；Windows 实机验收作为并行任务保留
 **对应计划：** [Relay 独立 Windows 与 Android 客户端实施计划](../plans/2026-09-17-relay-windows-android-implementation.md)
 **对应矩阵：** [Relay 跨端验收矩阵](./2026-09-18-relay-cross-platform-acceptance-matrix.md)
@@ -769,3 +769,10 @@
 - 完整入口通过：Vitest `167` 个文件通过、`1` 个跳过，`769` 个测试通过、`2` 个跳过；Chromium `5/5`；Android JVM `38/38` 与 AndroidTest 编译成功；Web/Server/Cloud 和 Windows NSIS/Portable 打包成功。
 - 当前 Debug APK：`8,655,856` bytes，SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`。当前 NSIS：`127,709,748` bytes，SHA-256 `EBBB7171328904A5A6250E2AC130477DB5CF1DBF4746ACFADB8A068EE901F34`；Portable：`113,688,946` bytes，SHA-256 `EE2DC352B0CFF300E697C3AA2E49F738CF6D726C8DD43D7E23575F981031A4EB`；Windows 两者均 `NotSigned`。
 - 本入口只关闭可自动化本地门禁，不替代 Android 真机 A-01～A-17、A-17 双向 bundle、Windows 原生文件对话框人工走查或正式 Authenticode 签名。
+
+## 64. 2026-09-20 当前提交跨端门禁与 Windows CI 交接
+
+- 当前交接基线为 `20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`。统一入口 `npm run verify:cross-platform:local` 已按固定顺序通过 typecheck、lint、全量 Vitest、Web/Server/Cloud build、Chromium E2E、Windows NSIS/Portable 打包、Android JVM/AndroidTest 编译和 Debug APK 构建；Vitest `167` 个文件通过、`1` 个跳过，`769` 个测试通过、`2` 个跳过；Chromium `5/5`；Android JVM `38/38`。
+- GitHub Actions run `35490701493` 成功完成源码校验、Electron runtime 准备、Windows NSIS/Portable 打包、manifest 生成和 artifact 上传；主分支的签名配置与正式标签签名校验按条件跳过。artifact 为 `Relay-Windows-main-20424421d547cb872bcbe45aaf8e4a3b2f3f03a6`，大小 `240,664,946` bytes，保留至 `2026-12-19`；run URL：`https://github.com/a-yan0901/Relay/actions/runs/35490701493`。
+- 当前 Debug APK 为 `8,655,856` bytes / SHA-256 `2436C5F4AFF4EB8CA46A464E9733968FA256A39B29FA3137824C66211476820`。当前本地 NSIS 为 `127,709,748` bytes / SHA-256 `EBBB7171328904A5A6250E2AC130477DB5CF1DBF4746ACFADB8A068EE901F34`；Portable 为 `113,688,946` bytes / SHA-256 `EE2DC352B0CFF300E697C3AA2E49F738CF6D726C8DD43D7E23575F981031A4EB`；两者均 `NotSigned`。
+- Android 真机手机和平板的 A-01～A-17 及 A-17 双向 bundle 按用户要求延期；恢复后只做一次当前 APK 的数据保留部署，再集中执行全量清单。Windows 真实系统文件选择/保存对话框人工走查和正式 Authenticode 签名仍未关闭，不能把本地自动化或 main 技术预览 artifact 记为正式发布通过。
