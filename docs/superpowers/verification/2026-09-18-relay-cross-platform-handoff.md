@@ -13,7 +13,7 @@
 
 | 范围 | 当前状态 | 已有证据 | 交接后仍需补充 |
 | --- | --- | --- | --- |
-| Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `164` 个文件通过、`1` 个跳过；`757` 个测试通过、`2` 个跳过；服务端定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
+| Web/服务端 | ✅ 自动化基线可复现 | 当前代码基线的串行全量 Vitest `167` 个文件通过、`1` 个跳过；`769` 个测试通过、`2` 个跳过；服务端 unit+integration 定向 `45` 文件/`203` 测试；typecheck、lint、build、Chromium E2E `5/5` | 无本次自动化交接阻塞项 |
 | Windows | 🟡 打包与隔离恢复已复核，平台发布门禁未完成 | 当前 NSIS/Portable 制品、Electron ABI 149 native load、隔离 userData 三轮强制终止/重启恢复、版本化 `0.0.9 → 0.1.0 → 0.0.9` 数据保留、一次安装器中断恢复、CI artifact、真实目标 SSH/SFTP、原生 fileOpen/fileSave 流和通知 IPC 均有证据 | 真签名、真实系统文件选择/保存对话框人工走查和发布门禁 |
 | Android | ⏸️ 真机测试按用户要求延期 | 当前只有独立 `emulator-5554`；JVM `38/38`、模拟器 instrumentation `9/9`、Debug APK `2436C5…` 已复核；手机和平板未上线，历史两台真机证据保留但不代表当前制品状态；本轮不安装、不卸载、不清库 | 用户提供真机后一次数据保留部署，再集中执行 A-01～A-17、低内存和实机跨端回传 |
 | Vault bundle v1 | 🟡 加密边界已有固定向量，完整跨端 payload 尚未验收 | Android 已通过 Node V1 envelope 解密向量；Web/Windows 单端导入导出测试存在 | A-17：Web/Windows↔Android 固定 payload 正反向导入导出、错误输入和数据不变性 |
